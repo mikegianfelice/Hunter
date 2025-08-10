@@ -1,0 +1,8 @@
+web3>=6.0.0
+pandas>=2.0.0
+requests
+pyyaml
+tweepy
+beautifulsoup4
+aiohttp
+python-dotenv

@@ -1,0 +1,11 @@
+# Configuration file for your trading bot
+wallet_address: "0xE39E2a9EFd457fd740b98FdaEA1cD35Ab1F54d21"
+private_key: "014bef71b6777693badf2cdf8ef35619b5c8d58d714c3e2009e8cd5b5242b8d7"
+infura_url: "https://mainnet.infura.io/v3/0337e62658f9474ebfdb9623e320c873"
+telegram_bot_token: "8274231087:AAFLp6Oz521uLD6yFPmRNJhZDaus92PcDf4"
+telegram_chat_id: "1815695300" 
+trade_amount_usd: 20
+slippage: 0.01
+take_profit: 0.5  
+use_dynamic_tp: true
+stop_loss: 0.25  
