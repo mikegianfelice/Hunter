@@ -205,3 +205,45 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# =============================================================================
+# Crypto Trading Bot 100X - Runtime Files
+# =============================================================================
+
+# Runtime state files
+.run_state.json
+cooldown.json
+open_positions.json
+risk_state.json
+peak_prices.json
+price_memory.json
+cooldown_log.json
+
+# Runtime data files
+trending_tokens.csv
+*.csv
+
+# Trading logs and archives
+archives/
+logs/
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
