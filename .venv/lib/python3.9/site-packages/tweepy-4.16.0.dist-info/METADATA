@@ -1,0 +1,86 @@
+Metadata-Version: 2.4
+Name: tweepy
+Version: 4.16.0
+Summary: Library for accessing the X API (Twitter)
+Keywords: X.com,API,Twitter
+Author: Joshua Roesslein, Harmon
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Topic :: Software Development :: Libraries
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Programming Language :: Python :: 3 :: Only
+License-File: LICENSE
+Requires-Dist: oauthlib>=3.2.0,<4
+Requires-Dist: requests>=2.27.0,<3
+Requires-Dist: requests-oauthlib>=1.2.0,<3
+Requires-Dist: aiohttp>=3.7.3,<4 ; extra == "async"
+Requires-Dist: async-lru>=1.0.3,<3 ; extra == "async"
+Requires-Dist: coverage>=4.4.2 ; extra == "dev"
+Requires-Dist: coveralls>=2.1.0 ; extra == "dev"
+Requires-Dist: tox>=3.21.0 ; extra == "dev"
+Requires-Dist: urllib3<2 ; extra == "test"
+Requires-Dist: vcrpy>=1.10.3 ; extra == "test"
+Project-URL: Code, https://github.com/tweepy/tweepy
+Project-URL: Documentation, https://docs.tweepy.org
+Project-URL: Homepage, https://tweepy.org
+Project-URL: Issue tracker, https://github.com/tweepy/tweepy/issues
+Provides-Extra: async
+Provides-Extra: dev
+Provides-Extra: test
+
+Tweepy: Twitter for Python!
+======
+
+[![PyPI Version](https://img.shields.io/pypi/v/tweepy?label=PyPI)](https://pypi.org/project/tweepy/)
+[![Python Versions](https://img.shields.io/pypi/pyversions/tweepy?label=Python)](https://pypi.org/project/tweepy/)
+[![DOI](https://zenodo.org/badge/244025.svg)](https://zenodo.org/badge/latestdoi/244025)
+
+[![Documentation Status](https://readthedocs.org/projects/tweepy/badge/?version=latest)](https://tweepy.readthedocs.io/en/latest/)
+[![Test Status](https://github.com/tweepy/tweepy/workflows/Test/badge.svg)](https://github.com/tweepy/tweepy/actions?query=workflow%3ATest)
+[![Coverage Status](https://img.shields.io/coveralls/tweepy/tweepy/master.svg?style=flat)](https://coveralls.io/github/tweepy/tweepy?branch=master)
+
+[![Discord Server](https://discord.com/api/guilds/432685901596852224/embed.png)](https://discord.gg/bJvqnhg)
+
+Installation
+------------
+
+The easiest way to install the latest version from PyPI is by using
+[pip](https://pip.pypa.io/):
+
+    pip install tweepy
+
+To use the `tweepy.asynchronous` subpackage, be sure to install with the
+`async` extra:
+
+    pip install tweepy[async]
+
+You can also use Git to clone the repository from GitHub to install the latest
+development version:
+
+    git clone https://github.com/tweepy/tweepy.git
+    cd tweepy
+    pip install .
+
+Alternatively, install directly from the GitHub repository:
+
+    pip install git+https://github.com/tweepy/tweepy.git
+
+Latest version of Python and older versions not end of life (bugfix and security) are supported.
+
+Links
+-----
+
+- [Documentation](https://tweepy.readthedocs.io/en/latest/)
+- [Official Discord Server](https://discord.gg/bJvqnhg)
+- [Twitter API Documentation](https://developer.twitter.com/en/docs/twitter-api)
+
+

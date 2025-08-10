@@ -1,71 +1,159 @@
-import pandas as pd
-import requests
+# strategy.py
+import json
+import os
+import time
+import yaml
 
-def fetch_token_prices(token_address, interval="5m", limit=50):
-    # NOTE: This is a placeholder. Replace with your real price data source.
-    # You can use DexTools, Moralis, or your own Uniswap graph integration.
-    
-    print(f"🔍 Fetching mock price data for {token_address}")
-    
+# Load config
+with open("config.yaml", "r") as f:
+    _cfg = yaml.safe_load(f)
+
+PRICE_MEM_FILE = "price_memory.json"
+PRICE_MEM_TTL_SECS = int(_cfg.get("price_memory_ttl_minutes", 15)) * 60
+PRICE_MEM_PRUNE_SECS = int(_cfg.get("price_memory_prune_hours", 24)) * 3600
+
+BASE_TP = float(_cfg.get("take_profit", 0.5))
+TP_MIN  = float(_cfg.get("tp_min", 0.20))
+TP_MAX  = float(_cfg.get("tp_max", 1.00))
+
+# Base thresholds
+MIN_MOMENTUM_PCT = float(_cfg.get("min_momentum_pct", 0.008))           # +0.8%
+MIN_VOL_24H_BUY  = float(_cfg.get("min_volume_24h_for_buy", 5000))
+MIN_LIQ_USD_BUY  = float(_cfg.get("min_liquidity_usd_for_buy", 5000))
+MIN_PRICE_USD    = float(_cfg.get("min_price_usd", 0.0000001))
+
+# Fast-path thresholds for first-seen tokens
+FASTPATH_VOL   = float(_cfg.get("fastpath_min_volume_24h", 100000))
+FASTPATH_LIQ   = float(_cfg.get("fastpath_min_liquidity_usd", 50000))
+FASTPATH_SENT  = int(_cfg.get("fastpath_min_sent_score", 55))           # OR mentions >= 3
+
+def _now() -> int:
+    return int(time.time())
+
+def _load_price_mem() -> dict:
+    if not os.path.exists(PRICE_MEM_FILE):
+        return {}
     try:
-        # Mock data: random walk prices for testing
-        import numpy as np
-        np.random.seed(42)
-        prices = np.cumsum(np.random.randn(limit)) + 100
+        with open(PRICE_MEM_FILE, "r") as f:
+            data = json.load(f) or {}
+    except Exception:
+        return {}
+    return _prune_price_mem(data)
 
-        df = pd.DataFrame(prices, columns=["price"])
-        return df
-    except Exception as e:
-        print(f"❌ Failed to fetch price data: {e}")
-        return None
-
-def calculate_indicators(token_address):
-    df = fetch_token_prices(token_address)
-
-    if df is None or df.empty:
-        print("⚠️ Price data unavailable.")
-        return None
-
+def _save_price_mem(mem: dict):
     try:
-        df["EMA10"] = df["price"].ewm(span=10).mean()
-        df["EMA20"] = df["price"].ewm(span=20).mean()
-        df["returns"] = df["price"].pct_change()
-        df.dropna(inplace=True)
-        return df
-    except Exception as e:
-        print(f"⚠️ Error calculating indicators: {e}")
-        return None
+        with open(PRICE_MEM_FILE, "w") as f:
+            json.dump(mem, f, indent=2)
+    except Exception:
+        pass
 
-def check_buy_signal(token_address):
-    df = calculate_indicators(token_address)
-    if df is None or df.empty:
+def _prune_price_mem(mem: dict) -> dict:
+    now_ts = _now()
+    pruned = {addr: info for addr, info in mem.items()
+              if now_ts - int(info.get("ts", 0)) <= PRICE_MEM_PRUNE_SECS}
+    removed = len(mem) - len(pruned)
+    if removed > 0:
+        _save_price_mem(pruned)
+        print(f"🧹 Pruned {removed} old entries from price_memory.json")
+    return pruned
+
+def prune_price_memory() -> int:
+    if not os.path.exists(PRICE_MEM_FILE):
+        return 0
+    try:
+        with open(PRICE_MEM_FILE, "r") as f:
+            mem = json.load(f) or {}
+    except Exception:
+        return 0
+    before = len(mem)
+    pruned = _prune_price_mem(mem)
+    return max(0, before - len(pruned))
+
+def _pct_change(curr: float, prev: float) -> float:
+    if prev <= 0:
+        return 0.0
+    return (curr - prev) / prev
+
+def check_buy_signal(token: dict) -> bool:
+    address = (token.get("address") or "").lower()
+    price   = float(token.get("priceUsd") or 0.0)
+    vol24h  = float(token.get("volume24h") or 0.0)
+    liq_usd = float(token.get("liquidity") or 0.0)
+    is_trusted = bool(token.get("is_trusted", False))
+
+    if not address or price <= MIN_PRICE_USD:
+        print("📉 No address or price too low; skipping buy signal.")
         return False
 
-    # Simple crossover strategy
-    try:
-        if (
-            df["EMA10"].iloc[-1] > df["EMA20"].iloc[-1]
-            and df["EMA10"].iloc[-2] <= df["EMA20"].iloc[-2]
-        ):
-            print("✅ BUY SIGNAL TRIGGERED")
-            return True
+    # For trusted tokens, require milder depth floors
+    min_vol = MIN_VOL_24H_BUY if not is_trusted else max(2000.0, MIN_VOL_24H_BUY * 0.5)
+    min_liq = MIN_LIQ_USD_BUY if not is_trusted else max(2000.0, MIN_LIQ_USD_BUY * 0.5)
+
+    if vol24h < min_vol or liq_usd < min_liq:
+        print(f"🪫 Fails market depth: vol ${vol24h:,.0f} (need ≥ {min_vol:,.0f}), "
+              f"liq ${liq_usd:,.0f} (need ≥ {min_liq:,.0f})")
+        return False
+
+    mem = _load_price_mem()
+    entry = mem.get(address)
+    now_ts = _now()
+    mem[address] = {"price": price, "ts": now_ts}
+    _save_price_mem(mem)
+
+    # Trusted tokens: slightly easier momentum threshold
+    momentum_need = MIN_MOMENTUM_PCT if not is_trusted else max(0.003, MIN_MOMENTUM_PCT * 0.5)  # e.g. 0.3%
+
+    if entry:
+        prev_price = float(entry.get("price", 0.0))
+        prev_ts    = int(entry.get("ts", 0))
+        age = now_ts - prev_ts
+
+        if prev_price > 0 and age <= PRICE_MEM_TTL_SECS:
+            mom = _pct_change(price, prev_price)
+            print(f"📈 Momentum vs {age}s ago: {mom*100:.2f}% (need ≥ {momentum_need*100:.2f}%)")
+            if mom >= momentum_need:
+                print("✅ Momentum buy signal → TRUE")
+                return True
+            else:
+                print("❌ Momentum insufficient.")
+                return False
         else:
-            print("📉 No buy signal")
-            return False
-    except Exception as e:
-        print(f"❌ Error in buy signal logic: {e}")
-        return False
+            print("ℹ️ Snapshot stale or missing, evaluating fast-path…")
 
-def get_dynamic_take_profit(token_address):
-    df = calculate_indicators(token_address)
-    if df is None or df.empty:
-        return 0.3  # fallback TP = 30%
+    # Fast-path: for trusted tokens ignore sentiment; for others require sentiment
+    sent_score    = int(token.get("sent_score") or 0)
+    sent_mentions = int(token.get("sent_mentions") or 0)
+    fast_liq_ok   = (vol24h >= FASTPATH_VOL and liq_usd >= FASTPATH_LIQ)
 
-    # Use recent volatility to determine dynamic TP
-    try:
-        recent_volatility = df["returns"].std() * 100  # %
-        dynamic_tp = min(max(recent_volatility * 2, 0.1), 1.0)
-        return dynamic_tp  # e.g., 0.25 = 25%
-    except Exception as e:
-        print(f"⚠️ Failed to calculate dynamic TP: {e}")
-        return 0.3
+    if is_trusted:
+        if fast_liq_ok:
+            print("🚀 Trusted fast-path (liq/vol only) → TRUE")
+            return True
+    else:
+        fast_sent_ok  = (sent_score >= FASTPATH_SENT) or (sent_mentions >= 3)
+        if fast_liq_ok and fast_sent_ok:
+            print("🚀 Fast-path conditions met (liquidity/volume + sentiment) → TRUE")
+            return True
+
+    print("❌ No buy signal (no momentum yet and fast-path not met).")
+    return False
+
+def get_dynamic_take_profit(token: dict) -> float:
+    tp = BASE_TP
+    vol24h = float(token.get("volume24h") or 0.0)
+    sent_score = float(token.get("sent_score") or 0.0)
+    mentions   = int(token.get("sent_mentions") or 0)
+
+    if sent_score >= 75 or mentions >= 10:
+        tp += 0.15
+    elif sent_score <= 50 and mentions < 3:
+        tp -= 0.10
+
+    if vol24h >= 200_000:
+        tp += 0.10
+    elif vol24h < 20_000:
+        tp -= 0.10
+
+    tp = max(TP_MIN, min(TP_MAX, tp))
+    print(f"🎯 Dynamic TP computed: {tp*100:.0f}% (base {BASE_TP*100:.0f}%)")
+    return tp

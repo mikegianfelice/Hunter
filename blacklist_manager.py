@@ -1,28 +1,39 @@
+# blacklist_manager.py
 import json
 import os
 
 BLACKLIST_FILE = "blacklist.json"
 
-def load_blacklist():
+def _load():
     if not os.path.exists(BLACKLIST_FILE):
-        return []
-    with open(BLACKLIST_FILE, "r") as file:
-        try:
-            return json.load(file)
-        except json.JSONDecodeError:
-            return []
+        return set()
+    try:
+        with open(BLACKLIST_FILE, "r") as f:
+            data = json.load(f) or []
+            return {a.lower() for a in data if isinstance(a, str)}
+    except Exception:
+        return set()
 
-def save_blacklist(blacklist):
-    with open(BLACKLIST_FILE, "w") as file:
-        json.dump(list(set(blacklist)), file, indent=2)
+def _save(s: set):
+    try:
+        with open(BLACKLIST_FILE, "w") as f:
+            json.dump(sorted(list(s)), f, indent=2)
+    except Exception:
+        pass
 
-def add_to_blacklist(token_address):
-    blacklist = load_blacklist()
-    if token_address not in blacklist:
-        blacklist.append(token_address)
-        save_blacklist(blacklist)
-        print(f"🛑 Token blacklisted: {token_address}")
+def is_blacklisted(address: str) -> bool:
+    return (address or "").lower() in _load()
 
-def is_blacklisted(token_address):
-    blacklist = load_blacklist()
-    return token_address in blacklist
+def add_to_blacklist(address: str):
+    s = _load()
+    s.add((address or "").lower())
+    _save(s)
+    print(f"🛑 Token blacklisted: {address}")
+
+def remove_from_blacklist(address: str):
+    s = _load()
+    addr = (address or "").lower()
+    if addr in s:
+        s.remove(addr)
+        _save(s)
+        print(f"🔓 Removed from blacklist (trusted): {address}")

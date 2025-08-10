@@ -1,11 +1,48 @@
-# Configuration file for your trading bot
-wallet_address: "0xE39E2a9EFd457fd740b98FdaEA1cD35Ab1F54d21"
-private_key: "014bef71b6777693badf2cdf8ef35619b5c8d58d714c3e2009e8cd5b5242b8d7"
-infura_url: "https://mainnet.infura.io/v3/0337e62658f9474ebfdb9623e320c873"
-telegram_bot_token: "8274231087:AAFLp6Oz521uLD6yFPmRNJhZDaus92PcDf4"
-telegram_chat_id: "1815695300" 
-trade_amount_usd: 20
-slippage: 0.01
-take_profit: 0.5  
-use_dynamic_tp: true
-stop_loss: 0.25  
+# === Trade Execution ===
+trade_amount_usd: 5               # Amount per trade in USD
+slippage: 0.02                    # 2% max slippage
+use_supporting_fee_swap: true     # Use fee-supporting swap function for taxed tokens
+requote_delay_seconds: 10         # If > this many seconds pass since quote, re-quote before sending
+requote_slippage_buffer: 0.005    # 0.5% extra slippage allowed after re-quote to reduce false rejections
+
+# Profit & Risk Management
+take_profit: 0.5                  # Base TP = 50%
+use_dynamic_tp: true              # Enable dynamic TP logic
+stop_loss: 0.25                   # Stop loss at 25%
+trailing_stop_percent: 0.1        # 10% trailing stop
+pump_guard_max_pct: 0.25           # 25% higher than EMA = suspicious pump → block buy
+price_impact_max_pct: 0.15         # 15% lower than EMA = price impact guard
+
+# Position & Risk Controls
+max_concurrent_positions: 5       # Max open positions at a time
+daily_loss_limit_usd: 50          # Daily loss cap before circuit breaker
+max_losing_streak: 3               # Consecutive losing trades before pause
+circuit_breaker_minutes: 60        # Pause duration if circuit breaker triggered
+per_trade_max_usd: 25              # Max USD risked in a single trade
+
+# === Strategy: Momentum-based Buy Logic ===
+min_momentum_pct: 0.008            # +0.8% change within TTL
+min_volume_24h_for_buy: 5000       # Min 24h volume in USD
+min_liquidity_usd_for_buy: 5000    # Min liquidity in USD
+min_price_usd: 0.0000001           # Ignore dust tokens
+
+# Fast-path thresholds for first-seen tokens
+fastpath_min_volume_24h: 100000    # Min 24h volume in USD
+fastpath_min_liquidity_usd: 50000  # Min liquidity in USD
+fastpath_min_sent_score: 55        # Min sentiment score for fast-path
+
+# TP limits for dynamic TP logic
+tp_min: 0.20                       # 20% min take profit
+tp_max: 1.00                       # 100% max take profit
+
+# === Housekeeping ===
+price_memory_ttl_minutes: 15       # Time window for momentum check
+price_memory_prune_hours: 24       # Remove price memory entries older than this
+price_ema_alpha: 0.3                # EMA smoothing factor for price guards
+
+# === Trusted Tokens (skip safety/sentiment checks) ===
+trusted_tokens:
+  - "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"  # WETH
+
+# === Modes ===
+test_mode: false                   # Set to true for dry run mode
