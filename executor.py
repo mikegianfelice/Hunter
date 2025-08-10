@@ -6,40 +6,38 @@ import sys
 import subprocess
 from pathlib import Path
 
-from secrets import INFURA_URL, WALLET_ADDRESS, PRIVATE_KEY
-from gas import suggest_fees
-from utils import get_eth_price_usd  # robust ETH/USD (Graph -> on-chain V2)
+from secrets import INFURA_URL, WALLET_ADDRESS  # PRIVATE_KEY not needed here
+from utils import get_eth_price_usd            # robust ETH/USD (Graph -> on-chain V2)
 from telegram_bot import send_telegram_message
+from uniswap_executor import buy_token         # executes swap w/ re-quote protection
 
 # --- Config ---
 with open("config.yaml", "r") as f:
     CONFIG = yaml.safe_load(f) or {}
 
 TEST_MODE = bool(CONFIG.get("test_mode", True))
-SLIPPAGE = float(CONFIG.get("slippage", 0.02))                      # e.g., 0.02 = 2%
 TRADE_AMOUNT_USD_DEFAULT = float(CONFIG.get("trade_amount_usd", 5))
-USE_SUPPORTING_FEE = bool(CONFIG.get("use_supporting_fee_swap", True))
+SLIPPAGE = float(CONFIG.get("slippage", 0.02))
+
+# Guards (EMA + pump)
 PRICE_IMPACT_MAX = float(CONFIG.get("price_impact_max_pct", 0.15))  # abort if quote >15% worse than EMA
-PRICE_EMA_ALPHA = float(CONFIG.get("price_ema_alpha", 0.30))        # EMA smoothing factor
-PUMP_GUARD_MAX = float(CONFIG.get("pump_guard_max_pct", 0.25))      # abort if quote >25% better than EMA
+PUMP_GUARD_MAX   = float(CONFIG.get("pump_guard_max_pct", 0.25))    # abort if quote >25% better than EMA
+PRICE_EMA_ALPHA  = float(CONFIG.get("price_ema_alpha", 0.30))        # EMA smoothing
 
-# Optional gas knobs
-GAS_CFG = {
-    "gas_blocks": CONFIG.get("gas_blocks"),
-    "gas_reward_percentile": CONFIG.get("gas_reward_percentile"),
-    "gas_basefee_headroom": CONFIG.get("gas_basefee_headroom"),
-    "gas_priority_min_gwei": CONFIG.get("gas_priority_min_gwei"),
-    "gas_priority_max_gwei": CONFIG.get("gas_priority_max_gwei"),
-    "gas_ceiling_gwei": CONFIG.get("gas_ceiling_gwei"),
-    "gas_multiplier": CONFIG.get("gas_multiplier"),
-    "gas_extra_priority_gwei": CONFIG.get("gas_extra_priority_gwei"),
-}
+# Liquidity / size sanity
+MAX_SIZE_PI      = float(CONFIG.get("max_size_price_impact_pct", 0.20))  # size impact limit, e.g., 20%
+MIN_RESERVE_WETH = float(CONFIG.get("min_pair_reserve_weth", 5.0))       # require ≥ this WETH in pool
 
-# --- Web3 / Router ---
+# Housekeeping
+POSITIONS_FILE   = "open_positions.json"
+MONITOR_SCRIPT   = "monitor_position.py"
+PRICE_MEMORY_FILE= "price_memory.json"
+
+# --- Web3 / Router / Factory ---
 if not INFURA_URL:
     raise RuntimeError("INFURA_URL missing in .env / secrets.py")
-if not WALLET_ADDRESS or not PRIVATE_KEY:
-    raise RuntimeError("WALLET_ADDRESS / PRIVATE_KEY missing in .env / secrets.py")
+if not WALLET_ADDRESS:
+    raise RuntimeError("WALLET_ADDRESS missing in .env / secrets.py")
 
 w3 = Web3(Web3.HTTPProvider(INFURA_URL))
 if not w3.is_connected():
@@ -47,37 +45,40 @@ if not w3.is_connected():
 
 WALLET = Web3.to_checksum_address(WALLET_ADDRESS)
 
-ROUTER_ADDR = Web3.to_checksum_address("0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D")  # Uniswap V2
-ABI_PATH = "uniswap_router_abi.json"
-with open(ABI_PATH, "r") as f:
+# Uniswap V2 router + ABI
+ROUTER_ADDR = Web3.to_checksum_address("0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D")
+with open("uniswap_router_abi.json", "r") as f:
     ROUTER_ABI = json.load(f)
 router = w3.eth.contract(address=ROUTER_ADDR, abi=ROUTER_ABI)
 
+# Uniswap V2 factory + minimal ABIs for reserves
+V2_FACTORY = Web3.to_checksum_address("0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f")
+V2_FACTORY_ABI = json.loads("""
+[
+  {"constant":true,"inputs":[{"name":"tokenA","type":"address"},{"name":"tokenB","type":"address"}],
+   "name":"getPair","outputs":[{"name":"pair","type":"address"}],"type":"function"}
+]
+""")
+V2_PAIR_ABI = json.loads("""
+[
+  {"constant":true,"inputs":[],"name":"getReserves",
+   "outputs":[{"name":"_reserve0","type":"uint112"},{"name":"_reserve1","type":"uint112"},{"name":"_blockTimestampLast","type":"uint32"}],"type":"function"},
+  {"constant":true,"inputs":[],"name":"token0","outputs":[{"name":"","type":"address"}],"type":"function"},
+  {"constant":true,"inputs":[],"name":"token1","outputs":[{"name":"","type":"address"}],"type":"function"}
+]
+""")
+factory = w3.eth.contract(address=V2_FACTORY, abi=V2_FACTORY_ABI)
+
 WETH = Web3.to_checksum_address("0xC02aaA39b223FE8D0A0E5C4F27eAD9083C756Cc2")
 
-# --- Files ---
-POSITIONS_FILE = "open_positions.json"
-MONITOR_SCRIPT = "monitor_position.py"
-PRICE_MEMORY_FILE = "price_memory.json"   # stores tokens_per_wei + ema per token
 
 # ===== Helpers =====
-def _next_nonce():
-    return w3.eth.get_transaction_count(WALLET)
-
-def _apply_eip1559(tx: dict) -> dict:
-    max_fee, max_prio = suggest_fees(w3, GAS_CFG)
-    tx = dict(tx)
-    tx["maxFeePerGas"] = int(max_fee)
-    tx["maxPriorityFeePerGas"] = int(max_prio)
-    tx["type"] = 2
-    return tx
-
 def _ensure_positions_file():
     p = Path(POSITIONS_FILE)
     if not p.exists():
         p.write_text("{}")
 
-def _log_position(token):
+def _log_position(token: dict):
     _ensure_positions_file()
     try:
         data = json.loads(Path(POSITIONS_FILE).read_text() or "{}")
@@ -101,20 +102,48 @@ def _launch_monitor_detached():
     except Exception as e:
         print(f"⚠️ Could not launch {MONITOR_SCRIPT}: {e}")
 
-def calculate_trade_size(usd_amount: float, eth_price_usd: float) -> float:
-    """Return ETH amount to spend for a given USD size."""
-    return float(usd_amount) / float(eth_price_usd)
-
-def _quote_v2_out(amount_in_wei: int, path: list[int]) -> int:
-    """Quote expected token out using Uniswap V2 router getAmountsOut."""
+def _quote_v2_out(amount_in_wei: int, path: list) -> int:
+    """Uniswap V2 router getAmountsOut for exact input; returns raw token amount."""
     amounts = router.functions.getAmountsOut(int(amount_in_wei), path).call()
     return int(amounts[-1])
+
+def _get_pair_address(token_a: str, token_b: str) -> str | None:
+    try:
+        addr = factory.functions.getPair(Web3.to_checksum_address(token_a),
+                                         Web3.to_checksum_address(token_b)).call()
+        if int(addr, 16) == 0:
+            return None
+        return Web3.to_checksum_address(addr)
+    except Exception:
+        return None
+
+def _get_weth_side_reserve(token_addr: str):
+    """
+    Returns (reserve_weth_eth, reserve_token_raw) or None.
+    reserve_weth_eth is in ETH (not wei). reserve_token_raw is raw units.
+    """
+    pair_addr = _get_pair_address(WETH, token_addr)
+    if not pair_addr:
+        return None
+    pair = w3.eth.contract(address=pair_addr, abi=V2_PAIR_ABI)
+    try:
+        r0, r1, _ = pair.functions.getReserves().call()
+        t0 = pair.functions.token0().call()
+        t1 = pair.functions.token1().call()
+    except Exception:
+        return None
+    if Web3.to_checksum_address(t0) == WETH:
+        reserve_weth_wei = int(r0); reserve_token_raw = int(r1)
+    elif Web3.to_checksum_address(t1) == WETH:
+        reserve_weth_wei = int(r1); reserve_token_raw = int(r0)
+    else:
+        return None
+    return reserve_weth_wei / 1e18, reserve_token_raw
 
 # ---- Price memory (EMA) ----
 def _load_price_memory():
     p = Path(PRICE_MEMORY_FILE)
-    if not p.exists():
-        return {}
+    if not p.exists(): return {}
     try:
         return json.loads(p.read_text() or "{}")
     except Exception:
@@ -140,7 +169,6 @@ def _update_price_memory(addr: str, curr_tpw: float):
     else:
         a = max(0.0, min(1.0, PRICE_EMA_ALPHA))
         new_ema = a * curr_tpw + (1 - a) * float(prev_ema)
-
     mem[addr] = {
         "tokens_per_wei": float(curr_tpw),
         "ema_tokens_per_wei": float(new_ema),
@@ -157,56 +185,83 @@ def _get_prev_metrics(addr: str):
         return None, None
     return float(rec.get("tokens_per_wei") or 0) or None, float(rec.get("ema_tokens_per_wei") or 0) or None
 
-# ===== Entry point =====
+
+# ===== Entry point used by main.py =====
 def execute_trade(token: dict, trade_amount_usd: float = None):
     """
-    BUY token with:
-      1) USD sizing -> ETH
-      2) V2 quote (getAmountsOut)
-      3) amountOutMin = quotedOut * (1 - SLIPPAGE)
-      4) Guard vs EMA:
-         - Abort if current quote is > PRICE_IMPACT_MAX worse than EMA (adverse impact)
-         - Abort if current quote is > PUMP_GUARD_MAX better than EMA (too-good pump)
-      5) Submit swap (EIP-1559)
-    Returns: (tx_hash_hex, success)
+    Pre-trade guards + execution:
+      1) Size in USD -> ETH
+      2) Liquidity/size sanity (reserve WETH + approx size impact)
+      3) V2 quote and EMA guards (price-impact + pump)
+      4) Update EMA memory
+      5) Delegate actual buy (with re-quote protection) to uniswap_executor.buy_token
+      6) If success, log position + launch monitor
+
+    Returns: (tx_hash_hex_or_sim, success_bool)
     """
     symbol = token.get("symbol", "?")
     token_address = Web3.to_checksum_address(token["address"])
     amount_usd = float(trade_amount_usd or TRADE_AMOUNT_USD_DEFAULT)
 
-    # 1) Robust ETH/USD sizing
+    # 1) USD -> ETH sizing
     eth_usd = get_eth_price_usd()
     if not eth_usd or eth_usd <= 0:
         print("❌ Failed to compute ETH amount: Could not fetch ETH/USD price for sizing.")
         return None, False
-
-    eth_amount = calculate_trade_size(amount_usd, eth_usd)  # in ETH
+    eth_amount = float(amount_usd) / float(eth_usd)
     value_wei = w3.to_wei(eth_amount, "ether")
 
-    path = [WETH, token_address]
-    deadline = int(time.time()) + 600
+    # 2) Liquidity/size sanity
+    reserves = _get_weth_side_reserve(token_address)
+    if not reserves:
+        print("🛑 No V2 pair found or reserves unreadable — aborting buy.")
+        return None, False
 
-    # 2) Quote exact output on V2
+    reserve_weth_eth, _reserve_token_raw = reserves
+    if reserve_weth_eth < MIN_RESERVE_WETH:
+        print(f"🛑 Reserve too low: WETH side {reserve_weth_eth:.4f} < {MIN_RESERVE_WETH} — aborting buy.")
+        try:
+            send_telegram_message(
+                f"🛑 *Buy Blocked: Low Reserves*\n"
+                f"Token: `{symbol}` `{token_address}`\n"
+                f"WETH reserve: {reserve_weth_eth:.4f} < {MIN_RESERVE_WETH}"
+            )
+        except Exception:
+            pass
+        return None, False
+
+    approx_impact = eth_amount / reserve_weth_eth if reserve_weth_eth > 0 else 1.0
+    if approx_impact > MAX_SIZE_PI:
+        print(f"🛑 Size price impact too high: {approx_impact*100:.2f}% > {MAX_SIZE_PI*100:.2f}% — aborting buy.")
+        try:
+            send_telegram_message(
+                f"🛑 *Buy Blocked: Size Impact*\n"
+                f"Token: `{symbol}` `{token_address}`\n"
+                f"Impact: *{approx_impact*100:.2f}%* (limit {MAX_SIZE_PI*100:.2f}%)\n"
+                f"WETH reserve: {reserve_weth_eth:.4f} WETH\n"
+                f"Size: {eth_amount:.6f} ETH"
+            )
+        except Exception:
+            pass
+        return None, False
+
+    # 3) Quote + EMA guards
+    path = [WETH, token_address]
     try:
         quoted_out = _quote_v2_out(value_wei, path)
     except Exception as e:
         print(f"❌ Quote failed for {symbol}: {e}")
         return None, False
-
     if quoted_out <= 0:
         print(f"❌ Bad quote (0 out) for {symbol}; aborting.")
         return None, False
 
-    # tokens per wei
     curr_tpw = quoted_out / float(value_wei)
-
-    # ---- 4) Guards vs EMA ----
     last_tpw, prev_ema = _get_prev_metrics(token_address)
+
     if prev_ema and prev_ema > 0:
-        # Adverse move: fewer tokens per wei (price got worse)
-        adverse = (prev_ema - curr_tpw) / prev_ema
-        # Pump move: many more tokens per wei (suspiciously better / bait)
-        favorable = (curr_tpw - prev_ema) / prev_ema
+        adverse   = (prev_ema - curr_tpw) / prev_ema   # worse than EMA
+        favorable = (curr_tpw - prev_ema) / prev_ema   # better than EMA
 
         if adverse > PRICE_IMPACT_MAX:
             pct = adverse * 100.0
@@ -221,8 +276,8 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
                     f"Curr tpw: `{curr_tpw:.12f}`\n"
                     f"α: {PRICE_EMA_ALPHA:.2f}"
                 )
-            except Exception as e:
-                print(f"⚠️ Telegram alert failed: {e}")
+            except Exception:
+                pass
             return None, False
 
         if favorable > PUMP_GUARD_MAX:
@@ -238,75 +293,25 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
                     f"Curr tpw: `{curr_tpw:.12f}`\n"
                     f"α: {PRICE_EMA_ALPHA:.2f}"
                 )
-            except Exception as e:
-                print(f"⚠️ Telegram alert failed: {e}")
+            except Exception:
+                pass
             return None, False
 
         print(f"🛡️ EMA guards OK: adverse {(adverse*100):.2f}% | favorable {(favorable*100):.2f}%")
-
     else:
-        print("ℹ️ No EMA history; skipping guards for first observation.")
+        print("ℹ️ No EMA history; skipping EMA guards on first observation.")
 
-    # Update EMA memory (after checks, before send so next loop has it)
+    # 4) Update EMA memory
     new_ema = _update_price_memory(token_address, curr_tpw)
     print(f"📈 Updated EMA tpw: {new_ema:.12f} (α={PRICE_EMA_ALPHA:.2f})")
 
-    # 3) Compute amountOutMin by slippage
-    amount_out_min = int(quoted_out * (1.0 - SLIPPAGE))
-    if amount_out_min <= 0:
-        print(f"❌ Computed minOut <= 0 for {symbol}; aborting.")
+    # 5) Execute swap via uniswap_executor (handles re-quote & minOut & EIP-1559)
+    tx_hash, ok = buy_token(token_address, amount_usd, symbol)
+    if not ok:
         return None, False
 
-    print(f"🧮 Quote for {symbol}: in {eth_amount:.6f} ETH → out {quoted_out} (raw units)")
-    print(f"🎯 Slippage {SLIPPAGE*100:.2f}% → minOut {amount_out_min} (raw units)")
+    # 6) Log position + start monitor
+    _log_position(token)
+    _launch_monitor_detached()
 
-    base_tx = {
-        "from": WALLET,
-        "value": int(value_wei),
-        "nonce": _next_nonce(),
-        "chainId": 1,
-    }
-
-    try:
-        # Build the swap with enforced minOut
-        if USE_SUPPORTING_FEE:
-            fn = router.functions.swapExactETHForTokensSupportingFeeOnTransferTokens(
-                amount_out_min, path, WALLET, deadline
-            )
-        else:
-            fn = router.functions.swapExactETHForTokens(
-                amount_out_min, path, WALLET, deadline
-            )
-
-        tx = fn.build_transaction(base_tx)
-        tx = _apply_eip1559(tx)
-
-        # Estimate gas and add buffer
-        try:
-            est = w3.eth.estimate_gas(tx)
-            tx["gas"] = int(est * 1.2)
-        except Exception:
-            tx["gas"] = 300000
-
-        if TEST_MODE:
-            print(f"🚫 [TEST MODE] Simulated buy of {symbol} for {eth_amount:.6f} ETH")
-            _log_position(token)
-            _launch_monitor_detached()
-            return "0xSIMULATED_TX", True
-
-        # LIVE: sign + send
-        signed = w3.eth.account.sign_transaction(tx, private_key=PRIVATE_KEY)
-        sent = w3.eth.send_raw_transaction(signed.rawTransaction)
-        tx_hash_hex = sent.hex()
-        print(f"📥 Buy sent: {tx_hash_hex}")
-
-        # Optional: w3.eth.wait_for_transaction_receipt(sent)
-
-        _log_position(token)
-        _launch_monitor_detached()
-
-        return tx_hash_hex, True
-
-    except Exception as e:
-        print(f"❌ Buy failed for {symbol}: {e}")
-        return None, False
+    return tx_hash, True

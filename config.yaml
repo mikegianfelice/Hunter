@@ -2,47 +2,51 @@
 trade_amount_usd: 5               # Amount per trade in USD
 slippage: 0.02                    # 2% max slippage
 use_supporting_fee_swap: true     # Use fee-supporting swap function for taxed tokens
-requote_delay_seconds: 10         # If > this many seconds pass since quote, re-quote before sending
-requote_slippage_buffer: 0.005    # 0.5% extra slippage allowed after re-quote to reduce false rejections
+requote_delay_seconds: 10         # If build/send delay > this, re-quote before sending
+requote_slippage_buffer: 0.005    # Extra slippage on re-quote (0.5%) to reduce false fails
 
 # Profit & Risk Management
 take_profit: 0.5                  # Base TP = 50%
 use_dynamic_tp: true              # Enable dynamic TP logic
 stop_loss: 0.25                   # Stop loss at 25%
 trailing_stop_percent: 0.1        # 10% trailing stop
-pump_guard_max_pct: 0.25           # 25% higher than EMA = suspicious pump → block buy
-price_impact_max_pct: 0.15         # 15% lower than EMA = price impact guard
+pump_guard_max_pct: 0.25          # 25% better than EMA = suspicious pump → block
+price_impact_max_pct: 0.15        # 15% worse than EMA = adverse impact → block
 
 # Position & Risk Controls
 max_concurrent_positions: 5       # Max open positions at a time
 daily_loss_limit_usd: 50          # Daily loss cap before circuit breaker
-max_losing_streak: 3               # Consecutive losing trades before pause
-circuit_breaker_minutes: 60        # Pause duration if circuit breaker triggered
-per_trade_max_usd: 25              # Max USD risked in a single trade
+max_losing_streak: 3              # Consecutive losing trades before pause
+circuit_breaker_minutes: 60       # Pause duration if circuit breaker triggered
+per_trade_max_usd: 25             # Max USD per trade
+
+# Liquidity / Size-Impact Sanity
+max_size_price_impact_pct: 0.20   # Abort if size would move price >20% (approx: size/reserve)
+min_pair_reserve_weth: 5.0        # Require ≥ 5 WETH on the pool’s WETH side
 
 # === Strategy: Momentum-based Buy Logic ===
-min_momentum_pct: 0.008            # +0.8% change within TTL
-min_volume_24h_for_buy: 5000       # Min 24h volume in USD
-min_liquidity_usd_for_buy: 5000    # Min liquidity in USD
-min_price_usd: 0.0000001           # Ignore dust tokens
+min_momentum_pct: 0.008           # +0.8% change within TTL
+min_volume_24h_for_buy: 5000      # Min 24h volume (USD)
+min_liquidity_usd_for_buy: 5000   # Min liquidity (USD)
+min_price_usd: 0.0000001          # Ignore dust tokens
 
 # Fast-path thresholds for first-seen tokens
-fastpath_min_volume_24h: 100000    # Min 24h volume in USD
-fastpath_min_liquidity_usd: 50000  # Min liquidity in USD
-fastpath_min_sent_score: 55        # Min sentiment score for fast-path
+fastpath_min_volume_24h: 100000   # Min 24h volume (USD)
+fastpath_min_liquidity_usd: 50000 # Min liquidity (USD)
+fastpath_min_sent_score: 55       # OR mentions >= 3
 
 # TP limits for dynamic TP logic
-tp_min: 0.20                       # 20% min take profit
-tp_max: 1.00                       # 100% max take profit
+tp_min: 0.20                      # 20% min TP when dynamic
+tp_max: 1.00                      # 100% max TP when dynamic
 
 # === Housekeeping ===
-price_memory_ttl_minutes: 15       # Time window for momentum check
-price_memory_prune_hours: 24       # Remove price memory entries older than this
-price_ema_alpha: 0.3                # EMA smoothing factor for price guards
+price_memory_ttl_minutes: 15      # TTL for momentum checks
+price_memory_prune_hours: 24      # Prune old EMA/quote entries
+price_ema_alpha: 0.3              # EMA smoothing factor for price guards
 
 # === Trusted Tokens (skip safety/sentiment checks) ===
 trusted_tokens:
   - "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"  # WETH
 
 # === Modes ===
-test_mode: false                   # Set to true for dry run mode
+test_mode: false                  # true = simulate only (no chain tx)
