@@ -5,6 +5,7 @@ import time
 import sys
 import subprocess
 from pathlib import Path
+from typing import Optional
 
 from secrets import INFURA_URL, WALLET_ADDRESS  # PRIVATE_KEY not needed here
 from utils import get_eth_price_usd            # robust ETH/USD (Graph -> on-chain V2)
@@ -107,7 +108,7 @@ def _quote_v2_out(amount_in_wei: int, path: list) -> int:
     amounts = router.functions.getAmountsOut(int(amount_in_wei), path).call()
     return int(amounts[-1])
 
-def _get_pair_address(token_a: str, token_b: str) -> str | None:
+def _get_pair_address(token_a: str, token_b: str) -> Optional[str]:
     try:
         addr = factory.functions.getPair(Web3.to_checksum_address(token_a),
                                          Web3.to_checksum_address(token_b)).call()
