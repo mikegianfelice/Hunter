@@ -103,6 +103,11 @@ def check_buy_signal(token: dict) -> bool:
     # Trusted tokens: slightly easier momentum threshold
     momentum_need = MIN_MOMENTUM_PCT if not is_trusted else max(0.003, MIN_MOMENTUM_PCT * 0.5)  # e.g. 0.3%
 
+    # WETH is handled specially in executor.py - skip here
+    if address == "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2":  # WETH
+        print("🔓 WETH detected - will be handled in executor")
+        return True
+
     if entry:
         prev_price = float(entry.get("price", 0.0))
         prev_ts    = int(entry.get("ts", 0))

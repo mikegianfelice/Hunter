@@ -203,6 +203,11 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
     symbol = token.get("symbol", "?")
     token_address = Web3.to_checksum_address(token["address"])
     amount_usd = float(trade_amount_usd or TRADE_AMOUNT_USD_DEFAULT)
+    
+    # Skip WETH trades - you can't buy WETH with WETH
+    if token_address.lower() == WETH.lower():
+        print("🛑 Skipping WETH trade - cannot buy WETH with WETH")
+        return None, False
 
     # 1) USD -> ETH sizing
     eth_usd = get_eth_price_usd()

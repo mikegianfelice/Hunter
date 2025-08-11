@@ -165,7 +165,9 @@ def trade_loop():
                 )
             else:
                 update_cooldown_log(address)
-                send_telegram_message(f"❌ Failed to buy {symbol}, added to cooldown.")
+                # Don't send telegram for WETH since it's intentionally skipped
+                if symbol != "WETH":
+                    send_telegram_message(f"❌ Failed to buy {symbol}, added to cooldown.")
                 # Treat failed execution as implicitly rejected by risk/execution environment
                 rejections[REJECT_RISK].append((symbol, address))
 
