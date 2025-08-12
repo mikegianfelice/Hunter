@@ -14,7 +14,7 @@ TELEGRAM_CHAT_ID = config.get("telegram_chat_id")
 
 # === Filters for TRADING (logging ignores these) ===
 EXCLUDED_KEYWORDS = ["INU", "AI", "PEPE", "DOGE", "SHIBA"]
-ENFORCE_KEYWORDS = True  # set False to allow all names
+ENFORCE_KEYWORDS = False  # set False to allow all names - temporarily disabled for testing
 
 PRIMARY_URLS = [
     "https://api.dexscreener.com/latest/dex/search/?q=trending",
@@ -138,8 +138,8 @@ def fetch_trending_tokens(limit=25):
             continue
 
         symbol = (row["symbol"] or "").upper()
-        vol_points = 2 if row["volume24h"] > 50_000 else 1 if row["volume24h"] > 10_000 else 0
-        liq_points = 2 if row["liquidity"] > 30_000 else 1 if row["liquidity"] > 10_000 else 0
+        vol_points = 2 if row["volume24h"] > 25_000 else 1 if row["volume24h"] > 5_000 else 0
+        liq_points = 2 if row["liquidity"] > 15_000 else 1 if row["liquidity"] > 5_000 else 0
 
         blocked = any(k in symbol for k in EXCLUDED_KEYWORDS)
         clean_points = 0 if blocked else 2
@@ -151,7 +151,7 @@ def fetch_trending_tokens(limit=25):
               f"LQ: ${row['liquidity']:,.0f} ({liq_points}) | "
               f"Clean: ({clean_points}) → Score: {score}/6")
 
-        if score < 3:
+        if score < 2:  # Reduced from 3 to 2
             continue
 
         tokens_for_trading.append({

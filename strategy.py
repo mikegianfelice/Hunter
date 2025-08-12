@@ -17,15 +17,15 @@ TP_MIN  = float(_cfg.get("tp_min", 0.20))
 TP_MAX  = float(_cfg.get("tp_max", 1.00))
 
 # Base thresholds
-MIN_MOMENTUM_PCT = float(_cfg.get("min_momentum_pct", 0.008))           # +0.8%
-MIN_VOL_24H_BUY  = float(_cfg.get("min_volume_24h_for_buy", 5000))
-MIN_LIQ_USD_BUY  = float(_cfg.get("min_liquidity_usd_for_buy", 5000))
+MIN_MOMENTUM_PCT = float(_cfg.get("min_momentum_pct", 0.005))           # Reduced from 0.8% to 0.5%
+MIN_VOL_24H_BUY  = float(_cfg.get("min_volume_24h_for_buy", 3000))      # Reduced from 5000 to 3000
+MIN_LIQ_USD_BUY  = float(_cfg.get("min_liquidity_usd_for_buy", 3000))   # Reduced from 5000 to 3000
 MIN_PRICE_USD    = float(_cfg.get("min_price_usd", 0.0000001))
 
 # Fast-path thresholds for first-seen tokens
-FASTPATH_VOL   = float(_cfg.get("fastpath_min_volume_24h", 100000))
-FASTPATH_LIQ   = float(_cfg.get("fastpath_min_liquidity_usd", 50000))
-FASTPATH_SENT  = int(_cfg.get("fastpath_min_sent_score", 55))           # OR mentions >= 3
+FASTPATH_VOL   = float(_cfg.get("fastpath_min_volume_24h", 50000))  # Reduced from 100k to 50k
+FASTPATH_LIQ   = float(_cfg.get("fastpath_min_liquidity_usd", 25000))  # Reduced from 50k to 25k
+FASTPATH_SENT  = int(_cfg.get("fastpath_min_sent_score", 40))           # Reduced from 55 to 40
 
 def _now() -> int:
     return int(time.time())

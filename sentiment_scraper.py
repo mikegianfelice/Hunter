@@ -78,7 +78,13 @@ def scrape_reddit(symbol):
         print(f"❌ Reddit scrape failed for {symbol}: {e}")
         return {"score": 0, "mentions": 0, "source": "reddit", "status": "error"}
 
-def get_sentiment_score(symbol):
+def get_sentiment_score(token):
+    # Extract symbol from token dict or use token directly if it's a string
+    if isinstance(token, dict):
+        symbol = token.get("symbol", "UNKNOWN")
+    else:
+        symbol = str(token)
+    
     twitter = scrape_nitter(symbol)
     reddit = scrape_reddit(symbol)
 
