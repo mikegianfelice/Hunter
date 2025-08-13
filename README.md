@@ -12,7 +12,9 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 - **🔄 Real-time Token Scanning** - Monitors trending tokens across multiple platforms and chains
 - **📊 Sentiment Analysis** - Analyzes social media sentiment from Reddit and Nitter (Ethereum-focused)
 - **⚡ High-Speed Execution** - Optimized for quick entry and exit strategies
-- **🛡️ Risk Management** - Built-in position sizing and stop-loss mechanisms
+- **🛡️ Advanced Risk Management** - Built-in position sizing, stop-loss mechanisms, and duplicate token prevention
+- **💰 Wallet Balance Protection** - Automatic balance checking with gas fee buffer to prevent failed transactions
+- **🚫 Duplicate Token Prevention** - Prevents buying the same token multiple times to avoid concentration risk
 - **📱 Telegram Notifications** - Real-time alerts for trades and bot status
 - **📈 Performance Tracking** - Comprehensive logging and analytics
 - **🔧 Configurable Strategy** - Easily adjustable parameters via config.yaml
@@ -122,6 +124,12 @@ max_daily_loss: 0.05          # Maximum daily loss (5%)
 stop_loss_percentage: 0.15    # Stop loss percentage (15%)
 take_profit_percentage: 0.3   # Take profit percentage (30%)
 cooldown_period: 300          # Cooldown between trades (seconds)
+max_concurrent_positions: 5   # Maximum open positions at a time
+daily_loss_limit_usd: 50      # Daily loss cap before circuit breaker
+max_losing_streak: 3          # Consecutive losing trades before pause
+circuit_breaker_minutes: 60   # Pause duration if circuit breaker triggered
+per_trade_max_usd: 25         # Max USD per trade
+min_wallet_balance_buffer: 0.01 # Keep 1% of balance for gas fees
 
 # Token Filtering
 enforce_keywords: false       # Enable/disable keyword filtering
@@ -163,6 +171,10 @@ python main.py
 - **Daily Limits**: Maximum daily loss protection
 - **Cooldown Periods**: Prevents overtrading
 - **Multi-Chain Limits**: Separate limits per blockchain
+- **Duplicate Token Prevention**: Prevents buying the same token multiple times
+- **Wallet Balance Protection**: Checks available funds before trading with gas fee buffer
+- **Circuit Breaker**: Automatic pause after consecutive losses
+- **Concurrent Position Limits**: Maximum number of open positions
 
 ### Gas Optimization
 - **Dynamic Gas Pricing**: Adjusts gas prices based on network conditions
@@ -250,6 +262,8 @@ CHAIN_CONFIGS = {
    - Ensure your wallet has enough native tokens for gas fees
    - Check your private key is correct
    - Verify RPC endpoints are accessible
+   - The bot now automatically checks wallet balance before trading
+   - Consider reducing trade amount if balance is low
 
 2. **"Transaction failed"**
    - Increase gas limit in config.yaml
@@ -267,6 +281,16 @@ CHAIN_CONFIGS = {
    - Verify chain is in supported_chains list
    - Check chain configuration in multi_chain_executor.py
    - Ensure RPC URL is correct
+
+5. **"Token already held"**
+   - The bot prevents buying the same token multiple times
+   - This is a safety feature to avoid concentration risk
+   - Wait for the position to close before buying again
+
+6. **"Insufficient balance"**
+   - The bot checks wallet balance before trading
+   - Includes gas fee buffer to prevent failed transactions
+   - Consider reducing trade amount or adding more funds
 
 ### Debug Mode
 Enable debug logging in `config.yaml`:
@@ -298,6 +322,25 @@ crypto_trading_bot_100x/
 └── blacklist.json           # Blacklisted tokens
 ```
 
+## 🛡️ Safety Features
+
+### Duplicate Token Prevention
+- **Automatic Detection**: The bot checks if a token is already in your open positions
+- **Concentration Risk Mitigation**: Prevents over-exposure to single tokens
+- **Smart Filtering**: Only allows one position per unique token address
+
+### Wallet Balance Protection
+- **Real-time Balance Checking**: Verifies available funds before each trade
+- **Gas Fee Buffer**: Automatically reserves funds for transaction fees
+- **Configurable Buffer**: Set `min_wallet_balance_buffer` to control reserve amount
+- **Failed Transaction Prevention**: Avoids costly failed transactions
+
+### Advanced Risk Controls
+- **Circuit Breaker**: Automatic pause after consecutive losses
+- **Daily Loss Limits**: Configurable daily loss caps
+- **Position Limits**: Maximum concurrent positions
+- **Trade Size Limits**: Per-trade maximum amounts
+
 ## 🔒 Security Best Practices
 
 1. **Never share your private key**
@@ -308,6 +351,8 @@ crypto_trading_bot_100x/
 6. **Regularly update dependencies**
 7. **Test on testnets first**
 8. **Use hardware wallets for large amounts**
+9. **Set appropriate wallet balance buffers** - Configure `min_wallet_balance_buffer` to reserve funds for gas
+10. **Monitor position concentration** - The bot prevents duplicate buys, but monitor overall portfolio diversity
 
 ## 📞 Support
 
