@@ -73,6 +73,10 @@ def trade_loop():
     # For end-of-loop summary
     rejections = defaultdict(list)  # reason -> list of (symbol, addr)
     buys = []
+    
+    if not tokens:
+        print("😴 No valid tokens found this cycle. Waiting for next discovery...")
+        return
 
     for token in tokens:
         try:

@@ -16,6 +16,14 @@ TELEGRAM_CHAT_ID = config.get("telegram_chat_id")
 EXCLUDED_KEYWORDS = ["INU", "AI", "PEPE", "DOGE", "SHIBA"]
 ENFORCE_KEYWORDS = False  # set False to allow all names - temporarily disabled for testing
 
+# Promotional content filters
+PROMOTIONAL_KEYWORDS = [
+    "appstore", "playstore", "download", "available", "marketplace", "app", "quotes", 
+    "motivation", "inspiration", "mindset", "growth", "success", "productivity",
+    "trending", "viral", "explore", "positive", "selfimprovement", "nevergiveup",
+    "daily", "best", "for", "you", "creators", "memes", "defi", "tba"
+]
+
 PRIMARY_URLS = [
     "https://api.dexscreener.com/latest/dex/search/?q=trending",
 ]
@@ -39,6 +47,50 @@ def send_telegram_message(message):
         requests.post(url, data=payload, timeout=8)
     except Exception as e:
         print("⚠️ Telegram error:", e)
+
+def is_promotional_content(symbol, description=""):
+    """Check if content is promotional/spam rather than a real token"""
+    if not symbol:
+        return True
+    
+    # Check for promotional keywords in symbol
+    symbol_lower = symbol.lower()
+    for keyword in PROMOTIONAL_KEYWORDS:
+        if keyword in symbol_lower:
+            return True
+    
+    # Check for very long symbols (likely promotional text)
+    if len(symbol) > 20:
+        return True
+    
+    # Check for symbols with too many spaces (likely sentences)
+    if symbol.count(' ') > 3:
+        return True
+    
+    # Check for symbols with hashtags
+    if '#' in symbol:
+        return True
+    
+    # Check for symbols that look like URLs or app descriptions
+    if any(word in symbol_lower for word in ['http', 'www', 'app', 'download', 'available']):
+        return True
+    
+    return False
+
+def is_valid_token_data(symbol, address, volume24h, liquidity):
+    """Validate that we have real token data"""
+    if not symbol or not address:
+        return False
+    
+    # Must have some trading activity
+    if volume24h <= 0 or liquidity <= 0:
+        return False
+    
+    # Address should be a valid format (not empty or obviously wrong)
+    if len(address) < 10:
+        return False
+    
+    return True
 
 def _append_all_to_csv(rows):
     write_header = False
@@ -80,32 +132,19 @@ def fetch_trending_tokens(limit=25):
                 print(f"⚠️ Fallback fetch failed ({u}): {e}")
 
     if not data:
-        print("❌ Error: all trending sources failed. Injecting fallback.")
-        _append_all_to_csv([{
-            "fetched_at": datetime.utcnow().isoformat(),
-            "symbol": "WETH",
-            "address": "0xC02aaA39b223FE8D0a0e5C4F27eAD9083C756Cc2",
-            "dex": "uniswap",
-            "chainId": "ethereum",
-            "priceUsd": 2000.0,
-            "volume24h": 1_000_000,
-            "liquidity": 50_000_000
-        }])
-        return [{
-            "symbol": "WETH",
-            "address": "0xC02aaA39b223FE8D0a0e5C4F27eAD9083C756Cc2",
-            "dex": "uniswap",
-            "priceUsd": 2000.0,
-            "volume24h": 1_000_000,
-            "liquidity": 50_000_000
-        }]
+        print("❌ Error: all trending sources failed.")
+        return []
 
     pairs = data.get("pairs", [])
+    if pairs is None:
+        pairs = []
     print(f"🔍 Found {len(pairs)} total trending tokens...")
 
-    # 1) Log ALL chains to CSV
+    # 1) Log ALL chains to CSV (but filter out promotional content)
     fetched_at = datetime.utcnow().isoformat()
     all_rows = []
+    valid_tokens_count = 0
+    
     for pair in pairs:
         symbol = (pair.get("baseToken", {}) or {}).get("symbol") or ""
         addr = pair.get("pairAddress")
@@ -114,7 +153,18 @@ def fetch_trending_tokens(limit=25):
         price = float(pair.get("priceUsd") or 0)
         vol24 = float((pair.get("volume", {}) or {}).get("h24") or 0)
         liq = float((pair.get("liquidity", {}) or {}).get("usd") or 0)
-
+        
+        # Skip promotional content
+        if is_promotional_content(symbol):
+            print(f"🚫 Skipping promotional content: {symbol[:50]}...")
+            continue
+            
+        # Skip invalid token data
+        if not is_valid_token_data(symbol, addr, vol24, liq):
+            print(f"🚫 Skipping invalid token data: {symbol} (vol: ${vol24}, liq: ${liq})")
+            continue
+        
+        valid_tokens_count += 1
         all_rows.append({
             "fetched_at": fetched_at,
             "symbol": symbol,
@@ -125,6 +175,8 @@ def fetch_trending_tokens(limit=25):
             "volume24h": vol24,
             "liquidity": liq
         })
+    
+    print(f"✅ Found {valid_tokens_count} valid tokens out of {len(pairs)} total pairs")
 
     if all_rows:
         _append_all_to_csv(all_rows)
@@ -167,15 +219,9 @@ def fetch_trending_tokens(limit=25):
             break
 
     if not tokens_for_trading:
-        print("⚠️ No tokens passed filtering. Injecting fallback token for trading.")
-        tokens_for_trading = [{
-            "symbol": "WETH",
-            "address": "0xC02aaA39b223FE8D0a0e5C4F27eAD9083C756Cc2",
-            "dex": "uniswap",
-            "priceUsd": 2000.0,
-            "volume24h": 1_000_000,
-            "liquidity": 50_000_000
-        }]
+        print("⚠️ No tokens passed filtering. Will try alternative sources...")
+        # Don't inject WETH fallback - let the bot handle empty results gracefully
+        return []
 
     return tokens_for_trading
 
