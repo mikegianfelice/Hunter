@@ -183,11 +183,17 @@ def fetch_trending_tokens(limit=25):
     else:
         print("ℹ️ No pairs found to log.")
 
-    # 2) Build FILTERED list for trading: Ethereum only
+    # 2) Build FILTERED list for trading: Multi-chain support
     tokens_for_trading = []
+    supported_chains = ["ethereum", "solana", "base", "polygon", "bsc", "arbitrum", "optimism", "pulsechain"]
+    
     for row in all_rows:
-        if (row["chainId"] or "").lower() != "ethereum":
+        chain = (row["chainId"] or "").lower()
+        if chain not in supported_chains:
+            print(f"⛔ Skipping unsupported chain: {chain}")
             continue
+        
+        print(f"🔗 Processing {chain.upper()} token: {symbol}")
 
         symbol = (row["symbol"] or "").upper()
         vol_points = 2 if row["volume24h"] > 25_000 else 1 if row["volume24h"] > 5_000 else 0
@@ -210,6 +216,7 @@ def fetch_trending_tokens(limit=25):
             "symbol": symbol or "?",
             "address": row["address"],
             "dex": row["dex"],
+            "chainId": row["chainId"],  # Add chainId to token object
             "priceUsd": row["priceUsd"],
             "volume24h": row["volume24h"],
             "liquidity": row["liquidity"],

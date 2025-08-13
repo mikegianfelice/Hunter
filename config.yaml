@@ -44,6 +44,18 @@ price_memory_ttl_minutes: 15      # TTL for momentum checks
 price_memory_prune_hours: 24      # Prune old EMA/quote entries
 price_ema_alpha: 0.3              # EMA smoothing factor for price guards
 
+# === Multi-Chain Settings ===
+enable_multi_chain: true
+supported_chains:
+  - "ethereum"
+  - "solana" 
+  - "base"
+  - "polygon"
+  - "bsc"
+  - "arbitrum"
+  - "optimism"
+  - "pulsechain"
+
 # === Trusted Tokens (skip safety/sentiment checks) ===
 trusted_tokens:
   # - "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"  # WETH - temporarily disabled

@@ -218,6 +218,7 @@ risk_state.json
 peak_prices.json
 price_memory.json
 cooldown_log.json
+.monitor_heartbeat
 
 # Runtime data files
 trending_tokens.csv

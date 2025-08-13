@@ -1,7 +1,15 @@
 import requests
 import time
 
-def check_token_safety(token_address):
+def check_token_safety(token_address, chain_id="ethereum"):
+    """
+    Check token safety using TokenSniffer (Ethereum only) or skip for other chains
+    """
+    # TokenSniffer only works for Ethereum tokens
+    if chain_id.lower() != "ethereum":
+        print(f"🔓 Skipping TokenSniffer for {chain_id.upper()} token (not supported)")
+        return True  # Assume safe for non-Ethereum chains
+    
     url = f"https://tokensniffer.com/api/v2/tokens/{token_address}"
     headers = {"User-Agent": "Mozilla/5.0"}
 

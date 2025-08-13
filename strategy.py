@@ -80,6 +80,7 @@ def check_buy_signal(token: dict) -> bool:
     vol24h  = float(token.get("volume24h") or 0.0)
     liq_usd = float(token.get("liquidity") or 0.0)
     is_trusted = bool(token.get("is_trusted", False))
+    chain_id = token.get("chainId", "ethereum").lower()
 
     if not address or price <= MIN_PRICE_USD:
         print("📉 No address or price too low; skipping buy signal.")
@@ -102,6 +103,11 @@ def check_buy_signal(token: dict) -> bool:
 
     # Trusted tokens: slightly easier momentum threshold
     momentum_need = MIN_MOMENTUM_PCT if not is_trusted else max(0.003, MIN_MOMENTUM_PCT * 0.5)  # e.g. 0.3%
+    
+    # Multi-chain tokens: even easier momentum threshold
+    if chain_id != "ethereum":
+        momentum_need = max(0.001, momentum_need * 0.2)  # 20% of normal requirement for multi-chain
+        print(f"🔓 Multi-chain momentum threshold: {momentum_need*100:.2f}%")
 
     # WETH is handled specially in executor.py - skip here
     if address == "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2":  # WETH
@@ -128,15 +134,27 @@ def check_buy_signal(token: dict) -> bool:
     # Fast-path: for trusted tokens ignore sentiment; for others require sentiment
     sent_score    = int(token.get("sent_score") or 0)
     sent_mentions = int(token.get("sent_mentions") or 0)
-    fast_liq_ok   = (vol24h >= FASTPATH_VOL and liq_usd >= FASTPATH_LIQ)
+    chain_id = token.get("chainId", "ethereum").lower()
+    
+    # Adjust requirements for non-Ethereum chains
+    if chain_id != "ethereum":
+        # Lower requirements for multi-chain tokens
+        fast_vol_ok = (vol24h >= FASTPATH_VOL * 0.05)  # 5% of Ethereum requirement
+        fast_liq_ok = (liq_usd >= FASTPATH_LIQ * 0.1)  # 10% of Ethereum requirement
+        fast_sent_ok = True  # Skip sentiment for non-Ethereum
+        print(f"🔓 Multi-chain fast-path: vol ${vol24h:,.0f} (need ≥ {FASTPATH_VOL * 0.05:,.0f}), liq ${liq_usd:,.0f} (need ≥ {FASTPATH_LIQ * 0.1:,.0f})")
+    else:
+        # Original Ethereum requirements
+        fast_vol_ok = (vol24h >= FASTPATH_VOL)
+        fast_liq_ok = (liq_usd >= FASTPATH_LIQ)
+        fast_sent_ok = (sent_score >= FASTPATH_SENT) or (sent_mentions >= 3)
 
     if is_trusted:
-        if fast_liq_ok:
+        if fast_vol_ok and fast_liq_ok:
             print("🚀 Trusted fast-path (liq/vol only) → TRUE")
             return True
     else:
-        fast_sent_ok  = (sent_score >= FASTPATH_SENT) or (sent_mentions >= 3)
-        if fast_liq_ok and fast_sent_ok:
+        if fast_vol_ok and fast_liq_ok and fast_sent_ok:
             print("🚀 Fast-path conditions met (liquidity/volume + sentiment) → TRUE")
             return True
 

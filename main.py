@@ -8,7 +8,7 @@ from clear_state import ensure_mode_transition_clean
 from token_scraper import fetch_trending_tokens
 from sentiment_scraper import get_sentiment_score
 from strategy import check_buy_signal, get_dynamic_take_profit, prune_price_memory
-from executor import execute_trade
+from multi_chain_executor import execute_trade
 from telegram_bot import send_telegram_message
 from token_sniffer import check_token_safety as is_token_safe
 from cooldown import is_token_on_cooldown, update_cooldown_log
@@ -109,7 +109,10 @@ def trade_loop():
                     continue
 
                 # TokenSniffer / safety gate
-                if not is_token_safe(address):
+                chain_id = token.get("chainId", "ethereum")
+                print(f"🔍 Checking safety for {symbol} on {chain_id.upper()}")
+                print(f"   Token data: {token}")
+                if not is_token_safe(address, chain_id):
                     print("⚠️ TokenSniffer marked as unsafe.")
                     add_to_blacklist(address)
                     rejections[REJECT_SNIFFER].append((symbol, address))
@@ -117,27 +120,35 @@ def trade_loop():
             else:
                 print("🔓 Trusted token — skipping blacklist, cooldown, and TokenSniffer")
 
-            # --- Sentiment ---
-            sentiment = get_sentiment_score(token) or {}
-            print(f"🧠 Sentiment for ${symbol}: {sentiment}")
+            # --- Sentiment (Ethereum only) ---
+            chain_id = token.get("chainId", "ethereum").lower()
+            if chain_id == "ethereum":
+                sentiment = get_sentiment_score(token) or {}
+                print(f"🧠 Sentiment for ${symbol}: {sentiment}")
 
-            # Attach sentiment to token so strategy/executor can use it
-            token["sent_score"] = sentiment.get("score")
-            token["sent_mentions"] = sentiment.get("mentions")
-            token["sent_status"] = sentiment.get("status")
+                # Attach sentiment to token so strategy/executor can use it
+                token["sent_score"] = sentiment.get("score")
+                token["sent_mentions"] = sentiment.get("mentions")
+                token["sent_status"] = sentiment.get("status")
 
-            # Enforce thresholds unless trusted
-            if not is_trusted:
-                if (
-                    sentiment.get("status") == "blocked"
-                    or (sentiment.get("mentions") or 0) < 3
-                    or (sentiment.get("score") or 0) < 60
-                ):
-                    print("📉 Token failed sentiment check.")
-                    rejections[REJECT_SENTIMENT].append((symbol, address))
-                    continue
+                # Enforce thresholds unless trusted
+                if not is_trusted:
+                    if (
+                        sentiment.get("status") == "blocked"
+                        or (sentiment.get("mentions") or 0) < 3
+                        or (sentiment.get("score") or 0) < 60
+                    ):
+                        print("📉 Token failed sentiment check.")
+                        rejections[REJECT_SENTIMENT].append((symbol, address))
+                        continue
+                else:
+                    print("🔓 Trusted token — skipping sentiment filter")
             else:
-                print("🔓 Trusted token — skipping sentiment filter")
+                # Skip sentiment for non-Ethereum chains
+                print(f"🔓 Skipping sentiment for {chain_id.upper()} token (not required)")
+                token["sent_score"] = 100  # Default high score for non-Ethereum
+                token["sent_mentions"] = 10  # Default high mentions for non-Ethereum
+                token["sent_status"] = "ok"
 
             # --- Strategy signal ---
             if not check_buy_signal(token):
