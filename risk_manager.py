@@ -1,6 +1,8 @@
 # risk_manager.py
 import json, os, time, yaml
 from datetime import datetime, timezone
+from web3 import Web3
+from secrets import INFURA_URL, WALLET_ADDRESS
 
 STATE_FILE = "risk_state.json"
 POSITIONS_FILE = "open_positions.json"
@@ -14,6 +16,25 @@ DAILY_LOSS_LIMIT_USD = float(_cfg.get("daily_loss_limit_usd", 50.0))  # stop for
 MAX_LOSING_STREAK = int(_cfg.get("max_losing_streak", 3))             # pause after N consecutive losses
 CIRCUIT_BREAK_MIN = int(_cfg.get("circuit_breaker_minutes", 60))      # pause window when triggered
 PER_TRADE_MAX_USD  = float(_cfg.get("per_trade_max_usd", _cfg.get("trade_amount_usd", 5)))
+MIN_WALLET_BALANCE_BUFFER = float(_cfg.get("min_wallet_balance_buffer", 0.01))  # Keep 1% buffer for gas
+
+# Web3 setup for balance checking
+w3 = Web3(Web3.HTTPProvider(INFURA_URL))
+
+def _get_wallet_balance_usd():
+    """Get wallet balance in USD"""
+    try:
+        balance_wei = w3.eth.get_balance(WALLET_ADDRESS)
+        balance_eth = w3.from_wei(balance_wei, 'ether')
+        
+        # Get ETH price in USD (you might want to cache this)
+        from utils import get_eth_price_usd
+        eth_price = get_eth_price_usd()
+        
+        return float(balance_eth) * eth_price
+    except Exception as e:
+        print(f"⚠️ Could not get wallet balance: {e}")
+        return 0.0
 
 def _today_utc():
     return datetime.utcnow().strftime("%Y-%m-%d")
@@ -65,7 +86,20 @@ def _open_positions_count():
     except Exception:
         return 0
 
-def allow_new_trade(trade_amount_usd: float):
+def _is_token_already_held(token_address: str) -> bool:
+    """Check if a specific token is already held in open positions"""
+    if not os.path.exists(POSITIONS_FILE):
+        return False
+    try:
+        with open(POSITIONS_FILE, "r") as f:
+            data = json.load(f) or {}
+            # Normalize address to lowercase for comparison
+            token_address_lower = token_address.lower()
+            return any(addr.lower() == token_address_lower for addr in data.keys())
+    except Exception:
+        return False
+
+def allow_new_trade(trade_amount_usd: float, token_address: str = None):
     """
     Gatekeeper before any new buy.
     Returns (allowed: bool, reason: str)
@@ -87,6 +121,16 @@ def allow_new_trade(trade_amount_usd: float):
     # per-trade size guard
     if trade_amount_usd > PER_TRADE_MAX_USD:
         return False, f"trade_amount_exceeds_cap_{PER_TRADE_MAX_USD}"
+
+    # Check wallet balance
+    wallet_balance = _get_wallet_balance_usd()
+    required_amount = trade_amount_usd + (wallet_balance * MIN_WALLET_BALANCE_BUFFER)  # Include buffer for gas
+    if wallet_balance < required_amount:
+        return False, f"insufficient_balance_{wallet_balance:.2f}_usd_needs_{required_amount:.2f}_usd"
+
+    # Check if token is already held (prevent duplicate buys)
+    if token_address and _is_token_already_held(token_address):
+        return False, "token_already_held"
 
     # concurrent positions guard
     if _open_positions_count() >= MAX_CONCURRENT_POS:

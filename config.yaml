@@ -19,6 +19,7 @@ daily_loss_limit_usd: 50          # Daily loss cap before circuit breaker
 max_losing_streak: 3              # Consecutive losing trades before pause
 circuit_breaker_minutes: 60       # Pause duration if circuit breaker triggered
 per_trade_max_usd: 25             # Max USD per trade
+min_wallet_balance_buffer: 0.01   # Keep 1% of balance for gas fees
 
 # Liquidity / Size-Impact Sanity
 max_size_price_impact_pct: 0.20   # Abort if size would move price >20% (approx: size/reserve)
@@ -61,4 +62,4 @@ trusted_tokens:
   # - "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"  # WETH - temporarily disabled
 
 # === Modes ===
-test_mode: false                  # true = simulate only (no chain tx)
+test_mode: true                  # true = simulate only (no chain tx)

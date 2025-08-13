@@ -157,7 +157,7 @@ def trade_loop():
                 continue
 
             # --- Risk manager gate ---
-            allowed, reason = allow_new_trade(TRADE_AMOUNT)
+            allowed, reason = allow_new_trade(TRADE_AMOUNT, address)
             if not allowed:
                 print(f"🛑 Risk manager blocked trade: {reason}")
                 send_telegram_message(f"🛑 Trade blocked by risk controls: {reason}")
