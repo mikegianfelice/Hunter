@@ -219,6 +219,7 @@ peak_prices.json
 price_memory.json
 cooldown_log.json
 .monitor_heartbeat
+.monitor_lock
 
 # Runtime data files
 trending_tokens.csv
