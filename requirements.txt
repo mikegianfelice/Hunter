@@ -9,3 +9,5 @@ python-dotenv
 plotly               # for optional dashboard/graphing
 matplotlib           # alternative plotting library
 python-dateutil      # for working with timestamps/dates
+solana>=0.30.2       # for Solana blockchain interactions
+base58               # for Solana private key encoding

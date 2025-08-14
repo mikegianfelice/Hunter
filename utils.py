@@ -83,3 +83,18 @@ def get_eth_price_usd() -> float:
         print(f"❌ Uniswap V2 router quote failed: {e}")
         # Last-ditch: return None; caller should handle
         return None
+
+def get_sol_price_usd() -> float:
+    """
+    Get SOL/USD price from CoinGecko API
+    """
+    try:
+        url = "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            return float(data.get("solana", {}).get("usd", 0))
+        return 0.0
+    except Exception as e:
+        print(f"⚠️ Error getting SOL price: {e}")
+        return 0.0

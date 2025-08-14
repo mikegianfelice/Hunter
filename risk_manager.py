@@ -45,10 +45,18 @@ def _get_wallet_balance_usd(chain_id="ethereum"):
             
             return float(balance_eth) * eth_price
         elif chain_id.lower() == "solana":
-            # For Solana, we'll need to implement Solana balance checking
-            # For now, return a default value or skip balance check
-            print(f"⚠️ Solana balance checking not implemented yet")
-            return 100.0  # Assume $100 for testing - TODO: implement real Solana balance check
+            # Real Solana balance checking
+            try:
+                from solana_executor import get_solana_balance
+                from utils import get_sol_price_usd
+                
+                sol_balance = get_solana_balance()
+                sol_price = get_sol_price_usd()
+                
+                return float(sol_balance) * float(sol_price)
+            except Exception as e:
+                print(f"⚠️ Error getting Solana balance: {e}")
+                return 0.0
         else:
             # For other chains, assume some balance for now
             print(f"⚠️ Balance checking for {chain_id} not implemented yet")
