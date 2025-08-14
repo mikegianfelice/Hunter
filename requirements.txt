@@ -6,6 +6,10 @@ solders>=0.18.1
 construct>=2.10.68
 construct-typing>=0.5.6
 
+# Solana-specific dependencies
+solana-spl>=0.2.0  # SPL token program support
+anchorpy>=0.18.0   # Anchor framework support (optional)
+
 # HTTP and networking
 requests>=2.31.0
 httpx>=0.23.3

@@ -24,19 +24,22 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 - **🛡️ Pre-Buy Delisting Check** - Prevents buying tokens that are already delisted or inactive
 - **📊 Position Monitoring** - Real-time position tracking with automatic sell triggers
 - **🔄 Multi-Chain Price Fetching** - Chain-specific price monitoring for accurate PnL calculation
+- **🌞 Solana Raydium Integration** - Real trading on Solana with automatic token account creation
+- **🏊 Pool Discovery** - Automatic Raydium pool finding and liquidity validation
+- **💱 Swap Quotes** - Pre-trade quote generation with slippage protection
 
 ## 🌐 Supported Blockchains
 
-| Chain | Native Token | DEX | Status |
-|-------|-------------|-----|--------|
-| **Ethereum** | ETH | Uniswap V2/V3 | ✅ Full Support |
-| **Base** | ETH | Uniswap | ✅ Full Support |
-| **Solana** | SOL | Raydium | ✅ Full Support |
-| **Polygon** | MATIC | Uniswap | 🔧 Available |
-| **BSC** | BNB | PancakeSwap | 🔧 Available |
-| **Arbitrum** | ETH | Uniswap | 🔧 Available |
-| **Optimism** | ETH | Uniswap | 🔧 Available |
-| **PulseChain** | PLS | PulseX | 🔧 Available |
+| Chain | Native Token | DEX | Status | Features |
+|-------|-------------|-----|--------|----------|
+| **Ethereum** | ETH | Uniswap V2/V3 | ✅ Full Support | Real trading, sentiment analysis, TokenSniffer |
+| **Base** | ETH | Uniswap | ✅ Full Support | Real trading, gas optimization |
+| **Solana** | SOL | Raydium | ✅ Full Support | Real trading, ATA creation, pool discovery |
+| **Polygon** | MATIC | Uniswap | 🔧 Available | Basic support |
+| **BSC** | BNB | PancakeSwap | 🔧 Available | Basic support |
+| **Arbitrum** | ETH | Uniswap | 🔧 Available | Basic support |
+| **Optimism** | ETH | Uniswap | 🔧 Available | Basic support |
+| **PulseChain** | PLS | PulseX | 🔧 Available | Basic support |
 
 ## 📋 Prerequisites
 
@@ -93,7 +96,9 @@ SOLANA_PRIVATE_KEY=your_phantom_private_key_here
 # Blockchain RPC URLs
 INFURA_URL=https://mainnet.infura.io/v3/your_infura_key
 BASE_RPC_URL=https://mainnet.base.org
-SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
+SOLANA_RPC_URL=https://api.mainnet-beta.solana.com  # Free public endpoint
+# For production trading, use a paid RPC provider:
+# SOLANA_RPC_URL=https://your-endpoint.quiknode.pro/your-api-key/
 
 # Telegram Configuration (Optional)
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
@@ -163,7 +168,23 @@ Before running with real money, test the bot in simulation mode:
 test_mode: true               # Set to true for simulation only
 ```
 
-### 5. Run the Bot
+### 5. Test Solana Implementation (Optional)
+Test the Solana trading implementation:
+
+```bash
+python test_solana.py
+```
+
+This will verify:
+- ✅ Environment configuration
+- ✅ Wallet initialization
+- ✅ Balance checking
+- ✅ Price fetching
+- ✅ Pool discovery
+- ✅ Swap quotes
+- ✅ Simulation mode
+
+### 6. Run the Bot
 ```bash
 python main.py
 ```
@@ -171,13 +192,14 @@ python main.py
 ## 📊 Configuration Options
 
 ### Multi-Chain Strategy
-- **Three-Network Support**: Ethereum, Base, and Solana trading
+- **Three-Network Support**: Ethereum, Base, and Solana trading with full implementation
 - **Chain-Specific Requirements**: Different volume/liquidity thresholds per chain
 - **Sentiment Analysis**: Ethereum-focused (skipped for other chains)
 - **TokenSniffer Integration**: Ethereum token safety checks
-- **DEX-Specific Execution**: Optimized for each blockchain's DEX
+- **DEX-Specific Execution**: Optimized for each blockchain's DEX (Uniswap, Raydium)
 - **Wallet Integration**: MetaMask for Ethereum/Base, Phantom for Solana
 - **Multi-Chain Price Fetching**: Chain-specific price monitoring for accurate PnL
+- **Solana Features**: Raydium DEX integration, automatic token account creation, pool discovery
 
 ### Trading Strategy
 - **Trending Detection**: Monitors social media and DEX activity across chains
@@ -317,6 +339,18 @@ def _detect_delisted_token(token_address: str, consecutive_failures: int) -> boo
    - The bot now automatically checks wallet balance before trading
    - Consider reducing trade amount if balance is low
 
+2. **"SOLANA_PRIVATE_KEY not found"**
+   - Ensure Solana private key is set in .env file
+   - Check key format (should be base58 encoded)
+   - Verify SOLANA_RPC_URL is accessible
+   - For production trading, use a paid RPC provider
+
+3. **"No Raydium pool found"**
+   - Token may not have liquidity on Raydium
+   - Check if token is listed on Raydium
+   - Verify token mint address is correct
+   - Some tokens may only be available on other DEXs
+
 2. **"Transaction failed"**
    - Increase gas limit in config.yaml
    - Check network congestion
@@ -379,8 +413,9 @@ crypto_trading_bot_100x/
 ├── monitor_position.py      # Position monitoring and sell triggers
 ├── telegram_bot.py          # Telegram notifications
 ├── token_sniffer.py         # Token safety checks
-├── solana_executor.py       # Solana blockchain interactions
-├── raydium_swap.py          # Raydium DEX integration
+├── solana_executor.py       # Solana blockchain interactions (NEW!)
+├── test_solana.py           # Solana implementation tests (NEW!)
+├── SOLANA_IMPLEMENTATION.md # Solana documentation (NEW!)
 ├── utils.py                 # Utility functions
 ├── uniswap_router_abi.json  # Uniswap contract ABI
 ├── trending_tokens.csv      # Token discovery history
@@ -465,6 +500,14 @@ For issues and questions:
 - Check RPC endpoint connectivity for all chains
 - Monitor Telegram alerts for position updates
 - Understand delisting risks and detection
+
+### Solana-Specific Support
+- **Test Solana Implementation**: Run `python test_solana.py`
+- **Check Solana Documentation**: See `SOLANA_IMPLEMENTATION.md`
+- **Verify RPC Endpoint**: Ensure SOLANA_RPC_URL is accessible
+- **Wallet Setup**: Use Phantom wallet for Solana
+- **Token Account Creation**: Bot automatically creates associated token accounts
+- **Pool Discovery**: Bot finds Raydium pools automatically
 
 ## 📄 License
 

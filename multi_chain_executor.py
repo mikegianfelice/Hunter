@@ -180,7 +180,7 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
             elif chain_id == "solana":
                 # Use real Solana executor
                 from solana_executor import buy_token_solana
-                tx_hash, ok = buy_token_solana(token_address, amount_usd, symbol)
+                tx_hash, ok = buy_token_solana(token_address, amount_usd, symbol, test_mode=TEST_MODE)
             else:
                 # For other chains, simulate for now
                 print(f"⚠️ Real trading on {chain_id.upper()} not implemented yet - simulating")
