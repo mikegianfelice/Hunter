@@ -26,20 +26,22 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 | Chain | Native Token | DEX | Status |
 |-------|-------------|-----|--------|
 | **Ethereum** | ETH | Uniswap V2/V3 | ✅ Full Support |
-| **Solana** | SOL | Raydium | ✅ Full Support |
 | **Base** | ETH | Uniswap | ✅ Full Support |
-| **Polygon** | MATIC | Uniswap | ✅ Full Support |
-| **BSC** | BNB | PancakeSwap | ✅ Full Support |
-| **Arbitrum** | ETH | Uniswap | ✅ Full Support |
-| **Optimism** | ETH | Uniswap | ✅ Full Support |
-| **PulseChain** | PLS | PulseX | ✅ Full Support |
+| **Solana** | SOL | Raydium | ✅ Full Support |
+| **Polygon** | MATIC | Uniswap | 🔧 Available |
+| **BSC** | BNB | PancakeSwap | 🔧 Available |
+| **Arbitrum** | ETH | Uniswap | 🔧 Available |
+| **Optimism** | ETH | Uniswap | 🔧 Available |
+| **PulseChain** | PLS | PulseX | 🔧 Available |
 
 ## 📋 Prerequisites
 
 - **Python 3.8+**
 - **Web3.py** for blockchain interactions
-- **Cryptocurrency wallet** with native tokens for gas fees
-- **Private key** for wallet signing
+- **Cryptocurrency wallets** with native tokens for gas fees:
+  - **MetaMask** for Ethereum and Base
+  - **Phantom** for Solana
+- **Private keys** for wallet signing
 - **Telegram Bot Token** (optional, for notifications)
 - **Infura API key** (for Ethereum and EVM chains)
 
@@ -75,12 +77,17 @@ cp .env.example .env
 
 #### Edit `.env` file with your credentials:
 ```env
-# Wallet Configuration
-PRIVATE_KEY=your_private_key_here
-WALLET_ADDRESS=your_wallet_address_here
+# Ethereum/Base Wallet Configuration (MetaMask)
+PRIVATE_KEY=your_ethereum_private_key_here
+WALLET_ADDRESS=your_ethereum_wallet_address_here
+
+# Solana Wallet Configuration (Phantom)
+SOLANA_WALLET_ADDRESS=your_phantom_wallet_address_here
+SOLANA_PRIVATE_KEY=your_phantom_private_key_here
 
 # Blockchain RPC URLs
 INFURA_URL=https://mainnet.infura.io/v3/your_infura_key
+SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
 
 # Telegram Configuration (Optional)
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
@@ -98,13 +105,13 @@ Edit `config.yaml` to customize your trading strategy:
 enable_multi_chain: true
 supported_chains:
   - ethereum
-  - solana
   - base
-  - polygon
-  - bsc
-  - arbitrum
-  - optimism
-  - pulsechain
+  - solana
+  # - polygon
+  # - bsc
+  # - arbitrum
+  # - optimism
+  # - pulsechain
 
 # Trading Configuration
 test_mode: false              # Set to true for simulation only
@@ -152,10 +159,12 @@ python main.py
 ## 📊 Configuration Options
 
 ### Multi-Chain Strategy
+- **Three-Network Support**: Ethereum, Base, and Solana trading
 - **Chain-Specific Requirements**: Different volume/liquidity thresholds per chain
 - **Sentiment Analysis**: Ethereum-focused (skipped for other chains)
 - **TokenSniffer Integration**: Ethereum token safety checks
 - **DEX-Specific Execution**: Optimized for each blockchain's DEX
+- **Wallet Integration**: MetaMask for Ethereum/Base, Phantom for Solana
 
 ### Trading Strategy
 - **Trending Detection**: Monitors social media and DEX activity across chains
@@ -175,6 +184,7 @@ python main.py
 - **Wallet Balance Protection**: Checks available funds before trading with gas fee buffer
 - **Circuit Breaker**: Automatic pause after consecutive losses
 - **Concurrent Position Limits**: Maximum number of open positions
+- **Cross-Chain Safety**: Prevents trading on unsupported networks
 
 ### Gas Optimization
 - **Dynamic Gas Pricing**: Adjusts gas prices based on network conditions
@@ -324,6 +334,12 @@ crypto_trading_bot_100x/
 
 ## 🛡️ Safety Features
 
+### Multi-Network Support
+- **Three-Network Trading**: Ethereum, Base, and Solana
+- **Wallet Integration**: MetaMask for ETH/Base, Phantom for Solana
+- **Cross-Chain Safety**: Prevents trading on unsupported networks
+- **Network-Specific Balance Checking**: Verifies funds on each network
+
 ### Duplicate Token Prevention
 - **Automatic Detection**: The bot checks if a token is already in your open positions
 - **Concentration Risk Mitigation**: Prevents over-exposure to single tokens
@@ -343,8 +359,8 @@ crypto_trading_bot_100x/
 
 ## 🔒 Security Best Practices
 
-1. **Never share your private key**
-2. **Use a dedicated trading wallet**
+1. **Never share your private keys**
+2. **Use dedicated trading wallets**
 3. **Start with small amounts**
 4. **Monitor the bot regularly**
 5. **Keep your `.env` file secure**
@@ -353,6 +369,7 @@ crypto_trading_bot_100x/
 8. **Use hardware wallets for large amounts**
 9. **Set appropriate wallet balance buffers** - Configure `min_wallet_balance_buffer` to reserve funds for gas
 10. **Monitor position concentration** - The bot prevents duplicate buys, but monitor overall portfolio diversity
+11. **Secure wallet setup** - Use separate wallets for different networks (MetaMask for ETH/Base, Phantom for Solana)
 
 ## 📞 Support
 
@@ -362,6 +379,8 @@ For issues and questions:
 - Test in simulation mode first
 - Start with small position sizes
 - Verify chain-specific requirements
+- Ensure wallet configurations are correct for each network
+- Check RPC endpoint connectivity for all chains
 
 ## 📄 License
 
