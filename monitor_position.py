@@ -22,6 +22,7 @@ POSITIONS_FILE = "open_positions.json"
 LOG_FILE = "trade_log.csv"
 MONITOR_LOCK = ".monitor_lock"
 HEARTBEAT_FILE = ".monitor_heartbeat"
+DELISTED_TOKENS_FILE = "delisted_tokens.json"
 
 # === Global for cleanup ===
 _running = True
@@ -106,14 +107,28 @@ def save_positions(positions):
     with open(POSITIONS_FILE, "w") as f:
         json.dump(positions, f, indent=2)
 
-def log_trade(token, entry_price, exit_price):
+def load_delisted_tokens():
+    if not os.path.exists(DELISTED_TOKENS_FILE):
+        return {}
+    with open(DELISTED_TOKENS_FILE, "r") as f:
+        try:
+            return json.load(f) or {}
+        except Exception:
+            return {}
+
+def save_delisted_tokens(delisted):
+    with open(DELISTED_TOKENS_FILE, "w") as f:
+        json.dump(delisted, f, indent=2)
+
+def log_trade(token, entry_price, exit_price, reason="normal"):
     pnl_pct = ((exit_price - entry_price) / entry_price) * 100 if entry_price else 0.0
     row = {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "token": token,
         "entry_price": entry_price,
         "exit_price": exit_price,
-        "pnl_pct": round(pnl_pct, 2)
+        "pnl_pct": round(pnl_pct, 2),
+        "reason": reason
     }
     file_exists = os.path.isfile(LOG_FILE)
     try:
@@ -146,12 +161,55 @@ def _apply_trailing_stop(state: dict, addr: str, current_price: float) -> float:
     trail_stop_price = peak * (1 - TRAILING_STOP)
     return trail_stop_price
 
+def _fetch_token_price_multi_chain(token_address: str) -> float:
+    """
+    Fetch token price based on chain type.
+    For now, we'll try to detect Solana vs Ethereum tokens.
+    """
+    try:
+        # Try Solana price first (if it looks like a Solana address)
+        if len(token_address) == 44:  # Solana addresses are 44 chars
+            try:
+                from solana_executor import get_token_price_usd
+                price = get_token_price_usd(token_address)
+                if price and price > 0:
+                    print(f"🔗 Fetched Solana price for {token_address[:8]}...{token_address[-8:]}: ${price:.6f}")
+                    return price
+                else:
+                    print(f"⚠️ Zero price returned for {token_address[:8]}...{token_address[-8:]}")
+                    return 0.0
+            except Exception as e:
+                print(f"⚠️ Solana price fetch failed: {e}")
+                return 0.0
+        
+        # Fallback to Ethereum price fetching
+        price = fetch_token_price_usd(token_address)
+        if price and price > 0:
+            print(f"🔗 Fetched Ethereum price for {token_address[:8]}...{token_address[-8:]}: ${price:.6f}")
+            return price
+            
+        return 0.0
+    except Exception as e:
+        print(f"⚠️ Price fetch failed for {token_address}: {e}")
+        return 0.0
+
+def _detect_delisted_token(token_address: str, consecutive_failures: int) -> bool:
+    """
+    Detect if a token is likely delisted based on consecutive price fetch failures
+    """
+    # Consider delisted after 5 consecutive failures (2.5 minutes of monitoring)
+    return consecutive_failures >= 5
+
 def monitor_all_positions():
     positions = load_positions()
     if not positions:
         print("📭 No open positions to monitor.")
         return
 
+    # Load delisting tracking
+    delisted_tokens = load_delisted_tokens()
+    failure_counts = delisted_tokens.get("failure_counts", {})
+    
     updated_positions = dict(positions)  # shallow copy
     closed_positions = []
     # ephemeral state for trailing stop peaks
@@ -167,14 +225,41 @@ def monitor_all_positions():
         print(f"\n🔍 Monitoring token: {token_address}")
         print(f"🎯 Entry price: ${entry_price:.6f}")
 
-        # Fetch current price
-        try:
-            current_price = fetch_token_price_usd(token_address)
-        except Exception as e:
-            print(f"⚠️ Price fetch failed for {token_address}: {e}")
-            continue
+        # Fetch current price using multi-chain function
+        current_price = _fetch_token_price_multi_chain(token_address)
 
-        if current_price is None:
+        # Track price fetch failures
+        if current_price == 0:
+            failure_counts[token_address] = failure_counts.get(token_address, 0) + 1
+            print(f"⚠️ Price fetch failure #{failure_counts[token_address]} for {token_address[:8]}...{token_address[-8:]}")
+            
+            # Check if token is likely delisted
+            if _detect_delisted_token(token_address, failure_counts[token_address]):
+                print(f"🚨 TOKEN LIKELY DELISTED: {token_address[:8]}...{token_address[-8:]}")
+                print(f"💸 Investment lost: ${entry_price:.6f}")
+                
+                # Log as delisted trade
+                log_trade(token_address, entry_price, 0.0, "delisted")
+                
+                # Send Telegram alert
+                send_telegram_message(
+                    f"🚨 TOKEN DELISTED - INVESTMENT LOST!\n"
+                    f"Token: {token_address[:8]}...{token_address[-8:]}\n"
+                    f"Entry: ${entry_price:.6f}\n"
+                    f"Current: $0.00 (DELISTED)\n"
+                    f"Loss: 100% (${entry_price:.6f})\n"
+                    f"⚠️ Token no longer tradeable"
+                )
+                
+                # Remove from active positions
+                closed_positions.append(token_address)
+                updated_positions.pop(token_address, None)
+                continue
+        else:
+            # Reset failure count on successful price fetch
+            failure_counts[token_address] = 0
+
+        if current_price is None or current_price == 0:
             print(f"⚠️ Could not fetch current price for {token_address}")
             continue
 
@@ -191,7 +276,7 @@ def monitor_all_positions():
         if gain >= TAKE_PROFIT:
             print("💰 Take-profit hit! Selling...")
             tx = sell_token(token_address)
-            log_trade(token_address, entry_price, current_price)
+            log_trade(token_address, entry_price, current_price, "take_profit")
             send_telegram_message(
                 f"💰 Take-profit triggered!\n"
                 f"Token: {token_address}\n"
@@ -207,7 +292,7 @@ def monitor_all_positions():
         if gain <= -STOP_LOSS:
             print("🛑 Stop-loss hit! Selling...")
             tx = sell_token(token_address)
-            log_trade(token_address, entry_price, current_price)
+            log_trade(token_address, entry_price, current_price, "stop_loss")
             send_telegram_message(
                 f"🛑 Stop-loss triggered!\n"
                 f"Token: {token_address}\n"
@@ -223,7 +308,7 @@ def monitor_all_positions():
         if dyn_stop and current_price <= dyn_stop:
             print("🧵 Trailing stop-loss hit! Selling...")
             tx = sell_token(token_address)
-            log_trade(token_address, entry_price, current_price)
+            log_trade(token_address, entry_price, current_price, "trailing_stop")
             send_telegram_message(
                 f"🧵 Trailing stop-loss triggered!\n"
                 f"Token: {token_address}\n"
@@ -236,7 +321,10 @@ def monitor_all_positions():
         else:
             print("⏳ Holding position...")
 
+    # Save updated positions and failure counts
     save_positions(updated_positions)
+    delisted_tokens["failure_counts"] = failure_counts
+    save_delisted_tokens(delisted_tokens)
 
     if closed_positions and not updated_positions:
         closed_list = "\n".join([f"• {addr}" for addr in closed_positions])

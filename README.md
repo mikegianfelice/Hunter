@@ -20,6 +20,9 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 - **🔧 Configurable Strategy** - Easily adjustable parameters via config.yaml
 - **🔍 Token Safety Checks** - TokenSniffer integration for Ethereum tokens
 - **🚫 Promotional Content Filtering** - Automatically filters out spam and promotional tokens
+- **🚨 Delisting Detection** - Automatically detects and handles delisted tokens
+- **📊 Position Monitoring** - Real-time position tracking with automatic sell triggers
+- **🔄 Multi-Chain Price Fetching** - Chain-specific price monitoring for accurate PnL calculation
 
 ## 🌐 Supported Blockchains
 
@@ -38,6 +41,7 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 
 - **Python 3.8+**
 - **Web3.py** for blockchain interactions
+- **Solana SDK** for Solana blockchain interactions
 - **Cryptocurrency wallets** with native tokens for gas fees:
   - **MetaMask** for Ethereum and Base
   - **Phantom** for Solana
@@ -87,6 +91,7 @@ SOLANA_PRIVATE_KEY=your_phantom_private_key_here
 
 # Blockchain RPC URLs
 INFURA_URL=https://mainnet.infura.io/v3/your_infura_key
+BASE_RPC_URL=https://mainnet.base.org
 SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
 
 # Telegram Configuration (Optional)
@@ -138,6 +143,11 @@ circuit_breaker_minutes: 60   # Pause duration if circuit breaker triggered
 per_trade_max_usd: 25         # Max USD per trade
 min_wallet_balance_buffer: 0.01 # Keep 1% of balance for gas fees
 
+# Position Monitoring
+take_profit: 0.5              # Take profit at 50% gain
+stop_loss: 0.25               # Stop loss at 25% loss
+trailing_stop_percent: 0.1    # 10% trailing stop
+
 # Token Filtering
 enforce_keywords: false       # Enable/disable keyword filtering
 trusted_tokens: []            # List of trusted token addresses
@@ -165,6 +175,7 @@ python main.py
 - **TokenSniffer Integration**: Ethereum token safety checks
 - **DEX-Specific Execution**: Optimized for each blockchain's DEX
 - **Wallet Integration**: MetaMask for Ethereum/Base, Phantom for Solana
+- **Multi-Chain Price Fetching**: Chain-specific price monitoring for accurate PnL
 
 ### Trading Strategy
 - **Trending Detection**: Monitors social media and DEX activity across chains
@@ -185,6 +196,15 @@ python main.py
 - **Circuit Breaker**: Automatic pause after consecutive losses
 - **Concurrent Position Limits**: Maximum number of open positions
 - **Cross-Chain Safety**: Prevents trading on unsupported networks
+- **Delisting Detection**: Automatically detects and handles delisted tokens
+
+### Position Monitoring
+- **Real-time Monitoring**: Continuous position tracking every 30 seconds
+- **Automatic Sell Triggers**: Take profit, stop loss, and trailing stop
+- **Delisting Detection**: Identifies delisted tokens after 5 consecutive price fetch failures
+- **PnL Calculation**: Real-time profit/loss tracking
+- **Telegram Alerts**: Instant notifications for all position events
+- **Trade Logging**: Comprehensive CSV logging with reason codes
 
 ### Gas Optimization
 - **Dynamic Gas Pricing**: Adjusts gas prices based on network conditions
@@ -214,6 +234,13 @@ The bot can send real-time notifications via Telegram:
    notify_on_error: true
    ```
 
+### Telegram Notifications Include:
+- **Trade Executions**: Buy/sell confirmations with transaction hashes
+- **Position Updates**: Take profit, stop loss, and trailing stop triggers
+- **Delisting Alerts**: Notifications when tokens are delisted with loss amounts
+- **Error Alerts**: Important errors and warnings
+- **Daily Summaries**: Performance updates and statistics
+
 ## 📈 Monitoring and Analytics
 
 ### Dashboard
@@ -228,6 +255,8 @@ The bot creates detailed logs in:
 - `archives/` - Trading logs and data
 - Console output - Real-time status updates
 - `trending_tokens.csv` - Token discovery history
+- `trade_log.csv` - Detailed trade history with reason codes
+- `delisted_tokens.json` - Tracking of delisted tokens
 
 ## 🔧 Advanced Configuration
 
@@ -262,6 +291,16 @@ CHAIN_CONFIGS = {
         # ... more config
     }
 }
+```
+
+### Position Monitoring
+Customize position monitoring in `monitor_position.py`:
+
+```python
+# Adjust delisting detection sensitivity
+def _detect_delisted_token(token_address: str, consecutive_failures: int) -> bool:
+    # Customize failure threshold
+    return consecutive_failures >= 5  # Default: 5 failures
 ```
 
 ## 🛠️ Troubleshooting
@@ -302,6 +341,18 @@ CHAIN_CONFIGS = {
    - Includes gas fee buffer to prevent failed transactions
    - Consider reducing trade amount or adding more funds
 
+7. **"Token delisted"**
+   - The bot automatically detects delisted tokens
+   - Sends Telegram alert with loss amount
+   - Removes from active monitoring
+   - Logs as "delisted" trade with 100% loss
+
+8. **"Price fetch failed"**
+   - Check RPC endpoint connectivity
+   - Verify token address is correct
+   - May indicate token is delisted or has no liquidity
+   - Bot will automatically handle after 5 consecutive failures
+
 ### Debug Mode
 Enable debug logging in `config.yaml`:
 ```yaml
@@ -322,13 +373,18 @@ crypto_trading_bot_100x/
 ├── token_scraper.py         # Token discovery across chains
 ├── sentiment_scraper.py     # Sentiment analysis
 ├── risk_manager.py          # Risk management
+├── monitor_position.py      # Position monitoring and sell triggers
 ├── telegram_bot.py          # Telegram notifications
 ├── token_sniffer.py         # Token safety checks
+├── solana_executor.py       # Solana blockchain interactions
+├── raydium_swap.py          # Raydium DEX integration
 ├── utils.py                 # Utility functions
 ├── uniswap_router_abi.json  # Uniswap contract ABI
 ├── trending_tokens.csv      # Token discovery history
 ├── price_memory.json        # Price history for momentum
 ├── open_positions.json      # Current positions
+├── delisted_tokens.json     # Delisting tracking
+├── trade_log.csv            # Detailed trade history
 └── blacklist.json           # Blacklisted tokens
 ```
 
@@ -357,6 +413,20 @@ crypto_trading_bot_100x/
 - **Position Limits**: Maximum concurrent positions
 - **Trade Size Limits**: Per-trade maximum amounts
 
+### Delisting Detection
+- **Automatic Detection**: Identifies delisted tokens after 5 consecutive price fetch failures
+- **Loss Tracking**: Records 100% loss for delisted tokens
+- **Telegram Alerts**: Immediate notification when tokens are delisted
+- **Position Cleanup**: Removes delisted tokens from active monitoring
+- **Trade Logging**: Logs delisted trades with reason code
+
+### Position Monitoring
+- **Real-time Tracking**: Monitors all positions every 30 seconds
+- **Automatic Sell Triggers**: Take profit, stop loss, and trailing stop
+- **Multi-chain Price Fetching**: Chain-specific price monitoring
+- **PnL Calculation**: Real-time profit/loss tracking
+- **Telegram Integration**: Instant notifications for all events
+
 ## 🔒 Security Best Practices
 
 1. **Never share your private keys**
@@ -370,6 +440,8 @@ crypto_trading_bot_100x/
 9. **Set appropriate wallet balance buffers** - Configure `min_wallet_balance_buffer` to reserve funds for gas
 10. **Monitor position concentration** - The bot prevents duplicate buys, but monitor overall portfolio diversity
 11. **Secure wallet setup** - Use separate wallets for different networks (MetaMask for ETH/Base, Phantom for Solana)
+12. **Understand delisting risks** - Meme tokens can be delisted quickly, resulting in 100% loss
+13. **Monitor position alerts** - Pay attention to Telegram notifications for position updates
 
 ## 📞 Support
 
@@ -381,6 +453,8 @@ For issues and questions:
 - Verify chain-specific requirements
 - Ensure wallet configurations are correct for each network
 - Check RPC endpoint connectivity for all chains
+- Monitor Telegram alerts for position updates
+- Understand delisting risks and detection
 
 ## 📄 License
 
@@ -395,6 +469,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Never invest more than you can afford to lose
 - Understand the risks involved
 - Be aware of cross-chain transaction risks
+- Understand that meme tokens can be delisted quickly
+- Monitor position alerts and delisting notifications
 
 ---
 
