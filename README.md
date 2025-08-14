@@ -76,6 +76,17 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+**⚠️ Important: Solana Dependencies**
+The bot requires specific versions of Solana packages for proper functionality:
+- `solana==0.27.0` (includes required `keypair` module)
+- `solders>=0.9.0` (compatible version)
+
+If you encounter `ModuleNotFoundError: No module named 'solana.keypair'`, run:
+```bash
+pip uninstall solana -y
+pip install solana==0.27.0
+```
+
 ### 3. Configure the Bot
 
 #### Create Environment File
@@ -464,6 +475,8 @@ crypto_trading_bot_100x/
 - **Conservative Approach**: Skips tokens that can't be verified
 - **DexScreener Protection**: Prevents buying tokens with stale/inactive data
 - **Configurable**: Can be enabled/disabled via `enable_pre_buy_delisting_check`
+- **Dependency Validation**: Enhanced error handling for missing Solana dependencies
+- **Graceful Degradation**: Provides clear error messages and installation instructions when dependencies are missing
 
 ### Position Monitoring
 - **Real-time Tracking**: Monitors all positions every 30 seconds
@@ -488,10 +501,72 @@ crypto_trading_bot_100x/
 12. **Understand delisting risks** - Meme tokens can be delisted quickly, resulting in 100% loss
 13. **Monitor position alerts** - Pay attention to Telegram notifications for position updates
 
+## 🔧 Troubleshooting
+
+### Common Issues
+
+#### 1. Solana Import Errors
+**Error**: `ModuleNotFoundError: No module named 'solana.keypair'`
+
+**Solution**: Install the correct Solana version:
+```bash
+pip uninstall solana -y
+pip install solana==0.27.0
+```
+
+**Why**: Newer versions of the Solana package (0.30+) removed the `keypair` module, which is required for the bot's pre-buy delisting checks.
+
+#### 2. Delisted Token Still Bought
+**Issue**: Token appears "delisted" in logs but gets bought anyway
+
+**Explanation**: 
+- "Delisted" messages in discovery logs indicate tokens with zero liquidity, not actual delisting
+- If pre-buy delisting check fails due to missing dependencies, the bot defaults to allowing the trade
+- Check if Solana dependencies are properly installed
+
+**Solution**: Ensure Solana dependencies are correct and pre-buy checks are working
+
+#### 3. Pre-Buy Delisting Check Failures
+**Error**: `⚠️ Pre-buy check failed for [TOKEN]: No module named 'solana.keypair'`
+
+**Solution**: Fix Solana dependencies as shown above
+
+**Impact**: Without proper delisting checks, the bot may buy tokens that are actually delisted or inactive
+
+#### 4. SSL Warnings
+**Warning**: `NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+`
+
+**Solution**: This is a warning and doesn't affect functionality. For production, consider updating OpenSSL or using a different Python environment.
+
+### Dependency Issues
+
+#### Solana Package Version Conflicts
+The bot requires specific Solana package versions:
+- ✅ `solana==0.27.0` (includes `keypair` module)
+- ❌ `solana>=0.30.0` (missing `keypair` module)
+
+#### Installation Verification
+Test Solana dependencies:
+```bash
+python -c "import solana.keypair; print('✅ Solana keypair module working')"
+```
+
+### Performance Issues
+
+#### High Gas Fees
+- Use Base network for lower fees
+- Adjust `min_wallet_balance_buffer` to ensure sufficient gas
+- Monitor gas prices before trading
+
+#### Slow Token Discovery
+- Check RPC endpoint connectivity
+- Verify API rate limits
+- Consider using paid RPC providers for production
+
 ## 📞 Support
 
 For issues and questions:
-- Check the troubleshooting section
+- Check the troubleshooting section above
 - Review the configuration options
 - Test in simulation mode first
 - Start with small position sizes

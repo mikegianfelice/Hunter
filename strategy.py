@@ -111,6 +111,11 @@ def _check_token_delisted(token: dict) -> bool:
             print(f"✅ Pre-buy check: {symbol} price verified at ${current_price}")
             return False
             
+        except ImportError as e:
+            print(f"⚠️ Pre-buy check failed for {symbol}: Missing Solana dependencies - {e}")
+            print(f"💡 Install correct Solana version: pip install solana==0.27.0")
+            # If we can't verify due to missing dependencies, be conservative and skip
+            return True
         except Exception as e:
             print(f"⚠️ Pre-buy check failed for {symbol}: {e}")
             # If we can't verify, be conservative but allow the trade
