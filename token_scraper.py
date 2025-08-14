@@ -185,7 +185,14 @@ def fetch_trending_tokens(limit=25):
 
     # 2) Build FILTERED list for trading: Multi-chain support
     tokens_for_trading = []
-    supported_chains = ["ethereum", "solana", "base", "polygon", "bsc", "arbitrum", "optimism", "pulsechain"]
+    
+    # Load supported chains from config
+    try:
+        with open("config.yaml", "r") as f:
+            config = yaml.safe_load(f) or {}
+        supported_chains = config.get("supported_chains", ["ethereum"])
+    except Exception:
+        supported_chains = ["ethereum"]  # fallback
     
     for row in all_rows:
         chain = (row["chainId"] or "").lower()
