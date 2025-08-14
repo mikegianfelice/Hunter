@@ -50,7 +50,7 @@ enable_multi_chain: true
 supported_chains:
   - "ethereum"
   - "base"         # Enabled - uses same MetaMask wallet
-  # - "solana"     # Disabled - need Solana wallet
+  - "solana"       # Enabled - uses Phantom wallet
   # - "polygon"    # Disabled - need Polygon wallet
   # - "bsc"        # Disabled - need BSC wallet
   # - "arbitrum"   # Disabled - need Arbitrum wallet

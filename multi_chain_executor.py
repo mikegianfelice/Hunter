@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 from web3 import Web3
 
-from secrets import INFURA_URL, WALLET_ADDRESS
+from secrets import INFURA_URL, WALLET_ADDRESS, SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
 from utils import get_eth_price_usd
 from telegram_bot import send_telegram_message
 
@@ -32,7 +32,7 @@ CHAIN_CONFIGS = {
         "executor_module": "uniswap_executor"
     },
     "solana": {
-        "rpc_url": "https://api.mainnet-beta.solana.com",
+        "rpc_url": SOLANA_RPC_URL,
         "native_token": "SOL",
         "wrapped_token": "So11111111111111111111111111111111111111112",  # Wrapped SOL
         "dex": "raydium",
