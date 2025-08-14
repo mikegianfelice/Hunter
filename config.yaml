@@ -30,6 +30,7 @@ min_momentum_pct: 0.008           # +0.8% change within TTL
 min_volume_24h_for_buy: 5000      # Min 24h volume (USD)
 min_liquidity_usd_for_buy: 5000   # Min liquidity (USD)
 min_price_usd: 0.0000001          # Ignore dust tokens
+enable_pre_buy_delisting_check: true  # Check if token is delisted before buying
 
 # Fast-path thresholds for first-seen tokens
 fastpath_min_volume_24h: 100000   # Min 24h volume (USD)

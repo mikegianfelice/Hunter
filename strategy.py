@@ -3,6 +3,7 @@ import json
 import os
 import time
 import yaml
+import requests
 
 # Load config
 with open("config.yaml", "r") as f:
@@ -26,6 +27,9 @@ MIN_PRICE_USD    = float(_cfg.get("min_price_usd", 0.0000001))
 FASTPATH_VOL   = float(_cfg.get("fastpath_min_volume_24h", 50000))  # Reduced from 100k to 50k
 FASTPATH_LIQ   = float(_cfg.get("fastpath_min_liquidity_usd", 25000))  # Reduced from 50k to 25k
 FASTPATH_SENT  = int(_cfg.get("fastpath_min_sent_score", 40))           # Reduced from 55 to 40
+
+# Pre-buy delisting check
+ENABLE_PRE_BUY_DELISTING_CHECK = bool(_cfg.get("enable_pre_buy_delisting_check", True))
 
 def _now() -> int:
     return int(time.time())
@@ -74,6 +78,71 @@ def _pct_change(curr: float, prev: float) -> float:
         return 0.0
     return (curr - prev) / prev
 
+def _check_token_delisted(token: dict) -> bool:
+    """
+    Pre-buy check to detect if a token is likely delisted or inactive.
+    Returns True if token appears to be delisted/inactive.
+    """
+    address = token.get("address", "")
+    chain_id = token.get("chainId", "ethereum").lower()
+    symbol = token.get("symbol", "")
+    
+    if not address:
+        return True  # No address = likely invalid
+    
+    # Check for Solana tokens (43-44 character addresses)
+    if (len(address) in [43, 44]) and chain_id == "solana":
+        try:
+            # Try to get current price from Raydium API
+            from solana_executor import get_token_price_usd
+            current_price = get_token_price_usd(address)
+            
+            if current_price == 0 or current_price is None:
+                print(f"⚠️ Pre-buy check: {symbol} has zero price (may be inactive)")
+                # For Solana, be more lenient - zero price doesn't necessarily mean delisted
+                # Many new tokens might not be in Raydium API yet
+                return False  # Allow the trade to proceed
+                
+            # Check if price is extremely low (potential delisting)
+            if current_price < 0.0000001:
+                print(f"🚨 Pre-buy check: {symbol} has suspiciously low price ${current_price}")
+                return True
+                
+            print(f"✅ Pre-buy check: {symbol} price verified at ${current_price}")
+            return False
+            
+        except Exception as e:
+            print(f"⚠️ Pre-buy check failed for {symbol}: {e}")
+            # If we can't verify, be conservative but allow the trade
+            return False
+    
+    # For Ethereum tokens, try to get current price
+    elif chain_id in ["ethereum", "base"]:
+        try:
+            from utils import fetch_token_price_usd
+            current_price = fetch_token_price_usd(address)
+            
+            if current_price == 0 or current_price is None:
+                print(f"🚨 Pre-buy check: {symbol} appears delisted (zero price)")
+                return True
+                
+            # Check if price is extremely low (potential delisting)
+            if current_price < 0.0000001:
+                print(f"🚨 Pre-buy check: {symbol} has suspiciously low price ${current_price}")
+                return True
+                
+            print(f"✅ Pre-buy check: {symbol} price verified at ${current_price}")
+            return False
+            
+        except Exception as e:
+            print(f"⚠️ Pre-buy check failed for {symbol}: {e}")
+            # If we can't verify, be conservative and skip
+            return True
+    
+    # For other chains, skip the check for now
+    print(f"ℹ️ Pre-buy check: Skipping for {chain_id} chain")
+    return False
+
 def check_buy_signal(token: dict) -> bool:
     address = (token.get("address") or "").lower()
     price   = float(token.get("priceUsd") or 0.0)
@@ -84,6 +153,11 @@ def check_buy_signal(token: dict) -> bool:
 
     if not address or price <= MIN_PRICE_USD:
         print("📉 No address or price too low; skipping buy signal.")
+        return False
+
+    # Pre-buy delisting check
+    if ENABLE_PRE_BUY_DELISTING_CHECK and _check_token_delisted(token):
+        print("🚨 Token appears delisted/inactive; skipping buy signal.")
         return False
 
     # For trusted tokens, require milder depth floors

@@ -21,6 +21,7 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 - **🔍 Token Safety Checks** - TokenSniffer integration for Ethereum tokens
 - **🚫 Promotional Content Filtering** - Automatically filters out spam and promotional tokens
 - **🚨 Delisting Detection** - Automatically detects and handles delisted tokens
+- **🛡️ Pre-Buy Delisting Check** - Prevents buying tokens that are already delisted or inactive
 - **📊 Position Monitoring** - Real-time position tracking with automatic sell triggers
 - **🔄 Multi-Chain Price Fetching** - Chain-specific price monitoring for accurate PnL calculation
 
@@ -127,6 +128,7 @@ slippage: 0.02                # Slippage tolerance (2%)
 min_volume_24h: 3000          # Minimum 24h volume in USD
 min_liquidity: 3000           # Minimum liquidity in USD
 min_momentum_pct: 0.005       # Minimum price momentum (0.5%)
+enable_pre_buy_delisting_check: true  # Check if token is delisted before buying
 fastpath_volume: 50000        # Fast-path volume threshold
 fastpath_liquidity: 25000     # Fast-path liquidity threshold
 fastpath_sentiment: 40        # Fast-path sentiment threshold
@@ -197,6 +199,7 @@ python main.py
 - **Concurrent Position Limits**: Maximum number of open positions
 - **Cross-Chain Safety**: Prevents trading on unsupported networks
 - **Delisting Detection**: Automatically detects and handles delisted tokens
+- **Pre-Buy Delisting Check**: Prevents buying tokens that are already delisted or inactive
 
 ### Position Monitoring
 - **Real-time Monitoring**: Continuous position tracking every 30 seconds
@@ -419,6 +422,13 @@ crypto_trading_bot_100x/
 - **Telegram Alerts**: Immediate notification when tokens are delisted
 - **Position Cleanup**: Removes delisted tokens from active monitoring
 - **Trade Logging**: Logs delisted trades with reason code
+
+### Pre-Buy Delisting Check
+- **Pre-Purchase Validation**: Checks if tokens are delisted before buying
+- **Chain-Specific Logic**: Different validation rules for Ethereum vs Solana tokens
+- **Conservative Approach**: Skips tokens that can't be verified
+- **DexScreener Protection**: Prevents buying tokens with stale/inactive data
+- **Configurable**: Can be enabled/disabled via `enable_pre_buy_delisting_check`
 
 ### Position Monitoring
 - **Real-time Tracking**: Monitors all positions every 30 seconds
