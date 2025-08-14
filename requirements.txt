@@ -1,13 +1,46 @@
-web3>=6.0.0
-pandas>=2.0.0
-requests
-pyyaml
-tweepy
-beautifulsoup4
-aiohttp
-python-dotenv
-plotly               # for optional dashboard/graphing
-matplotlib           # alternative plotting library
-python-dateutil      # for working with timestamps/dates
-solana>=0.30.2       # for Solana blockchain interactions
-base58               # for Solana private key encoding
+# Core blockchain and web3 dependencies
+web3>=7.12.1
+solana>=0.30.2
+base58>=2.1.1
+solders>=0.18.1
+construct>=2.10.68
+construct-typing>=0.5.6
+
+# HTTP and networking
+requests>=2.31.0
+httpx>=0.23.3
+aiohttp>=3.12.14
+websockets>=11.0.3
+
+# Data processing and analysis
+pandas>=2.3.1
+python-dateutil>=2.9.0
+
+# Configuration and environment
+python-dotenv>=1.0.0
+pyyaml>=6.0
+
+# Social media and sentiment analysis
+tweepy>=4.16.0
+beautifulsoup4>=4.12.2
+
+# Visualization (optional)
+plotly>=6.2.0
+matplotlib>=3.8.2
+
+# Additional dependencies
+requests-oauthlib>=2.0.0
+types-requests>=2.32.4
+
+# Transitive dependencies (important for Solana and HTTP clients)
+cachetools>=4.2.4
+types-cachetools>=4.2.10
+jsonalias>=0.1.1
+rfc3986>=1.5.0
+h11>=0.14.0
+anyio>=4.9.0
+sniffio>=1.3.1
+certifi>=2025.7.14
+idna>=3.10
+typing-extensions>=4.14.1
+exceptiongroup>=1.3.0
