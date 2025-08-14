@@ -3,6 +3,7 @@ import json
 import time
 import sys
 import subprocess
+import os
 from pathlib import Path
 from typing import Optional, Dict, Any
 from web3 import Web3
@@ -38,7 +39,7 @@ CHAIN_CONFIGS = {
         "executor_module": "raydium_executor"
     },
     "base": {
-        "rpc_url": "https://mainnet.base.org",
+        "rpc_url": os.getenv("BASE_RPC_URL", "https://mainnet.base.org"),
         "native_token": "ETH",
         "wrapped_token": "0x4200000000000000000000000000000000000006",  # WETH on Base
         "dex": "uniswap",

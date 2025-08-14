@@ -49,13 +49,13 @@ price_ema_alpha: 0.3              # EMA smoothing factor for price guards
 enable_multi_chain: true
 supported_chains:
   - "ethereum"
-  - "solana" 
-  - "base"
-  - "polygon"
-  - "bsc"
-  - "arbitrum"
-  - "optimism"
-  - "pulsechain"
+  - "base"         # Enabled - uses same MetaMask wallet
+  # - "solana"     # Disabled - need Solana wallet
+  # - "polygon"    # Disabled - need Polygon wallet
+  # - "bsc"        # Disabled - need BSC wallet
+  # - "arbitrum"   # Disabled - need Arbitrum wallet
+  # - "optimism"   # Disabled - need Optimism wallet
+  # - "pulsechain" # Disabled - need PulseChain wallet
 
 # === Trusted Tokens (skip safety/sentiment checks) ===
 trusted_tokens:

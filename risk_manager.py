@@ -34,6 +34,16 @@ def _get_wallet_balance_usd(chain_id="ethereum"):
             eth_price = get_eth_price_usd()
             
             return float(balance_eth) * eth_price
+        elif chain_id.lower() == "base":
+            # Base uses same wallet as Ethereum, check ETH balance
+            balance_wei = w3.eth.get_balance(WALLET_ADDRESS)
+            balance_eth = w3.from_wei(balance_wei, 'ether')
+            
+            # Get ETH price in USD
+            from utils import get_eth_price_usd
+            eth_price = get_eth_price_usd()
+            
+            return float(balance_eth) * eth_price
         elif chain_id.lower() == "solana":
             # For Solana, we'll need to implement Solana balance checking
             # For now, return a default value or skip balance check
