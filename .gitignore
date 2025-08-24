@@ -226,6 +226,9 @@ delisted_tokens.json
 .secret_key
 
 # Runtime data files
+delisted_tokens.json
+
+# Runtime data files
 trending_tokens.csv
 *.csv
 

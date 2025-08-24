@@ -180,6 +180,23 @@ def trade_loop():
                     f"TX: https://etherscan.io/tx/{tx_hash}"
                 )
             else:
+                # Check if the failure might be due to delisting
+                chain_id = token.get("chainId", "ethereum").lower()
+                if chain_id == "solana":
+                    try:
+                        from solana_executor import get_token_price_usd
+                        current_price = get_token_price_usd(address)
+                        if current_price == 0:
+                            print(f"🚨 Trade failed and token has zero price - likely delisted")
+                            # Add to delisted tokens instead of cooldown
+                            from strategy import _add_to_delisted_tokens
+                            _add_to_delisted_tokens(address, symbol, "Trade failed + zero price")
+                            rejections[REJECT_RISK].append((symbol, address))
+                            continue
+                    except Exception as e:
+                        print(f"⚠️ Could not verify token status: {e}")
+                
+                # If not delisted, add to cooldown as usual
                 update_cooldown_log(address)
                 # Don't send telegram for WETH since it's intentionally skipped
                 if symbol != "WETH":

@@ -1,5 +1,5 @@
 # === Trade Execution ===
-trade_amount_usd: 5               # Amount per trade in USD
+trade_amount_usd: 10              # Amount per trade in USD - Increased for better positions
 slippage: 0.02                    # 2% max slippage
 use_supporting_fee_swap: true     # Use fee-supporting swap function for taxed tokens
 requote_delay_seconds: 10         # If build/send delay > this, re-quote before sending
@@ -15,7 +15,7 @@ price_impact_max_pct: 0.15        # 15% worse than EMA = adverse impact → bloc
 
 # Position & Risk Controls
 max_concurrent_positions: 5       # Max open positions at a time
-daily_loss_limit_usd: 50          # Daily loss cap before circuit breaker
+daily_loss_limit_usd: 100         # Daily loss cap before circuit breaker - Increased for more opportunities
 max_losing_streak: 3              # Consecutive losing trades before pause
 circuit_breaker_minutes: 60       # Pause duration if circuit breaker triggered
 per_trade_max_usd: 25             # Max USD per trade
@@ -27,14 +27,14 @@ min_pair_reserve_weth: 5.0        # Require ≥ 5 WETH on the pool’s WETH side
 
 # === Strategy: Momentum-based Buy Logic ===
 min_momentum_pct: 0.008           # +0.8% change within TTL
-min_volume_24h_for_buy: 5000      # Min 24h volume (USD)
+min_volume_24h_for_buy: 500       # Min 24h volume (USD) - Further lowered for more opportunities
 min_liquidity_usd_for_buy: 5000   # Min liquidity (USD)
 min_price_usd: 0.0000001          # Ignore dust tokens
-enable_pre_buy_delisting_check: true  # Check if token is delisted before buying
+enable_pre_buy_delisting_check: true   # Re-enabled with improved delisting detection
 
 # Fast-path thresholds for first-seen tokens
-fastpath_min_volume_24h: 100000   # Min 24h volume (USD)
-fastpath_min_liquidity_usd: 50000 # Min liquidity (USD)
+fastpath_min_volume_24h: 25000    # Min 24h volume (USD) - Lowered for better opportunities
+fastpath_min_liquidity_usd: 25000 # Min liquidity (USD) - Lowered for better opportunities
 fastpath_min_sent_score: 55       # OR mentions >= 3
 
 # TP limits for dynamic TP logic

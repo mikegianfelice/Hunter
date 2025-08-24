@@ -22,7 +22,20 @@ def _save(s: set):
         pass
 
 def is_blacklisted(address: str) -> bool:
-    return (address or "").lower() in _load()
+    # Check regular blacklist
+    if (address or "").lower() in _load():
+        return True
+    
+    # Check delisted tokens
+    try:
+        with open("delisted_tokens.json", "r") as f:
+            data = json.load(f) or {}
+            delisted_tokens = data.get("delisted_tokens", [])
+            return (address or "").lower() in delisted_tokens
+    except Exception:
+        pass
+    
+    return False
 
 def add_to_blacklist(address: str):
     s = _load()

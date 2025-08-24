@@ -78,10 +78,42 @@ def _pct_change(curr: float, prev: float) -> float:
         return 0.0
     return (curr - prev) / prev
 
+def _add_to_delisted_tokens(address: str, symbol: str, reason: str):
+    """
+    Add a token to the delisted_tokens.json file
+    """
+    try:
+        # Load existing delisted tokens
+        if os.path.exists("delisted_tokens.json"):
+            with open("delisted_tokens.json", "r") as f:
+                data = json.load(f) or {}
+        else:
+            data = {"failure_counts": {}, "delisted_tokens": []}
+        
+        # Add the token address to delisted list
+        delisted_tokens = data.get("delisted_tokens", [])
+        token_address_lower = address.lower()
+        
+        if token_address_lower not in delisted_tokens:
+            delisted_tokens.append(token_address_lower)
+            data["delisted_tokens"] = delisted_tokens
+            
+            # Save updated data
+            with open("delisted_tokens.json", "w") as f:
+                json.dump(data, f, indent=2)
+            
+            print(f"🛑 Added {symbol} ({address}) to delisted tokens: {reason}")
+        else:
+            print(f"ℹ️ {symbol} already in delisted tokens list")
+            
+    except Exception as e:
+        print(f"⚠️ Failed to add {symbol} to delisted tokens: {e}")
+
 def _check_token_delisted(token: dict) -> bool:
     """
     Pre-buy check to detect if a token is likely delisted or inactive.
     Returns True if token appears to be delisted/inactive.
+    Automatically adds delisted tokens to delisted_tokens.json.
     """
     address = token.get("address", "")
     chain_id = token.get("chainId", "ethereum").lower()
@@ -106,6 +138,7 @@ def _check_token_delisted(token: dict) -> bool:
             # Check if price is extremely low (potential delisting)
             if current_price < 0.0000001:
                 print(f"🚨 Pre-buy check: {symbol} has suspiciously low price ${current_price}")
+                _add_to_delisted_tokens(address, symbol, f"Low price: ${current_price}")
                 return True
                 
             print(f"✅ Pre-buy check: {symbol} price verified at ${current_price}")
@@ -129,11 +162,13 @@ def _check_token_delisted(token: dict) -> bool:
             
             if current_price == 0 or current_price is None:
                 print(f"🚨 Pre-buy check: {symbol} appears delisted (zero price)")
+                _add_to_delisted_tokens(address, symbol, "Zero price from API")
                 return True
                 
             # Check if price is extremely low (potential delisting)
             if current_price < 0.0000001:
                 print(f"🚨 Pre-buy check: {symbol} has suspiciously low price ${current_price}")
+                _add_to_delisted_tokens(address, symbol, f"Low price: ${current_price}")
                 return True
                 
             print(f"✅ Pre-buy check: {symbol} price verified at ${current_price}")

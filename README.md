@@ -20,8 +20,8 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 - **🔧 Configurable Strategy** - Easily adjustable parameters via config.yaml
 - **🔍 Token Safety Checks** - TokenSniffer integration for Ethereum tokens
 - **🚫 Promotional Content Filtering** - Automatically filters out spam and promotional tokens
-- **🚨 Delisting Detection** - Automatically detects and handles delisted tokens
-- **🛡️ Pre-Buy Delisting Check** - Prevents buying tokens that are already delisted or inactive
+- **🚨 Enhanced Delisting Detection** - Automatic detection and blacklisting of delisted/inactive tokens
+- **🛡️ Smart Failure Tracking** - Tokens with 5+ failures are automatically delisted
 - **📊 Position Monitoring** - Real-time position tracking with automatic sell triggers
 - **🔄 Multi-Chain Price Fetching** - Chain-specific price monitoring for accurate PnL calculation
 - **🌞 Solana Raydium Integration** - Real trading on Solana with automatic token account creation
@@ -55,6 +55,13 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 
 ## 🔧 Recent Updates & Fixes
 
+### Latest Improvements (v2.2)
+- **🚨 Enhanced Delisting Detection**: Automatic detection and blacklisting of delisted/inactive tokens
+- **📊 Smart Failure Tracking**: Tokens with 5+ failures are automatically delisted
+- **🛡️ Improved Token Screening**: Pre-buy and post-trade delisting checks
+- **⚡ Performance Optimization**: Reduced processing time by avoiding inactive tokens
+- **🔄 Persistent Learning**: Delisted tokens are permanently blocked across bot restarts
+
 ### Latest Improvements (v2.1)
 - **🔐 Enhanced Secrets Management**: Fixed AWS Secrets Manager integration with proper fallback to `.env` files
 - **💰 Wallet Address Validation**: Added automatic checksum address conversion to prevent Web3 errors
@@ -67,6 +74,38 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 - ✅ Fixed `web3.py only accepts checksum addresses` error
 - ✅ Eliminated AWS Secrets Manager credential errors
 - ✅ Improved multi-chain wallet balance detection
+- ✅ Resolved delisted token processing issues
+
+## 🚨 Enhanced Delisting Detection System
+
+The bot now includes an intelligent delisting detection system that automatically identifies and blocks inactive or delisted tokens:
+
+### **🔍 How It Works:**
+
+#### **1. Pre-Buy Screening**
+- **Zero Price Detection**: Tokens with zero prices are flagged as potentially delisted
+- **Low Price Detection**: Tokens with prices < $0.0000001 are automatically delisted
+- **API Failure Detection**: Tokens that can't be verified are conservatively blocked
+
+#### **2. Smart Failure Tracking**
+- **Failure Counter**: Each failed trade increments a failure counter
+- **Auto-Delisting**: Tokens with 5+ failures are automatically delisted
+- **Persistent Storage**: Delisted tokens are permanently blocked across bot restarts
+
+#### **3. Post-Trade Analysis**
+- **Trade Failure Analysis**: Failed trades trigger additional delisting checks
+- **Zero Price Verification**: Tokens with zero prices after failed trades are delisted
+- **Automatic Blacklisting**: Delisted tokens are added to `delisted_tokens.json`
+
+### **📁 Files Used:**
+- `delisted_tokens.json` - Stores permanently delisted tokens
+- `cooldown_log.json` - Tracks failure counts and temporary cooldowns
+- `blacklist_manager.py` - Manages both regular blacklist and delisted tokens
+
+### **⚙️ Configuration:**
+```yaml
+enable_pre_buy_delisting_check: true   # Enable pre-buy delisting checks
+```
 
 ## 🚀 Quick Start
 
