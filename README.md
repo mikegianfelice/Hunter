@@ -53,6 +53,21 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 - **Telegram Bot Token** (optional, for notifications)
 - **Infura API key** (for Ethereum and EVM chains)
 
+## 🔧 Recent Updates & Fixes
+
+### Latest Improvements (v2.1)
+- **🔐 Enhanced Secrets Management**: Fixed AWS Secrets Manager integration with proper fallback to `.env` files
+- **💰 Wallet Address Validation**: Added automatic checksum address conversion to prevent Web3 errors
+- **🚫 AWS Error Elimination**: Configured default secrets backend to avoid AWS credential errors
+- **🛡️ Improved Risk Management**: Enhanced wallet balance checking across multiple chains
+- **📊 Better Error Handling**: Cleaner startup process with proper state management
+
+### Known Issues Resolved
+- ✅ Fixed `ModuleNotFoundError: No module named 'cryptography'` 
+- ✅ Fixed `web3.py only accepts checksum addresses` error
+- ✅ Eliminated AWS Secrets Manager credential errors
+- ✅ Improved multi-chain wallet balance detection
+
 ## 🚀 Quick Start
 
 ### 1. Clone the Repository
@@ -89,12 +104,59 @@ pip install solana==0.27.0
 
 ### 3. Configure the Bot
 
-#### Create Environment File
+#### 🔐 Secure Secrets Management
+
+The bot supports multiple secure secrets backends to protect your wallet credentials. **For most users, we recommend using the `.env` file approach (Option C) as it's simpler and doesn't require AWS setup.**
+
+**Option A: AWS Secrets Manager (Production)**
 ```bash
-cp .env.example .env
+# Install AWS CLI and configure credentials
+aws configure
+
+# Run interactive setup
+python setup_secrets.py
 ```
 
-#### Edit `.env` file with your credentials:
+**Option B: Environment Variables**
+```bash
+# Set environment variables
+export TRADING_BOT_SECRETS_PRIVATE_KEY="your_ethereum_private_key"
+export TRADING_BOT_SECRETS_WALLET_ADDRESS="your_ethereum_wallet_address"
+export TRADING_BOT_SECRETS_SOLANA_PRIVATE_KEY="your_solana_private_key"
+export TRADING_BOT_SECRETS_SOLANA_WALLET_ADDRESS="your_solana_wallet_address"
+export TRADING_BOT_SECRETS_INFURA_URL="https://mainnet.infura.io/v3/your_key"
+export TRADING_BOT_SECRETS_BASE_RPC_URL="https://mainnet.base.org"
+export TRADING_BOT_SECRETS_SOLANA_RPC_URL="https://api.mainnet-beta.solana.com"
+export TRADING_BOT_SECRETS_TELEGRAM_BOT_TOKEN="your_telegram_bot_token"
+export TRADING_BOT_SECRETS_TELEGRAM_CHAT_ID="your_chat_id"
+```
+
+**Option C: .env File (Recommended for most users)**
+```bash
+# Copy the example file
+cp .env.example .env
+
+# Edit .env file with your credentials
+nano .env
+```
+
+**Configure Secrets Backend**
+Add this line to your `.env` file to avoid AWS errors:
+```env
+SECRETS_BACKEND=env
+```
+
+#### 🔄 Migrate from .env (Legacy)
+
+If you have an existing `.env` file, migrate to secure storage:
+```bash
+python setup_secrets.py migrate
+```
+
+#### 📝 .env Configuration (Recommended)
+
+Create your `.env` file with the following structure:
+
 ```env
 # Ethereum/Base Wallet Configuration (MetaMask)
 PRIVATE_KEY=your_ethereum_private_key_here
@@ -107,17 +169,17 @@ SOLANA_PRIVATE_KEY=your_phantom_private_key_here
 # Blockchain RPC URLs
 INFURA_URL=https://mainnet.infura.io/v3/your_infura_key
 BASE_RPC_URL=https://mainnet.base.org
-SOLANA_RPC_URL=https://api.mainnet-beta.solana.com  # Free public endpoint
-# For production trading, use a paid RPC provider:
-# SOLANA_RPC_URL=https://your-endpoint.quiknode.pro/your-api-key/
+SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
 
 # Telegram Configuration (Optional)
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 TELEGRAM_CHAT_ID=your_chat_id
 
-# API Keys (Optional)
-ETHERSCAN_API_KEY=your_etherscan_api_key
+# Secrets Backend Configuration (Important!)
+SECRETS_BACKEND=env
 ```
+
+**⚠️ Security Note**: Keep your `.env` file secure and never commit it to version control. The `.env` file is already in `.gitignore` to prevent accidental commits.
 
 #### Configure Trading Parameters
 Edit `config.yaml` to customize your trading strategy:
@@ -427,6 +489,8 @@ crypto_trading_bot_100x/
 ├── solana_executor.py       # Solana blockchain interactions (NEW!)
 ├── test_solana.py           # Solana implementation tests (NEW!)
 ├── SOLANA_IMPLEMENTATION.md # Solana documentation (NEW!)
+├── secrets_manager.py       # Secure secrets management (NEW!)
+├── setup_secrets.py         # Secrets setup and migration (NEW!)
 ├── utils.py                 # Utility functions
 ├── uniswap_router_abi.json  # Uniswap contract ABI
 ├── trending_tokens.csv      # Token discovery history
@@ -487,19 +551,28 @@ crypto_trading_bot_100x/
 
 ## 🔒 Security Best Practices
 
-1. **Never share your private keys**
-2. **Use dedicated trading wallets**
-3. **Start with small amounts**
-4. **Monitor the bot regularly**
-5. **Keep your `.env` file secure**
-6. **Regularly update dependencies**
-7. **Test on testnets first**
-8. **Use hardware wallets for large amounts**
-9. **Set appropriate wallet balance buffers** - Configure `min_wallet_balance_buffer` to reserve funds for gas
-10. **Monitor position concentration** - The bot prevents duplicate buys, but monitor overall portfolio diversity
-11. **Secure wallet setup** - Use separate wallets for different networks (MetaMask for ETH/Base, Phantom for Solana)
-12. **Understand delisting risks** - Meme tokens can be delisted quickly, resulting in 100% loss
-13. **Monitor position alerts** - Pay attention to Telegram notifications for position updates
+### 🔐 Secrets Management
+1. **Use secure secrets backends** - AWS Secrets Manager, encrypted local files, or environment variables
+2. **Never store private keys in plain text** - Avoid `.env` files for production
+3. **Rotate credentials regularly** - Update private keys and API tokens periodically
+4. **Use dedicated trading wallets** - Separate from main wallets
+5. **Limit wallet permissions** - Only grant necessary permissions
+
+### 🛡️ Trading Security
+6. **Start with small amounts** - Test with minimal funds first
+7. **Monitor the bot regularly** - Check for unusual activity
+8. **Set appropriate wallet balance buffers** - Configure `min_wallet_balance_buffer` to reserve funds for gas
+9. **Monitor position concentration** - The bot prevents duplicate buys, but monitor overall portfolio diversity
+10. **Understand delisting risks** - Meme tokens can be delisted quickly, resulting in 100% loss
+11. **Monitor position alerts** - Pay attention to Telegram notifications for position updates
+
+### 🔧 Infrastructure Security
+12. **Regularly update dependencies** - Keep all packages updated
+13. **Test on testnets first** - Validate functionality before mainnet
+14. **Use hardware wallets for large amounts** - Consider hardware wallets for significant funds
+15. **Secure wallet setup** - Use separate wallets for different networks (MetaMask for ETH/Base, Phantom for Solana)
+16. **Backup secrets securely** - Store backup credentials in secure locations
+17. **Monitor access logs** - Track who has access to your secrets
 
 ## 🔧 Troubleshooting
 
@@ -537,6 +610,32 @@ pip install solana==0.27.0
 **Warning**: `NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+`
 
 **Solution**: This is a warning and doesn't affect functionality. For production, consider updating OpenSSL or using a different Python environment.
+
+#### 5. Secrets Management Issues
+**Error**: `❌ Missing required secrets`
+
+**Solution**: 
+```bash
+# Set up secrets interactively
+python setup_secrets.py
+
+# Or migrate from existing .env
+python setup_secrets.py migrate
+```
+
+**Error**: `❌ Error accessing AWS Secrets Manager`
+
+**Solution**: 
+- Ensure AWS CLI is configured: `aws configure`
+- Check IAM permissions for Secrets Manager
+- Verify AWS region matches your configuration
+
+**Error**: `⚠️ Encryption not available for local secrets`
+
+**Solution**: Install cryptography package:
+```bash
+pip install cryptography
+```
 
 ### Dependency Issues
 

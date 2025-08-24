@@ -222,6 +222,9 @@ delisted_tokens.json
 .monitor_heartbeat
 .monitor_lock
 
+# Secrets and encryption keys
+.secret_key
+
 # Runtime data files
 trending_tokens.csv
 *.csv

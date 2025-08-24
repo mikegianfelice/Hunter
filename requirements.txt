@@ -36,6 +36,11 @@ matplotlib>=3.8.2
 requests-oauthlib>=2.0.0
 types-requests>=2.32.4
 
+# Secrets management dependencies
+boto3>=1.34.0
+cryptography>=41.0.0
+python-dotenv>=1.0.0  # Fallback for backward compatibility
+
 # Transitive dependencies (important for Solana and HTTP clients)
 cachetools>=4.2.4
 types-cachetools>=4.2.10

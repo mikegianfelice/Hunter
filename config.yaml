@@ -63,4 +63,4 @@ trusted_tokens:
   # - "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"  # WETH - temporarily disabled
 
 # === Modes ===
-test_mode: true                  # true = simulate only (no chain tx)
+test_mode: false                  # true = simulate only (no chain tx)

@@ -1,7 +1,7 @@
 import time
 import yaml
 from collections import defaultdict
-from secrets import WALLET_ADDRESS  # loaded from .env via secrets.py
+from secrets import WALLET_ADDRESS, validate_secrets  # loaded from secure backend via secrets.py
 
 from clear_state import ensure_mode_transition_clean
 
@@ -220,6 +220,13 @@ def _print_reject_summary(rejections, buys):
             print(f"  ↳ {names}{'…' if count > 5 else ''}")
 
 if __name__ == "__main__":
+    # Validate secrets before starting
+    if not validate_secrets():
+        print("❌ Exiting due to missing secrets")
+        exit(1)
+    
+    print("🔐 Secrets validated successfully")
+    
     while True:
         try:
             trade_loop()

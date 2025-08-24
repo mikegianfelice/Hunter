@@ -25,8 +25,10 @@ def _get_wallet_balance_usd(chain_id="ethereum"):
     """Get wallet balance in USD for specific chain"""
     try:
         if chain_id.lower() == "ethereum":
+            # Convert to checksum address if needed
+            checksum_address = w3.to_checksum_address(WALLET_ADDRESS)
             # Ethereum balance check
-            balance_wei = w3.eth.get_balance(WALLET_ADDRESS)
+            balance_wei = w3.eth.get_balance(checksum_address)
             balance_eth = w3.from_wei(balance_wei, 'ether')
             
             # Get ETH price in USD
@@ -36,7 +38,8 @@ def _get_wallet_balance_usd(chain_id="ethereum"):
             return float(balance_eth) * eth_price
         elif chain_id.lower() == "base":
             # Base uses same wallet as Ethereum, check ETH balance
-            balance_wei = w3.eth.get_balance(WALLET_ADDRESS)
+            checksum_address = w3.to_checksum_address(WALLET_ADDRESS)
+            balance_wei = w3.eth.get_balance(checksum_address)
             balance_eth = w3.from_wei(balance_wei, 'ether')
             
             # Get ETH price in USD
