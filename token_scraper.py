@@ -26,9 +26,12 @@ PROMOTIONAL_KEYWORDS = [
 
 PRIMARY_URLS = [
     "https://api.dexscreener.com/latest/dex/search/?q=trending",
+    "https://api.dexscreener.com/latest/dex/search/?q=hot",
+    "https://api.dexscreener.com/latest/dex/search/?q=gaining",
 ]
 FALLBACK_URLS = [
-    "https://api.dexscreener.com/latest/dex/search/?q=hot",
+    "https://api.dexscreener.com/latest/dex/search/?q=volume",
+    "https://api.dexscreener.com/latest/dex/search/?q=liquidity",
 ]
 
 CSV_PATH = "trending_tokens.csv"
@@ -111,41 +114,55 @@ def _append_all_to_csv(rows):
     except Exception as e:
         print("⚠️ Failed to append CSV:", e)
 
-def fetch_trending_tokens(limit=25):
+def fetch_trending_tokens(limit=50):
     headers = {"User-Agent": "Mozilla/5.0 (bot)"}
-    data = None
+    all_pairs = []
 
+    # Try multiple primary sources and combine results
     for u in PRIMARY_URLS:
         try:
             data = get_json(u, headers=headers, timeout=10, retries=3, backoff=0.7)
-            break
+            if data and data.get("pairs"):
+                pairs = data.get("pairs", [])
+                all_pairs.extend(pairs)
+                print(f"✅ Fetched {len(pairs)} tokens from {u}")
         except Exception as e:
             print(f"⚠️ Primary fetch failed ({u}): {e}")
 
-    if not data:
+    # If no primary sources worked, try fallbacks
+    if not all_pairs:
         for u in FALLBACK_URLS:
             try:
                 data = get_json(u, headers=headers, timeout=10, retries=3, backoff=0.7)
-                print(f"🔁 Used fallback source: {u}")
+                if data and data.get("pairs"):
+                    pairs = data.get("pairs", [])
+                    all_pairs.extend(pairs)
+                    print(f"🔁 Used fallback source: {u} - {len(pairs)} tokens")
                 break
             except Exception as e:
                 print(f"⚠️ Fallback fetch failed ({u}): {e}")
 
-    if not data:
+    if not all_pairs:
         print("❌ Error: all trending sources failed.")
         return []
 
-    pairs = data.get("pairs", [])
-    if pairs is None:
-        pairs = []
-    print(f"🔍 Found {len(pairs)} total trending tokens...")
+    # Remove duplicates based on pair address
+    unique_pairs = []
+    seen_addresses = set()
+    for pair in all_pairs:
+        addr = pair.get("pairAddress")
+        if addr and addr not in seen_addresses:
+            unique_pairs.append(pair)
+            seen_addresses.add(addr)
+    
+    print(f"🔍 Found {len(unique_pairs)} unique trending tokens from {len(all_pairs)} total...")
 
     # 1) Log ALL chains to CSV (but filter out promotional content)
     fetched_at = datetime.utcnow().isoformat()
     all_rows = []
     valid_tokens_count = 0
     
-    for pair in pairs:
+    for pair in unique_pairs:
         symbol = (pair.get("baseToken", {}) or {}).get("symbol") or ""
         addr = pair.get("pairAddress")
         dex = pair.get("dexId")
@@ -176,7 +193,7 @@ def fetch_trending_tokens(limit=25):
             "liquidity": liq
         })
     
-    print(f"✅ Found {valid_tokens_count} valid tokens out of {len(pairs)} total pairs")
+    print(f"✅ Found {valid_tokens_count} valid tokens out of {len(unique_pairs)} total pairs")
 
     if all_rows:
         _append_all_to_csv(all_rows)
@@ -216,7 +233,7 @@ def fetch_trending_tokens(limit=25):
               f"LQ: ${row['liquidity']:,.0f} ({liq_points}) | "
               f"Clean: ({clean_points}) → Score: {score}/6")
 
-        if score < 2:  # Reduced from 3 to 2
+        if score < 1:  # Reduced from 2 to 1 for more opportunities
             continue
 
         tokens_for_trading.append({

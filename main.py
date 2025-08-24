@@ -64,7 +64,7 @@ def trade_loop():
     if removed:
         print(f"🧽 Price memory cleanup: removed {removed} stale entries")
 
-    tokens = fetch_trending_tokens(limit=50)
+    tokens = fetch_trending_tokens(limit=100)
 
     # optional: print current risk state each loop
     risk = status_summary()

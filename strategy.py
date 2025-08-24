@@ -18,15 +18,15 @@ TP_MIN  = float(_cfg.get("tp_min", 0.20))
 TP_MAX  = float(_cfg.get("tp_max", 1.00))
 
 # Base thresholds
-MIN_MOMENTUM_PCT = float(_cfg.get("min_momentum_pct", 0.005))           # Reduced from 0.8% to 0.5%
-MIN_VOL_24H_BUY  = float(_cfg.get("min_volume_24h_for_buy", 3000))      # Reduced from 5000 to 3000
-MIN_LIQ_USD_BUY  = float(_cfg.get("min_liquidity_usd_for_buy", 3000))   # Reduced from 5000 to 3000
+MIN_MOMENTUM_PCT = float(_cfg.get("min_momentum_pct", 0.003))           # Reduced from 0.5% to 0.3%
+MIN_VOL_24H_BUY  = float(_cfg.get("min_volume_24h_for_buy", 1000))      # Reduced from 3000 to 1000
+MIN_LIQ_USD_BUY  = float(_cfg.get("min_liquidity_usd_for_buy", 1000))   # Reduced from 3000 to 1000
 MIN_PRICE_USD    = float(_cfg.get("min_price_usd", 0.0000001))
 
 # Fast-path thresholds for first-seen tokens
-FASTPATH_VOL   = float(_cfg.get("fastpath_min_volume_24h", 50000))  # Reduced from 100k to 50k
-FASTPATH_LIQ   = float(_cfg.get("fastpath_min_liquidity_usd", 25000))  # Reduced from 50k to 25k
-FASTPATH_SENT  = int(_cfg.get("fastpath_min_sent_score", 40))           # Reduced from 55 to 40
+FASTPATH_VOL   = float(_cfg.get("fastpath_min_volume_24h", 10000))  # Reduced from 50k to 10k
+FASTPATH_LIQ   = float(_cfg.get("fastpath_min_liquidity_usd", 5000))  # Reduced from 25k to 5k
+FASTPATH_SENT  = int(_cfg.get("fastpath_min_sent_score", 30))           # Reduced from 40 to 30
 
 # Pre-buy delisting check
 ENABLE_PRE_BUY_DELISTING_CHECK = bool(_cfg.get("enable_pre_buy_delisting_check", True))
@@ -203,6 +203,11 @@ def check_buy_signal(token: dict) -> bool:
     # For trusted tokens, require milder depth floors
     min_vol = MIN_VOL_24H_BUY if not is_trusted else max(2000.0, MIN_VOL_24H_BUY * 0.5)
     min_liq = MIN_LIQ_USD_BUY if not is_trusted else max(2000.0, MIN_LIQ_USD_BUY * 0.5)
+    
+    # For multi-chain tokens, use even lower requirements
+    if chain_id != "ethereum":
+        min_vol = max(500.0, min_vol * 0.3)  # 30% of normal requirement
+        min_liq = max(500.0, min_liq * 0.3)  # 30% of normal requirement
 
     if vol24h < min_vol or liq_usd < min_liq:
         print(f"🪫 Fails market depth: vol ${vol24h:,.0f} (need ≥ {min_vol:,.0f}), "
@@ -220,7 +225,7 @@ def check_buy_signal(token: dict) -> bool:
     
     # Multi-chain tokens: even easier momentum threshold
     if chain_id != "ethereum":
-        momentum_need = max(0.001, momentum_need * 0.2)  # 20% of normal requirement for multi-chain
+        momentum_need = max(0.0005, momentum_need * 0.1)  # 10% of normal requirement for multi-chain
         print(f"🔓 Multi-chain momentum threshold: {momentum_need*100:.2f}%")
 
     # WETH is handled specially in executor.py - skip here
@@ -252,11 +257,11 @@ def check_buy_signal(token: dict) -> bool:
     
     # Adjust requirements for non-Ethereum chains
     if chain_id != "ethereum":
-        # Lower requirements for multi-chain tokens
-        fast_vol_ok = (vol24h >= FASTPATH_VOL * 0.05)  # 5% of Ethereum requirement
-        fast_liq_ok = (liq_usd >= FASTPATH_LIQ * 0.1)  # 10% of Ethereum requirement
+        # Much lower requirements for multi-chain tokens
+        fast_vol_ok = (vol24h >= FASTPATH_VOL * 0.01)  # 1% of Ethereum requirement
+        fast_liq_ok = (liq_usd >= FASTPATH_LIQ * 0.02)  # 2% of Ethereum requirement
         fast_sent_ok = True  # Skip sentiment for non-Ethereum
-        print(f"🔓 Multi-chain fast-path: vol ${vol24h:,.0f} (need ≥ {FASTPATH_VOL * 0.05:,.0f}), liq ${liq_usd:,.0f} (need ≥ {FASTPATH_LIQ * 0.1:,.0f})")
+        print(f"🔓 Multi-chain fast-path: vol ${vol24h:,.0f} (need ≥ {FASTPATH_VOL * 0.01:,.0f}), liq ${liq_usd:,.0f} (need ≥ {FASTPATH_LIQ * 0.02:,.0f})")
     else:
         # Original Ethereum requirements
         fast_vol_ok = (vol24h >= FASTPATH_VOL)

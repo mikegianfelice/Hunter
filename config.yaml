@@ -26,16 +26,16 @@ max_size_price_impact_pct: 0.20   # Abort if size would move price >20% (approx:
 min_pair_reserve_weth: 5.0        # Require ≥ 5 WETH on the pool’s WETH side
 
 # === Strategy: Momentum-based Buy Logic ===
-min_momentum_pct: 0.008           # +0.8% change within TTL
-min_volume_24h_for_buy: 500       # Min 24h volume (USD) - Further lowered for more opportunities
-min_liquidity_usd_for_buy: 5000   # Min liquidity (USD)
+min_momentum_pct: 0.003           # +0.3% change within TTL - Reduced for more opportunities
+min_volume_24h_for_buy: 1000      # Min 24h volume (USD) - Balanced for opportunities
+min_liquidity_usd_for_buy: 1000   # Min liquidity (USD) - Balanced for opportunities
 min_price_usd: 0.0000001          # Ignore dust tokens
 enable_pre_buy_delisting_check: true   # Re-enabled with improved delisting detection
 
 # Fast-path thresholds for first-seen tokens
-fastpath_min_volume_24h: 25000    # Min 24h volume (USD) - Lowered for better opportunities
-fastpath_min_liquidity_usd: 25000 # Min liquidity (USD) - Lowered for better opportunities
-fastpath_min_sent_score: 55       # OR mentions >= 3
+fastpath_min_volume_24h: 10000    # Min 24h volume (USD) - Reduced for more opportunities
+fastpath_min_liquidity_usd: 5000  # Min liquidity (USD) - Reduced for more opportunities
+fastpath_min_sent_score: 30       # OR mentions >= 3 - Reduced for more opportunities
 
 # TP limits for dynamic TP logic
 tp_min: 0.20                      # 20% min TP when dynamic
