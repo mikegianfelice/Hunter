@@ -55,6 +55,16 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 
 ## 🔧 Recent Updates & Fixes
 
+### Latest Improvements (v2.5) - Multi-Chain Trading & Telegram Fixes
+- **🎯 Fixed No-Trades Issue**: Resolved 20+ hour trading drought by optimizing token discovery
+- **📊 Enhanced Token Discovery**: Increased from 18 to 89 tokens per cycle (395% improvement)
+- **🌐 Multi-Chain Optimization**: Enabled Ethereum + Solana trading, disabled chains without funds
+- **🛡️ Re-enabled Delisting Checks**: Prevents buying delisted tokens to avoid "investment lost" messages
+- **📱 Telegram Deduplication**: Fixed spam issue - risk control messages sent only once per 5 minutes
+- **⚡ Reduced Requirements**: Lowered volume/liquidity thresholds for more trading opportunities
+- **🔓 Relaxed Filtering**: Removed overly strict keyword filters (AI, MOON) for more opportunities
+- **📈 Better Chain Support**: Added 6 new API sources for enhanced token discovery
+
 ### Latest Improvements (v2.4) - Enhanced Token Discovery & Quality
 - **🎯 Fixed No-Trades Issue**: Resolved the main blocking factor (delisted tokens list was too aggressive)
 - **📊 Enhanced Token Discovery**: 225% more unique symbols, 13,640% higher average volume
@@ -94,6 +104,33 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 - ✅ Eliminated AWS Secrets Manager credential errors
 - ✅ Improved multi-chain wallet balance detection
 - ✅ Resolved delisted token processing issues
+- ✅ Fixed 20+ hour trading drought by optimizing token discovery
+- ✅ Resolved Telegram message spam with deduplication system
+- ✅ Fixed "token delisted investment lost" by re-enabling pre-buy checks
+- ✅ Optimized multi-chain support to only trade on chains with funds
+
+## 📱 Telegram Notifications & Deduplication
+
+The bot includes intelligent Telegram notification system with automatic message deduplication:
+
+### **🔄 Message Deduplication System**
+- **5-Minute Cache**: Prevents sending identical messages within 5 minutes
+- **Automatic Cleanup**: Old messages are automatically removed from cache
+- **Smart Filtering**: Reduces spam from repeated risk control messages
+- **Configurable**: Can be disabled per message if needed
+
+### **📨 Notification Types**
+- **Trade Executions**: Buy/sell confirmations with transaction links
+- **Risk Alerts**: Position limits, daily loss limits, circuit breakers
+- **Error Notifications**: Failed trades, delisted tokens, API issues
+- **Status Updates**: Bot startup, mode changes, configuration updates
+
+### **⚙️ Configuration**
+```yaml
+# Telegram settings in config.yaml
+telegram_bot_token: "your_bot_token"
+telegram_chat_id: "your_chat_id"
+```
 
 ## 🌐 Multi-DEX Solana Support
 
@@ -315,31 +352,31 @@ SECRETS_BACKEND=env
 Edit `config.yaml` to customize your trading strategy:
 
 ```yaml
-# Multi-Chain Configuration
+# Multi-Chain Configuration (Optimized for Available Funds)
 enable_multi_chain: true
 supported_chains:
-  - ethereum
-  - base
-  - solana
-  # - polygon
-  # - bsc
-  # - arbitrum
-  # - optimism
-  # - pulsechain
+  - ethereum     # Enabled - requires ETH for gas fees
+  - solana       # Enabled - requires SOL for gas fees
+  # - base       # Disabled - need ETH on Base network
+  # - pulsechain # Disabled - need PLS for gas fees
+  # - polygon    # Disabled - need MATIC for gas fees
+  # - bsc        # Disabled - need BNB for gas fees
+  # - arbitrum   # Disabled - need ETH on Arbitrum
+  # - optimism   # Disabled - need ETH on Optimism
 
 # Trading Configuration
 test_mode: false              # Set to true for simulation only
-trade_amount_usd: 5.0         # Amount per trade in USD
+trade_amount_usd: 10.0        # Amount per trade in USD (increased for better positions)
 slippage: 0.02                # Slippage tolerance (2%)
 
-# Strategy Parameters
-min_volume_24h: 3000          # Minimum 24h volume in USD
-min_liquidity: 3000           # Minimum liquidity in USD
-min_momentum_pct: 0.005       # Minimum price momentum (0.5%)
+# Strategy Parameters (Optimized for More Opportunities)
+min_volume_24h: 100           # Minimum 24h volume in USD (reduced from 3000)
+min_liquidity: 100            # Minimum liquidity in USD (reduced from 3000)
+min_momentum_pct: 0.001       # Minimum price momentum (0.1% - reduced from 0.5%)
 enable_pre_buy_delisting_check: true  # Check if token is delisted before buying
-fastpath_volume: 50000        # Fast-path volume threshold
-fastpath_liquidity: 25000     # Fast-path liquidity threshold
-fastpath_sentiment: 40        # Fast-path sentiment threshold
+fastpath_volume: 500          # Fast-path volume threshold (reduced from 50000)
+fastpath_liquidity: 500       # Fast-path liquidity threshold (reduced from 25000)
+fastpath_sentiment: 20        # Fast-path sentiment threshold (reduced from 40)
 
 # Risk Management
 max_daily_loss: 0.05          # Maximum daily loss (5%)

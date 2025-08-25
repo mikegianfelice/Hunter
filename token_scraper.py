@@ -16,7 +16,7 @@ TELEGRAM_BOT_TOKEN = config.get("telegram_bot_token")
 TELEGRAM_CHAT_ID = config.get("telegram_chat_id")
 
 # === Enhanced Filters for TRADING ===
-EXCLUDED_KEYWORDS = ["INU", "AI", "PEPE", "DOGE", "SHIBA", "MOON", "SAFE", "ELON"]
+EXCLUDED_KEYWORDS = ["INU", "PEPE", "DOGE", "SHIBA", "SAFE", "ELON"]  # Removed "AI" and "MOON" for more opportunities
 ENFORCE_KEYWORDS = True  # Re-enable keyword filtering for better quality
 
 # Enhanced promotional content filters
@@ -37,12 +37,19 @@ PRIMARY_URLS = [
     "https://api.dexscreener.com/latest/dex/search/?q=liquidity",
     "https://api.dexscreener.com/latest/dex/search/?q=new",
     "https://api.dexscreener.com/latest/dex/search/?q=rising",
-]
-
-FALLBACK_URLS = [
     "https://api.dexscreener.com/latest/dex/search/?q=popular",
     "https://api.dexscreener.com/latest/dex/search/?q=active",
     "https://api.dexscreener.com/latest/dex/search/?q=top",
+    "https://api.dexscreener.com/latest/dex/search/?q=moon",
+    "https://api.dexscreener.com/latest/dex/search/?q=pump",
+    "https://api.dexscreener.com/latest/dex/search/?q=surge",
+]
+
+FALLBACK_URLS = [
+    "https://api.dexscreener.com/latest/dex/search/?q=trending",
+    "https://api.dexscreener.com/latest/dex/search/?q=hot",
+    "https://api.dexscreener.com/latest/dex/search/?q=new",
+    "https://api.dexscreener.com/latest/dex/search/?q=volume",
 ]
 
 CSV_PATH = "trending_tokens.csv"
@@ -74,11 +81,11 @@ def is_promotional_content(symbol, description=""):
             return True
     
     # Check for very long symbols (likely promotional text)
-    if len(symbol) > 15:  # Reduced from 20 to 15
+    if len(symbol) > 20:  # Increased from 15 to 20 for more opportunities
         return True
     
     # Check for symbols with too many spaces (likely sentences)
-    if symbol.count(' ') > 2:  # Reduced from 3 to 2
+    if symbol.count(' ') > 3:  # Increased from 2 to 3 for more opportunities
         return True
     
     # Check for symbols with hashtags or special characters
@@ -108,11 +115,11 @@ def is_valid_token_data(symbol, address, volume24h, liquidity):
     if len(address) < 10:
         return False
     
-    # Enhanced minimum requirements
-    if volume24h < 100:  # Increased from 0 to 100
+    # Reduced minimum requirements for more opportunities
+    if volume24h < 10:  # Reduced from 100 to 10
         return False
     
-    if liquidity < 500:  # Increased from 0 to 500
+    if liquidity < 50:  # Reduced from 500 to 50
         return False
     
     return True
@@ -321,7 +328,7 @@ def fetch_trending_tokens(limit=100):
         print(f"🧪 {symbol} | Vol: ${volume24h:,.0f} | LQ: ${liquidity:,.0f} | Score: {score}/8 | Chain: {chain}")
         
         # Only include tokens with decent scores
-        if score >= 2:  # Increased minimum score for better quality
+        if score >= 0:  # Reduced minimum score for more opportunities
             scored_tokens.append({
                 "symbol": symbol,
                 "address": row["address"],
@@ -337,7 +344,7 @@ def fetch_trending_tokens(limit=100):
     scored_tokens.sort(key=lambda x: x["score"], reverse=True)
     
     # Ensure symbol diversity
-    diverse_tokens = ensure_symbol_diversity(scored_tokens, max_same_symbol=2)  # Reduced from 3 to 2
+    diverse_tokens = ensure_symbol_diversity(scored_tokens, max_same_symbol=5)  # Increased from 2 to 5 for more opportunities
     
     # Take top tokens up to limit
     tokens_for_trading = diverse_tokens[:limit]

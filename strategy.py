@@ -206,8 +206,8 @@ def check_buy_signal(token: dict) -> bool:
     
     # For multi-chain tokens, use even lower requirements
     if chain_id != "ethereum":
-        min_vol = max(100.0, min_vol * 0.1)  # 10% of normal requirement
-        min_liq = max(200.0, min_liq * 0.2)  # 20% of normal requirement
+        min_vol = max(10.0, min_vol * 0.05)  # 5% of normal requirement
+        min_liq = max(50.0, min_liq * 0.1)   # 10% of normal requirement
 
     if vol24h < min_vol or liq_usd < min_liq:
         print(f"🪫 Fails market depth: vol ${vol24h:,.0f} (need ≥ {min_vol:,.0f}), "
@@ -225,7 +225,7 @@ def check_buy_signal(token: dict) -> bool:
     
     # Multi-chain tokens: even easier momentum threshold
     if chain_id != "ethereum":
-        momentum_need = max(0.0005, momentum_need * 0.1)  # 10% of normal requirement for multi-chain
+        momentum_need = max(0.0001, momentum_need * 0.05)  # 5% of normal requirement for multi-chain
         print(f"🔓 Multi-chain momentum threshold: {momentum_need*100:.2f}%")
 
     # WETH is handled specially in executor.py - skip here
@@ -258,10 +258,10 @@ def check_buy_signal(token: dict) -> bool:
     # Adjust requirements for non-Ethereum chains
     if chain_id != "ethereum":
         # Much lower requirements for multi-chain tokens
-        fast_vol_ok = (vol24h >= FASTPATH_VOL * 0.005)  # 0.5% of Ethereum requirement
-        fast_liq_ok = (liq_usd >= FASTPATH_LIQ * 0.01)  # 1% of Ethereum requirement
+        fast_vol_ok = (vol24h >= FASTPATH_VOL * 0.001)  # 0.1% of Ethereum requirement
+        fast_liq_ok = (liq_usd >= FASTPATH_LIQ * 0.002)  # 0.2% of Ethereum requirement
         fast_sent_ok = True  # Skip sentiment for non-Ethereum
-        print(f"🔓 Multi-chain fast-path: vol ${vol24h:,.0f} (need ≥ {FASTPATH_VOL * 0.005:,.0f}), liq ${liq_usd:,.0f} (need ≥ {FASTPATH_LIQ * 0.01:,.0f})")
+        print(f"🔓 Multi-chain fast-path: vol ${vol24h:,.0f} (need ≥ {FASTPATH_VOL * 0.001:,.0f}), liq ${liq_usd:,.0f} (need ≥ {FASTPATH_LIQ * 0.002:,.0f})")
     else:
         # Original Ethereum requirements
         fast_vol_ok = (vol24h >= FASTPATH_VOL)

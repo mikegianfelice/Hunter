@@ -26,16 +26,16 @@ max_size_price_impact_pct: 0.20   # Abort if size would move price >20% (approx:
 min_pair_reserve_weth: 5.0        # Require ≥ 5 WETH on the pool’s WETH side
 
 # === Strategy: Momentum-based Buy Logic ===
-min_momentum_pct: 0.003           # +0.3% change within TTL - Reduced for more opportunities
-min_volume_24h_for_buy: 500       # Min 24h volume (USD) - Reduced for more opportunities
-min_liquidity_usd_for_buy: 500    # Min liquidity (USD) - Reduced for more opportunities
+min_momentum_pct: 0.001           # +0.1% change within TTL - Further reduced for more opportunities
+min_volume_24h_for_buy: 100       # Min 24h volume (USD) - Further reduced for more opportunities
+min_liquidity_usd_for_buy: 100    # Min liquidity (USD) - Further reduced for more opportunities
 min_price_usd: 0.0000001          # Ignore dust tokens
-enable_pre_buy_delisting_check: false  # Temporarily disabled due to API issues
+enable_pre_buy_delisting_check: true   # Re-enabled to prevent buying delisted tokens
 
 # Fast-path thresholds for first-seen tokens
-fastpath_min_volume_24h: 1000     # Min 24h volume (USD) - Reduced for more opportunities
-fastpath_min_liquidity_usd: 1000  # Min liquidity (USD) - Reduced for more opportunities
-fastpath_min_sent_score: 30       # OR mentions >= 3 - Reduced for more opportunities
+fastpath_min_volume_24h: 500      # Min 24h volume (USD) - Further reduced for more opportunities
+fastpath_min_liquidity_usd: 500   # Min liquidity (USD) - Further reduced for more opportunities
+fastpath_min_sent_score: 20       # OR mentions >= 2 - Further reduced for more opportunities
 
 # TP limits for dynamic TP logic
 tp_min: 0.20                      # 20% min TP when dynamic
@@ -49,14 +49,14 @@ price_ema_alpha: 0.3              # EMA smoothing factor for price guards
 # === Multi-Chain Settings ===
 enable_multi_chain: true
 supported_chains:
-  - "ethereum"
-  # - "base"         # Temporarily disabled due to API issues
-  - "solana"       # Re-enabled with Jupiter API fix
+  - "ethereum"     # Ethereum trading enabled
+  - "solana"       # Re-enabled - you have SOL in Phantom wallet
+  # - "base"       # Disabled - need ETH on Base network
+  # - "pulsechain" # Disabled - need PLS in wallet
   # - "polygon"    # Disabled - need Polygon wallet
   # - "bsc"        # Disabled - need BSC wallet
   # - "arbitrum"   # Disabled - need Arbitrum wallet
   # - "optimism"   # Disabled - need Optimism wallet
-  # - "pulsechain" # Disabled - need PulseChain wallet
 
 # === Trusted Tokens (skip safety/sentiment checks) ===
 trusted_tokens:
