@@ -86,15 +86,44 @@ def get_eth_price_usd() -> float:
 
 def get_sol_price_usd() -> float:
     """
-    Get SOL/USD price from CoinGecko API
+    Get SOL/USD price from multiple sources:
+    1. CoinGecko API (primary)
+    2. Jupiter quote API (fallback)
     """
+    # Try CoinGecko first
     try:
         url = "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd"
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
             data = response.json()
-            return float(data.get("solana", {}).get("usd", 0))
-        return 0.0
+            price = float(data.get("solana", {}).get("usd", 0))
+            if price > 0:
+                print(f"✅ SOL price from CoinGecko: ${price}")
+                return price
     except Exception as e:
-        print(f"⚠️ Error getting SOL price: {e}")
-        return 0.0
+        print(f"⚠️ CoinGecko SOL price error: {e}")
+    
+    # Fallback to Jupiter quote API
+    try:
+        url = "https://quote-api.jup.ag/v6/quote"
+        params = {
+            "inputMint": "So11111111111111111111111111111111111111112",
+            "outputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+            "amount": "1000000000",  # 1 SOL in lamports
+            "slippageBps": 50,
+            "onlyDirectRoutes": False,
+            "asLegacyTransaction": False
+        }
+        
+        response = requests.get(url, params=params, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("swapUsdValue"):
+                price = float(data["swapUsdValue"])
+                print(f"✅ SOL price from Jupiter quote: ${price}")
+                return price
+    except Exception as e:
+        print(f"⚠️ Jupiter quote SOL price error: {e}")
+    
+    print("⚠️ Could not get SOL price from any source")
+    return 0.0

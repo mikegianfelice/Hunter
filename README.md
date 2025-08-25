@@ -55,6 +55,14 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 
 ## 🔧 Recent Updates & Fixes
 
+### Latest Improvements (v2.6) - Jupiter Price API Fix & Enhanced Reliability
+- **🔧 Fixed Jupiter Price API Error**: Resolved `[Errno 8] nodename nor servname provided, or not known` error
+- **📊 Enhanced Price Fetching**: Replaced deprecated `price.jup.ag` with reliable `quote-api.jup.ag` and CoinGecko
+- **🔄 Multi-Source Price Data**: Implemented fallback system using Jupiter quote API and CoinGecko for better reliability
+- **⚡ Improved SOL Price Fetching**: Enhanced `get_sol_price_usd()` with multiple data sources and better error handling
+- **🛡️ Better Token Price Coverage**: Added support for more tokens (BONK, PEPE, JITO) in CoinGecko fallback
+- **📈 Enhanced Error Handling**: Graceful degradation when price APIs are unavailable
+
 ### Latest Improvements (v2.5) - Multi-Chain Trading & Telegram Fixes
 - **🎯 Fixed No-Trades Issue**: Resolved 20+ hour trading drought by optimizing token discovery
 - **📊 Enhanced Token Discovery**: Increased from 18 to 89 tokens per cycle (395% improvement)
@@ -629,6 +637,12 @@ def _detect_delisted_token(token_address: str, consecutive_failures: int) -> boo
    - Verify token address is correct
    - May indicate token is delisted or has no liquidity
    - Bot will automatically handle after 5 consecutive failures
+
+9. **"Jupiter price API error: nodename nor servname provided"**
+   - **FIXED**: This error has been resolved in v2.6
+   - The bot now uses reliable `quote-api.jup.ag` and CoinGecko instead of deprecated `price.jup.ag`
+   - If you see this error, update to the latest version
+   - The bot automatically falls back to multiple price sources for reliability
 
 ### Debug Mode
 Enable debug logging in `config.yaml`:

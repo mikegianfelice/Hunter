@@ -38,25 +38,59 @@ class SimpleSolanaExecutor:
 
     def get_token_price_usd(self, token_address: str) -> float:
         """Get token price in USD using multiple sources"""
-        # Try Jupiter price API first
+        # Import here to avoid circular imports
+        from utils import get_sol_price_usd
+        
+        # Try Jupiter quote API for price calculation (more reliable than price API)
         try:
-            url = "https://price.jup.ag/v4/price"
-            params = {"ids": token_address}
+            # Use SOL as reference for price calculation
+            sol_mint = "So11111111111111111111111111111111111111112"
+            usdc_mint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
             
-            response = requests.get(url, params=params, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("data") and token_address in data["data"]:
-                    price = float(data["data"][token_address]["price"])
-                    print(f"✅ Jupiter price for {token_address[:8]}...{token_address[-8:]}: ${price}")
-                    return price
+            # If the token is SOL, use the utility function
+            if token_address == sol_mint:
+                return get_sol_price_usd()
+            
+            # Get SOL price for calculations
+            sol_price = get_sol_price_usd()
+            if sol_price <= 0:
+                raise Exception("Could not get SOL price")
+            
+            # For other tokens, try to get a quote against SOL
+            try:
+                url = "https://quote-api.jup.ag/v6/quote"
+                token_params = {
+                    "inputMint": token_address,
+                    "outputMint": sol_mint,
+                    "amount": "1000000000",  # 1 token (assuming 9 decimals)
+                    "slippageBps": 50,
+                    "onlyDirectRoutes": False,
+                    "asLegacyTransaction": False
+                }
+                
+                token_response = requests.get(url, params=token_params, timeout=10)
+                if token_response.status_code == 200:
+                    token_data = token_response.json()
+                    if token_data.get("outAmount"):
+                        # Calculate token price: (SOL received / SOL price) / token amount
+                        sol_received = float(token_data["outAmount"]) / 1e9  # Convert from lamports
+                        token_price = (sol_received * sol_price) / 1.0  # Assuming 1 token
+                        print(f"✅ Token price from Jupiter quote: ${token_price}")
+                        return token_price
+            except Exception as e:
+                print(f"⚠️ Token quote calculation failed: {e}")
         except Exception as e:
-            print(f"⚠️ Jupiter price API error: {e}")
+            print(f"⚠️ Jupiter quote API error: {e}")
         
         # Fallback to CoinGecko for common tokens
         token_mapping = {
             "So11111111111111111111111111111111111111112": "solana",
-            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": "usd-coin"
+            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": "usd-coin",
+            "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB": "tether",
+            "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So": "msol",
+            "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263": "bonk",
+            "7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr": "pepe",
+            "EPeUFDgHRxs9xxEPVaL6kfGQvCon7jmAWKVUHuux1Tpz": "jito"
         }
         
         if token_address in token_mapping:
