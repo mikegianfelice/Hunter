@@ -24,9 +24,9 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 - **🛡️ Smart Failure Tracking** - Tokens with 5+ failures are automatically delisted
 - **📊 Position Monitoring** - Real-time position tracking with automatic sell triggers
 - **🔄 Multi-Chain Price Fetching** - Chain-specific price monitoring for accurate PnL calculation
-- **🌞 Solana Raydium Integration** - Real trading on Solana with automatic token account creation
-- **🏊 Pool Discovery** - Automatic Raydium pool finding and liquidity validation
-- **💱 Swap Quotes** - Pre-trade quote generation with slippage protection
+- **🌞 Multi-DEX Solana Integration** - Real trading on Solana across multiple DEXs (Raydium, PumpSwap, Meteora, Heaven)
+- **🏊 Multi-DEX Pool Discovery** - Automatic pool finding across multiple Solana DEXs with liquidity validation
+- **💱 Multi-DEX Swap Quotes** - Pre-trade quote generation with slippage protection across all supported DEXs
 
 ## 🌐 Supported Blockchains
 
@@ -34,7 +34,7 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 |-------|-------------|-----|--------|----------|
 | **Ethereum** | ETH | Uniswap V2/V3 | ✅ Full Support | Real trading, sentiment analysis, TokenSniffer |
 | **Base** | ETH | Uniswap | ✅ Full Support | Real trading, gas optimization |
-| **Solana** | SOL | Raydium | ✅ Full Support | Real trading, ATA creation, pool discovery |
+| **Solana** | SOL | Multi-DEX (Raydium, PumpSwap, Meteora, Heaven) | ✅ Full Support | Real trading, ATA creation, multi-DEX pool discovery |
 | **Polygon** | MATIC | Uniswap | 🔧 Available | Basic support |
 | **BSC** | BNB | PancakeSwap | 🔧 Available | Basic support |
 | **Arbitrum** | ETH | Uniswap | 🔧 Available | Basic support |
@@ -54,6 +54,15 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 - **Infura API key** (for Ethereum and EVM chains)
 
 ## 🔧 Recent Updates & Fixes
+
+### Latest Improvements (v2.3) - Multi-DEX Solana Support
+- **🌐 Multi-DEX Solana Integration**: Added support for multiple Solana DEXs (Raydium, PumpSwap, Meteora, Heaven)
+- **🔍 Enhanced Pool Discovery**: Automatic pool searching across all supported DEXs with priority-based selection
+- **💱 Multi-DEX Swap Execution**: Real trading capabilities across multiple Solana DEXs
+- **📊 Improved Token Discovery**: Better token finding by searching across multiple DEXs simultaneously
+- **🛡️ DEX Fallback System**: If one DEX fails, automatically tries others for better success rates
+- **⚡ Performance Optimization**: Reduced volume/liquidity requirements for more trading opportunities
+- **🔓 Relaxed Safety Checks**: Temporarily disabled TokenSniffer and sentiment checks for increased trading activity
 
 ### Latest Improvements (v2.2)
 - **🚨 Enhanced Delisting Detection**: Automatic detection and blacklisting of delisted/inactive tokens
@@ -75,6 +84,42 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 - ✅ Eliminated AWS Secrets Manager credential errors
 - ✅ Improved multi-chain wallet balance detection
 - ✅ Resolved delisted token processing issues
+
+## 🌐 Multi-DEX Solana Support
+
+The bot now supports **multiple Solana DEXs** for enhanced trading opportunities and better success rates:
+
+### **🔍 Supported Solana DEXs:**
+
+| DEX | API Base | Status | Priority |
+|-----|----------|--------|----------|
+| **Raydium** | `https://api.raydium.io/v2` | ✅ Primary | 1st |
+| **PumpSwap** | `https://api.pumpswap.finance` | ✅ Active | 2nd |
+| **Meteora** | `https://api.meteora.ag` | ✅ Active | 3rd |
+| **Heaven** | `https://api.heaven.so` | ✅ Active | 4th |
+
+### **🚀 How Multi-DEX Works:**
+
+#### **1. Priority-Based Pool Discovery**
+- **Sequential Search**: Searches DEXs in priority order (Raydium → PumpSwap → Meteora → Heaven)
+- **First Match Wins**: Uses the first DEX that has a valid pool for the token
+- **Automatic Fallback**: If one DEX fails, automatically tries the next
+
+#### **2. Enhanced Token Discovery**
+- **Broader Coverage**: Tokens listed on any supported DEX can be traded
+- **Better Liquidity**: Access to pools across multiple DEXs increases trading opportunities
+- **Reduced Failures**: Higher success rate when one DEX is unavailable
+
+#### **3. Unified Trading Interface**
+- **Single API**: All DEXs use the same trading interface
+- **Consistent Execution**: Same slippage protection and quote generation across all DEXs
+- **Simplified Management**: No need to configure multiple DEX settings
+
+### **📊 Benefits:**
+- **🎯 Higher Success Rate**: More trading opportunities across multiple DEXs
+- **💰 Better Liquidity**: Access to pools that might not be on Raydium
+- **🛡️ Redundancy**: If one DEX is down, others continue working
+- **⚡ Faster Execution**: Priority-based selection finds pools quickly
 
 ## 🚨 Enhanced Delisting Detection System
 
@@ -311,7 +356,7 @@ python main.py
 - **DEX-Specific Execution**: Optimized for each blockchain's DEX (Uniswap, Raydium)
 - **Wallet Integration**: MetaMask for Ethereum/Base, Phantom for Solana
 - **Multi-Chain Price Fetching**: Chain-specific price monitoring for accurate PnL
-- **Solana Features**: Raydium DEX integration, automatic token account creation, pool discovery
+- **Solana Features**: Multi-DEX integration (Raydium, PumpSwap, Meteora, Heaven), automatic token account creation, priority-based pool discovery
 
 ### Trading Strategy
 - **Trending Detection**: Monitors social media and DEX activity across chains

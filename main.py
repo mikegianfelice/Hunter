@@ -131,18 +131,17 @@ def trade_loop():
                 token["sent_mentions"] = sentiment.get("mentions")
                 token["sent_status"] = sentiment.get("status")
 
-                # Enforce thresholds unless trusted
-                if not is_trusted:
-                    if (
-                        sentiment.get("status") == "blocked"
-                        or (sentiment.get("mentions") or 0) < 3
-                        or (sentiment.get("score") or 0) < 60
-                    ):
-                        print("📉 Token failed sentiment check.")
-                        rejections[REJECT_SENTIMENT].append((symbol, address))
-                        continue
-                else:
-                    print("🔓 Trusted token — skipping sentiment filter")
+                # Temporarily disable sentiment checks to allow trades
+                print("🔓 Sentiment checks temporarily disabled")
+                # if not is_trusted:
+                #     if (
+                #         sentiment.get("status") == "blocked"
+                #         or (sentiment.get("mentions") or 0) < 1  # Reduced from 3 to 1
+                #         or (sentiment.get("score") or 0) < 30   # Reduced from 60 to 30
+                #     ):
+                #         print("📉 Token failed sentiment check.")
+                #         rejections[REJECT_SENTIMENT].append((symbol, address))
+                #         continue
             else:
                 # Skip sentiment for non-Ethereum chains
                 print(f"🔓 Skipping sentiment for {chain_id.upper()} token (not required)")

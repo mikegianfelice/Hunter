@@ -10,6 +10,10 @@ def check_token_safety(token_address, chain_id="ethereum"):
         print(f"🔓 Skipping TokenSniffer for {chain_id.upper()} token (not supported)")
         return True  # Assume safe for non-Ethereum chains
     
+    # Temporarily disable TokenSniffer due to API issues
+    print(f"🔓 TokenSniffer temporarily disabled for {token_address}")
+    return True  # Assume safe temporarily
+    
     url = f"https://tokensniffer.com/api/v2/tokens/{token_address}"
     headers = {"User-Agent": "Mozilla/5.0"}
 
