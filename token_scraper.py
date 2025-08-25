@@ -1,8 +1,11 @@
-# token_scraper.py
+# token_scraper_improved.py
 import csv
 import yaml
+import time
+import random
 from datetime import datetime
 from http_utils import get_json
+from collections import defaultdict
 
 # === Load config.yaml ===
 with open("config.yaml", "r") as file:
@@ -12,26 +15,34 @@ TELEGRAM_ENABLED = not config.get("test_mode", True)
 TELEGRAM_BOT_TOKEN = config.get("telegram_bot_token")
 TELEGRAM_CHAT_ID = config.get("telegram_chat_id")
 
-# === Filters for TRADING (logging ignores these) ===
-EXCLUDED_KEYWORDS = ["INU", "AI", "PEPE", "DOGE", "SHIBA"]
-ENFORCE_KEYWORDS = False  # set False to allow all names - temporarily disabled for testing
+# === Enhanced Filters for TRADING ===
+EXCLUDED_KEYWORDS = ["INU", "AI", "PEPE", "DOGE", "SHIBA", "MOON", "SAFE", "ELON"]
+ENFORCE_KEYWORDS = True  # Re-enable keyword filtering for better quality
 
-# Promotional content filters
+# Enhanced promotional content filters
 PROMOTIONAL_KEYWORDS = [
     "appstore", "playstore", "download", "available", "marketplace", "app", "quotes", 
     "motivation", "inspiration", "mindset", "growth", "success", "productivity",
     "trending", "viral", "explore", "positive", "selfimprovement", "nevergiveup",
-    "daily", "best", "for", "you", "creators", "memes", "defi", "tba"
+    "daily", "best", "for", "you", "creators", "memes", "defi", "tba", "launch",
+    "presale", "airdrop", "whitelist", "ico", "ido", "fairlaunch", "stealth"
 ]
 
+# Enhanced API sources for better diversity
 PRIMARY_URLS = [
     "https://api.dexscreener.com/latest/dex/search/?q=trending",
     "https://api.dexscreener.com/latest/dex/search/?q=hot",
     "https://api.dexscreener.com/latest/dex/search/?q=gaining",
-]
-FALLBACK_URLS = [
     "https://api.dexscreener.com/latest/dex/search/?q=volume",
     "https://api.dexscreener.com/latest/dex/search/?q=liquidity",
+    "https://api.dexscreener.com/latest/dex/search/?q=new",
+    "https://api.dexscreener.com/latest/dex/search/?q=rising",
+]
+
+FALLBACK_URLS = [
+    "https://api.dexscreener.com/latest/dex/search/?q=popular",
+    "https://api.dexscreener.com/latest/dex/search/?q=active",
+    "https://api.dexscreener.com/latest/dex/search/?q=top",
 ]
 
 CSV_PATH = "trending_tokens.csv"
@@ -52,7 +63,7 @@ def send_telegram_message(message):
         print("⚠️ Telegram error:", e)
 
 def is_promotional_content(symbol, description=""):
-    """Check if content is promotional/spam rather than a real token"""
+    """Enhanced check if content is promotional/spam rather than a real token"""
     if not symbol:
         return True
     
@@ -63,25 +74,29 @@ def is_promotional_content(symbol, description=""):
             return True
     
     # Check for very long symbols (likely promotional text)
-    if len(symbol) > 20:
+    if len(symbol) > 15:  # Reduced from 20 to 15
         return True
     
     # Check for symbols with too many spaces (likely sentences)
-    if symbol.count(' ') > 3:
+    if symbol.count(' ') > 2:  # Reduced from 3 to 2
         return True
     
-    # Check for symbols with hashtags
-    if '#' in symbol:
+    # Check for symbols with hashtags or special characters
+    if any(char in symbol for char in ['#', '@', 'http', 'www', '.com', '.io']):
         return True
     
     # Check for symbols that look like URLs or app descriptions
-    if any(word in symbol_lower for word in ['http', 'www', 'app', 'download', 'available']):
+    if any(word in symbol_lower for word in ['http', 'www', 'app', 'download', 'available', 'launch']):
+        return True
+    
+    # Check for symbols that are just numbers or very short
+    if len(symbol) < 2 or symbol.isdigit():
         return True
     
     return False
 
 def is_valid_token_data(symbol, address, volume24h, liquidity):
-    """Validate that we have real token data"""
+    """Enhanced validation that we have real token data"""
     if not symbol or not address:
         return False
     
@@ -93,7 +108,71 @@ def is_valid_token_data(symbol, address, volume24h, liquidity):
     if len(address) < 10:
         return False
     
+    # Enhanced minimum requirements
+    if volume24h < 100:  # Increased from 0 to 100
+        return False
+    
+    if liquidity < 500:  # Increased from 0 to 500
+        return False
+    
     return True
+
+def calculate_token_score(symbol, volume24h, liquidity, chain_id):
+    """Calculate a quality score for token filtering"""
+    score = 0
+    
+    # Volume scoring (0-3 points)
+    if volume24h >= 100000:
+        score += 3
+    elif volume24h >= 50000:
+        score += 2
+    elif volume24h >= 10000:
+        score += 1
+    
+    # Liquidity scoring (0-3 points)
+    if liquidity >= 100000:
+        score += 3
+    elif liquidity >= 50000:
+        score += 2
+    elif liquidity >= 10000:
+        score += 1
+    
+    # Symbol quality scoring (0-2 points)
+    symbol_lower = symbol.lower()
+    
+    # Penalize common spam symbols
+    spam_indicators = ['hot', 'moon', 'safe', 'elon', 'inu', 'doge', 'shiba', 'pepe']
+    if any(indicator in symbol_lower for indicator in spam_indicators):
+        score -= 1
+    
+    # Bonus for unique/interesting symbols
+    if len(symbol) >= 4 and len(symbol) <= 8:
+        score += 1
+    
+    # Chain-specific adjustments
+    if chain_id == "ethereum":
+        score += 1  # Bonus for Ethereum tokens
+    elif chain_id in ["solana", "base"]:
+        score += 0  # Neutral for other major chains
+    else:
+        score -= 1  # Penalty for less common chains
+    
+    return max(0, score)  # Ensure non-negative
+
+def ensure_symbol_diversity(tokens, max_same_symbol=3):
+    """Ensure we don't get too many tokens with the same symbol"""
+    symbol_counts = defaultdict(int)
+    diverse_tokens = []
+    
+    for token in tokens:
+        symbol = token.get("symbol", "").upper()
+        if symbol_counts[symbol] < max_same_symbol:
+            diverse_tokens.append(token)
+            symbol_counts[symbol] += 1
+        else:
+            print(f"🔄 Skipping duplicate symbol: {symbol} (already have {symbol_counts[symbol]})")
+    
+    return diverse_tokens
 
 def _append_all_to_csv(rows):
     write_header = False
@@ -114,18 +193,25 @@ def _append_all_to_csv(rows):
     except Exception as e:
         print("⚠️ Failed to append CSV:", e)
 
-def fetch_trending_tokens(limit=50):
+def fetch_trending_tokens(limit=100):
+    """Enhanced token discovery with better diversity and quality filtering"""
     headers = {"User-Agent": "Mozilla/5.0 (bot)"}
     all_pairs = []
 
-    # Try multiple primary sources and combine results
-    for u in PRIMARY_URLS:
+    # Try multiple primary sources with randomization
+    primary_urls = PRIMARY_URLS.copy()
+    random.shuffle(primary_urls)  # Randomize order to avoid bias
+    
+    for u in primary_urls:
         try:
             data = get_json(u, headers=headers, timeout=10, retries=3, backoff=0.7)
             if data and data.get("pairs"):
                 pairs = data.get("pairs", [])
                 all_pairs.extend(pairs)
                 print(f"✅ Fetched {len(pairs)} tokens from {u}")
+                
+                # Add small delay between requests
+                time.sleep(0.5)
         except Exception as e:
             print(f"⚠️ Primary fetch failed ({u}): {e}")
 
@@ -157,7 +243,7 @@ def fetch_trending_tokens(limit=50):
     
     print(f"🔍 Found {len(unique_pairs)} unique trending tokens from {len(all_pairs)} total...")
 
-    # 1) Log ALL chains to CSV (but filter out promotional content)
+    # Enhanced filtering and scoring
     fetched_at = datetime.utcnow().isoformat()
     all_rows = []
     valid_tokens_count = 0
@@ -171,12 +257,12 @@ def fetch_trending_tokens(limit=50):
         vol24 = float((pair.get("volume", {}) or {}).get("h24") or 0)
         liq = float((pair.get("liquidity", {}) or {}).get("usd") or 0)
         
-        # Skip promotional content
+        # Enhanced promotional content filtering
         if is_promotional_content(symbol):
             print(f"🚫 Skipping promotional content: {symbol[:50]}...")
             continue
             
-        # Skip invalid token data
+        # Enhanced token data validation
         if not is_valid_token_data(symbol, addr, vol24, liq):
             print(f"🚫 Skipping invalid token data: {symbol} (vol: ${vol24}, liq: ${liq})")
             continue
@@ -200,7 +286,7 @@ def fetch_trending_tokens(limit=50):
     else:
         print("ℹ️ No pairs found to log.")
 
-    # 2) Build FILTERED list for trading: Multi-chain support
+    # Enhanced trading token selection with scoring
     tokens_for_trading = []
     
     # Load supported chains from config
@@ -211,47 +297,59 @@ def fetch_trending_tokens(limit=50):
     except Exception:
         supported_chains = ["ethereum"]  # fallback
     
+    scored_tokens = []
+    
     for row in all_rows:
         chain = (row["chainId"] or "").lower()
         if chain not in supported_chains:
             print(f"⛔ Skipping unsupported chain: {chain}")
             continue
         
-        print(f"🔗 Processing {chain.upper()} token: {symbol}")
-
         symbol = (row["symbol"] or "").upper()
-        vol_points = 2 if row["volume24h"] > 25_000 else 1 if row["volume24h"] > 5_000 else 0
-        liq_points = 2 if row["liquidity"] > 15_000 else 1 if row["liquidity"] > 5_000 else 0
-
+        volume24h = row["volume24h"]
+        liquidity = row["liquidity"]
+        
+        # Calculate quality score
+        score = calculate_token_score(symbol, volume24h, liquidity, chain)
+        
+        # Keyword filtering
         blocked = any(k in symbol for k in EXCLUDED_KEYWORDS)
-        clean_points = 0 if blocked else 2
         if blocked and ENFORCE_KEYWORDS:
             print(f"⛔ {symbol} — blocked keyword.")
-
-        score = vol_points + liq_points + clean_points
-        print(f"🧪 {symbol or '?'} | Vol: ${row['volume24h']:,.0f} ({vol_points}) | "
-              f"LQ: ${row['liquidity']:,.0f} ({liq_points}) | "
-              f"Clean: ({clean_points}) → Score: {score}/6")
-
-        if score < 1:  # Reduced from 2 to 1 for more opportunities
             continue
-
-        tokens_for_trading.append({
-            "symbol": symbol or "?",
-            "address": row["address"],
-            "dex": row["dex"],
-            "chainId": row["chainId"],  # Add chainId to token object
-            "priceUsd": row["priceUsd"],
-            "volume24h": row["volume24h"],
-            "liquidity": row["liquidity"],
-        })
-
-        if len(tokens_for_trading) >= limit:
-            break
-
+        
+        print(f"🧪 {symbol} | Vol: ${volume24h:,.0f} | LQ: ${liquidity:,.0f} | Score: {score}/8 | Chain: {chain}")
+        
+        # Only include tokens with decent scores
+        if score >= 2:  # Increased minimum score for better quality
+            scored_tokens.append({
+                "symbol": symbol,
+                "address": row["address"],
+                "dex": row["dex"],
+                "chainId": row["chainId"],
+                "priceUsd": row["priceUsd"],
+                "volume24h": volume24h,
+                "liquidity": liquidity,
+                "score": score
+            })
+    
+    # Sort by score (highest first) and ensure diversity
+    scored_tokens.sort(key=lambda x: x["score"], reverse=True)
+    
+    # Ensure symbol diversity
+    diverse_tokens = ensure_symbol_diversity(scored_tokens, max_same_symbol=2)  # Reduced from 3 to 2
+    
+    # Take top tokens up to limit
+    tokens_for_trading = diverse_tokens[:limit]
+    
+    # Remove score from final output
+    for token in tokens_for_trading:
+        token.pop("score", None)
+    
+    print(f"🎯 Selected {len(tokens_for_trading)} high-quality, diverse tokens for trading")
+    
     if not tokens_for_trading:
-        print("⚠️ No tokens passed filtering. Will try alternative sources...")
-        # Don't inject WETH fallback - let the bot handle empty results gracefully
+        print("⚠️ No tokens passed enhanced filtering. Will try alternative sources...")
         return []
 
     return tokens_for_trading

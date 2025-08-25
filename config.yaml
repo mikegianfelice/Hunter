@@ -27,14 +27,14 @@ min_pair_reserve_weth: 5.0        # Require ≥ 5 WETH on the pool’s WETH side
 
 # === Strategy: Momentum-based Buy Logic ===
 min_momentum_pct: 0.003           # +0.3% change within TTL - Reduced for more opportunities
-min_volume_24h_for_buy: 500       # Min 24h volume (USD) - Further reduced for more opportunities
-min_liquidity_usd_for_buy: 500    # Min liquidity (USD) - Further reduced for more opportunities
+min_volume_24h_for_buy: 1000      # Min 24h volume (USD) - Increased for better quality
+min_liquidity_usd_for_buy: 1000   # Min liquidity (USD) - Increased for better quality
 min_price_usd: 0.0000001          # Ignore dust tokens
 enable_pre_buy_delisting_check: false  # Temporarily disabled due to API issues
 
 # Fast-path thresholds for first-seen tokens
-fastpath_min_volume_24h: 500      # Min 24h volume (USD) - Further reduced for more opportunities
-fastpath_min_liquidity_usd: 500   # Min liquidity (USD) - Further reduced for more opportunities
+fastpath_min_volume_24h: 2000     # Min 24h volume (USD) - Increased for better quality
+fastpath_min_liquidity_usd: 2000  # Min liquidity (USD) - Increased for better quality
 fastpath_min_sent_score: 30       # OR mentions >= 3 - Reduced for more opportunities
 
 # TP limits for dynamic TP logic

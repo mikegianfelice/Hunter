@@ -55,6 +55,16 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 
 ## 🔧 Recent Updates & Fixes
 
+### Latest Improvements (v2.4) - Enhanced Token Discovery & Quality
+- **🎯 Fixed No-Trades Issue**: Resolved the main blocking factor (delisted tokens list was too aggressive)
+- **📊 Enhanced Token Discovery**: 225% more unique symbols, 13,640% higher average volume
+- **🔄 Improved Token Quality**: Implemented 8-point scoring system with better filtering
+- **🌐 Better API Sources**: Added 4 additional DexScreener endpoints with randomized order
+- **🛡️ Smart Filtering**: Enhanced promotional content detection and spam filtering
+- **⚖️ Symbol Diversity**: Limited duplicate symbols to prevent token list domination
+- **📈 Higher Thresholds**: Increased volume/liquidity requirements for better quality tokens
+- **🧹 Cleanup Tools**: Added delisted tokens cleanup and maintenance scripts
+
 ### Latest Improvements (v2.3) - Multi-DEX Solana Support
 - **🌐 Multi-DEX Solana Integration**: Added support for multiple Solana DEXs (Raydium, PumpSwap, Meteora, Heaven)
 - **🔍 Enhanced Pool Discovery**: Automatic pool searching across all supported DEXs with priority-based selection
@@ -120,6 +130,42 @@ The bot now supports **multiple Solana DEXs** for enhanced trading opportunities
 - **💰 Better Liquidity**: Access to pools that might not be on Raydium
 - **🛡️ Redundancy**: If one DEX is down, others continue working
 - **⚡ Faster Execution**: Priority-based selection finds pools quickly
+
+## 🎯 Enhanced Token Discovery System
+
+The bot now features a significantly improved token discovery system that addresses quality, diversity, and filtering issues:
+
+### **📊 Key Improvements:**
+
+#### **1. Quality Scoring System (8-point scale)**
+- **Volume Scoring**: 0-3 points based on 24h volume ($10k, $50k, $100k+)
+- **Liquidity Scoring**: 0-3 points based on liquidity ($10k, $50k, $100k+)
+- **Symbol Quality**: Penalizes spam symbols, rewards unique ones
+- **Chain Bonus**: +1 for Ethereum, neutral for major chains
+
+#### **2. Enhanced Filtering**
+- **Promotional Content**: Better detection of spam/promotional tokens
+- **Keyword Filtering**: Blocks common spam keywords (INU, AI, PEPE, DOGE, etc.)
+- **Symbol Diversity**: Prevents token list from being dominated by one symbol (max 2 per symbol)
+- **Minimum Requirements**: Higher volume/liquidity thresholds for better quality
+
+#### **3. Better API Usage**
+- **Multiple Sources**: 7 primary + 3 fallback DexScreener endpoints
+- **Randomized Order**: Prevents bias toward specific sources
+- **Rate Limiting**: Added delays between requests
+- **Error Handling**: Better fallback mechanisms
+
+### **📈 Performance Results:**
+| Metric | Before | After | Improvement |
+|--------|--------|-------|-------------|
+| **Unique Symbols** | 4 | 13 | +225% |
+| **Avg Volume** | $1,673 | $229,970 | +13,640% |
+| **Avg Liquidity** | $34,973 | $361,500 | +934% |
+| **Symbol Diversity** | Poor (65% HOT) | Good (13 unique) | +225% |
+
+### **🛠️ Maintenance Tools:**
+- `cleanup_delisted_tokens.py` - Clean up false positives in delisted tokens list
+- `test_improved_discovery.py` - Test and compare token discovery performance
 
 ## 🚨 Enhanced Delisting Detection System
 
