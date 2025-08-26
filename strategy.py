@@ -130,9 +130,9 @@ def _check_token_delisted(token: dict) -> bool:
             current_price = get_token_price_usd(address)
             
             if current_price == 0 or current_price is None:
-                print(f"⚠️ Pre-buy check: {symbol} has zero price (may be inactive)")
-                # For Solana, be more lenient - zero price doesn't necessarily mean delisted
-                # Many new tokens might not be in Raydium API yet
+                print(f"ℹ️ Pre-buy check: {symbol} not found in price APIs (new token)")
+                # For Solana, be very lenient - new tokens often aren't indexed yet
+                # Only block if we have strong evidence it's delisted
                 return False  # Allow the trade to proceed
                 
             # Check if price is extremely low (potential delisting)
@@ -161,9 +161,10 @@ def _check_token_delisted(token: dict) -> bool:
             current_price = fetch_token_price_usd(address)
             
             if current_price == 0 or current_price is None:
-                print(f"🚨 Pre-buy check: {symbol} appears delisted (zero price)")
-                _add_to_delisted_tokens(address, symbol, "Zero price from API")
-                return True
+                print(f"ℹ️ Pre-buy check: {symbol} not found in price APIs (new token)")
+                # For Ethereum, be lenient - new tokens might not be indexed yet
+                # Only block if we have strong evidence it's delisted
+                return False  # Allow the trade to proceed
                 
             # Check if price is extremely low (potential delisting)
             if current_price < 0.0000001:
@@ -176,8 +177,8 @@ def _check_token_delisted(token: dict) -> bool:
             
         except Exception as e:
             print(f"⚠️ Pre-buy check failed for {symbol}: {e}")
-            # If we can't verify, be conservative and skip
-            return True
+            # If we can't verify, be conservative but allow the trade
+            return False
     
     # For other chains, skip the check for now
     print(f"ℹ️ Pre-buy check: Skipping for {chain_id} chain")

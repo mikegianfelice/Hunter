@@ -55,6 +55,14 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 
 ## 🔧 Recent Updates & Fixes
 
+### Latest Improvements (v2.7) - Pre-Buy Delisting Check Fix & Enhanced Token Discovery
+- **🔧 Fixed 10+ Hour No-Trades Issue**: Resolved critical bug where pre-buy delisting check was incorrectly blocking ALL new tokens
+- **🛡️ Improved Pre-Buy Delisting Logic**: Changed from blocking tokens with zero price to allowing new tokens that aren't indexed yet
+- **📊 Enhanced Token Discovery**: Bot now properly evaluates new tokens instead of treating them as delisted
+- **🔓 More Lenient New Token Handling**: New Solana/Ethereum tokens that aren't in price APIs are now allowed to trade
+- **⚡ Better Error Handling**: More graceful handling when price APIs fail or return zero prices
+- **📈 Increased Trading Opportunities**: Bot can now find and trade legitimate new tokens that were previously blocked
+
 ### Latest Improvements (v2.6) - Jupiter Price API Fix & Enhanced Reliability
 - **🔧 Fixed Jupiter Price API Error**: Resolved `[Errno 8] nodename nor servname provided, or not known` error
 - **📊 Enhanced Price Fetching**: Replaced deprecated `price.jup.ag` with reliable `quote-api.jup.ag` and CoinGecko
@@ -116,6 +124,7 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 - ✅ Resolved Telegram message spam with deduplication system
 - ✅ Fixed "token delisted investment lost" by re-enabling pre-buy checks
 - ✅ Optimized multi-chain support to only trade on chains with funds
+- ✅ **CRITICAL FIX**: Resolved 10+ hour no-trades issue caused by pre-buy delisting check incorrectly blocking new tokens
 
 ## 📱 Telegram Notifications & Deduplication
 
@@ -643,6 +652,13 @@ def _detect_delisted_token(token_address: str, consecutive_failures: int) -> boo
    - The bot now uses reliable `quote-api.jup.ag` and CoinGecko instead of deprecated `price.jup.ag`
    - If you see this error, update to the latest version
    - The bot automatically falls back to multiple price sources for reliability
+
+10. **"Bot running for 10+ hours with no trades"**
+    - **FIXED**: This critical issue has been resolved in v2.7
+    - The pre-buy delisting check was incorrectly blocking ALL new tokens
+    - New tokens that aren't indexed by price APIs are now allowed to trade
+    - Update to the latest version to fix this issue
+    - The bot now properly distinguishes between delisted tokens and new tokens
 
 ### Debug Mode
 Enable debug logging in `config.yaml`:
