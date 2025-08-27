@@ -130,65 +130,151 @@ def _check_token_delisted(token: dict) -> bool:
             if address.lower() in [t.lower() for t in delisted_tokens]:
                 print(f"🚨 Pre-buy check: {symbol} is already in delisted tokens list")
                 return True
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"⚠️ Error reading delisted tokens: {e}")
+        # Don't fail the check if we can't read the file
     
     # Check for Solana tokens (43-44 character addresses)
     if (len(address) in [43, 44]) and chain_id == "solana":
-        # For Solana tokens, trust DexScreener data more since Jupiter API is unreliable
-        # Only check if token is already in delisted list
-        try:
-            with open("delisted_tokens.json", "r") as f:
-                data = json.load(f) or {}
-                delisted_tokens = data.get("delisted_tokens", [])
-                if address.lower() in [t.lower() for t in delisted_tokens]:
-                    print(f"🚨 Pre-buy check: {symbol} is already in delisted tokens list")
-                    return True
-        except Exception:
-            pass
-        
-        # If token has good volume and liquidity from DexScreener, trust it
-        volume_24h = float(token.get("volume24h", 0))
-        liquidity = float(token.get("liquidity", 0))
-        
-        if volume_24h > 1000 and liquidity > 5000:  # Good volume and liquidity
-            print(f"✅ Pre-buy check: {symbol} has good volume (${volume_24h:.0f}) and liquidity (${liquidity:.0f}) - trusting DexScreener data")
-            return False
-        elif volume_24h > 100 and liquidity > 500:  # Moderate volume and liquidity
-            print(f"✅ Pre-buy check: {symbol} has moderate volume (${volume_24h:.0f}) and liquidity (${liquidity:.0f}) - trusting DexScreener data")
-            return False
-        else:
-            print(f"⚠️ Pre-buy check: {symbol} has low volume (${volume_24h:.0f}) and liquidity (${liquidity:.0f}) - skipping")
-            return True
+        return _check_solana_token_delisted(token)
     
     # For Ethereum tokens, try to get current price
     elif chain_id == "ethereum":
-        try:
-            from utils import fetch_token_price_usd
-            current_price = fetch_token_price_usd(address)
-            
-            if current_price == 0 or current_price is None:
-                print(f"🚨 Pre-buy check: {symbol} has zero price - likely delisted")
-                _add_to_delisted_tokens(address, symbol, "Zero price detected")
-                return True
-                
-            # Check if price is extremely low (potential delisting)
-            if current_price < 0.0000001:
-                print(f"🚨 Pre-buy check: {symbol} has suspiciously low price ${current_price}")
-                _add_to_delisted_tokens(address, symbol, f"Low price: ${current_price}")
-                return True
-                
-            print(f"✅ Pre-buy check: {symbol} price verified at ${current_price}")
-            return False
-            
-        except Exception as e:
-            print(f"⚠️ Pre-buy check failed for {symbol}: {e}")
-            # If we can't verify, be conservative and skip
-            return True
+        return _check_ethereum_token_delisted(token)
     
     # For other chains, skip the check
     print(f"ℹ️ Pre-buy check: Skipping for {chain_id} chain")
     return False
+
+def _check_solana_token_delisted(token: dict) -> bool:
+    """
+    Enhanced Solana token delisting check with better fallback logic.
+    More lenient when DexScreener shows good data.
+    """
+    address = token.get("address", "")
+    symbol = token.get("symbol", "")
+    volume_24h = float(token.get("volume24h", 0))
+    liquidity = float(token.get("liquidity", 0))
+    price_usd = float(token.get("priceUsd", 0))
+    
+    # If token has good volume and liquidity from DexScreener, trust it
+    # More lenient thresholds for Solana tokens
+    if volume_24h > 500 and liquidity > 1000:  # Reduced from 1000/5000
+        print(f"✅ Pre-buy check: {symbol} has good volume (${volume_24h:.0f}) and liquidity (${liquidity:.0f}) - trusting DexScreener data")
+        return False
+    elif volume_24h > 100 and liquidity > 500:  # Reduced from 100/500
+        print(f"✅ Pre-buy check: {symbol} has moderate volume (${volume_24h:.0f}) and liquidity (${liquidity:.0f}) - trusting DexScreener data")
+        return False
+    elif volume_24h > 50 and liquidity > 200:  # New very lenient threshold
+        print(f"✅ Pre-buy check: {symbol} has acceptable volume (${volume_24h:.0f}) and liquidity (${liquidity:.0f}) - trusting DexScreener data")
+        return False
+    
+    # If we have a valid price from DexScreener, trust it even with lower volume/liquidity
+    if price_usd > 0.0000001:  # Very low but non-zero price threshold
+        print(f"✅ Pre-buy check: {symbol} has valid price (${price_usd}) from DexScreener - trusting data")
+        return False
+    
+    # Only mark as delisted if we have very poor metrics
+    if volume_24h < 10 and liquidity < 50:
+        print(f"⚠️ Pre-buy check: {symbol} has very low volume (${volume_24h:.0f}) and liquidity (${liquidity:.0f}) - marking as delisted")
+        _add_to_delisted_tokens(address, symbol, f"Very low volume (${volume_24h:.0f}) and liquidity (${liquidity:.0f})")
+        return True
+    
+    # If we're unsure, be conservative but don't blacklist
+    print(f"⚠️ Pre-buy check: {symbol} has uncertain metrics - skipping but not blacklisting")
+    return True
+
+def _check_ethereum_token_delisted(token: dict) -> bool:
+    """
+    Enhanced Ethereum token delisting check with better error handling.
+    """
+    address = token.get("address", "")
+    symbol = token.get("symbol", "")
+    
+    # Try multiple price sources with fallbacks
+    current_price = _get_ethereum_token_price_with_fallbacks(address, symbol)
+    
+    if current_price is None:
+        # If we can't get price from any source, check if we have good DexScreener data
+        volume_24h = float(token.get("volume24h", 0))
+        liquidity = float(token.get("liquidity", 0))
+        price_usd = float(token.get("priceUsd", 0))
+        
+        # If DexScreener shows good data, trust it even if price APIs fail
+        if volume_24h > 1000 and liquidity > 5000 and price_usd > 0:
+            print(f"✅ Pre-buy check: {symbol} has good DexScreener data despite API failures - trusting DexScreener")
+            return False
+        elif volume_24h > 500 and liquidity > 2000 and price_usd > 0:
+            print(f"✅ Pre-buy check: {symbol} has moderate DexScreener data despite API failures - trusting DexScreener")
+            return False
+        
+        # If we can't verify and don't have good DexScreener data, skip but don't blacklist
+        print(f"⚠️ Pre-buy check: {symbol} price verification failed and no good DexScreener data - skipping but not blacklisting")
+        return True
+    
+    if current_price == 0:
+        print(f"🚨 Pre-buy check: {symbol} has zero price - likely delisted")
+        _add_to_delisted_tokens(address, symbol, "Zero price detected")
+        return True
+        
+    # Check if price is extremely low (potential delisting)
+    if current_price < 0.0000001:
+        print(f"🚨 Pre-buy check: {symbol} has suspiciously low price ${current_price}")
+        _add_to_delisted_tokens(address, symbol, f"Low price: ${current_price}")
+        return True
+        
+    print(f"✅ Pre-buy check: {symbol} price verified at ${current_price}")
+    return False
+
+def _get_ethereum_token_price_with_fallbacks(address: str, symbol: str) -> float:
+    """
+    Get Ethereum token price with multiple fallback mechanisms.
+    Returns None if all sources fail.
+    """
+    # Primary: Uniswap Graph API
+    try:
+        from utils import fetch_token_price_usd
+        price = fetch_token_price_usd(address)
+        if price and price > 0:
+            return price
+    except Exception as e:
+        print(f"⚠️ Primary price source failed for {symbol}: {e}")
+    
+    # Fallback 1: Try DexScreener API
+    try:
+        url = f"https://api.dexscreener.com/latest/dex/tokens/{address}"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            pairs = data.get("pairs", [])
+            if pairs:
+                # Get the first pair with USDC or USDT
+                for pair in pairs:
+                    quote_token = pair.get("quoteToken", {}).get("symbol", "").upper()
+                    if quote_token in ["USDC", "USDT"]:
+                        price = float(pair.get("priceUsd", 0))
+                        if price > 0:
+                            print(f"✅ {symbol} price from DexScreener fallback: ${price}")
+                            return price
+                # If no USDC/USDT pair, use any pair with price
+                for pair in pairs:
+                    price = float(pair.get("priceUsd", 0))
+                    if price > 0:
+                        print(f"✅ {symbol} price from DexScreener fallback (non-USDC): ${price}")
+                        return price
+    except Exception as e:
+        print(f"⚠️ DexScreener fallback failed for {symbol}: {e}")
+    
+    # Fallback 2: Try CoinGecko API (if we have the token ID)
+    try:
+        # This would require a mapping of addresses to CoinGecko IDs
+        # For now, we'll skip this fallback
+        pass
+    except Exception as e:
+        print(f"⚠️ CoinGecko fallback failed for {symbol}: {e}")
+    
+    print(f"⚠️ All price sources failed for {symbol}")
+    return None
 
 def check_buy_signal(token: dict) -> bool:
     address = (token.get("address") or "").lower()

@@ -1,5 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
+import time
+import random
 
 # Weighted bullish keywords
 BULLISH_KEYWORDS = {
@@ -34,46 +36,77 @@ def score_content(content):
             score += value
     return score, True
 
-def scrape_nitter(symbol):
-    query = f"https://nitter.net/search?f=tweets&q=%24{symbol}"
-    headers = {"User-Agent": "Mozilla/5.0"}
+def scrape_twitter_alternative(symbol):
+    """Try multiple Twitter alternatives for sentiment data"""
+    # Multiple Twitter alternatives to try
+    alternatives = [
+        "https://nitter.net",
+        "https://nitter.1d4.us", 
+        "https://nitter.kavin.rocks",
+        "https://nitter.unixfox.eu",
+        "https://nitter.privacydev.net"
+    ]
+    
+    query = f"/search?f=tweets&q=%24{symbol}"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     mentions = 0
     score = 0
-    try:
-        response = requests.get(query, headers=headers, timeout=10)
-        soup = BeautifulSoup(response.text, "html.parser")
-        tweets = soup.find_all("div", class_="timeline-item")
-        for tweet in tweets:
-            content = tweet.text
-            tweet_score, passed = score_content(content)
-            if passed:
-                score += tweet_score
-                mentions += 1
-            else:
-                return {"score": 0, "mentions": mentions, "source": "nitter", "status": "blocked by FUD"}
-        return {"score": score, "mentions": mentions, "source": "nitter", "status": "ok"}
-    except Exception as e:
-        print(f"❌ Twitter scrape failed for {symbol}: {e}")
-        return {"score": 0, "mentions": 0, "source": "nitter", "status": "error"}
+    
+    for base_url in alternatives:
+        try:
+            url = base_url + query
+            response = requests.get(url, headers=headers, timeout=8)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, "html.parser")
+                tweets = soup.find_all("div", class_="timeline-item")
+                
+                for tweet in tweets:
+                    content = tweet.text
+                    tweet_score, passed = score_content(content)
+                    if passed:
+                        score += tweet_score
+                        mentions += 1
+                    else:
+                        return {"score": 0, "mentions": mentions, "source": "twitter", "status": "blocked by FUD"}
+                
+                print(f"✅ Twitter sentiment from {base_url}")
+                return {"score": score, "mentions": mentions, "source": "twitter", "status": "ok"}
+                
+        except Exception as e:
+            print(f"⚠️ Twitter alternative {base_url} failed: {e}")
+            continue
+    
+    # If all Twitter alternatives fail, return default values
+    print(f"❌ All Twitter alternatives failed for {symbol}")
+    return {"score": 0, "mentions": 0, "source": "twitter", "status": "error"}
 
 def scrape_reddit(symbol):
+    """Scrape Reddit for sentiment data with better error handling"""
     query = f"https://www.reddit.com/search/?q={symbol}&sort=new"
-    headers = {"User-Agent": "Mozilla/5.0"}
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     mentions = 0
     score = 0
+    
     try:
         response = requests.get(query, headers=headers, timeout=10)
-        soup = BeautifulSoup(response.text, "html.parser")
-        posts = soup.find_all("div", attrs={"data-testid": "post-container"})
-        for post in posts:
-            content = post.text
-            post_score, passed = score_content(content)
-            if passed:
-                score += post_score
-                mentions += 1
-            else:
-                return {"score": 0, "mentions": mentions, "source": "reddit", "status": "blocked by FUD"}
-        return {"score": score, "mentions": mentions, "source": "reddit", "status": "ok"}
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, "html.parser")
+            posts = soup.find_all("div", attrs={"data-testid": "post-container"})
+            
+            for post in posts:
+                content = post.text
+                post_score, passed = score_content(content)
+                if passed:
+                    score += post_score
+                    mentions += 1
+                else:
+                    return {"score": 0, "mentions": mentions, "source": "reddit", "status": "blocked by FUD"}
+            
+            return {"score": score, "mentions": mentions, "source": "reddit", "status": "ok"}
+        else:
+            print(f"⚠️ Reddit returned status {response.status_code}")
+            return {"score": 0, "mentions": 0, "source": "reddit", "status": "error"}
+            
     except Exception as e:
         print(f"❌ Reddit scrape failed for {symbol}: {e}")
         return {"score": 0, "mentions": 0, "source": "reddit", "status": "error"}
@@ -85,7 +118,10 @@ def get_sentiment_score(token):
     else:
         symbol = str(token)
     
-    twitter = scrape_nitter(symbol)
+    # Add small delay to avoid rate limiting
+    time.sleep(random.uniform(0.5, 1.5))
+    
+    twitter = scrape_twitter_alternative(symbol)
     reddit = scrape_reddit(symbol)
 
     total_mentions = twitter["mentions"] + reddit["mentions"]
@@ -98,9 +134,8 @@ def get_sentiment_score(token):
         "symbol": symbol,
         "mentions": total_mentions,
         "score": normalized_score,
-        "source": "nitter+reddit",
-        "status": "ok" if "blocked" not in twitter["status"] and "blocked" not in reddit["status"] else "blocked"
+        "source": f"{twitter['source']}+{reddit['source']}",
+        "status": "ok" if twitter["status"] == "ok" and reddit["status"] == "ok" else "partial"
     }
-
-    print(f"🧠 Sentiment for ${symbol}: {sentiment}")
+    
     return sentiment

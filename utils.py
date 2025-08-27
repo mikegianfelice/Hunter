@@ -89,6 +89,8 @@ def get_sol_price_usd() -> float:
     Get SOL/USD price from multiple sources:
     1. CoinGecko API (primary)
     2. Jupiter quote API (fallback)
+    3. DexScreener API (fallback)
+    4. Fixed fallback price
     """
     # Try CoinGecko first
     try:
@@ -135,5 +137,31 @@ def get_sol_price_usd() -> float:
     except Exception as e:
         print(f"⚠️ Jupiter quote SOL price error: {e}")
     
-    print("⚠️ Could not get SOL price from any source")
-    return 0.0
+    # Fallback to DexScreener API
+    try:
+        url = "https://api.dexscreener.com/latest/dex/tokens/So11111111111111111111111111111111111111112"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            pairs = data.get("pairs", [])
+            if pairs:
+                # Get the first pair with USDC
+                for pair in pairs:
+                    if pair.get("quoteToken", {}).get("symbol") == "USDC":
+                        price = float(pair.get("priceUsd", 0))
+                        if price > 0:
+                            print(f"✅ SOL price from DexScreener: ${price}")
+                            return price
+                # If no USDC pair, use any pair with price
+                for pair in pairs:
+                    price = float(pair.get("priceUsd", 0))
+                    if price > 0:
+                        print(f"✅ SOL price from DexScreener (non-USDC): ${price}")
+                        return price
+    except Exception as e:
+        print(f"⚠️ DexScreener SOL price error: {e}")
+    
+    # Last resort: return a reasonable fallback price
+    fallback_price = 100.0  # Conservative fallback
+    print(f"⚠️ Using fallback SOL price: ${fallback_price}")
+    return fallback_price

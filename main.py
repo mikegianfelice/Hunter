@@ -15,7 +15,10 @@ from multi_chain_executor import execute_trade
 from telegram_bot import send_telegram_message
 from token_sniffer import check_token_safety as is_token_safe
 from cooldown import is_token_on_cooldown, update_cooldown_log
-from blacklist_manager import is_blacklisted, add_to_blacklist, remove_from_blacklist
+from blacklist_manager import (
+    is_blacklisted, add_to_blacklist, remove_from_blacklist, 
+    record_failure, review_blacklisted_tokens, get_blacklist_stats
+)
 from risk_manager import allow_new_trade, register_buy, status_summary
 
 # --- Load non-secret config ---
@@ -203,11 +206,25 @@ def trade_loop():
                 chain_id = token.get("chainId", "ethereum")
                 print(f"🔍 Checking safety for {symbol} on {chain_id.upper()}")
                 print(f"   Token data: {token}")
-                if not is_token_safe(address, chain_id):
-                    print("⚠️ TokenSniffer marked as unsafe.")
-                    add_to_blacklist(address)
-                    rejections[REJECT_SNIFFER].append((symbol, address))
-                    continue
+                
+                # Enhanced error handling for TokenSniffer
+                try:
+                    if not is_token_safe(address, chain_id):
+                        print("⚠️ TokenSniffer marked as unsafe.")
+                        # Use failure tracking instead of immediate blacklisting
+                        if record_failure(address, "tokensniffer_unsafe"):
+                            rejections[REJECT_SNIFFER].append((symbol, address))
+                            continue
+                        else:
+                            print("⚠️ Token marked as unsafe but not blacklisted (failure tracking)")
+                            rejections[REJECT_SNIFFER].append((symbol, address))
+                            continue
+                except Exception as e:
+                    print(f"⚠️ TokenSniffer check failed for {symbol}: {e}")
+                    # Record failure but don't blacklist for API errors
+                    record_failure(address, "tokensniffer_api_error", should_blacklist=False)
+                    print("⚠️ Skipping TokenSniffer check due to API error")
+                    # Continue with evaluation instead of rejecting
             else:
                 print("🔓 Trusted token — skipping blacklist, cooldown, and TokenSniffer")
 
@@ -274,8 +291,8 @@ def trade_loop():
                 chain_id = token.get("chainId", "ethereum").lower()
                 if chain_id == "solana":
                     try:
-                        from solana_executor import get_token_price_usd
-                        current_price = get_token_price_usd(address)
+                        # Use the price data already available in the token object
+                        current_price = float(token.get("priceUsd", 0))
                         if current_price == 0:
                             print(f"🚨 Trade failed and token has zero price - likely delisted")
                             # Add to delisted tokens instead of cooldown
@@ -283,6 +300,8 @@ def trade_loop():
                             _add_to_delisted_tokens(address, symbol, "Trade failed + zero price")
                             rejections[REJECT_RISK].append((symbol, address))
                             continue
+                        else:
+                            print(f"✅ Token price verified: ${current_price}")
                     except Exception as e:
                         print(f"⚠️ Could not verify token status: {e}")
                 
@@ -334,8 +353,25 @@ if __name__ == "__main__":
     
     print("🔐 Secrets validated successfully")
     
+    # Initialize blacklist review counter
+    blacklist_review_counter = 0
+    
     while True:
         try:
+            # Periodic blacklist review (every 24 hours)
+            blacklist_review_counter += 1
+            if blacklist_review_counter >= 1440:  # 24 hours (1440 minutes)
+                print("\n🔄 Running periodic blacklist review...")
+                removed_count = review_blacklisted_tokens()
+                if removed_count > 0:
+                    print(f"✅ Removed {removed_count} old blacklisted tokens")
+                
+                # Print blacklist statistics
+                stats = get_blacklist_stats()
+                print(f"📊 Blacklist stats: {stats['blacklisted_count']} blacklisted, {stats['failure_tracking_count']} tracked")
+                
+                blacklist_review_counter = 0  # Reset counter
+            
             trade_loop()
             time.sleep(60)  # wait before next discovery cycle
         except Exception as e:

@@ -54,33 +54,50 @@ class SimpleSolanaExecutor:
             # Get SOL price for calculations
             sol_price = get_sol_price_usd()
             if sol_price <= 0:
-                raise Exception("Could not get SOL price")
-            
-            # For other tokens, try to get a quote against SOL
-            try:
-                url = "https://quote-api.jup.ag/v6/quote"
-                token_params = {
-                    "inputMint": token_address,
-                    "outputMint": sol_mint,
-                    "amount": "1000000000",  # 1 token (assuming 9 decimals)
-                    "slippageBps": 50,
-                    "onlyDirectRoutes": "false",
-                    "asLegacyTransaction": "false"
-                }
-                
-                token_response = requests.get(url, params=token_params, timeout=10)
-                if token_response.status_code == 200:
-                    token_data = token_response.json()
-                    if token_data.get("outAmount"):
-                        # Calculate token price: (SOL received / SOL price) / token amount
-                        sol_received = float(token_data["outAmount"]) / 1e9  # Convert from lamports
-                        token_price = (sol_received * sol_price) / 1.0  # Assuming 1 token
-                        print(f"✅ Token price from Jupiter quote: ${token_price}")
-                        return token_price
-            except Exception as e:
-                print(f"⚠️ Token quote calculation failed: {e}")
+                print("⚠️ Could not get SOL price, trying alternative methods...")
+            else:
+                # For other tokens, try to get a quote against SOL
+                try:
+                    url = "https://quote-api.jup.ag/v6/quote"
+                    token_params = {
+                        "inputMint": token_address,
+                        "outputMint": sol_mint,
+                        "amount": "1000000000",  # 1 token (assuming 9 decimals)
+                        "slippageBps": 50,
+                        "onlyDirectRoutes": "false",
+                        "asLegacyTransaction": "false"
+                    }
+                    
+                    token_response = requests.get(url, params=token_params, timeout=10)
+                    if token_response.status_code == 200:
+                        token_data = token_response.json()
+                        if token_data.get("outAmount"):
+                            # Calculate token price: (SOL received / SOL price) / token amount
+                            sol_received = float(token_data["outAmount"]) / 1e9  # Convert from lamports
+                            token_price = (sol_received * sol_price) / 1.0  # Assuming 1 token
+                            print(f"✅ Token price from Jupiter quote: ${token_price}")
+                            return token_price
+                except Exception as e:
+                    print(f"⚠️ Token quote calculation failed: {e}")
         except Exception as e:
             print(f"⚠️ Jupiter quote API error: {e}")
+        
+        # Try DexScreener API for token price
+        try:
+            url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                pairs = data.get("pairs", [])
+                if pairs:
+                    # Get the first pair with a valid price
+                    for pair in pairs:
+                        price = float(pair.get("priceUsd", 0))
+                        if price > 0:
+                            print(f"✅ Token price from DexScreener: ${price}")
+                            return price
+        except Exception as e:
+            print(f"⚠️ DexScreener price API error: {e}")
         
         # Fallback to CoinGecko for common tokens
         token_mapping = {

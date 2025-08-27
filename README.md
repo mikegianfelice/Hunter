@@ -51,6 +51,16 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 
 ## 🔧 Recent Updates & Fixes
 
+### Latest Improvements (v3.0) - Enhanced Price Verification & Smart Blacklist Management
+- **🔧 Fixed JSON Corruption**: Resolved corrupted `delisted_tokens.json` file that was causing parsing errors
+- **🎯 Enhanced Solana Token Verification**: More lenient thresholds for Solana tokens when DexScreener shows good data
+- **🛡️ Smart Blacklist Management**: Implemented failure tracking system to avoid blacklisting tokens for temporary API failures
+- **📊 Better Error Handling**: Multiple fallback mechanisms when price APIs fail instead of rejecting tokens
+- **🔄 Automatic Blacklist Review**: Periodic cleanup of old blacklisted tokens (every 7 days)
+- **✅ Fixed TOPLESS & PUMP Issues**: Resolved specific problems where legitimate tokens were incorrectly rejected
+- **📈 Improved Token Evaluation**: Trust DexScreener data when APIs fail but metrics are good
+- **⚡ Enhanced Resilience**: System continues working when external APIs are down
+
 ### Latest Improvements (v2.9) - SOL Price API Fix & Trading Strategy Optimization
 - **🔧 Fixed SOL Price API Issues**: Resolved CoinGecko rate limiting and Jupiter API parameter errors
 - **🎯 Optimized Solana Token Evaluation**: Modified strategy to trust DexScreener data for Solana tokens with good volume/liquidity
