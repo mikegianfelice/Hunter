@@ -2,6 +2,9 @@ import time
 import yaml
 from collections import defaultdict
 from secrets import WALLET_ADDRESS, validate_secrets  # loaded from secure backend via secrets.py
+import os
+import json
+from datetime import datetime
 
 from clear_state import ensure_mode_transition_clean
 
@@ -56,8 +59,96 @@ REJECT_BUY_SIGNAL  = "no_buy_signal"
 REJECT_RISK        = "risk_blocked"
 REJECT_MISSINGADDR = "missing_address"
 
+# Smart blacklist maintenance
+ENABLE_SMART_BLACKLIST_CLEANUP = bool(config.get("enable_smart_blacklist_cleanup", True))
+BLACKLIST_CLEANUP_INTERVAL = int(config.get("blacklist_cleanup_interval", 6))
+BLACKLIST_KEEP_FAILURE_THRESHOLD = int(config.get("blacklist_keep_failure_threshold", 3))
+blacklist_cleanup_counter = 0
+
+def smart_blacklist_maintenance():
+    """Automatically clean blacklist to maintain trading opportunities"""
+    global blacklist_cleanup_counter
+    
+    if not ENABLE_SMART_BLACKLIST_CLEANUP:
+        return
+        
+    blacklist_cleanup_counter += 1
+    
+    if blacklist_cleanup_counter < BLACKLIST_CLEANUP_INTERVAL:
+        return
+    
+    blacklist_cleanup_counter = 0  # Reset counter
+    
+    print("\n🧹 Running smart blacklist maintenance...")
+    
+    try:
+        # Load current blacklist data
+        if not os.path.exists("delisted_tokens.json"):
+            return
+        
+        with open("delisted_tokens.json", "r") as f:
+            data = json.load(f)
+        
+        delisted_tokens = data.get("delisted_tokens", [])
+        failure_counts = data.get("failure_counts", {})
+        
+        if not delisted_tokens:
+            print("✅ Blacklist is already clean")
+            return
+        
+        # Identify high-risk tokens to keep
+        high_risk_tokens = set()
+        
+        # Keep tokens with N+ failures (configurable threshold)
+        for token, count in failure_counts.items():
+            if count >= BLACKLIST_KEEP_FAILURE_THRESHOLD:
+                high_risk_tokens.add(token.lower())
+        
+        # Keep tokens that caused 100% losses (from trade log)
+        if os.path.exists("trade_log.csv"):
+            import csv
+            with open("trade_log.csv", "r") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if float(row.get("pnl_pct", 0)) <= -99.9:  # 100% loss
+                        high_risk_tokens.add(row.get("token", "").lower())
+        
+        # Calculate safe tokens to remove
+        safe_to_remove = []
+        for token in delisted_tokens:
+            if token.lower() not in high_risk_tokens:
+                safe_to_remove.append(token)
+        
+        if not safe_to_remove:
+            print("⚠️ No safe tokens to remove - all are high-risk")
+            return
+        
+        # Remove safe tokens (keep high-risk ones)
+        original_count = len(delisted_tokens)
+        delisted_tokens = [t for t in delisted_tokens if t not in safe_to_remove]
+        
+        # Update data
+        data["delisted_tokens"] = delisted_tokens
+        data["removed_count"] = original_count - len(delisted_tokens)
+        data["remaining_count"] = len(delisted_tokens)
+        data["quick_cleaned_at"] = datetime.now().isoformat()
+        
+        # Save updated data
+        with open("delisted_tokens.json", "w") as f:
+            json.dump(data, f, indent=2)
+        
+        print(f"✅ Smart cleanup: removed {len(safe_to_remove)} safer tokens")
+        print(f"📊 Kept {len(high_risk_tokens)} high-risk tokens")
+        print(f"📊 Remaining blacklist: {len(delisted_tokens)} tokens")
+        
+    except Exception as e:
+        print(f"⚠️ Blacklist maintenance failed: {e}")
+
 def trade_loop():
     print("🔁 Starting trade loop...")
+
+    # Smart blacklist maintenance (runs every 6 loops)
+    smart_blacklist_maintenance()
 
     # Housekeeping: prune stale price memory each loop
     removed = prune_price_memory()

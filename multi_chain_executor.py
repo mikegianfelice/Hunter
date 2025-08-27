@@ -156,36 +156,19 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
         # Get chain configuration
         chain_config = get_chain_config(chain_id)
         
-        # Check if we're in test mode
-        if TEST_MODE:
-            # Simulate trade for all chains in test mode
-            print(f"🔄 Simulating trade on {chain_id.upper()} for {symbol} (test mode)")
-            print(f"   Amount: ${amount_usd}")
-            print(f"   DEX: {chain_config['dex']}")
-            print(f"   Native token: {chain_config['native_token']}")
-            
-            # Simulate successful trade
-            tx_hash = f"simulated_tx_{int(time.time())}_{chain_id}"
-            ok = True
+        # Real trading mode (test_mode is false in config)
+        if chain_id == "ethereum":
+            # Use existing uniswap executor for Ethereum (MetaMask)
+            from uniswap_executor import buy_token
+            tx_hash, ok = buy_token(token_address, amount_usd, symbol)
+        elif chain_id == "solana":
+            # Use real Solana executor (Phantom)
+            from solana_executor import buy_token_solana
+            tx_hash, ok = buy_token_solana(token_address, amount_usd, symbol, test_mode=False)
         else:
-            # Real trading mode
-            if chain_id == "ethereum":
-                # Use existing uniswap executor for Ethereum
-                from uniswap_executor import buy_token
-                tx_hash, ok = buy_token(token_address, amount_usd, symbol)
-            elif chain_id == "base":
-                # Use uniswap executor for Base (same as Ethereum)
-                from uniswap_executor import buy_token
-                tx_hash, ok = buy_token(token_address, amount_usd, symbol)
-            elif chain_id == "solana":
-                # Use real Solana executor
-                from solana_executor import buy_token_solana
-                tx_hash, ok = buy_token_solana(token_address, amount_usd, symbol, test_mode=TEST_MODE)
-            else:
-                # For other chains, simulate for now
-                print(f"⚠️ Real trading on {chain_id.upper()} not implemented yet - simulating")
-                tx_hash = f"simulated_tx_{int(time.time())}_{chain_id}"
-                ok = True
+            # For unsupported chains, skip
+            print(f"❌ Chain {chain_id.upper()} not supported - only Ethereum and Solana enabled")
+            return None, False
             
         if not ok:
             print(f"❌ Trade failed for {symbol} on {chain_id}")

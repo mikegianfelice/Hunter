@@ -122,6 +122,17 @@ def _check_token_delisted(token: dict) -> bool:
     if not address:
         return True  # No address = likely invalid
     
+    # Check if token is already in our delisted tokens list
+    try:
+        with open("delisted_tokens.json", "r") as f:
+            data = json.load(f) or {}
+            delisted_tokens = data.get("delisted_tokens", [])
+            if address.lower() in [t.lower() for t in delisted_tokens]:
+                print(f"🚨 Pre-buy check: {symbol} is already in delisted tokens list")
+                return True
+    except Exception:
+        pass
+    
     # Check for Solana tokens (43-44 character addresses)
     if (len(address) in [43, 44]) and chain_id == "solana":
         try:
@@ -130,10 +141,9 @@ def _check_token_delisted(token: dict) -> bool:
             current_price = get_token_price_usd(address)
             
             if current_price == 0 or current_price is None:
-                print(f"ℹ️ Pre-buy check: {symbol} not found in price APIs (new token)")
-                # For Solana, be very lenient - new tokens often aren't indexed yet
-                # Only block if we have strong evidence it's delisted
-                return False  # Allow the trade to proceed
+                print(f"🚨 Pre-buy check: {symbol} has zero price - likely delisted")
+                _add_to_delisted_tokens(address, symbol, "Zero price detected")
+                return True
                 
             # Check if price is extremely low (potential delisting)
             if current_price < 0.0000001:
@@ -151,20 +161,19 @@ def _check_token_delisted(token: dict) -> bool:
             return True
         except Exception as e:
             print(f"⚠️ Pre-buy check failed for {symbol}: {e}")
-            # If we can't verify, be conservative but allow the trade
-            return False
+            # If we can't verify, be conservative and skip
+            return True
     
     # For Ethereum tokens, try to get current price
-    elif chain_id in ["ethereum", "base"]:
+    elif chain_id == "ethereum":
         try:
             from utils import fetch_token_price_usd
             current_price = fetch_token_price_usd(address)
             
             if current_price == 0 or current_price is None:
-                print(f"ℹ️ Pre-buy check: {symbol} not found in price APIs (new token)")
-                # For Ethereum, be lenient - new tokens might not be indexed yet
-                # Only block if we have strong evidence it's delisted
-                return False  # Allow the trade to proceed
+                print(f"🚨 Pre-buy check: {symbol} has zero price - likely delisted")
+                _add_to_delisted_tokens(address, symbol, "Zero price detected")
+                return True
                 
             # Check if price is extremely low (potential delisting)
             if current_price < 0.0000001:
@@ -177,10 +186,10 @@ def _check_token_delisted(token: dict) -> bool:
             
         except Exception as e:
             print(f"⚠️ Pre-buy check failed for {symbol}: {e}")
-            # If we can't verify, be conservative but allow the trade
-            return False
+            # If we can't verify, be conservative and skip
+            return True
     
-    # For other chains, skip the check for now
+    # For other chains, skip the check
     print(f"ℹ️ Pre-buy check: Skipping for {chain_id} chain")
     return False
 

@@ -1,6 +1,6 @@
 # 🚀 Crypto Trading Bot 100X
 
-A sophisticated automated cryptocurrency trading bot designed for high-frequency trading across **multiple blockchain networks**. This bot uses advanced strategies including sentiment analysis, trend detection, and risk management to identify and execute profitable trades on Ethereum, Solana, Base, Polygon, BSC, Arbitrum, Optimism, and PulseChain.
+A sophisticated automated cryptocurrency trading bot designed for high-frequency trading on **Ethereum and Solana**. This bot uses advanced strategies including sentiment analysis, trend detection, and risk management to identify and execute profitable trades with real-time monitoring and smart blacklist management.
 
 ## ⚠️ **IMPORTANT DISCLAIMER**
 
@@ -8,8 +8,8 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 
 ## 🎯 Features
 
-- **🌐 Multi-Chain Trading** - Trade on 8+ blockchain networks (Ethereum, Solana, Base, Polygon, BSC, Arbitrum, Optimism, PulseChain)
-- **🔄 Real-time Token Scanning** - Monitors trending tokens across multiple platforms and chains
+- **🌐 Dual-Chain Trading** - Real trading on Ethereum (MetaMask) and Solana (Phantom)
+- **🔄 Real-time Token Scanning** - Monitors trending tokens across multiple platforms
 - **📊 Sentiment Analysis** - Analyzes social media sentiment from Reddit and Nitter (Ethereum-focused)
 - **⚡ High-Speed Execution** - Optimized for quick entry and exit strategies
 - **🛡️ Advanced Risk Management** - Built-in position sizing, stop-loss mechanisms, and duplicate token prevention
@@ -21,7 +21,7 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 - **🔍 Token Safety Checks** - TokenSniffer integration for Ethereum tokens
 - **🚫 Promotional Content Filtering** - Automatically filters out spam and promotional tokens
 - **🚨 Enhanced Delisting Detection** - Automatic detection and blacklisting of delisted/inactive tokens
-- **🛡️ Smart Failure Tracking** - Tokens with 5+ failures are automatically delisted
+- **🛡️ Smart Blacklist Management** - Automatic cleanup of blacklist every 6 hours to maintain trading opportunities
 - **📊 Position Monitoring** - Real-time position tracking with automatic sell triggers
 - **🔄 Multi-Chain Price Fetching** - Chain-specific price monitoring for accurate PnL calculation
 - **🌞 Multi-DEX Solana Integration** - Real trading on Solana across multiple DEXs (Raydium, PumpSwap, Meteora, Heaven)
@@ -33,13 +33,9 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 | Chain | Native Token | DEX | Status | Features |
 |-------|-------------|-----|--------|----------|
 | **Ethereum** | ETH | Uniswap V2/V3 | ✅ Full Support | Real trading, sentiment analysis, TokenSniffer |
-| **Base** | ETH | Uniswap | ✅ Full Support | Real trading, gas optimization |
 | **Solana** | SOL | Multi-DEX (Raydium, PumpSwap, Meteora, Heaven) | ✅ Full Support | Real trading, ATA creation, multi-DEX pool discovery |
-| **Polygon** | MATIC | Uniswap | 🔧 Available | Basic support |
-| **BSC** | BNB | PancakeSwap | 🔧 Available | Basic support |
-| **Arbitrum** | ETH | Uniswap | 🔧 Available | Basic support |
-| **Optimism** | ETH | Uniswap | 🔧 Available | Basic support |
-| **PulseChain** | PLS | PulseX | 🔧 Available | Basic support |
+
+*Note: Other chains (Base, Polygon, BSC, Arbitrum, Optimism, PulseChain) are disabled by default to focus on chains where you have active wallets.*
 
 ## 📋 Prerequisites
 
@@ -47,21 +43,22 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 - **Web3.py** for blockchain interactions
 - **Solana SDK** for Solana blockchain interactions
 - **Cryptocurrency wallets** with native tokens for gas fees:
-  - **MetaMask** for Ethereum and Base
+  - **MetaMask** for Ethereum
   - **Phantom** for Solana
 - **Private keys** for wallet signing
 - **Telegram Bot Token** (optional, for notifications)
-- **Infura API key** (for Ethereum and EVM chains)
+- **Infura API key** (for Ethereum)
 
 ## 🔧 Recent Updates & Fixes
 
-### Latest Improvements (v2.7) - Pre-Buy Delisting Check Fix & Enhanced Token Discovery
-- **🔧 Fixed 10+ Hour No-Trades Issue**: Resolved critical bug where pre-buy delisting check was incorrectly blocking ALL new tokens
-- **🛡️ Improved Pre-Buy Delisting Logic**: Changed from blocking tokens with zero price to allowing new tokens that aren't indexed yet
-- **📊 Enhanced Token Discovery**: Bot now properly evaluates new tokens instead of treating them as delisted
-- **🔓 More Lenient New Token Handling**: New Solana/Ethereum tokens that aren't in price APIs are now allowed to trade
-- **⚡ Better Error Handling**: More graceful handling when price APIs fail or return zero prices
-- **📈 Increased Trading Opportunities**: Bot can now find and trade legitimate new tokens that were previously blocked
+### Latest Improvements (v2.8) - Smart Blacklist Management & Dual-Chain Focus
+- **🧹 Smart Blacklist Auto-Cleanup**: Automatic blacklist maintenance every 6 hours to maintain trading opportunities
+- **🎯 Dual-Chain Focus**: Simplified to Ethereum (MetaMask) and Solana (Phantom) only for better reliability
+- **🛡️ Enhanced Pre-Buy Delisting**: Improved detection of delisted tokens before trading to prevent losses
+- **✅ Real Trading Confirmed**: Bot now executes real transactions (no more simulated trades)
+- **📱 Clean Telegram Messages**: Real transaction hashes sent to Telegram instead of simulated ones
+- **🔧 Simplified Configuration**: Removed support for chains without active wallets to reduce complexity
+- **⚡ Better Performance**: Focused on two chains for faster execution and better reliability
 
 ### Latest Improvements (v2.6) - Jupiter Price API Fix & Enhanced Reliability
 - **🔧 Fixed Jupiter Price API Error**: Resolved `[Errno 8] nodename nor servname provided, or not known` error
@@ -417,13 +414,15 @@ enforce_keywords: false       # Enable/disable keyword filtering
 trusted_tokens: []            # List of trusted token addresses
 ```
 
-### 4. Test Mode (Recommended First Step)
-Before running with real money, test the bot in simulation mode:
+### 4. Test Mode (Optional)
+The bot is configured for real trading by default. If you want to test in simulation mode first:
 
 ```yaml
 # In config.yaml
 test_mode: true               # Set to true for simulation only
 ```
+
+**Note**: The bot now executes real trades by default. Make sure you have sufficient funds in your MetaMask (Ethereum) and Phantom (Solana) wallets before running.
 
 ### 5. Test Solana Implementation (Optional)
 Test the Solana trading implementation:
@@ -448,15 +447,16 @@ python main.py
 
 ## 📊 Configuration Options
 
-### Multi-Chain Strategy
-- **Three-Network Support**: Ethereum, Base, and Solana trading with full implementation
+### Dual-Chain Strategy
+- **Two-Network Support**: Ethereum and Solana trading with full implementation
 - **Chain-Specific Requirements**: Different volume/liquidity thresholds per chain
-- **Sentiment Analysis**: Ethereum-focused (skipped for other chains)
+- **Sentiment Analysis**: Ethereum-focused (skipped for Solana)
 - **TokenSniffer Integration**: Ethereum token safety checks
 - **DEX-Specific Execution**: Optimized for each blockchain's DEX (Uniswap, Raydium)
-- **Wallet Integration**: MetaMask for Ethereum/Base, Phantom for Solana
+- **Wallet Integration**: MetaMask for Ethereum, Phantom for Solana
 - **Multi-Chain Price Fetching**: Chain-specific price monitoring for accurate PnL
 - **Solana Features**: Multi-DEX integration (Raydium, PumpSwap, Meteora, Heaven), automatic token account creation, priority-based pool discovery
+- **Smart Blacklist Management**: Automatic cleanup every 6 hours to maintain trading opportunities
 
 ### Trading Strategy
 - **Trending Detection**: Monitors social media and DEX activity across chains
@@ -479,6 +479,7 @@ python main.py
 - **Cross-Chain Safety**: Prevents trading on unsupported networks
 - **Delisting Detection**: Automatically detects and handles delisted tokens
 - **Pre-Buy Delisting Check**: Prevents buying tokens that are already delisted or inactive
+- **Smart Blacklist Management**: Automatic cleanup of blacklist every 6 hours to maintain trading opportunities while keeping high-risk tokens blocked
 
 ### Position Monitoring
 - **Real-time Monitoring**: Continuous position tracking every 30 seconds
@@ -517,11 +518,12 @@ The bot can send real-time notifications via Telegram:
    ```
 
 ### Telegram Notifications Include:
-- **Trade Executions**: Buy/sell confirmations with transaction hashes
+- **Trade Executions**: Buy/sell confirmations with real transaction hashes
 - **Position Updates**: Take profit, stop loss, and trailing stop triggers
 - **Delisting Alerts**: Notifications when tokens are delisted with loss amounts
 - **Error Alerts**: Important errors and warnings
 - **Daily Summaries**: Performance updates and statistics
+- **Blacklist Maintenance**: Notifications when smart cleanup removes safer tokens
 
 ## 📈 Monitoring and Analytics
 
@@ -531,6 +533,23 @@ Open `trading_bot_dashboard.html` in your browser to view:
 - Position tracking across chains
 - Profit/loss analysis
 - Trading history
+
+### Smart Blacklist Management
+The bot automatically maintains its blacklist to ensure trading opportunities:
+
+- **Automatic Cleanup**: Runs every 6 loops (6 hours) to remove safer tokens
+- **Risk-Based Filtering**: Keeps high-risk tokens (3+ failures, 100% losses) blocked
+- **Trading Opportunity Maintenance**: Removes tokens with low failure counts to allow new trades
+- **Transparent Logging**: Shows exactly which tokens are removed and why
+- **Configurable**: Adjust cleanup frequency and failure thresholds in config.yaml
+
+**Configuration Options:**
+```yaml
+# Smart Blacklist Maintenance
+enable_smart_blacklist_cleanup: true    # Auto-clean blacklist every 6 loops
+blacklist_cleanup_interval: 6           # Clean every N loops (6 = every 6 hours)
+blacklist_keep_failure_threshold: 3     # Keep tokens with N+ failures
+```
 
 ### Logs
 The bot creates detailed logs in:

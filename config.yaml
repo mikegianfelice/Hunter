@@ -26,16 +26,16 @@ max_size_price_impact_pct: 0.20   # Abort if size would move price >20% (approx:
 min_pair_reserve_weth: 5.0        # Require ≥ 5 WETH on the pool’s WETH side
 
 # === Strategy: Momentum-based Buy Logic ===
-min_momentum_pct: 0.001           # +0.1% change within TTL - Further reduced for more opportunities
-min_volume_24h_for_buy: 100       # Min 24h volume (USD) - Further reduced for more opportunities
-min_liquidity_usd_for_buy: 100    # Min liquidity (USD) - Further reduced for more opportunities
+min_momentum_pct: 0.0005          # +0.05% change within TTL - Even more reduced for more opportunities
+min_volume_24h_for_buy: 50        # Min 24h volume (USD) - Even more reduced for more opportunities
+min_liquidity_usd_for_buy: 50     # Min liquidity (USD) - Even more reduced for more opportunities
 min_price_usd: 0.0000001          # Ignore dust tokens
 enable_pre_buy_delisting_check: true   # Re-enabled to prevent buying delisted tokens
 
 # Fast-path thresholds for first-seen tokens
-fastpath_min_volume_24h: 500      # Min 24h volume (USD) - Further reduced for more opportunities
-fastpath_min_liquidity_usd: 500   # Min liquidity (USD) - Further reduced for more opportunities
-fastpath_min_sent_score: 20       # OR mentions >= 2 - Further reduced for more opportunities
+fastpath_min_volume_24h: 200      # Min 24h volume (USD) - Even more reduced for more opportunities
+fastpath_min_liquidity_usd: 200   # Min liquidity (USD) - Even more reduced for more opportunities
+fastpath_min_sent_score: 10       # OR mentions >= 1 - Even more reduced for more opportunities
 
 # TP limits for dynamic TP logic
 tp_min: 0.20                      # 20% min TP when dynamic
@@ -46,11 +46,16 @@ price_memory_ttl_minutes: 15      # TTL for momentum checks
 price_memory_prune_hours: 24      # Prune old EMA/quote entries
 price_ema_alpha: 0.3              # EMA smoothing factor for price guards
 
+# === Smart Blacklist Maintenance ===
+enable_smart_blacklist_cleanup: true    # Auto-clean blacklist every 6 loops
+blacklist_cleanup_interval: 6           # Clean every N loops (6 = every 6 hours)
+blacklist_keep_failure_threshold: 3     # Keep tokens with N+ failures
+
 # === Multi-Chain Settings ===
 enable_multi_chain: true
 supported_chains:
-  - "ethereum"     # Ethereum trading enabled
-  - "solana"       # Re-enabled - you have SOL in Phantom wallet
+  - "ethereum"     # Ethereum trading enabled (MetaMask)
+  - "solana"       # Solana trading enabled (Phantom)
   # - "base"       # Disabled - need ETH on Base network
   # - "pulsechain" # Disabled - need PLS in wallet
   # - "polygon"    # Disabled - need Polygon wallet
