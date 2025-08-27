@@ -96,10 +96,16 @@ def get_sol_price_usd() -> float:
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
             data = response.json()
-            price = float(data.get("solana", {}).get("usd", 0))
-            if price > 0:
-                print(f"✅ SOL price from CoinGecko: ${price}")
-                return price
+            # Check for rate limit error in response
+            if "status" in data and data["status"].get("error_code") == 429:
+                print("⚠️ CoinGecko rate limited, trying Jupiter fallback...")
+            else:
+                price = float(data.get("solana", {}).get("usd", 0))
+                if price > 0:
+                    print(f"✅ SOL price from CoinGecko: ${price}")
+                    return price
+        elif response.status_code == 429:
+            print("⚠️ CoinGecko rate limited (429), trying Jupiter fallback...")
     except Exception as e:
         print(f"⚠️ CoinGecko SOL price error: {e}")
     
@@ -111,8 +117,8 @@ def get_sol_price_usd() -> float:
             "outputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
             "amount": "1000000000",  # 1 SOL in lamports
             "slippageBps": 50,
-            "onlyDirectRoutes": False,
-            "asLegacyTransaction": False
+            "onlyDirectRoutes": "false",
+            "asLegacyTransaction": "false"
         }
         
         response = requests.get(url, params=params, timeout=10)
@@ -122,6 +128,10 @@ def get_sol_price_usd() -> float:
                 price = float(data["swapUsdValue"])
                 print(f"✅ SOL price from Jupiter quote: ${price}")
                 return price
+            else:
+                print(f"⚠️ Jupiter quote missing swapUsdValue: {data}")
+        else:
+            print(f"⚠️ Jupiter quote API error: {response.status_code}")
     except Exception as e:
         print(f"⚠️ Jupiter quote SOL price error: {e}")
     

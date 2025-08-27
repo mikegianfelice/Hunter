@@ -135,33 +135,30 @@ def _check_token_delisted(token: dict) -> bool:
     
     # Check for Solana tokens (43-44 character addresses)
     if (len(address) in [43, 44]) and chain_id == "solana":
+        # For Solana tokens, trust DexScreener data more since Jupiter API is unreliable
+        # Only check if token is already in delisted list
         try:
-            # Try to get current price from Raydium API
-            from solana_executor import get_token_price_usd
-            current_price = get_token_price_usd(address)
-            
-            if current_price == 0 or current_price is None:
-                print(f"🚨 Pre-buy check: {symbol} has zero price - likely delisted")
-                _add_to_delisted_tokens(address, symbol, "Zero price detected")
-                return True
-                
-            # Check if price is extremely low (potential delisting)
-            if current_price < 0.0000001:
-                print(f"🚨 Pre-buy check: {symbol} has suspiciously low price ${current_price}")
-                _add_to_delisted_tokens(address, symbol, f"Low price: ${current_price}")
-                return True
-                
-            print(f"✅ Pre-buy check: {symbol} price verified at ${current_price}")
+            with open("delisted_tokens.json", "r") as f:
+                data = json.load(f) or {}
+                delisted_tokens = data.get("delisted_tokens", [])
+                if address.lower() in [t.lower() for t in delisted_tokens]:
+                    print(f"🚨 Pre-buy check: {symbol} is already in delisted tokens list")
+                    return True
+        except Exception:
+            pass
+        
+        # If token has good volume and liquidity from DexScreener, trust it
+        volume_24h = float(token.get("volume24h", 0))
+        liquidity = float(token.get("liquidity", 0))
+        
+        if volume_24h > 1000 and liquidity > 5000:  # Good volume and liquidity
+            print(f"✅ Pre-buy check: {symbol} has good volume (${volume_24h:.0f}) and liquidity (${liquidity:.0f}) - trusting DexScreener data")
             return False
-            
-        except ImportError as e:
-            print(f"⚠️ Pre-buy check failed for {symbol}: Missing Solana dependencies - {e}")
-            print(f"💡 Install correct Solana version: pip install solana==0.27.0")
-            # If we can't verify due to missing dependencies, be conservative and skip
-            return True
-        except Exception as e:
-            print(f"⚠️ Pre-buy check failed for {symbol}: {e}")
-            # If we can't verify, be conservative and skip
+        elif volume_24h > 100 and liquidity > 500:  # Moderate volume and liquidity
+            print(f"✅ Pre-buy check: {symbol} has moderate volume (${volume_24h:.0f}) and liquidity (${liquidity:.0f}) - trusting DexScreener data")
+            return False
+        else:
+            print(f"⚠️ Pre-buy check: {symbol} has low volume (${volume_24h:.0f}) and liquidity (${liquidity:.0f}) - skipping")
             return True
     
     # For Ethereum tokens, try to get current price

@@ -64,8 +64,8 @@ class SimpleSolanaExecutor:
                     "outputMint": sol_mint,
                     "amount": "1000000000",  # 1 token (assuming 9 decimals)
                     "slippageBps": 50,
-                    "onlyDirectRoutes": False,
-                    "asLegacyTransaction": False
+                    "onlyDirectRoutes": "false",
+                    "asLegacyTransaction": "false"
                 }
                 
                 token_response = requests.get(url, params=token_params, timeout=10)
@@ -120,8 +120,8 @@ class SimpleSolanaExecutor:
                 "outputMint": output_mint,
                 "amount": str(amount),
                 "slippageBps": int(slippage * 10000),  # Convert to basis points
-                "onlyDirectRoutes": False,
-                "asLegacyTransaction": False
+                "onlyDirectRoutes": "false",
+                "asLegacyTransaction": "false"
             }
             
             response = requests.get(url, params=params, timeout=15)

@@ -51,6 +51,16 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 
 ## 🔧 Recent Updates & Fixes
 
+### Latest Improvements (v2.9) - SOL Price API Fix & Trading Strategy Optimization
+- **🔧 Fixed SOL Price API Issues**: Resolved CoinGecko rate limiting and Jupiter API parameter errors
+- **🎯 Optimized Solana Token Evaluation**: Modified strategy to trust DexScreener data for Solana tokens with good volume/liquidity
+- **✅ Resolved 10+ Hour No-Trades Issue**: Fixed critical problem where bot was incorrectly rejecting all tokens due to price validation failures
+- **🛡️ Enhanced Pre-Buy Delisting Logic**: Improved Solana token validation to use volume/liquidity thresholds instead of unreliable price APIs
+- **📊 Better Token Discovery**: Bot now properly evaluates tokens based on DexScreener data rather than failing price validation
+- **⚡ Improved Trading Success**: Bot attempted first trade in 10+ hours after implementing fixes
+- **🔧 Fixed Jupiter API Parameters**: Corrected boolean parameter format for Jupiter quote API calls
+- **📈 Enhanced Error Handling**: Better fallback mechanisms for price API failures
+
 ### Latest Improvements (v2.8) - Smart Blacklist Management & Dual-Chain Focus
 - **🧹 Smart Blacklist Auto-Cleanup**: Automatic blacklist maintenance every 6 hours to maintain trading opportunities
 - **🎯 Dual-Chain Focus**: Simplified to Ethereum (MetaMask) and Solana (Phantom) only for better reliability
@@ -122,6 +132,9 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 - ✅ Fixed "token delisted investment lost" by re-enabling pre-buy checks
 - ✅ Optimized multi-chain support to only trade on chains with funds
 - ✅ **CRITICAL FIX**: Resolved 10+ hour no-trades issue caused by pre-buy delisting check incorrectly blocking new tokens
+- ✅ **CRITICAL FIX**: Resolved SOL price API failures causing all Solana tokens to be marked as "delisted"
+- ✅ **CRITICAL FIX**: Fixed Jupiter API parameter errors preventing price validation
+- ✅ **CRITICAL FIX**: Optimized Solana token evaluation strategy to trust DexScreener data
 
 ## 📱 Telegram Notifications & Deduplication
 
@@ -673,11 +686,19 @@ def _detect_delisted_token(token_address: str, consecutive_failures: int) -> boo
    - The bot automatically falls back to multiple price sources for reliability
 
 10. **"Bot running for 10+ hours with no trades"**
-    - **FIXED**: This critical issue has been resolved in v2.7
-    - The pre-buy delisting check was incorrectly blocking ALL new tokens
-    - New tokens that aren't indexed by price APIs are now allowed to trade
+    - **FIXED**: This critical issue has been resolved in v2.9
+    - The pre-buy delisting check was incorrectly blocking ALL new tokens due to SOL price API failures
+    - Solana tokens were being marked as "delisted" because Jupiter API calls were failing
+    - The strategy now trusts DexScreener data for Solana tokens with good volume/liquidity
     - Update to the latest version to fix this issue
     - The bot now properly distinguishes between delisted tokens and new tokens
+
+11. **"All Solana tokens marked as delisted"**
+    - **FIXED**: This issue has been resolved in v2.9
+    - Jupiter API parameter errors were causing all price validation to fail
+    - CoinGecko rate limiting was preventing SOL price fetching
+    - The bot now uses volume/liquidity thresholds for Solana token evaluation
+    - Update to the latest version to fix this issue
 
 ### Debug Mode
 Enable debug logging in `config.yaml`:
