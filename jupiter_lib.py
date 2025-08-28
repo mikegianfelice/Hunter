@@ -1,0 +1,314 @@
+#!/usr/bin/env python3
+"""
+Custom Jupiter Library - Direct transaction handling for Jupiter v6
+"""
+
+import requests
+import json
+import base64
+import struct
+import time
+from typing import Tuple, Optional, Dict, Any, List
+from solders.keypair import Keypair
+import base58
+
+class JupiterCustomLib:
+    def __init__(self, rpc_url: str, wallet_address: str, private_key: str):
+        self.rpc_url = rpc_url
+        self.wallet_address = wallet_address
+        self.private_key = private_key
+        
+        # Initialize wallet
+        try:
+            if self.private_key:
+                secret_key_bytes = base58.b58decode(self.private_key)
+                self.keypair = Keypair.from_bytes(secret_key_bytes)
+                print(f"✅ Custom Jupiter lib initialized with wallet: {self.keypair.pubkey()}...{str(self.keypair.pubkey())[-8:]}")
+            else:
+                print("⚠️ No Solana private key provided")
+                self.keypair = None
+        except Exception as e:
+            print(f"❌ Failed to initialize wallet: {e}")
+            self.keypair = None
+
+    def get_quote(self, input_mint: str, output_mint: str, amount: int, slippage: float = 0.02) -> Dict[str, Any]:
+        """Get swap quote from Jupiter v6"""
+        try:
+            url = "https://quote-api.jup.ag/v6/quote"
+            params = {
+                "inputMint": input_mint,
+                "outputMint": output_mint,
+                "amount": str(amount),
+                "slippageBps": int(slippage * 10000),
+                "onlyDirectRoutes": "false",
+                "asLegacyTransaction": "false"
+            }
+            
+            response = requests.get(url, params=params, timeout=15)
+            if response.status_code == 200:
+                data = response.json()
+                if data and not data.get("error"):
+                    print(f"✅ Jupiter quote: {data.get('inAmount', 'N/A')} -> {data.get('outAmount', 'N/A')}")
+                    return data
+                else:
+                    error_msg = data.get('error', 'Unknown error')
+                    print(f"⚠️ Jupiter quote failed: {error_msg}")
+                    return {}
+            else:
+                print(f"⚠️ Jupiter quote failed: {response.status_code}")
+                return {}
+        except Exception as e:
+            print(f"❌ Jupiter quote error: {e}")
+            return {}
+
+    def get_swap_transaction(self, quote_response: Dict[str, Any]) -> str:
+        """Get swap transaction from Jupiter"""
+        try:
+            url = "https://quote-api.jup.ag/v6/swap"
+            payload = {
+                "quoteResponse": quote_response,
+                "userPublicKey": self.wallet_address,
+                "wrapUnwrapSOL": True,
+                "computeUnitPriceMicroLamports": 1000,
+                "asLegacyTransaction": False,
+                "useSharedAccounts": True,
+                "maxAccounts": 32
+            }
+            
+            response = requests.post(url, json=payload, timeout=15)
+            if response.status_code == 200:
+                swap_data = response.json()
+                if "swapTransaction" in swap_data:
+                    return swap_data["swapTransaction"]
+                else:
+                    print(f"❌ No swap transaction in response: {swap_data}")
+                    return ""
+            else:
+                print(f"❌ Jupiter swap request failed: {response.status_code}")
+                return ""
+        except Exception as e:
+            print(f"❌ Jupiter swap error: {e}")
+            return ""
+
+    def decode_transaction(self, transaction_data: str) -> Dict[str, Any]:
+        """Decode base64 transaction data"""
+        try:
+            decoded_bytes = base64.b64decode(transaction_data)
+            
+            # Parse transaction structure manually
+            # Solana transaction format: [signatures][message]
+            
+            # Read number of signatures (1 byte)
+            num_signatures = decoded_bytes[0]
+            
+            # Each signature is 64 bytes
+            signature_length = 64
+            signatures_end = 1 + (num_signatures * signature_length)
+            
+            # Extract signatures
+            signatures = []
+            for i in range(num_signatures):
+                start = 1 + (i * signature_length)
+                end = start + signature_length
+                signature = decoded_bytes[start:end]
+                signatures.append(base58.b58encode(signature).decode('utf-8'))
+            
+            # Extract message (rest of the data)
+            message_bytes = decoded_bytes[signatures_end:]
+            
+            return {
+                "num_signatures": num_signatures,
+                "signatures": signatures,
+                "message": base58.b58encode(message_bytes).decode('utf-8'),
+                "message_bytes": message_bytes
+            }
+        except Exception as e:
+            print(f"❌ Transaction decode error: {e}")
+            return {}
+
+    def sign_transaction(self, transaction_data: str) -> str:
+        """Sign transaction with wallet"""
+        try:
+            if not self.keypair:
+                print("❌ No keypair available for signing")
+                return ""
+            
+            # Decode transaction
+            decoded = self.decode_transaction(transaction_data)
+            if not decoded:
+                return ""
+            
+            # Get message bytes
+            message_bytes = decoded["message_bytes"]
+            
+            # Sign the message
+            signature = self.keypair.sign_message(message_bytes)
+            signature_bytes = bytes(signature)
+            
+            # Reconstruct transaction with signature
+            # Format: [num_signatures][signature][message]
+            num_signatures = 1
+            reconstructed = struct.pack('B', num_signatures)  # 1 byte for num signatures
+            reconstructed += signature_bytes  # 64 bytes for signature
+            reconstructed += message_bytes  # message bytes
+            
+            # Encode back to base64
+            signed_transaction = base64.b64encode(reconstructed).decode('utf-8')
+            
+            print(f"✅ Transaction signed successfully")
+            return signed_transaction
+            
+        except Exception as e:
+            print(f"❌ Transaction signing error: {e}")
+            return ""
+
+    def send_transaction(self, signed_transaction: str) -> Tuple[str, bool]:
+        """Send signed transaction to Solana network"""
+        try:
+            rpc_payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "sendTransaction",
+                "params": [
+                    signed_transaction,
+                    {
+                        "encoding": "base64",
+                        "skipPreflight": True,
+                        "maxRetries": 3
+                    }
+                ]
+            }
+            
+            response = requests.post(self.rpc_url, json=rpc_payload, timeout=30)
+            
+            if response.status_code == 200:
+                result = response.json()
+                if "result" in result:
+                    tx_hash = result["result"]
+                    print(f"✅ Transaction sent: {tx_hash}")
+                    return tx_hash, True
+                elif "error" in result:
+                    error_msg = result["error"]
+                    print(f"❌ RPC error: {error_msg}")
+                    return "", False
+            else:
+                print(f"❌ RPC request failed: {response.status_code}")
+                return "", False
+                
+        except Exception as e:
+            print(f"❌ Send transaction error: {e}")
+            return "", False
+
+    def execute_swap(self, input_mint: str, output_mint: str, amount: int, slippage: float = 0.02) -> Tuple[str, bool]:
+        """Execute complete swap process"""
+        try:
+            print(f"🔄 Executing swap: {input_mint[:8]}... -> {output_mint[:8]}...")
+            
+            # Step 1: Get quote
+            quote = self.get_quote(input_mint, output_mint, amount, slippage)
+            if not quote:
+                return "", False
+            
+            # Step 2: Get swap transaction
+            transaction_data = self.get_swap_transaction(quote)
+            if not transaction_data:
+                return "", False
+            
+            # Step 3: Sign transaction
+            signed_transaction = self.sign_transaction(transaction_data)
+            if not signed_transaction:
+                return "", False
+            
+            # Step 4: Send transaction
+            tx_hash, success = self.send_transaction(signed_transaction)
+            if success:
+                return tx_hash, True
+            
+            # Step 5: If failed due to size, try with smaller amount
+            print(f"🔄 Transaction too large, trying with smaller amount...")
+            smaller_amount = int(amount * 0.25)  # Try with 25% of original amount
+            
+            quote = self.get_quote(input_mint, output_mint, smaller_amount, slippage)
+            if not quote:
+                return "", False
+            
+            transaction_data = self.get_swap_transaction(quote)
+            if not transaction_data:
+                return "", False
+            
+            signed_transaction = self.sign_transaction(transaction_data)
+            if not signed_transaction:
+                return "", False
+            
+            tx_hash, success = self.send_transaction(signed_transaction)
+            if success:
+                return tx_hash, True
+            
+            # Step 6: If still too large, try with even smaller amount
+            print(f"🔄 Still too large, trying with minimal amount...")
+            minimal_amount = int(amount * 0.1)  # Try with 10% of original amount
+            
+            quote = self.get_quote(input_mint, output_mint, minimal_amount, slippage)
+            if not quote:
+                return "", False
+            
+            transaction_data = self.get_swap_transaction(quote)
+            if not transaction_data:
+                return "", False
+            
+            signed_transaction = self.sign_transaction(transaction_data)
+            if not signed_transaction:
+                return "", False
+            
+            tx_hash, success = self.send_transaction(signed_transaction)
+            if success:
+                return tx_hash, True
+            
+            # Step 7: If still too large, try with tiny amount
+            print(f"🔄 Still too large, trying with tiny amount...")
+            tiny_amount = int(amount * 0.05)  # Try with 5% of original amount
+            
+            quote = self.get_quote(input_mint, output_mint, tiny_amount, slippage)
+            if not quote:
+                return "", False
+            
+            transaction_data = self.get_swap_transaction(quote)
+            if not transaction_data:
+                return "", False
+            
+            signed_transaction = self.sign_transaction(transaction_data)
+            if not signed_transaction:
+                return "", False
+            
+            tx_hash, success = self.send_transaction(signed_transaction)
+            return tx_hash, success
+            
+        except Exception as e:
+            print(f"❌ Swap execution error: {e}")
+            return "", False
+
+    def get_balance(self) -> float:
+        """Get SOL balance"""
+        try:
+            rpc_payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getBalance",
+                "params": [str(self.keypair.pubkey())]
+            }
+            
+            response = requests.post(self.rpc_url, json=rpc_payload, timeout=10)
+            if response.status_code == 200:
+                result = response.json()
+                if "result" in result and "value" in result["result"]:
+                    balance_lamports = result["result"]["value"]
+                    return float(balance_lamports) / 1_000_000_000
+            return 0.0
+        except Exception as e:
+            print(f"❌ Error getting balance: {e}")
+            return 0.0
+
+# Utility functions
+def create_jupiter_lib(rpc_url: str, wallet_address: str, private_key: str) -> JupiterCustomLib:
+    """Create Jupiter custom library instance"""
+    return JupiterCustomLib(rpc_url, wallet_address, private_key)

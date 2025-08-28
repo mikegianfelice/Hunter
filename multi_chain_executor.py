@@ -162,8 +162,8 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
             from uniswap_executor import buy_token
             tx_hash, ok = buy_token(token_address, amount_usd, symbol)
         elif chain_id == "solana":
-            # Use real Solana executor (Phantom)
-            from solana_executor import buy_token_solana
+            # Use Jupiter executor for Solana trading
+            from jupiter_executor import buy_token_solana
             tx_hash, ok = buy_token_solana(token_address, amount_usd, symbol, test_mode=False)
         else:
             # For unsupported chains, skip

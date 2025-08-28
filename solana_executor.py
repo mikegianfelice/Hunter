@@ -131,9 +131,10 @@ class SimpleSolanaExecutor:
             response = requests.get(url, params=params, timeout=15)
             if response.status_code == 200:
                 data = response.json()
-                if data.get("data"):
-                    print(f"✅ Jupiter quote: {data['data']['inputAmount']} -> {data['data']['outputAmount']}")
-                    return data["data"]
+                # Jupiter v6 returns quote data directly, not wrapped in "data" field
+                if data and not data.get("error"):
+                    print(f"✅ Jupiter quote: {data.get('inAmount', 'N/A')} -> {data.get('outAmount', 'N/A')}")
+                    return data
                 else:
                     error_msg = data.get('error', 'Unknown error')
                     print(f"⚠️ Jupiter quote failed: {error_msg}")
@@ -154,9 +155,9 @@ class SimpleSolanaExecutor:
                         retry_response = requests.get(url, params=params, timeout=15)
                         if retry_response.status_code == 200:
                             retry_data = retry_response.json()
-                            if retry_data.get("data"):
-                                print(f"✅ Jupiter quote with smaller amount: {retry_data['data']['inputAmount']} -> {retry_data['data']['outputAmount']}")
-                                return retry_data["data"]
+                            if retry_data and not retry_data.get("error"):
+                                print(f"✅ Jupiter quote with smaller amount: {retry_data.get('inAmount', 'N/A')} -> {retry_data.get('outAmount', 'N/A')}")
+                                return retry_data
                 except Exception as e:
                     print(f"⚠️ Could not parse Jupiter 400 error: {e}")
                 
@@ -179,10 +180,15 @@ class SimpleSolanaExecutor:
             payload = {
                 "quoteResponse": quote_response,
                 "userPublicKey": self.wallet_address,
-                "wrapUnwrapSOL": True
+                "wrapUnwrapSOL": True,
+                "computeUnitPriceMicroLamports": 1000,
+                "asLegacyTransaction": False,
+                "useSharedAccounts": True
             }
             
+            print(f"🌐 Requesting swap transaction from Jupiter...")
             response = requests.post(url, json=payload, timeout=15)
+            
             if response.status_code == 200:
                 swap_data = response.json()
                 
@@ -190,28 +196,156 @@ class SimpleSolanaExecutor:
                     print("❌ No Solana keypair available for signing")
                     return "", False
                 
+                # Check if we have the transaction data
+                if "swapTransaction" not in swap_data:
+                    print(f"❌ No swap transaction in response: {swap_data}")
+                    return "", False
+                
                 # Sign and send transaction
                 transaction_data = swap_data["swapTransaction"]
-                transaction = Transaction.deserialize(base58.b58decode(transaction_data))
+                print(f"📝 Transaction data length: {len(transaction_data)}")
                 
-                # Sign transaction
-                transaction.sign(self.keypair)
-                
-                # Send transaction
-                tx_hash = self.client.send_transaction(transaction)
-                
-                if tx_hash.value:
-                    print(f"✅ Jupiter swap executed: {tx_hash.value}")
-                    return tx_hash.value, True
-                else:
-                    print(f"❌ Jupiter swap failed: {tx_hash}")
+                try:
+                    # For Jupiter v6, we need to properly sign the transaction
+                    print(f"📡 Processing Jupiter v6 transaction...")
+                    
+                    # Decode base64 transaction data
+                    import base64
+                    decoded_data = base64.b64decode(transaction_data)
+                    print(f"✅ Base64 decoded, length: {len(decoded_data)} bytes")
+                    
+                    # Try to deserialize and sign the transaction
+                    try:
+                        from solana.transaction import Transaction
+                        transaction = Transaction.deserialize(decoded_data)
+                        print(f"✅ Transaction deserialized, {len(transaction.instructions)} instructions")
+                        
+                        # Sign the transaction
+                        transaction.sign(self.keypair)
+                        print(f"✅ Transaction signed")
+                        
+                        # Serialize the signed transaction
+                        signed_data = transaction.serialize()
+                        signed_base64 = base64.b64encode(signed_data).decode('utf-8')
+                        print(f"✅ Transaction serialized and encoded")
+                        
+                        # Send the signed transaction via RPC
+                        rpc_payload = {
+                            "jsonrpc": "2.0",
+                            "id": 1,
+                            "method": "sendTransaction",
+                            "params": [
+                                signed_base64,
+                                {
+                                    "encoding": "base64",
+                                    "skipPreflight": False,
+                                    "maxRetries": 3
+                                }
+                            ]
+                        }
+                        
+                        rpc_response = requests.post(SOLANA_RPC_URL, json=rpc_payload, timeout=30)
+                        
+                        if rpc_response.status_code == 200:
+                            rpc_result = rpc_response.json()
+                            if "result" in rpc_result:
+                                tx_hash = rpc_result["result"]
+                                print(f"✅ Jupiter swap executed: {tx_hash}")
+                                return tx_hash, True
+                            elif "error" in rpc_result:
+                                error_msg = rpc_result["error"]
+                                print(f"❌ RPC error: {error_msg}")
+                                
+                                # If it's a signature verification error, try a different approach
+                                if "signature verification" in str(error_msg).lower():
+                                    print(f"🔄 Trying alternative transaction approach...")
+                                    return self._try_alternative_jupiter_swap(quote_response)
+                                else:
+                                    return "", False
+                        else:
+                            print(f"❌ RPC request failed: {rpc_response.status_code}")
+                            return "", False
+                            
+                    except Exception as deserialize_error:
+                        print(f"❌ Transaction deserialization failed: {deserialize_error}")
+                        print(f"🔄 Trying alternative approach...")
+                        return self._try_alternative_jupiter_swap(quote_response)
+                        
+                except Exception as tx_error:
+                    print(f"❌ Transaction processing error: {tx_error}")
                     return "", False
             else:
                 print(f"❌ Jupiter swap request failed: {response.status_code}")
+                print(f"Response: {response.text}")
                 return "", False
                 
         except Exception as e:
             print(f"❌ Jupiter swap error: {e}")
+            return "", False
+
+    def _try_alternative_jupiter_swap(self, quote_response: Dict[str, Any]) -> Tuple[str, bool]:
+        """Alternative Jupiter swap method"""
+        try:
+            print(f"🔄 Trying alternative Jupiter swap method...")
+            
+            # Try using Jupiter's POST endpoint with different parameters
+            url = "https://quote-api.jup.ag/v6/swap"
+            payload = {
+                "quoteResponse": quote_response,
+                "userPublicKey": self.wallet_address,
+                "wrapUnwrapSOL": True,
+                "computeUnitPriceMicroLamports": 1000,
+                "asLegacyTransaction": True,  # Try legacy format
+                "useSharedAccounts": False
+            }
+            
+            response = requests.post(url, json=payload, timeout=15)
+            
+            if response.status_code == 200:
+                swap_data = response.json()
+                
+                if "swapTransaction" in swap_data:
+                    transaction_data = swap_data["swapTransaction"]
+                    print(f"📝 Alternative transaction data length: {len(transaction_data)}")
+                    
+                    # Try to send directly via RPC
+                    rpc_payload = {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "sendTransaction",
+                        "params": [
+                            transaction_data,
+                            {
+                                "encoding": "base64",
+                                "skipPreflight": True,
+                                "maxRetries": 3
+                            }
+                        ]
+                    }
+                    
+                    rpc_response = requests.post(SOLANA_RPC_URL, json=rpc_payload, timeout=30)
+                    
+                    if rpc_response.status_code == 200:
+                        rpc_result = rpc_response.json()
+                        if "result" in rpc_result:
+                            tx_hash = rpc_result["result"]
+                            print(f"✅ Alternative Jupiter swap executed: {tx_hash}")
+                            return tx_hash, True
+                        elif "error" in rpc_result:
+                            print(f"❌ Alternative RPC error: {rpc_result['error']}")
+                            return "", False
+                    else:
+                        print(f"❌ Alternative RPC request failed: {rpc_response.status_code}")
+                        return "", False
+                else:
+                    print(f"❌ No swap transaction in alternative response")
+                    return "", False
+            else:
+                print(f"❌ Alternative Jupiter swap request failed: {response.status_code}")
+                return "", False
+                
+        except Exception as e:
+            print(f"❌ Alternative Jupiter swap error: {e}")
             return "", False
 
     def execute_trade(self, token_address: str, amount_usd: float, is_buy: bool = True) -> Tuple[str, bool]:

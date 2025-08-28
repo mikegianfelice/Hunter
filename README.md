@@ -51,6 +51,16 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 
 ## 🔧 Recent Updates & Fixes
 
+### Latest Improvements (v3.1) - Custom Jupiter Library & Real Trading Implementation
+- **🎯 Custom Jupiter Library**: Created `jupiter_lib.py` with direct transaction handling for Jupiter v6
+- **✅ Real Trading Confirmed**: Successfully executing real trades with actual transaction hashes
+- **🔧 Transaction Size Management**: Automatic fallback with smaller amounts when transactions are too large
+- **📊 Multi-Source Price Data**: Enhanced price fetching with DexScreener, Birdeye, and CoinGecko
+- **🛡️ Smart Transaction Signing**: Proper transaction signing using `solders` library
+- **⚡ Optimized Performance**: Reduced transaction size limits and improved success rates
+- **🔄 Fallback Mechanisms**: Multiple retry attempts with different amounts for better success
+- **📱 Real Transaction Hashes**: No more dummy `1111...` hashes - real transaction tracking
+
 ### Latest Improvements (v3.0) - Enhanced Price Verification & Smart Blacklist Management
 - **🔧 Fixed JSON Corruption**: Resolved corrupted `delisted_tokens.json` file that was causing parsing errors
 - **🎯 Enhanced Solana Token Verification**: More lenient thresholds for Solana tokens when DexScreener shows good data
@@ -168,6 +178,34 @@ The bot includes intelligent Telegram notification system with automatic message
 telegram_bot_token: "your_bot_token"
 telegram_chat_id: "your_chat_id"
 ```
+
+## 🚀 Jupiter v6 Integration - Real Solana Trading
+
+The bot now features a **custom Jupiter library** that enables real trading on Solana with actual transaction execution:
+
+### **✅ Real Trading Confirmed**
+- **Actual Transaction Hashes**: No more dummy `1111...` hashes - real transaction tracking
+- **Custom Jupiter Library**: `jupiter_lib.py` with direct transaction handling for Jupiter v6
+- **Smart Transaction Signing**: Proper transaction signing using `solders` library
+- **Transaction Size Management**: Automatic fallback with smaller amounts when transactions are too large
+
+### **🔧 How It Works**
+1. **Quote Retrieval**: Gets best swap quotes from Jupiter v6 API
+2. **Transaction Creation**: Jupiter creates the swap transaction
+3. **Transaction Signing**: Signs the transaction with your wallet using custom library
+4. **Transaction Submission**: Sends signed transaction to Solana network
+5. **Fallback Logic**: Multiple retry attempts with different amounts for better success
+
+### **📊 Real Transaction Results**
+Recent successful trades with actual transaction hashes:
+- **Buy Transaction**: `5dZMcrGAAZmhs79bm1K46wasKvLXDVgSoKPnoHwVAuZmKJ3fwkLZAbAZwnXjwoWZs3nLDQoFqaFHmyvWChwD3jDJ`
+- **Sell Transaction**: `endhq277LAdSe59qHBXgDskLocmBCqiUARzFRrQpTPNTB4kbepmULq8XuNCwMWwaWaMgkvRVYbhY9SQdr3nnqug`
+
+### **🛡️ Safety Features**
+- **Transaction Size Limits**: Automatically reduces trade amounts when transactions are too large
+- **Multiple Fallbacks**: Tries with 50%, 25%, 10%, and 5% of original amount
+- **Real-time Validation**: Verifies transaction success before proceeding
+- **Error Handling**: Comprehensive error handling and retry mechanisms
 
 ## 🌐 Multi-DEX Solana Support
 
@@ -719,7 +757,9 @@ crypto_trading_bot_100x/
 ├── monitor_position.py      # Position monitoring and sell triggers
 ├── telegram_bot.py          # Telegram notifications
 ├── token_sniffer.py         # Token safety checks
-├── solana_executor.py       # Solana blockchain interactions (NEW!)
+├── jupiter_lib.py           # Custom Jupiter library for real trading (NEW!)
+├── jupiter_executor.py      # Jupiter trading executor (NEW!)
+├── solana_executor.py       # Solana blockchain interactions (legacy)
 
 ├── SOLANA_IMPLEMENTATION.md # Solana documentation (NEW!)
 ├── secrets_manager.py       # Secure secrets management (NEW!)
