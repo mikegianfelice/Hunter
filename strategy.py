@@ -448,7 +448,8 @@ def check_buy_signal(token: dict) -> bool:
         print("📉 No address or price too low; skipping buy signal.")
         return False
 
-    # Jupiter tradeability pre-check for Solana tokens
+    # Jupiter tradeability pre-check for Solana tokens (PRE-TRADE SAFETY CHECK)
+    # This prevents attempting to buy tokens that cannot be traded on Jupiter
     if chain_id == "solana" and not is_trusted:
         if not _check_jupiter_tradeable(address, token.get("symbol", "UNKNOWN")):
             print("❌ Token not tradeable on Jupiter; skipping buy signal.")
@@ -463,10 +464,10 @@ def check_buy_signal(token: dict) -> bool:
     min_vol = MIN_VOL_24H_BUY if not is_trusted else max(2000.0, MIN_VOL_24H_BUY * 0.5)
     min_liq = MIN_LIQ_USD_BUY if not is_trusted else max(2000.0, MIN_LIQ_USD_BUY * 0.5)
     
-    # For multi-chain tokens, use even lower requirements
+    # For multi-chain tokens, use lower requirements but not too aggressive
     if chain_id != "ethereum":
-        min_vol = max(10.0, min_vol * 0.05)  # 5% of normal requirement
-        min_liq = max(50.0, min_liq * 0.1)   # 10% of normal requirement
+        min_vol = max(100.0, min_vol * 0.2)  # 20% of normal requirement (was 5%)
+        min_liq = max(500.0, min_liq * 0.3)  # 30% of normal requirement (was 10%)
 
     if vol24h < min_vol or liq_usd < min_liq:
         print(f"🪫 Fails market depth: vol ${vol24h:,.0f} (need ≥ {min_vol:,.0f}), "
@@ -516,11 +517,11 @@ def check_buy_signal(token: dict) -> bool:
     
     # Adjust requirements for non-Ethereum chains
     if chain_id != "ethereum":
-        # Much lower requirements for multi-chain tokens
-        fast_vol_ok = (vol24h >= FASTPATH_VOL * 0.001)  # 0.1% of Ethereum requirement
-        fast_liq_ok = (liq_usd >= FASTPATH_LIQ * 0.002)  # 0.2% of Ethereum requirement
+        # Lower requirements for multi-chain tokens but not too aggressive
+        fast_vol_ok = (vol24h >= FASTPATH_VOL * 0.01)   # 1% of Ethereum requirement (was 0.1%)
+        fast_liq_ok = (liq_usd >= FASTPATH_LIQ * 0.02)  # 2% of Ethereum requirement (was 0.2%)
         fast_sent_ok = True  # Skip sentiment for non-Ethereum
-        print(f"🔓 Multi-chain fast-path: vol ${vol24h:,.0f} (need ≥ {FASTPATH_VOL * 0.001:,.0f}), liq ${liq_usd:,.0f} (need ≥ {FASTPATH_LIQ * 0.002:,.0f})")
+        print(f"🔓 Multi-chain fast-path: vol ${vol24h:,.0f} (need ≥ {FASTPATH_VOL * 0.01:,.0f}), liq ${liq_usd:,.0f} (need ≥ {FASTPATH_LIQ * 0.02:,.0f})")
     else:
         # Original Ethereum requirements
         fast_vol_ok = (vol24h >= FASTPATH_VOL)
