@@ -68,6 +68,11 @@ BLACKLIST_CLEANUP_INTERVAL = int(config.get("blacklist_cleanup_interval", 6))
 BLACKLIST_KEEP_FAILURE_THRESHOLD = int(config.get("blacklist_keep_failure_threshold", 3))
 blacklist_cleanup_counter = 0
 
+# Smart delisted token cleanup
+ENABLE_SMART_DELISTED_CLEANUP = bool(config.get("enable_smart_delisted_cleanup", True))
+DELISTED_CLEANUP_INTERVAL = int(config.get("delisted_cleanup_interval", 12))  # Every 12 loops (12 hours)
+delisted_cleanup_counter = 0
+
 def smart_blacklist_maintenance():
     """Automatically clean blacklist to maintain trading opportunities"""
     global blacklist_cleanup_counter
@@ -147,11 +152,44 @@ def smart_blacklist_maintenance():
     except Exception as e:
         print(f"⚠️ Blacklist maintenance failed: {e}")
 
+def smart_delisted_cleanup():
+    """Automatically clean delisted tokens list to maintain trading opportunities"""
+    global delisted_cleanup_counter
+    
+    if not ENABLE_SMART_DELISTED_CLEANUP:
+        return
+        
+    delisted_cleanup_counter += 1
+    
+    if delisted_cleanup_counter < DELISTED_CLEANUP_INTERVAL:
+        return
+    
+    delisted_cleanup_counter = 0  # Reset counter
+    
+    print("\n🧹 Running smart delisted token cleanup...")
+    
+    try:
+        from smart_blacklist_cleaner import clean_delisted_tokens
+        result = clean_delisted_tokens()
+        
+        if result:
+            removed_count = result.get("removed_count", 0)
+            remaining_count = result.get("remaining_count", 0)
+            print(f"✅ Delisted cleanup completed: {removed_count} tokens reactivated, {remaining_count} still delisted")
+        else:
+            print("⚠️ Delisted cleanup failed")
+            
+    except Exception as e:
+        print(f"❌ Error during delisted cleanup: {e}")
+
 def trade_loop():
     print("🔁 Starting trade loop...")
 
     # Smart blacklist maintenance (runs every 6 loops)
     smart_blacklist_maintenance()
+    
+    # Smart delisted token cleanup (runs every 12 loops)
+    smart_delisted_cleanup()
 
     # Housekeeping: prune stale price memory each loop
     removed = prune_price_memory()

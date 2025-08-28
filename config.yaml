@@ -26,7 +26,7 @@ max_size_price_impact_pct: 0.20   # Abort if size would move price >20% (approx:
 min_pair_reserve_weth: 5.0        # Require ≥ 5 WETH on the pool’s WETH side
 
 # === Strategy: Momentum-based Buy Logic ===
-min_momentum_pct: 0.0005          # +0.05% change within TTL - Even more reduced for more opportunities
+min_momentum_pct: 0.0002          # +0.02% change within TTL - Ideal balance for opportunities vs noise
 min_volume_24h_for_buy: 2000      # Min 24h volume (USD) - Increased from 500 to 2000 for safety
 min_liquidity_usd_for_buy: 5000   # Min liquidity (USD) - Increased from 1000 to 5000 for safety
 min_price_usd: 0.0000001          # Ignore dust tokens
@@ -52,6 +52,10 @@ price_ema_alpha: 0.3              # EMA smoothing factor for price guards
 enable_smart_blacklist_cleanup: true    # Auto-clean blacklist every 6 loops
 blacklist_cleanup_interval: 6           # Clean every N loops (6 = every 6 hours)
 blacklist_keep_failure_threshold: 3     # Keep tokens with N+ failures
+
+# === Smart Delisted Token Cleanup ===
+enable_smart_delisted_cleanup: true     # Auto-clean delisted tokens every 1 loop
+delisted_cleanup_interval: 1            # Clean every N loops (1 = every 1 hour)
 
 # === Multi-Chain Settings ===
 enable_multi_chain: true

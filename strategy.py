@@ -82,34 +82,47 @@ def _pct_change(curr: float, prev: float) -> float:
 
 def _add_to_delisted_tokens(address: str, symbol: str, reason: str):
     """
-    Add a token to the delisted_tokens.json file
+    Add a token to the delisted_tokens.json file with smart verification
     """
     try:
-        # Load existing delisted tokens
-        if os.path.exists("delisted_tokens.json"):
-            with open("delisted_tokens.json", "r") as f:
-                data = json.load(f) or {}
-        else:
-            data = {"failure_counts": {}, "delisted_tokens": []}
+        # Import the smart verification function
+        from smart_blacklist_cleaner import add_to_delisted_tokens_smart
         
-        # Add the token address to delisted list
-        delisted_tokens = data.get("delisted_tokens", [])
-        token_address_lower = address.lower()
+        # Use smart verification to only add if actually delisted
+        success = add_to_delisted_tokens_smart(address, symbol, reason)
         
-        if token_address_lower not in delisted_tokens:
-            delisted_tokens.append(token_address_lower)
-            data["delisted_tokens"] = delisted_tokens
-            
-            # Save updated data
-            with open("delisted_tokens.json", "w") as f:
-                json.dump(data, f, indent=2)
-            
-            print(f"🛑 Added {symbol} ({address}) to delisted tokens: {reason}")
-        else:
-            print(f"ℹ️ {symbol} already in delisted tokens list")
+        if not success:
+            print(f"ℹ️ {symbol} appears to be active - not adding to delisted tokens")
             
     except Exception as e:
         print(f"⚠️ Failed to add {symbol} to delisted tokens: {e}")
+        # Fallback to old method if smart verification fails
+        try:
+            # Load existing delisted tokens
+            if os.path.exists("delisted_tokens.json"):
+                with open("delisted_tokens.json", "r") as f:
+                    data = json.load(f) or {}
+            else:
+                data = {"failure_counts": {}, "delisted_tokens": []}
+            
+            # Add the token address to delisted list
+            delisted_tokens = data.get("delisted_tokens", [])
+            token_address_lower = address.lower()
+            
+            if token_address_lower not in delisted_tokens:
+                delisted_tokens.append(token_address_lower)
+                data["delisted_tokens"] = delisted_tokens
+                
+                # Save updated data
+                with open("delisted_tokens.json", "w") as f:
+                    json.dump(data, f, indent=2)
+                
+                print(f"🛑 Added {symbol} ({address}) to delisted tokens: {reason}")
+            else:
+                print(f"ℹ️ {symbol} already in delisted tokens list")
+                
+        except Exception as fallback_error:
+            print(f"❌ Both smart and fallback methods failed for {symbol}: {fallback_error}")
 
 def _check_token_delisted(token: dict) -> bool:
     """
@@ -418,6 +431,12 @@ def _check_jupiter_tradeable(token_address: str, symbol: str) -> bool:
                 error_msg = error_data.get('error', 'Bad Request')
                 if "not tradable" in error_msg.lower() or "not tradeable" in error_msg.lower():
                     print(f"❌ Jupiter pre-check: {symbol} not tradeable - {error_msg}")
+                    return False
+                elif "cannot be parsed" in error_msg.lower() or "invalid" in error_msg.lower():
+                    print(f"⚠️ Jupiter pre-check: {symbol} address validation issue - {error_msg}")
+                    # For address parsing issues, let it pass (might be temporary or new token)
+                    print(f"🔓 Allowing {symbol} to proceed despite Jupiter validation issue")
+                    return True
                 else:
                     print(f"⚠️ Jupiter pre-check: {symbol} 400 error - {error_msg}")
                     # For other 400 errors, let it pass (might be temporary)
@@ -485,8 +504,8 @@ def check_buy_signal(token: dict) -> bool:
     
     # Multi-chain tokens: even easier momentum threshold
     if chain_id != "ethereum":
-        momentum_need = max(0.0001, momentum_need * 0.05)  # 5% of normal requirement for multi-chain
-        print(f"🔓 Multi-chain momentum threshold: {momentum_need*100:.2f}%")
+        momentum_need = max(0.0001, momentum_need * 0.05)  # 5% of normal requirement for multi-chain (0.02% * 0.05 = 0.001% = 0.01%)
+        print(f"🔓 Multi-chain momentum threshold: {momentum_need*100:.4f}%")
 
     # WETH is handled specially in executor.py - skip here
     if address == "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2":  # WETH
@@ -505,6 +524,10 @@ def check_buy_signal(token: dict) -> bool:
                 print("✅ Momentum buy signal → TRUE")
                 return True
             else:
+                # Special case for Solana tokens with good volume/liquidity
+                if chain_id == "solana" and vol24h >= 10000 and liq_usd >= 50000:
+                    print("🔓 Solana token with good metrics - allowing despite zero momentum")
+                    return True
                 print("❌ Momentum insufficient.")
                 return False
         else:
