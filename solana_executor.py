@@ -37,69 +37,52 @@ class SimpleSolanaExecutor:
             self.keypair = None
 
     def get_token_price_usd(self, token_address: str) -> float:
-        """Get token price in USD using multiple sources"""
+        """Get token price in USD using multiple sources with retry logic"""
+        import time
+        
         # Import here to avoid circular imports
         from utils import get_sol_price_usd
         
-        # Try Jupiter quote API for price calculation (more reliable than price API)
-        try:
-            # Use SOL as reference for price calculation
-            sol_mint = "So11111111111111111111111111111111111111112"
-            usdc_mint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
-            
-            # If the token is SOL, use the utility function
-            if token_address == sol_mint:
-                return get_sol_price_usd()
-            
-            # Get SOL price for calculations
-            sol_price = get_sol_price_usd()
-            if sol_price <= 0:
-                print("⚠️ Could not get SOL price, trying alternative methods...")
-            else:
-                # For other tokens, try to get a quote against SOL
-                try:
-                    url = "https://quote-api.jup.ag/v6/quote"
-                    token_params = {
-                        "inputMint": token_address,
-                        "outputMint": sol_mint,
-                        "amount": "1000000000",  # 1 token (assuming 9 decimals)
-                        "slippageBps": 50,
-                        "onlyDirectRoutes": "false",
-                        "asLegacyTransaction": "false"
-                    }
-                    
-                    token_response = requests.get(url, params=token_params, timeout=10)
-                    if token_response.status_code == 200:
-                        token_data = token_response.json()
-                        if token_data.get("outAmount"):
-                            # Calculate token price: (SOL received / SOL price) / token amount
-                            sol_received = float(token_data["outAmount"]) / 1e9  # Convert from lamports
-                            token_price = (sol_received * sol_price) / 1.0  # Assuming 1 token
-                            print(f"✅ Token price from Jupiter quote: ${token_price}")
-                            return token_price
-                except Exception as e:
-                    print(f"⚠️ Token quote calculation failed: {e}")
-        except Exception as e:
-            print(f"⚠️ Jupiter quote API error: {e}")
+        # If the token is SOL, use the utility function
+        sol_mint = "So11111111111111111111111111111111111111112"
+        if token_address == sol_mint:
+            return get_sol_price_usd()
         
-        # Try DexScreener API for token price
+        # Try DexScreener API for token price first (direct price, no SOL dependency)
+        for attempt in range(2):
+            try:
+                url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
+                response = requests.get(url, timeout=15)
+                if response.status_code == 200:
+                    data = response.json()
+                    pairs = data.get("pairs", [])
+                    if pairs:
+                        # Get the first pair with a valid price
+                        for pair in pairs:
+                            price = float(pair.get("priceUsd", 0))
+                            if price > 0:
+                                print(f"✅ Token price from DexScreener: ${price}")
+                                return price
+            except Exception as e:
+                print(f"⚠️ DexScreener price API error (attempt {attempt + 1}/2): {e}")
+            
+            if attempt < 1:
+                time.sleep(1)
+        
+        # Try Birdeye API for Solana tokens (direct price, no SOL dependency)
         try:
-            url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
+            url = f"https://public-api.birdeye.so/public/price?address={token_address}"
             response = requests.get(url, timeout=10)
             if response.status_code == 200:
                 data = response.json()
-                pairs = data.get("pairs", [])
-                if pairs:
-                    # Get the first pair with a valid price
-                    for pair in pairs:
-                        price = float(pair.get("priceUsd", 0))
-                        if price > 0:
-                            print(f"✅ Token price from DexScreener: ${price}")
-                            return price
+                if data.get("success") and data.get("data", {}).get("value"):
+                    price = float(data["data"]["value"])
+                    print(f"✅ Token price from Birdeye: ${price}")
+                    return price
         except Exception as e:
-            print(f"⚠️ DexScreener price API error: {e}")
+            print(f"⚠️ Birdeye price API error: {e}")
         
-        # Fallback to CoinGecko for common tokens
+        # Fallback to CoinGecko for common tokens (direct price, no SOL dependency)
         token_mapping = {
             "So11111111111111111111111111111111111111112": "solana",
             "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": "usd-coin",
@@ -111,25 +94,29 @@ class SimpleSolanaExecutor:
         }
         
         if token_address in token_mapping:
-            try:
-                coingecko_id = token_mapping[token_address]
-                url = f"https://api.coingecko.com/api/v3/simple/price?ids={coingecko_id}&vs_currencies=usd"
+            for attempt in range(2):
+                try:
+                    coingecko_id = token_mapping[token_address]
+                    url = f"https://api.coingecko.com/api/v3/simple/price?ids={coingecko_id}&vs_currencies=usd"
+                    
+                    response = requests.get(url, timeout=15)
+                    if response.status_code == 200:
+                        data = response.json()
+                        if coingecko_id in data and "usd" in data[coingecko_id]:
+                            price = float(data[coingecko_id]["usd"])
+                            print(f"✅ CoinGecko price for {token_address[:8]}...{token_address[-8:]}: ${price}")
+                            return price
+                except Exception as e:
+                    print(f"⚠️ CoinGecko price API error (attempt {attempt + 1}/2): {e}")
                 
-                response = requests.get(url, timeout=10)
-                if response.status_code == 200:
-                    data = response.json()
-                    if coingecko_id in data and "usd" in data[coingecko_id]:
-                        price = float(data[coingecko_id]["usd"])
-                        print(f"✅ CoinGecko price for {token_address[:8]}...{token_address[-8:]}: ${price}")
-                        return price
-            except Exception as e:
-                print(f"⚠️ CoinGecko price API error: {e}")
+                if attempt < 1:
+                    time.sleep(1)
         
         print(f"⚠️ Token not found in any price API: {token_address[:8]}...{token_address[-8:]}")
         return 0.0
 
     def get_jupiter_quote(self, input_mint: str, output_mint: str, amount: int, slippage: float = 0.02) -> Dict[str, Any]:
-        """Get swap quote from Jupiter"""
+        """Get swap quote from Jupiter with better error handling"""
         try:
             url = "https://quote-api.jup.ag/v6/quote"
             params = {
@@ -148,8 +135,32 @@ class SimpleSolanaExecutor:
                     print(f"✅ Jupiter quote: {data['data']['inputAmount']} -> {data['data']['outputAmount']}")
                     return data["data"]
                 else:
-                    print(f"⚠️ Jupiter quote failed: {data.get('error', 'Unknown error')}")
+                    error_msg = data.get('error', 'Unknown error')
+                    print(f"⚠️ Jupiter quote failed: {error_msg}")
                     return {}
+            elif response.status_code == 400:
+                # Try to get more details about the 400 error
+                try:
+                    error_data = response.json()
+                    error_msg = error_data.get('error', 'Bad Request')
+                    print(f"⚠️ Jupiter quote 400 error: {error_msg}")
+                    
+                    # Try with a smaller amount if it's a liquidity issue
+                    if amount > 1000000:  # If amount > 1 USDC
+                        smaller_amount = amount // 2
+                        print(f"🔄 Retrying with smaller amount: {smaller_amount}")
+                        params["amount"] = str(smaller_amount)
+                        
+                        retry_response = requests.get(url, params=params, timeout=15)
+                        if retry_response.status_code == 200:
+                            retry_data = retry_response.json()
+                            if retry_data.get("data"):
+                                print(f"✅ Jupiter quote with smaller amount: {retry_data['data']['inputAmount']} -> {retry_data['data']['outputAmount']}")
+                                return retry_data["data"]
+                except Exception as e:
+                    print(f"⚠️ Could not parse Jupiter 400 error: {e}")
+                
+                return {}
             else:
                 print(f"⚠️ Jupiter quote failed: {response.status_code}")
                 return {}
@@ -207,6 +218,17 @@ class SimpleSolanaExecutor:
         """Execute trade using Jupiter (most reliable Solana DEX aggregator)"""
         try:
             print(f"🚀 Executing {'buy' if is_buy else 'sell'} for {token_address[:8]}...{token_address[-8:]}")
+            
+            # Get token liquidity to adjust trade amount
+            try:
+                from strategy import _get_token_liquidity
+                liquidity = _get_token_liquidity(token_address)
+                if liquidity and liquidity < amount_usd * 2:  # If liquidity is less than 2x trade amount
+                    adjusted_amount = min(amount_usd, liquidity * 0.1)  # Use 10% of liquidity or original amount
+                    print(f"🔄 Adjusting trade amount from ${amount_usd} to ${adjusted_amount} due to low liquidity (${liquidity})")
+                    amount_usd = adjusted_amount
+            except Exception as e:
+                print(f"⚠️ Could not get liquidity info: {e}")
             
             # Convert USD amount to USDC (assuming 1 USDC = 1 USD)
             usdc_amount = int(amount_usd * 1_000_000)  # USDC has 6 decimals

@@ -239,7 +239,7 @@ The bot now features a significantly improved token discovery system that addres
 
 ### **🛠️ Maintenance Tools:**
 - `cleanup_delisted_tokens.py` - Clean up false positives in delisted tokens list
-- `test_improved_discovery.py` - Test and compare token discovery performance
+
 
 ## 🚨 Enhanced Delisting Detection System
 
@@ -447,21 +447,7 @@ test_mode: true               # Set to true for simulation only
 
 **Note**: The bot now executes real trades by default. Make sure you have sufficient funds in your MetaMask (Ethereum) and Phantom (Solana) wallets before running.
 
-### 5. Test Solana Implementation (Optional)
-Test the Solana trading implementation:
 
-```bash
-python test_solana.py
-```
-
-This will verify:
-- ✅ Environment configuration
-- ✅ Wallet initialization
-- ✅ Balance checking
-- ✅ Price fetching
-- ✅ Pool discovery
-- ✅ Swap quotes
-- ✅ Simulation mode
 
 ### 6. Run the Bot
 ```bash
@@ -734,7 +720,7 @@ crypto_trading_bot_100x/
 ├── telegram_bot.py          # Telegram notifications
 ├── token_sniffer.py         # Token safety checks
 ├── solana_executor.py       # Solana blockchain interactions (NEW!)
-├── test_solana.py           # Solana implementation tests (NEW!)
+
 ├── SOLANA_IMPLEMENTATION.md # Solana documentation (NEW!)
 ├── secrets_manager.py       # Secure secrets management (NEW!)
 ├── setup_secrets.py         # Secrets setup and migration (NEW!)
@@ -923,7 +909,7 @@ For issues and questions:
 - Understand delisting risks and detection
 
 ### Solana-Specific Support
-- **Test Solana Implementation**: Run `python test_solana.py`
+
 - **Check Solana Documentation**: See `SOLANA_IMPLEMENTATION.md`
 - **Verify RPC Endpoint**: Ensure SOLANA_RPC_URL is accessible
 - **Wallet Setup**: Use Phantom wallet for Solana

@@ -31,6 +31,8 @@ min_volume_24h_for_buy: 50        # Min 24h volume (USD) - Even more reduced for
 min_liquidity_usd_for_buy: 50     # Min liquidity (USD) - Even more reduced for more opportunities
 min_price_usd: 0.0000001          # Ignore dust tokens
 enable_pre_buy_delisting_check: true   # Re-enabled to prevent buying delisted tokens
+pre_buy_check_sensitivity: "moderate"  # Options: "strict", "moderate", "lenient" - Controls how aggressive the delisting check is
+pre_buy_check_timeout: 10         # Timeout in seconds for price verification APIs
 
 # Fast-path thresholds for first-seen tokens
 fastpath_min_volume_24h: 200      # Min 24h volume (USD) - Even more reduced for more opportunities
