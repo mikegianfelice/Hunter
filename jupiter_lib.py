@@ -308,6 +308,70 @@ class JupiterCustomLib:
             print(f"❌ Error getting balance: {e}")
             return 0.0
 
+    def get_sol_balance(self) -> float:
+        """Get SOL balance (alias for get_balance)"""
+        return self.get_balance()
+
+    def get_token_balance(self, token_mint: str) -> float:
+        """Get token balance for a specific mint"""
+        try:
+            # Get token accounts for the wallet
+            rpc_payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getTokenAccountsByOwner",
+                "params": [
+                    str(self.keypair.pubkey()),
+                    {
+                        "mint": token_mint
+                    },
+                    {
+                        "encoding": "jsonParsed"
+                    }
+                ]
+            }
+            
+            response = requests.post(self.rpc_url, json=rpc_payload, timeout=10)
+            if response.status_code == 200:
+                result = response.json()
+                if "result" in result and "value" in result["result"]:
+                    accounts = result["result"]["value"]
+                    if accounts:
+                        # Get the first account's balance
+                        account_info = accounts[0]["account"]["data"]["parsed"]["info"]
+                        balance = float(account_info["tokenAmount"]["uiAmount"])
+                        return balance
+            return 0.0
+        except Exception as e:
+            print(f"❌ Error getting token balance: {e}")
+            return 0.0
+
+    def swap_tokens(self, input_mint: str, output_mint: str, amount_in: float, slippage_bps: int) -> Dict[str, Any]:
+        """Execute token swap and return result dict"""
+        try:
+            # Convert amount to lamports (for SOL) or token units
+            if input_mint == "So11111111111111111111111111111111111111112":  # WSOL
+                amount_lamports = int(amount_in * 1_000_000_000)
+            else:
+                # For tokens, assume 6 decimals (like USDC)
+                amount_lamports = int(amount_in * 1_000_000)
+            
+            tx_hash, success = self.execute_swap(input_mint, output_mint, amount_lamports, slippage_bps / 10000)
+            
+            return {
+                "success": success,
+                "tx_hash": tx_hash if success else None,
+                "amount_in": amount_in,
+                "input_mint": input_mint,
+                "output_mint": output_mint
+            }
+        except Exception as e:
+            print(f"❌ Swap tokens error: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
 # Utility functions
 def create_jupiter_lib(rpc_url: str, wallet_address: str, private_key: str) -> JupiterCustomLib:
     """Create Jupiter custom library instance"""

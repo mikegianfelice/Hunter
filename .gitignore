@@ -238,6 +238,11 @@ archives/
 logs/
 *.log
 
+# Test results and transaction data
+*_test_results.json
+phantom_test_results.json
+quick_test_results.json
+
 # Temporary files
 *.tmp
 *.temp
