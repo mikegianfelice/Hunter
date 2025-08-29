@@ -11,14 +11,16 @@ from web3 import Web3
 from secrets import INFURA_URL, WALLET_ADDRESS, SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
 from utils import get_eth_price_usd
 from telegram_bot import send_telegram_message
+from config_loader import get_config, get_config_bool, get_config_float
 
-# --- Config ---
-with open("config.yaml", "r") as f:
-    CONFIG = yaml.safe_load(f) or {}
-
-TEST_MODE = bool(CONFIG.get("test_mode", True))
-TRADE_AMOUNT_USD_DEFAULT = float(CONFIG.get("trade_amount_usd", 5))
-SLIPPAGE = float(CONFIG.get("slippage", 0.02))
+# Dynamic config loading
+def get_multi_chain_config():
+    """Get current configuration values dynamically"""
+    return {
+        'TEST_MODE': get_config_bool("test_mode", True),
+        'TRADE_AMOUNT_USD_DEFAULT': get_config_float("trade_amount_usd", 5),
+        'SLIPPAGE': get_config_float("slippage", 0.02)
+    }
 
 # Chain-specific configurations
 CHAIN_CONFIGS = {
@@ -145,10 +147,11 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
     
     Returns: (tx_hash_hex_or_sim, success_bool)
     """
+    config = get_multi_chain_config()
     symbol = token.get("symbol", "?")
     token_address = token["address"]
     chain_id = token.get("chainId", "ethereum").lower()
-    amount_usd = float(trade_amount_usd or TRADE_AMOUNT_USD_DEFAULT)
+    amount_usd = float(trade_amount_usd or config['TRADE_AMOUNT_USD_DEFAULT'])
     
     print(f"🚀 Executing trade on {chain_id.upper()}: {symbol} ({token_address})")
     

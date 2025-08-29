@@ -6,14 +6,16 @@ import random
 from datetime import datetime
 from http_utils import get_json
 from collections import defaultdict
+from config_loader import get_config, get_config_bool
 
-# === Load config.yaml ===
-with open("config.yaml", "r") as file:
-    config = yaml.safe_load(file) or {}
-
-TELEGRAM_ENABLED = not config.get("test_mode", True)
-TELEGRAM_BOT_TOKEN = config.get("telegram_bot_token")
-TELEGRAM_CHAT_ID = config.get("telegram_chat_id")
+# Dynamic config loading
+def get_token_scraper_config():
+    """Get current configuration values dynamically"""
+    return {
+        'TELEGRAM_ENABLED': not get_config_bool("test_mode", True),
+        'TELEGRAM_BOT_TOKEN': get_config("telegram_bot_token"),
+        'TELEGRAM_CHAT_ID': get_config("telegram_chat_id")
+    }
 
 # === Enhanced Filters for TRADING ===
 EXCLUDED_KEYWORDS = ["INU", "PEPE", "DOGE", "SHIBA", "SAFE", "ELON"]  # Removed "AI" and "MOON" for more opportunities
@@ -59,11 +61,12 @@ CSV_FIELDS = [
 ]
 
 def send_telegram_message(message):
-    if not TELEGRAM_ENABLED:
+    config = get_token_scraper_config()
+    if not config['TELEGRAM_ENABLED']:
         return
     import requests
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
+    url = f"https://api.telegram.org/bot{config['TELEGRAM_BOT_TOKEN']}/sendMessage"
+    payload = {"chat_id": config['TELEGRAM_CHAT_ID'], "text": message}
     try:
         requests.post(url, data=payload, timeout=8)
     except Exception as e:
@@ -250,10 +253,16 @@ def fetch_trending_tokens(limit=100):
     
     print(f"🔍 Found {len(unique_pairs)} unique trending tokens from {len(all_pairs)} total...")
 
+    # Load supported chains from config early
+    supported_chains = get_config("supported_chains", ["ethereum"])
+    
+    print(f"🔗 Supported chains: {supported_chains}")
+    
     # Enhanced filtering and scoring
     fetched_at = datetime.utcnow().isoformat()
     all_rows = []
     valid_tokens_count = 0
+    unsupported_chain_count = 0
     
     for pair in unique_pairs:
         symbol = (pair.get("baseToken", {}) or {}).get("symbol") or ""
@@ -263,6 +272,11 @@ def fetch_trending_tokens(limit=100):
         price = float(pair.get("priceUsd") or 0)
         vol24 = float((pair.get("volume", {}) or {}).get("h24") or 0)
         liq = float((pair.get("liquidity", {}) or {}).get("usd") or 0)
+        
+        # Early chain filtering - skip unsupported chains immediately
+        if chain.lower() not in supported_chains:
+            unsupported_chain_count += 1
+            continue
         
         # Enhanced promotional content filtering
         if is_promotional_content(symbol):
@@ -287,6 +301,7 @@ def fetch_trending_tokens(limit=100):
         })
     
     print(f"✅ Found {valid_tokens_count} valid tokens out of {len(unique_pairs)} total pairs")
+    print(f"⛔ Skipped {unsupported_chain_count} tokens from unsupported chains")
 
     if all_rows:
         _append_all_to_csv(all_rows)
@@ -296,21 +311,10 @@ def fetch_trending_tokens(limit=100):
     # Enhanced trading token selection with scoring
     tokens_for_trading = []
     
-    # Load supported chains from config
-    try:
-        with open("config.yaml", "r") as f:
-            config = yaml.safe_load(f) or {}
-        supported_chains = config.get("supported_chains", ["ethereum"])
-    except Exception:
-        supported_chains = ["ethereum"]  # fallback
-    
     scored_tokens = []
     
     for row in all_rows:
         chain = (row["chainId"] or "").lower()
-        if chain not in supported_chains:
-            print(f"⛔ Skipping unsupported chain: {chain}")
-            continue
         
         symbol = (row["symbol"] or "").upper()
         volume24h = row["volume24h"]

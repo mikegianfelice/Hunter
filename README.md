@@ -33,9 +33,15 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 | Chain | Native Token | DEX | Status | Features |
 |-------|-------------|-----|--------|----------|
 | **Ethereum** | ETH | Uniswap V2/V3 | ✅ Full Support | Real trading, sentiment analysis, TokenSniffer |
-| **Solana** | SOL | Multi-DEX (Raydium, PumpSwap, Meteora, Heaven) | ✅ Full Support | Real trading, ATA creation, multi-DEX pool discovery |
+| **Solana** | SOL | Multi-DEX (Raydium, PumpSwap, Meteora, Heaven) | ⚠️ Limited Support | Real trading, ATA creation, multi-DEX pool discovery |
 
 *Note: Other chains (Base, Polygon, BSC, Arbitrum, Optimism, PulseChain) are disabled by default to focus on chains where you have active wallets.*
+
+### ⚠️ Current Solana/Jupiter API Issues
+- **SOL Price API Failures**: CoinGecko rate limiting and Jupiter API errors preventing SOL price fetching
+- **Jupiter Quote API 400 Errors**: Invalid token addresses and insufficient liquidity causing quote failures
+- **Token Validation Issues**: Some Solana tokens failing Jupiter pre-checks due to address format issues
+- **Workaround**: Bot continues to evaluate tokens but may skip Solana trades when APIs are unreliable
 
 ## 📋 Prerequisites
 
@@ -50,6 +56,16 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 - **Infura API key** (for Ethereum)
 
 ## 🔧 Recent Updates & Fixes
+
+### Latest Improvements (v3.2) - Dynamic Configuration & Automatic Cache Management
+- **🔄 Dynamic Configuration Loading**: Implemented `config_loader.py` for real-time config changes without bot restart
+- **🧹 Automatic Python Cache Clearing**: Bot automatically clears cached modules to ensure latest code is used
+- **⚡ Smart Cache Detection**: Only clears cache when source files are modified (performance optimized)
+- **🔧 Complete Module Refactoring**: Updated all modules (`strategy.py`, `main.py`, `token_scraper.py`, etc.) to use dynamic config
+- **📊 Real-Time Configuration**: Changes to `config.yaml` now take effect immediately without restarting the bot
+- **🛠️ Development Helper**: Added `clear_cache.py` script for manual cache management during development
+- **✅ Fixed Configuration Reloading**: Resolved issue where config changes weren't being picked up by running bot
+- **🔧 Enhanced Error Handling**: Better handling of configuration loading errors and fallbacks
 
 ### Latest Improvements (v3.1) - Custom Jupiter Library & Real Trading Implementation
 - **🎯 Custom Jupiter Library**: Created `jupiter_lib.py` with direct transaction handling for Jupiter v6
@@ -734,6 +750,27 @@ def _detect_delisted_token(token_address: str, consecutive_failures: int) -> boo
     - The bot now uses volume/liquidity thresholds for Solana token evaluation
     - Update to the latest version to fix this issue
 
+12. **"Jupiter quote failed (attempt 1/3): 400"**
+    - **CURRENT ISSUE**: Jupiter API is rejecting quote requests with 400 errors
+    - **Causes**: Invalid token addresses, insufficient liquidity, API parameter validation issues
+    - **Workaround**: Bot allows tokens to proceed despite Jupiter validation issues
+    - **Solution**: Focus on Ethereum trading until Jupiter API issues are resolved
+    - **Status**: Being investigated and fixed
+
+13. **"Could not get SOL price from any source"**
+    - **CURRENT ISSUE**: All SOL price APIs (CoinGecko, Jupiter, DexScreener) are failing
+    - **Causes**: Rate limiting, API downtime, network connectivity issues
+    - **Workaround**: Bot uses fallback price when all sources fail
+    - **Solution**: Enhanced fallback mechanisms and alternative price sources
+    - **Status**: Being improved with better error handling
+
+14. **"Configuration not reloading"**
+    - **FIXED**: This issue has been resolved in v3.2
+    - **Cause**: Python modules were loading config at import time and caching values
+    - **Solution**: Implemented dynamic configuration loading with `config_loader.py`
+    - **Result**: Changes to `config.yaml` now take effect immediately without restart
+    - **Status**: ✅ Resolved with automatic cache clearing
+
 ### Debug Mode
 Enable debug logging in `config.yaml`:
 ```yaml
@@ -760,6 +797,8 @@ crypto_trading_bot_100x/
 ├── jupiter_lib.py           # Custom Jupiter library for real trading (NEW!)
 ├── jupiter_executor.py      # Jupiter trading executor (NEW!)
 ├── solana_executor.py       # Solana blockchain interactions (legacy)
+├── config_loader.py         # Dynamic configuration loading (NEW!)
+├── clear_cache.py           # Python cache clearing helper (NEW!)
 
 ├── SOLANA_IMPLEMENTATION.md # Solana documentation (NEW!)
 ├── secrets_manager.py       # Secure secrets management (NEW!)

@@ -4,34 +4,30 @@ import os
 import time
 import yaml
 import requests
+from config_loader import get_config, get_config_bool, get_config_float, get_config_int
 
-# Load config
-with open("config.yaml", "r") as f:
-    _cfg = yaml.safe_load(f)
+# Dynamic config loading
+def get_config_values():
+    """Get current configuration values dynamically"""
+    return {
+        'PRICE_MEM_TTL_SECS': get_config_int("price_memory_ttl_minutes", 15) * 60,
+        'PRICE_MEM_PRUNE_SECS': get_config_int("price_memory_prune_hours", 24) * 3600,
+        'BASE_TP': get_config_float("take_profit", 0.5),
+        'TP_MIN': get_config_float("tp_min", 0.20),
+        'TP_MAX': get_config_float("tp_max", 1.00),
+        'MIN_MOMENTUM_PCT': get_config_float("min_momentum_pct", 0.003),
+        'MIN_VOL_24H_BUY': get_config_float("min_volume_24h_for_buy", 1000),
+        'MIN_LIQ_USD_BUY': get_config_float("min_liquidity_usd_for_buy", 1000),
+        'MIN_PRICE_USD': get_config_float("min_price_usd", 0.0000001),
+        'FASTPATH_VOL': get_config_float("fastpath_min_volume_24h", 10000),
+        'FASTPATH_LIQ': get_config_float("fastpath_min_liquidity_usd", 5000),
+        'FASTPATH_SENT': get_config_int("fastpath_min_sent_score", 30),
+        'ENABLE_PRE_BUY_DELISTING_CHECK': get_config_bool("enable_pre_buy_delisting_check", True),
+        'PRE_BUY_CHECK_SENSITIVITY': get_config("pre_buy_check_sensitivity", "moderate"),
+        'PRE_BUY_CHECK_TIMEOUT': get_config_int("pre_buy_check_timeout", 10)
+    }
 
 PRICE_MEM_FILE = "price_memory.json"
-PRICE_MEM_TTL_SECS = int(_cfg.get("price_memory_ttl_minutes", 15)) * 60
-PRICE_MEM_PRUNE_SECS = int(_cfg.get("price_memory_prune_hours", 24)) * 3600
-
-BASE_TP = float(_cfg.get("take_profit", 0.5))
-TP_MIN  = float(_cfg.get("tp_min", 0.20))
-TP_MAX  = float(_cfg.get("tp_max", 1.00))
-
-# Base thresholds
-MIN_MOMENTUM_PCT = float(_cfg.get("min_momentum_pct", 0.003))           # Reduced from 0.5% to 0.3%
-MIN_VOL_24H_BUY  = float(_cfg.get("min_volume_24h_for_buy", 1000))      # Reduced from 3000 to 1000
-MIN_LIQ_USD_BUY  = float(_cfg.get("min_liquidity_usd_for_buy", 1000))   # Reduced from 3000 to 1000
-MIN_PRICE_USD    = float(_cfg.get("min_price_usd", 0.0000001))
-
-# Fast-path thresholds for first-seen tokens
-FASTPATH_VOL   = float(_cfg.get("fastpath_min_volume_24h", 10000))  # Reduced from 50k to 10k
-FASTPATH_LIQ   = float(_cfg.get("fastpath_min_liquidity_usd", 5000))  # Reduced from 25k to 5k
-FASTPATH_SENT  = int(_cfg.get("fastpath_min_sent_score", 30))           # Reduced from 40 to 30
-
-# Pre-buy delisting check
-ENABLE_PRE_BUY_DELISTING_CHECK = bool(_cfg.get("enable_pre_buy_delisting_check", True))
-PRE_BUY_CHECK_SENSITIVITY = _cfg.get("pre_buy_check_sensitivity", "moderate")
-PRE_BUY_CHECK_TIMEOUT = int(_cfg.get("pre_buy_check_timeout", 10))
 
 def _now() -> int:
     return int(time.time())
@@ -55,8 +51,9 @@ def _save_price_mem(mem: dict):
 
 def _prune_price_mem(mem: dict) -> dict:
     now_ts = _now()
+    config = get_config_values()
     pruned = {addr: info for addr, info in mem.items()
-              if now_ts - int(info.get("ts", 0)) <= PRICE_MEM_PRUNE_SECS}
+              if now_ts - int(info.get("ts", 0)) <= config['PRICE_MEM_PRUNE_SECS']}
     removed = len(mem) - len(pruned)
     if removed > 0:
         _save_price_mem(pruned)
@@ -130,6 +127,13 @@ def _check_token_delisted(token: dict) -> bool:
     Returns True if token appears to be delisted/inactive.
     Automatically adds delisted tokens to delisted_tokens.json.
     """
+    config = get_config_values()
+    
+    # Check if pre-buy delisting check is enabled
+    if not config['ENABLE_PRE_BUY_DELISTING_CHECK']:
+        print(f"🔓 Pre-buy delisting check disabled - allowing {token.get('symbol', 'UNKNOWN')}")
+        return False
+    
     address = token.get("address", "")
     chain_id = token.get("chainId", "ethereum").lower()
     symbol = token.get("symbol", "")
@@ -168,6 +172,7 @@ def _check_solana_token_delisted(token: dict) -> bool:
     
     Returns True if token appears to be delisted/inactive.
     """
+    config = get_config_values()
     address = token.get("address", "")
     symbol = token.get("symbol", "")
     volume_24h = float(token.get("volume24h", 0))
@@ -175,12 +180,12 @@ def _check_solana_token_delisted(token: dict) -> bool:
     price_usd = float(token.get("priceUsd", 0))
     
     # Adjust thresholds based on sensitivity setting
-    if PRE_BUY_CHECK_SENSITIVITY == "lenient":
+    if config['PRE_BUY_CHECK_SENSITIVITY'] == "lenient":
         vol_threshold = 25
         liq_threshold = 100
         poor_vol_threshold = 5
         poor_liq_threshold = 25
-    elif PRE_BUY_CHECK_SENSITIVITY == "strict":
+    elif config['PRE_BUY_CHECK_SENSITIVITY'] == "strict":
         vol_threshold = 1000
         liq_threshold = 5000
         poor_vol_threshold = 50
@@ -201,6 +206,13 @@ def _check_solana_token_delisted(token: dict) -> bool:
     elif volume_24h > vol_threshold/4 and liquidity > liq_threshold/4:
         print(f"✅ Pre-buy check: {symbol} has acceptable volume (${volume_24h:.0f}) and liquidity (${liquidity:.0f}) - trusting DexScreener data")
         return False
+    
+    # In lenient mode, trust DexScreener data more when APIs fail
+    if config['PRE_BUY_CHECK_SENSITIVITY'] == "lenient":
+        # If we have any reasonable volume/liquidity from DexScreener, trust it
+        if volume_24h > 10 or liquidity > 50:
+            print(f"✅ Pre-buy check: {symbol} has reasonable DexScreener data (vol: ${volume_24h:.0f}, liq: ${liquidity:.0f}) - trusting in lenient mode")
+            return False
     
     # If we have a valid price from DexScreener, trust it even with lower volume/liquidity
     if price_usd > 0.0000001:  # Very low but non-zero price threshold
@@ -228,14 +240,23 @@ def _check_solana_token_delisted(token: dict) -> bool:
                 return True
     except Exception as e:
         print(f"⚠️ Pre-buy check: Price verification failed for {symbol}: {e}")
-        # If price verification fails, be conservative but don't blacklist unless metrics are very poor
-        if volume_24h < poor_vol_threshold/2 and liquidity < poor_liq_threshold/2:
-            print(f"⚠️ Pre-buy check: {symbol} has very poor metrics and price verification failed - marking as delisted")
-            _add_to_delisted_tokens(address, symbol, f"Price verification failed and very low metrics (vol: ${volume_24h:.0f}, liq: ${liquidity:.0f})")
-            return True
+        # In lenient mode, be much more trusting of DexScreener data when APIs fail
+        if config['PRE_BUY_CHECK_SENSITIVITY'] == "lenient":
+            if volume_24h > 10 or liquidity > 50:
+                print(f"✅ Pre-buy check: {symbol} price verification failed but has reasonable DexScreener data - trusting in lenient mode")
+                return False
+            else:
+                print(f"⚠️ Pre-buy check: {symbol} price verification failed and poor DexScreener data - skipping but not blacklisting")
+                return True
         else:
-            print(f"⚠️ Pre-buy check: {symbol} price verification failed but has reasonable metrics - skipping but not blacklisting")
-            return True
+            # If price verification fails, be conservative but don't blacklist unless metrics are very poor
+            if volume_24h < poor_vol_threshold/2 and liquidity < poor_liq_threshold/2:
+                print(f"⚠️ Pre-buy check: {symbol} has very poor metrics and price verification failed - marking as delisted")
+                _add_to_delisted_tokens(address, symbol, f"Price verification failed and very low metrics (vol: ${volume_24h:.0f}, liq: ${liquidity:.0f})")
+                return True
+            else:
+                print(f"⚠️ Pre-buy check: {symbol} price verification failed but has reasonable metrics - skipping but not blacklisting")
+                return True
     
     # If we're unsure, be conservative but don't blacklist
     print(f"⚠️ Pre-buy check: {symbol} has uncertain metrics - skipping but not blacklisting")
@@ -246,6 +267,7 @@ def _check_ethereum_token_delisted(token: dict) -> bool:
     Enhanced Ethereum token delisting check with better error handling.
     More lenient when APIs are down but DexScreener shows good data.
     """
+    config = get_config_values()
     address = token.get("address", "")
     symbol = token.get("symbol", "")
     volume_24h = float(token.get("volume24h", 0))
@@ -253,12 +275,12 @@ def _check_ethereum_token_delisted(token: dict) -> bool:
     price_usd = float(token.get("priceUsd", 0))
     
     # Adjust thresholds based on sensitivity setting
-    if PRE_BUY_CHECK_SENSITIVITY == "lenient":
+    if config['PRE_BUY_CHECK_SENSITIVITY'] == "lenient":
         vol_threshold = 100
         liq_threshold = 500
         poor_vol_threshold = 10
         poor_liq_threshold = 50
-    elif PRE_BUY_CHECK_SENSITIVITY == "strict":
+    elif config['PRE_BUY_CHECK_SENSITIVITY'] == "strict":
         vol_threshold = 2000
         liq_threshold = 10000
         poor_vol_threshold = 100
@@ -280,26 +302,42 @@ def _check_ethereum_token_delisted(token: dict) -> bool:
         print(f"✅ Pre-buy check: {symbol} has acceptable DexScreener data - trusting DexScreener")
         return False
     
+    # In lenient mode, trust DexScreener data more when APIs fail
+    if config['PRE_BUY_CHECK_SENSITIVITY'] == "lenient":
+        # If we have any reasonable volume/liquidity from DexScreener, trust it
+        if (volume_24h > 50 or liquidity > 200) and price_usd > 0:
+            print(f"✅ Pre-buy check: {symbol} has reasonable DexScreener data (vol: ${volume_24h:.0f}, liq: ${liquidity:.0f}) - trusting in lenient mode")
+            return False
+    
     # Try multiple price sources with fallbacks
     current_price = _get_ethereum_token_price_with_fallbacks(address, symbol)
     
     if current_price is None:
-        # If we can't get price from any source, check if we have good DexScreener data
-        if volume_24h > vol_threshold/2 and liquidity > liq_threshold/2 and price_usd > 0:
-            print(f"✅ Pre-buy check: {symbol} has good DexScreener data despite API failures - trusting DexScreener")
-            return False
-        elif volume_24h > vol_threshold/4 and liquidity > liq_threshold/4 and price_usd > 0:
-            print(f"✅ Pre-buy check: {symbol} has moderate DexScreener data despite API failures - trusting DexScreener")
-            return False
-        
-        # If we can't verify and don't have good DexScreener data, skip but don't blacklist unless metrics are very poor
-        if volume_24h < poor_vol_threshold and liquidity < poor_liq_threshold:
-            print(f"🚨 Pre-buy check: {symbol} price verification failed and very poor metrics - marking as delisted")
-            _add_to_delisted_tokens(address, symbol, "Price verification failed and very poor metrics")
-            return True
+        # In lenient mode, be much more trusting of DexScreener data when APIs fail
+        if config['PRE_BUY_CHECK_SENSITIVITY'] == "lenient":
+            if (volume_24h > 50 or liquidity > 200) and price_usd > 0:
+                print(f"✅ Pre-buy check: {symbol} price verification failed but has reasonable DexScreener data - trusting in lenient mode")
+                return False
+            else:
+                print(f"⚠️ Pre-buy check: {symbol} price verification failed and poor DexScreener data - skipping but not blacklisting")
+                return True
         else:
-            print(f"⚠️ Pre-buy check: {symbol} price verification failed but has reasonable metrics - skipping but not blacklisting")
-            return True
+            # If we can't get price from any source, check if we have good DexScreener data
+            if volume_24h > vol_threshold/2 and liquidity > liq_threshold/2 and price_usd > 0:
+                print(f"✅ Pre-buy check: {symbol} has good DexScreener data despite API failures - trusting DexScreener")
+                return False
+            elif volume_24h > vol_threshold/4 and liquidity > liq_threshold/4 and price_usd > 0:
+                print(f"✅ Pre-buy check: {symbol} has moderate DexScreener data despite API failures - trusting DexScreener")
+                return False
+            
+            # If we can't verify and don't have good DexScreener data, skip but don't blacklist unless metrics are very poor
+            if volume_24h < poor_vol_threshold and liquidity < poor_liq_threshold:
+                print(f"🚨 Pre-buy check: {symbol} price verification failed and very poor metrics - marking as delisted")
+                _add_to_delisted_tokens(address, symbol, "Price verification failed and very poor metrics")
+                return True
+            else:
+                print(f"⚠️ Pre-buy check: {symbol} price verification failed but has reasonable metrics - skipping but not blacklisting")
+                return True
     
     if current_price == 0:
         # Only mark as delisted if we also have poor metrics
@@ -456,6 +494,7 @@ def _check_jupiter_tradeable(token_address: str, symbol: str) -> bool:
         return True
 
 def check_buy_signal(token: dict) -> bool:
+    config = get_config_values()
     address = (token.get("address") or "").lower()
     price   = float(token.get("priceUsd") or 0.0)
     vol24h  = float(token.get("volume24h") or 0.0)
@@ -463,7 +502,7 @@ def check_buy_signal(token: dict) -> bool:
     is_trusted = bool(token.get("is_trusted", False))
     chain_id = token.get("chainId", "ethereum").lower()
 
-    if not address or price <= MIN_PRICE_USD:
+    if not address or price <= config['MIN_PRICE_USD']:
         print("📉 No address or price too low; skipping buy signal.")
         return False
 
@@ -475,13 +514,13 @@ def check_buy_signal(token: dict) -> bool:
             return False
 
     # Pre-buy delisting check
-    if ENABLE_PRE_BUY_DELISTING_CHECK and _check_token_delisted(token):
+    if config['ENABLE_PRE_BUY_DELISTING_CHECK'] and _check_token_delisted(token):
         print("🚨 Token appears delisted/inactive; skipping buy signal.")
         return False
 
     # For trusted tokens, require milder depth floors
-    min_vol = MIN_VOL_24H_BUY if not is_trusted else max(2000.0, MIN_VOL_24H_BUY * 0.5)
-    min_liq = MIN_LIQ_USD_BUY if not is_trusted else max(2000.0, MIN_LIQ_USD_BUY * 0.5)
+    min_vol = config['MIN_VOL_24H_BUY'] if not is_trusted else max(2000.0, config['MIN_VOL_24H_BUY'] * 0.5)
+    min_liq = config['MIN_LIQ_USD_BUY'] if not is_trusted else max(2000.0, config['MIN_LIQ_USD_BUY'] * 0.5)
     
     # For multi-chain tokens, use lower requirements but not too aggressive
     if chain_id != "ethereum":
@@ -500,7 +539,7 @@ def check_buy_signal(token: dict) -> bool:
     _save_price_mem(mem)
 
     # Trusted tokens: slightly easier momentum threshold
-    momentum_need = MIN_MOMENTUM_PCT if not is_trusted else max(0.003, MIN_MOMENTUM_PCT * 0.5)  # e.g. 0.3%
+    momentum_need = config['MIN_MOMENTUM_PCT'] if not is_trusted else max(0.003, config['MIN_MOMENTUM_PCT'] * 0.5)  # e.g. 0.3%
     
     # Multi-chain tokens: even easier momentum threshold
     if chain_id != "ethereum":
@@ -517,7 +556,7 @@ def check_buy_signal(token: dict) -> bool:
         prev_ts    = int(entry.get("ts", 0))
         age = now_ts - prev_ts
 
-        if prev_price > 0 and age <= PRICE_MEM_TTL_SECS:
+        if prev_price > 0 and age <= config['PRICE_MEM_TTL_SECS']:
             mom = _pct_change(price, prev_price)
             print(f"📈 Momentum vs {age}s ago: {mom*100:.2f}% (need ≥ {momentum_need*100:.2f}%)")
             if mom >= momentum_need:
@@ -541,15 +580,15 @@ def check_buy_signal(token: dict) -> bool:
     # Adjust requirements for non-Ethereum chains
     if chain_id != "ethereum":
         # Lower requirements for multi-chain tokens but not too aggressive
-        fast_vol_ok = (vol24h >= FASTPATH_VOL * 0.01)   # 1% of Ethereum requirement (was 0.1%)
-        fast_liq_ok = (liq_usd >= FASTPATH_LIQ * 0.02)  # 2% of Ethereum requirement (was 0.2%)
+        fast_vol_ok = (vol24h >= config['FASTPATH_VOL'] * 0.01)   # 1% of Ethereum requirement (was 0.1%)
+        fast_liq_ok = (liq_usd >= config['FASTPATH_LIQ'] * 0.02)  # 2% of Ethereum requirement (was 0.2%)
         fast_sent_ok = True  # Skip sentiment for non-Ethereum
-        print(f"🔓 Multi-chain fast-path: vol ${vol24h:,.0f} (need ≥ {FASTPATH_VOL * 0.01:,.0f}), liq ${liq_usd:,.0f} (need ≥ {FASTPATH_LIQ * 0.02:,.0f})")
+        print(f"🔓 Multi-chain fast-path: vol ${vol24h:,.0f} (need ≥ {config['FASTPATH_VOL'] * 0.01:,.0f}), liq ${liq_usd:,.0f} (need ≥ {config['FASTPATH_LIQ'] * 0.02:,.0f})")
     else:
         # Original Ethereum requirements
-        fast_vol_ok = (vol24h >= FASTPATH_VOL)
-        fast_liq_ok = (liq_usd >= FASTPATH_LIQ)
-        fast_sent_ok = (sent_score >= FASTPATH_SENT) or (sent_mentions >= 3)
+        fast_vol_ok = (vol24h >= config['FASTPATH_VOL'])
+        fast_liq_ok = (liq_usd >= config['FASTPATH_LIQ'])
+        fast_sent_ok = (sent_score >= config['FASTPATH_SENT']) or (sent_mentions >= 3)
 
     if is_trusted:
         if fast_vol_ok and fast_liq_ok:
@@ -564,7 +603,8 @@ def check_buy_signal(token: dict) -> bool:
     return False
 
 def get_dynamic_take_profit(token: dict) -> float:
-    tp = BASE_TP
+    config = get_config_values()
+    tp = config['BASE_TP']
     vol24h = float(token.get("volume24h") or 0.0)
     sent_score = float(token.get("sent_score") or 0.0)
     mentions   = int(token.get("sent_mentions") or 0)
@@ -579,6 +619,6 @@ def get_dynamic_take_profit(token: dict) -> float:
     elif vol24h < 20_000:
         tp -= 0.10
 
-    tp = max(TP_MIN, min(TP_MAX, tp))
-    print(f"🎯 Dynamic TP computed: {tp*100:.0f}% (base {BASE_TP*100:.0f}%)")
+    tp = max(config['TP_MIN'], min(config['TP_MAX'], tp))
+    print(f"🎯 Dynamic TP computed: {tp*100:.0f}% (base {config['BASE_TP']*100:.0f}%)")
     return tp

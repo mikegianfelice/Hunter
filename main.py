@@ -1,11 +1,72 @@
-import time
-import yaml
-from collections import defaultdict
-from secrets import WALLET_ADDRESS, validate_secrets  # loaded from secure backend via secrets.py
-import os
-import json
-from datetime import datetime
+#!/usr/bin/env python3
+"""
+Crypto Trading Bot - Main Entry Point
+Automatically clears Python cache to ensure latest code is used
+"""
 
+import os
+import sys
+import shutil
+
+# Clear Python cache BEFORE any other imports
+def clear_python_cache():
+    """Clear Python cache to ensure we're using the latest code"""
+    try:
+        # Check if any .py files are newer than their .pyc files
+        cache_needs_clearing = False
+        
+        for root, dirs, files in os.walk('.'):
+            for file in files:
+                if file.endswith('.py'):
+                    py_path = os.path.join(root, file)
+                    pyc_path = os.path.join(root, file.replace('.py', '.pyc'))
+                    
+                    # Check if .pyc exists and if .py is newer
+                    if os.path.exists(pyc_path):
+                        py_mtime = os.path.getmtime(py_path)
+                        pyc_mtime = os.path.getmtime(pyc_path)
+                        if py_mtime > pyc_mtime:
+                            cache_needs_clearing = True
+                            break
+        
+        if cache_needs_clearing:
+            print("🔄 Source files modified - clearing Python cache...")
+            
+            # Remove all .pyc files
+            for root, dirs, files in os.walk('.'):
+                for file in files:
+                    if file.endswith('.pyc'):
+                        os.remove(os.path.join(root, file))
+            
+            # Remove all __pycache__ directories
+            for root, dirs, files in os.walk('.'):
+                for dir_name in dirs:
+                    if dir_name == '__pycache__':
+                        shutil.rmtree(os.path.join(root, dir_name))
+            
+            print("🧹 Python cache cleared - using latest code")
+        else:
+            print("✅ Python cache is up to date")
+            
+    except Exception as e:
+        print(f"⚠️ Cache clearing failed: {e}")
+
+# Clear cache immediately
+clear_python_cache()
+
+# Now import all modules (they'll be fresh)
+import time
+import json
+import yaml
+import signal
+from datetime import datetime
+from collections import defaultdict
+from pathlib import Path
+
+from dotenv import load_dotenv
+load_dotenv()
+
+from secrets import WALLET_ADDRESS, validate_secrets  # loaded from secure backend via secrets.py
 from clear_state import ensure_mode_transition_clean
 
 from token_scraper import fetch_trending_tokens
@@ -22,22 +83,39 @@ from blacklist_manager import (
 from risk_manager import allow_new_trade, register_buy, status_summary
 
 # --- Load non-secret config ---
-with open("config.yaml", "r") as f:
-    config = yaml.safe_load(f) or {}
+from config_loader import get_config, get_config_bool, get_config_float, get_config_int
+
+# Dynamic config loading
+def get_main_config():
+    """Get current configuration values dynamically"""
+    return {
+        'TEST_MODE': get_config_bool("test_mode", True),
+        'TRADE_AMOUNT': get_config_float("trade_amount_usd", 5),
+        'SLIPPAGE': get_config_float("slippage", 0.02),
+        'TAKE_PROFIT': get_config_float("take_profit", 0.5),
+        'STOP_LOSS': get_config_float("stop_loss", 0.25),
+        'USE_DYNAMIC_TP': get_config_bool("use_dynamic_tp", False),
+        'ENABLE_SMART_BLACKLIST_CLEANUP': get_config_bool("enable_smart_blacklist_cleanup", True),
+        'BLACKLIST_CLEANUP_INTERVAL': get_config_int("blacklist_cleanup_interval", 6),
+        'BLACKLIST_KEEP_FAILURE_THRESHOLD': get_config_int("blacklist_keep_failure_threshold", 3),
+        'ENABLE_SMART_DELISTED_CLEANUP': get_config_bool("enable_smart_delisted_cleanup", True),
+        'DELISTED_CLEANUP_INTERVAL': get_config_int("delisted_cleanup_interval", 12)
+    }
 
 # Current mode
-TEST_MODE = bool(config.get("test_mode", True))
+config = get_main_config()
+TEST_MODE = config['TEST_MODE']
 
 # One-time cleaner: if mode changed since last run (or reset_state_now: true)
-ensure_mode_transition_clean(TEST_MODE, force_reset=bool(config.get("reset_state_now", False)))
+ensure_mode_transition_clean(TEST_MODE, force_reset=get_config_bool("reset_state_now", False))
 
 # Pull settings from config
 WALLET = WALLET_ADDRESS  # from .env
-TRADE_AMOUNT = float(config.get("trade_amount_usd", 5))
-SLIPPAGE = float(config.get("slippage", 0.02))
-TAKE_PROFIT = float(config.get("take_profit", 0.5))
-STOP_LOSS = float(config.get("stop_loss", 0.25))
-USE_DYNAMIC_TP = bool(config.get("use_dynamic_tp", False))
+TRADE_AMOUNT = config['TRADE_AMOUNT']
+SLIPPAGE = config['SLIPPAGE']
+TAKE_PROFIT = config['TAKE_PROFIT']
+STOP_LOSS = config['STOP_LOSS']
+USE_DYNAMIC_TP = config['USE_DYNAMIC_TP']
 
 # Normalize trusted token addresses to a lowercase set (robust to None/str/list)
 def _normalize_trusted(val):
@@ -51,7 +129,7 @@ def _normalize_trusted(val):
         return set()
     return {str(a).strip().lower() for a in vals if isinstance(a, str) and a.strip()}
 
-TRUSTED_TOKENS = _normalize_trusted(config.get("trusted_tokens"))
+TRUSTED_TOKENS = _normalize_trusted(get_config("trusted_tokens"))
 
 # ---- Debug rejection tracking keys ----
 REJECT_BLACKLIST   = "blacklisted"
@@ -77,12 +155,14 @@ def smart_blacklist_maintenance():
     """Automatically clean blacklist to maintain trading opportunities"""
     global blacklist_cleanup_counter
     
-    if not ENABLE_SMART_BLACKLIST_CLEANUP:
+    config = get_main_config()
+    
+    if not config['ENABLE_SMART_BLACKLIST_CLEANUP']:
         return
         
     blacklist_cleanup_counter += 1
     
-    if blacklist_cleanup_counter < BLACKLIST_CLEANUP_INTERVAL:
+    if blacklist_cleanup_counter < config['BLACKLIST_CLEANUP_INTERVAL']:
         return
     
     blacklist_cleanup_counter = 0  # Reset counter
@@ -109,7 +189,7 @@ def smart_blacklist_maintenance():
         
         # Keep tokens with N+ failures (configurable threshold)
         for token, count in failure_counts.items():
-            if count >= BLACKLIST_KEEP_FAILURE_THRESHOLD:
+            if count >= config['BLACKLIST_KEEP_FAILURE_THRESHOLD']:
                 high_risk_tokens.add(token.lower())
         
         # Keep tokens that caused 100% losses (from trade log)
@@ -156,12 +236,14 @@ def smart_delisted_cleanup():
     """Automatically clean delisted tokens list to maintain trading opportunities"""
     global delisted_cleanup_counter
     
-    if not ENABLE_SMART_DELISTED_CLEANUP:
+    config = get_main_config()
+    
+    if not config['ENABLE_SMART_DELISTED_CLEANUP']:
         return
         
     delisted_cleanup_counter += 1
     
-    if delisted_cleanup_counter < DELISTED_CLEANUP_INTERVAL:
+    if delisted_cleanup_counter < config['DELISTED_CLEANUP_INTERVAL']:
         return
     
     delisted_cleanup_counter = 0  # Reset counter
@@ -245,54 +327,67 @@ def trade_loop():
                 print(f"🔍 Checking safety for {symbol} on {chain_id.upper()}")
                 print(f"   Token data: {token}")
                 
-                # Enhanced error handling for TokenSniffer
-                try:
-                    if not is_token_safe(address, chain_id):
-                        print("⚠️ TokenSniffer marked as unsafe.")
-                        # Use failure tracking instead of immediate blacklisting
-                        if record_failure(address, "tokensniffer_unsafe"):
-                            rejections[REJECT_SNIFFER].append((symbol, address))
-                            continue
-                        else:
-                            print("⚠️ Token marked as unsafe but not blacklisted (failure tracking)")
-                            rejections[REJECT_SNIFFER].append((symbol, address))
-                            continue
-                except Exception as e:
-                    print(f"⚠️ TokenSniffer check failed for {symbol}: {e}")
-                    # Record failure but don't blacklist for API errors
-                    record_failure(address, "tokensniffer_api_error", should_blacklist=False)
-                    print("⚠️ Skipping TokenSniffer check due to API error")
-                    # Continue with evaluation instead of rejecting
+                # Check if TokenSniffer is enabled
+                if get_config_bool("enable_tokensniffer", False):
+                    # Enhanced error handling for TokenSniffer
+                    try:
+                        if not is_token_safe(address, chain_id):
+                            print("⚠️ TokenSniffer marked as unsafe.")
+                            # Use failure tracking instead of immediate blacklisting
+                            if record_failure(address, "tokensniffer_unsafe"):
+                                rejections[REJECT_SNIFFER].append((symbol, address))
+                                continue
+                            else:
+                                print("⚠️ Token marked as unsafe but not blacklisted (failure tracking)")
+                                rejections[REJECT_SNIFFER].append((symbol, address))
+                                continue
+                    except Exception as e:
+                        print(f"⚠️ TokenSniffer check failed for {symbol}: {e}")
+                        # Record failure but don't blacklist for API errors
+                        record_failure(address, "tokensniffer_api_error", should_blacklist=False)
+                        print("⚠️ Skipping TokenSniffer check due to API error")
+                        # Continue with evaluation instead of rejecting
+                else:
+                    print("🔓 TokenSniffer disabled in config - skipping safety check")
             else:
                 print("🔓 Trusted token — skipping blacklist, cooldown, and TokenSniffer")
 
             # --- Sentiment (Ethereum only) ---
             chain_id = token.get("chainId", "ethereum").lower()
-            if chain_id == "ethereum":
-                sentiment = get_sentiment_score(token) or {}
-                print(f"🧠 Sentiment for ${symbol}: {sentiment}")
+            config = get_main_config()
+            
+            # Check if sentiment checks are enabled
+            if get_config_bool("enable_sentiment_checks", False):
+                if chain_id == "ethereum":
+                    sentiment = get_sentiment_score(token) or {}
+                    print(f"🧠 Sentiment for ${symbol}: {sentiment}")
 
-                # Attach sentiment to token so strategy/executor can use it
-                token["sent_score"] = sentiment.get("score")
-                token["sent_mentions"] = sentiment.get("mentions")
-                token["sent_status"] = sentiment.get("status")
+                    # Attach sentiment to token so strategy/executor can use it
+                    token["sent_score"] = sentiment.get("score")
+                    token["sent_mentions"] = sentiment.get("mentions")
+                    token["sent_status"] = sentiment.get("status")
 
-                # Temporarily disable sentiment checks to allow trades
-                print("🔓 Sentiment checks temporarily disabled")
-                # if not is_trusted:
-                #     if (
-                #         sentiment.get("status") == "blocked"
-                #         or (sentiment.get("mentions") or 0) < 1  # Reduced from 3 to 1
-                #         or (sentiment.get("score") or 0) < 30   # Reduced from 60 to 30
-                #     ):
-                #         print("📉 Token failed sentiment check.")
-                #         rejections[REJECT_SENTIMENT].append((symbol, address))
-                #         continue
+                    # Sentiment checks are enabled
+                    if not is_trusted:
+                        if (
+                            sentiment.get("status") == "blocked"
+                            or (sentiment.get("mentions") or 0) < 1
+                            or (sentiment.get("score") or 0) < 30
+                        ):
+                            print("📉 Token failed sentiment check.")
+                            rejections[REJECT_SENTIMENT].append((symbol, address))
+                            continue
+                else:
+                    # Skip sentiment for non-Ethereum chains
+                    print(f"🔓 Skipping sentiment for {chain_id.upper()} token (not required)")
+                    token["sent_score"] = 100  # Default high score for non-Ethereum
+                    token["sent_mentions"] = 10  # Default high mentions for non-Ethereum
+                    token["sent_status"] = "ok"
             else:
-                # Skip sentiment for non-Ethereum chains
-                print(f"🔓 Skipping sentiment for {chain_id.upper()} token (not required)")
-                token["sent_score"] = 100  # Default high score for non-Ethereum
-                token["sent_mentions"] = 10  # Default high mentions for non-Ethereum
+                # Sentiment checks disabled - use default values
+                print("🔓 Sentiment checks disabled in config")
+                token["sent_score"] = 100  # Default high score
+                token["sent_mentions"] = 10  # Default high mentions
                 token["sent_status"] = "ok"
 
             # --- Strategy signal ---
@@ -396,6 +491,10 @@ if __name__ == "__main__":
     
     while True:
         try:
+            # Run smart blacklist maintenance every loop
+            smart_blacklist_maintenance()
+            smart_delisted_cleanup()
+            
             # Periodic blacklist review (every 24 hours)
             blacklist_review_counter += 1
             if blacklist_review_counter >= 1440:  # 24 hours (1440 minutes)

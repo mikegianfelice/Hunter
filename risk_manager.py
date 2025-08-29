@@ -3,20 +3,22 @@ import json, os, time, yaml
 from datetime import datetime, timezone
 from web3 import Web3
 from secrets import INFURA_URL, WALLET_ADDRESS
+from config_loader import get_config, get_config_int, get_config_float
 
 STATE_FILE = "risk_state.json"
 POSITIONS_FILE = "open_positions.json"
 
-# Load config (with safe defaults)
-with open("config.yaml", "r") as f:
-    _cfg = yaml.safe_load(f)
-
-MAX_CONCURRENT_POS = int(_cfg.get("max_concurrent_positions", 5))
-DAILY_LOSS_LIMIT_USD = float(_cfg.get("daily_loss_limit_usd", 50.0))  # stop for the day if realized loss exceeds this
-MAX_LOSING_STREAK = int(_cfg.get("max_losing_streak", 3))             # pause after N consecutive losses
-CIRCUIT_BREAK_MIN = int(_cfg.get("circuit_breaker_minutes", 60))      # pause window when triggered
-PER_TRADE_MAX_USD  = float(_cfg.get("per_trade_max_usd", _cfg.get("trade_amount_usd", 5)))
-MIN_WALLET_BALANCE_BUFFER = float(_cfg.get("min_wallet_balance_buffer", 0.01))  # Keep 1% buffer for gas
+# Dynamic config loading
+def get_risk_manager_config():
+    """Get current configuration values dynamically"""
+    return {
+        'MAX_CONCURRENT_POS': get_config_int("max_concurrent_positions", 5),
+        'DAILY_LOSS_LIMIT_USD': get_config_float("daily_loss_limit_usd", 50.0),
+        'MAX_LOSING_STREAK': get_config_int("max_losing_streak", 3),
+        'CIRCUIT_BREAK_MIN': get_config_int("circuit_breaker_minutes", 60),
+        'PER_TRADE_MAX_USD': get_config_float("per_trade_max_usd", get_config_float("trade_amount_usd", 5)),
+        'MIN_WALLET_BALANCE_BUFFER': get_config_float("min_wallet_balance_buffer", 0.01)
+    }
 
 # Web3 setup for balance checking
 w3 = Web3(Web3.HTTPProvider(INFURA_URL))
@@ -137,6 +139,7 @@ def allow_new_trade(trade_amount_usd: float, token_address: str = None, chain_id
     Gatekeeper before any new buy.
     Returns (allowed: bool, reason: str)
     """
+    config = get_risk_manager_config()
     s = _load_state()
 
     # paused by circuit breaker?
@@ -144,7 +147,7 @@ def allow_new_trade(trade_amount_usd: float, token_address: str = None, chain_id
         return False, f"circuit_breaker_active_until_{s['paused_until']}"
 
     # daily loss limit hit?
-    if s.get("realized_pnl_usd", 0.0) <= -abs(DAILY_LOSS_LIMIT_USD):
+    if s.get("realized_pnl_usd", 0.0) <= -abs(config['DAILY_LOSS_LIMIT_USD']):
         # pause until UTC midnight
         tomorrow = datetime.utcnow().replace(hour=23, minute=59, second=59, microsecond=0).timestamp()
         s["paused_until"] = int(tomorrow)
@@ -152,13 +155,13 @@ def allow_new_trade(trade_amount_usd: float, token_address: str = None, chain_id
         return False, "daily_loss_limit_hit"
 
     # per-trade size guard
-    if trade_amount_usd > PER_TRADE_MAX_USD:
-        return False, f"trade_amount_exceeds_cap_{PER_TRADE_MAX_USD}"
+    if trade_amount_usd > config['PER_TRADE_MAX_USD']:
+        return False, f"trade_amount_exceeds_cap_{config['PER_TRADE_MAX_USD']}"
 
     # Check wallet balance for specific chain
     # Temporarily disabled for testing - uncomment below lines for production
     # wallet_balance = _get_wallet_balance_usd(chain_id)
-    # required_amount = trade_amount_usd + (wallet_balance * MIN_WALLET_BALANCE_BUFFER)  # Include buffer for gas
+    # required_amount = trade_amount_usd + (wallet_balance * config['MIN_WALLET_BALANCE_BUFFER'])  # Include buffer for gas
     # if wallet_balance < required_amount:
     #     return False, f"insufficient_balance_{wallet_balance:.2f}_usd_needs_{required_amount:.2f}_usd"
 
@@ -167,7 +170,7 @@ def allow_new_trade(trade_amount_usd: float, token_address: str = None, chain_id
         return False, "token_already_held"
 
     # concurrent positions guard
-    if _open_positions_count() >= MAX_CONCURRENT_POS:
+    if _open_positions_count() >= config['MAX_CONCURRENT_POS']:
         return False, "max_concurrent_positions_reached"
 
     return True, "ok"
@@ -184,6 +187,7 @@ def register_sell(pnl_pct: float, usd_size: float):
     pnl_pct: e.g., +12.5 or -8.7 (percent)
     usd_size: original position size in USD (what you bought with)
     """
+    config = get_risk_manager_config()
     s = _load_state()
     s["sells_today"] = int(s.get("sells_today", 0)) + 1
 
@@ -198,8 +202,8 @@ def register_sell(pnl_pct: float, usd_size: float):
     # update losing streak / circuit breaker
     if pnl_usd < 0:
         s["losing_streak"] = int(s.get("losing_streak", 0)) + 1
-        if s["losing_streak"] >= MAX_LOSING_STREAK:
-            s["paused_until"] = _now_ts() + CIRCUIT_BREAK_MIN * 60
+        if s["losing_streak"] >= config['MAX_LOSING_STREAK']:
+            s["paused_until"] = _now_ts() + config['CIRCUIT_BREAK_MIN'] * 60
     else:
         s["losing_streak"] = 0  # reset on win
 

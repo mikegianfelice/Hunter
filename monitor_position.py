@@ -9,14 +9,16 @@ from datetime import datetime
 from uniswap_executor import sell_token
 from utils import fetch_token_price_usd
 from telegram_bot import send_telegram_message
+from config_loader import get_config, get_config_float
 
-# === Config / files ===
-with open("config.yaml", "r") as f:
-    config = yaml.safe_load(f) or {}
-
-TAKE_PROFIT = float(config.get("take_profit", 0.5))           # 50%
-STOP_LOSS = float(config.get("stop_loss", 0.25))               # 25%
-TRAILING_STOP = float(config.get("trailing_stop_percent", 0))  # e.g., 0.10 = 10% (0 to disable)
+# Dynamic config loading
+def get_monitor_config():
+    """Get current configuration values dynamically"""
+    return {
+        'TAKE_PROFIT': get_config_float("take_profit", 0.5),
+        'STOP_LOSS': get_config_float("stop_loss", 0.25),
+        'TRAILING_STOP': get_config_float("trailing_stop_percent", 0)
+    }
 
 POSITIONS_FILE = "open_positions.json"
 LOG_FILE = "trade_log.csv"
@@ -146,7 +148,8 @@ def _apply_trailing_stop(state: dict, addr: str, current_price: float) -> float:
     Update peak price and compute dynamic stop if trailing is enabled.
     Returns the dynamic stop price (or None if not active).
     """
-    if TRAILING_STOP <= 0:
+    config = get_monitor_config()
+    if config['TRAILING_STOP'] <= 0:
         return None
 
     # track per-token peak
@@ -157,8 +160,8 @@ def _apply_trailing_stop(state: dict, addr: str, current_price: float) -> float:
         state[peak_key] = current_price
         peak = current_price
 
-    # trailing_stop is a % drop from peak
-    trail_stop_price = peak * (1 - TRAILING_STOP)
+            # trailing_stop is a % drop from peak
+        trail_stop_price = peak * (1 - config['TRAILING_STOP'])
     return trail_stop_price
 
 def _fetch_token_price_multi_chain(token_address: str) -> float:
@@ -201,6 +204,7 @@ def _detect_delisted_token(token_address: str, consecutive_failures: int) -> boo
     return consecutive_failures >= 5
 
 def monitor_all_positions():
+    config = get_monitor_config()
     positions = load_positions()
     if not positions:
         print("📭 No open positions to monitor.")
@@ -273,7 +277,7 @@ def monitor_all_positions():
             print(f"🧵 Trailing stop @ ${dyn_stop:.6f} (peak-based)")
 
         # Take-profit
-        if gain >= TAKE_PROFIT:
+        if gain >= config['TAKE_PROFIT']:
             print("💰 Take-profit hit! Selling...")
             tx = sell_token(token_address)
             log_trade(token_address, entry_price, current_price, "take_profit")
@@ -289,7 +293,7 @@ def monitor_all_positions():
             continue  # move to next token
 
         # Hard stop-loss
-        if gain <= -STOP_LOSS:
+        if gain <= -config['STOP_LOSS']:
             print("🛑 Stop-loss hit! Selling...")
             tx = sell_token(token_address)
             log_trade(token_address, entry_price, current_price, "stop_loss")

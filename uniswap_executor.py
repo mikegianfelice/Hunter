@@ -10,30 +10,28 @@ from pathlib import Path
 from secrets import INFURA_URL, WALLET_ADDRESS, PRIVATE_KEY
 from gas import suggest_fees
 from utils import get_eth_price_usd  # robust ETH/USD (Graph -> on-chain V2)
+from config_loader import get_config, get_config_bool, get_config_float, get_config_int
 
-# === Load config ===
-with open("config.yaml", "r") as f:
-    CONFIG = yaml.safe_load(f) or {}
-
-TEST_MODE = bool(CONFIG.get("test_mode", True))
-SLIPPAGE = float(CONFIG.get("slippage", 0.02))
-USE_SUPPORTING_FEE = bool(CONFIG.get("use_supporting_fee_swap", True))
-
-# Re-quote protection
-REQUOTE_DELAY_SECONDS = int(CONFIG.get("requote_delay_seconds", 10))
-REQUOTE_SLIPPAGE_BUFFER = float(CONFIG.get("requote_slippage_buffer", 0.005))  # +0.5%
-
-# Optional gas knobs read by gas.suggest_fees
-GAS_CFG = {
-    "gas_blocks": CONFIG.get("gas_blocks"),
-    "gas_reward_percentile": CONFIG.get("gas_reward_percentile"),
-    "gas_basefee_headroom": CONFIG.get("gas_basefee_headroom"),
-    "gas_priority_min_gwei": CONFIG.get("gas_priority_min_gwei"),
-    "gas_priority_max_gwei": CONFIG.get("gas_priority_max_gwei"),
-    "gas_ceiling_gwei": CONFIG.get("gas_ceiling_gwei"),
-    "gas_multiplier": CONFIG.get("gas_multiplier"),
-    "gas_extra_priority_gwei": CONFIG.get("gas_extra_priority_gwei"),
-}
+# Dynamic config loading
+def get_uniswap_config():
+    """Get current configuration values dynamically"""
+    return {
+        'TEST_MODE': get_config_bool("test_mode", True),
+        'SLIPPAGE': get_config_float("slippage", 0.02),
+        'USE_SUPPORTING_FEE': get_config_bool("use_supporting_fee_swap", True),
+        'REQUOTE_DELAY_SECONDS': get_config_int("requote_delay_seconds", 10),
+        'REQUOTE_SLIPPAGE_BUFFER': get_config_float("requote_slippage_buffer", 0.005),
+        'GAS_CFG': {
+            "gas_blocks": get_config("gas_blocks"),
+            "gas_reward_percentile": get_config("gas_reward_percentile"),
+            "gas_basefee_headroom": get_config("gas_basefee_headroom"),
+            "gas_priority_min_gwei": get_config("gas_priority_min_gwei"),
+            "gas_priority_max_gwei": get_config("gas_priority_max_gwei"),
+            "gas_ceiling_gwei": get_config("gas_ceiling_gwei"),
+            "gas_multiplier": get_config("gas_multiplier"),
+            "gas_extra_priority_gwei": get_config("gas_extra_priority_gwei"),
+        }
+    }
 
 # === Web3 / Router setup ===
 if not INFURA_URL:
@@ -76,7 +74,8 @@ def _apply_eip1559(tx_dict: dict) -> dict:
     """
     Attach EIP-1559 gas fields using on-chain fee history, with config guardrails.
     """
-    max_fee, max_prio = suggest_fees(w3, GAS_CFG)
+    config = get_uniswap_config()
+    max_fee, max_prio = suggest_fees(w3, config['GAS_CFG'])
     out = dict(tx_dict)
     out["maxFeePerGas"] = int(max_fee)
     out["maxPriorityFeePerGas"] = int(max_prio)
@@ -104,6 +103,7 @@ def buy_token(token_address: str, usd_amount: float, symbol: str = "?") -> tuple
     - Uses EIP-1559 fees
     Returns: (tx_hash_hex or "0xSIMULATED_TX", success_bool)
     """
+    config = get_uniswap_config()
     token_address = Web3.to_checksum_address(token_address)
     path = [WETH, token_address]
     deadline = int(time.time()) + 600
@@ -134,16 +134,16 @@ def buy_token(token_address: str, usd_amount: float, symbol: str = "?") -> tuple
         print(f"❌ Bad quote (0 out) for {symbol}; aborting.")
         return None, False
 
-    amount_out_min = int(quoted_out * (1.0 - SLIPPAGE))
+    amount_out_min = int(quoted_out * (1.0 - config['SLIPPAGE']))
     if amount_out_min <= 0:
         print(f"❌ Computed minOut <= 0 for {symbol}; aborting.")
         return None, False
 
     print(f"🧮 Quote for {symbol}: in {eth_amount:.6f} ETH → out {quoted_out} raw")
-    print(f"🎯 Slippage {SLIPPAGE*100:.2f}% → minOut {amount_out_min}")
+    print(f"🎯 Slippage {config['SLIPPAGE']*100:.2f}% → minOut {amount_out_min}")
 
     # Build with initial minOut
-    if USE_SUPPORTING_FEE:
+    if config['USE_SUPPORTING_FEE']:
         fn = router.functions.swapExactETHForTokensSupportingFeeOnTransferTokens(
             amount_out_min, path, WALLET, deadline
         )
@@ -166,7 +166,7 @@ def buy_token(token_address: str, usd_amount: float, symbol: str = "?") -> tuple
     t_quote = time.time()
     def _maybe_requote_and_adjust(tx_dict):
         elapsed = time.time() - t_quote
-        if elapsed <= REQUOTE_DELAY_SECONDS:
+        if elapsed <= config['REQUOTE_DELAY_SECONDS']:
             return tx_dict  # still fresh
 
         print(f"⏱️ Quote stale ({elapsed:.1f}s). Re-quoting before send…")
@@ -181,7 +181,7 @@ def buy_token(token_address: str, usd_amount: float, symbol: str = "?") -> tuple
             return tx_dict
 
         # Expand slippage slightly on re-quote to reduce false failures
-        total_slip = SLIPPAGE + max(0.0, REQUOTE_SLIPPAGE_BUFFER)
+        total_slip = config['SLIPPAGE'] + max(0.0, config['REQUOTE_SLIPPAGE_BUFFER'])
         new_min_out = int(re_quoted_out * (1.0 - total_slip))
         if new_min_out <= 0:
             print("⚠️ Re-quote minOut <= 0; keeping original minOut.")
@@ -189,7 +189,7 @@ def buy_token(token_address: str, usd_amount: float, symbol: str = "?") -> tuple
 
         print(f"🔁 Re-quoted out: {re_quoted_out} → new minOut {new_min_out} (slip {total_slip*100:.2f}%)")
         # rebuild function with new minOut
-        if USE_SUPPORTING_FEE:
+        if config['USE_SUPPORTING_FEE']:
             fn2 = router.functions.swapExactETHForTokensSupportingFeeOnTransferTokens(
                 new_min_out, path, WALLET, deadline
             )
@@ -209,7 +209,7 @@ def buy_token(token_address: str, usd_amount: float, symbol: str = "?") -> tuple
         new_tx["gas"] = tx_dict.get("gas", 300000)
         return new_tx
 
-    if TEST_MODE:
+    if config['TEST_MODE']:
         # Simulate re-quote branch in test mode too (for logging)
         tx = _maybe_requote_and_adjust(tx)
         print(f"🚫 [TEST MODE] Simulated buy of {symbol} for {eth_amount:.6f} ETH")
@@ -237,6 +237,7 @@ def sell_token(token_address: str):
       - Uses swapExactTokensForETHSupportingFeeOnTransferTokens to handle taxed tokens
     Respects TEST_MODE. Returns tx hash (hex str) or None.
     """
+    config = get_uniswap_config()
     token = _erc20(token_address)
     token_addr = Web3.to_checksum_address(token_address)
 
@@ -278,7 +279,7 @@ def sell_token(token_address: str):
             except Exception:
                 tx["gas"] = 120000
 
-            if TEST_MODE:
+            if config['TEST_MODE']:
                 print("🚫 [TEST MODE] Approval built, not sent.")
             else:
                 signed = w3.eth.account.sign_transaction(tx, private_key=PRIVATE_KEY)
@@ -312,7 +313,7 @@ def sell_token(token_address: str):
         except Exception:
             tx["gas"] = 300000
 
-        if TEST_MODE:
+        if config['TEST_MODE']:
             print("🚫 [TEST MODE] Sell transaction built, not sent.")
             return "0xSIMULATED_SELL"
 
