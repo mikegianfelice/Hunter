@@ -165,9 +165,25 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
             from uniswap_executor import buy_token
             tx_hash, ok = buy_token(token_address, amount_usd, symbol)
         elif chain_id == "solana":
-            # Use Jupiter executor for Solana trading
+            # Try Jupiter first, then fallback to Raydium if Jupiter fails
             from jupiter_executor import buy_token_solana
+            from raydium_executor import execute_raydium_fallback_trade
+            
+            print(f"🔄 Attempting Jupiter trade for {symbol}...")
             tx_hash, ok = buy_token_solana(token_address, amount_usd, symbol, test_mode=False)
+            
+            if not ok:
+                print(f"⚠️ Jupiter trade failed for {symbol}, trying Raydium fallback...")
+                # Try Raydium fallback
+                raydium_ok, raydium_tx = execute_raydium_fallback_trade(token_address, symbol, amount_usd)
+                
+                if raydium_ok:
+                    print(f"✅ Raydium fallback successful for {symbol}")
+                    tx_hash = raydium_tx
+                    ok = True
+                else:
+                    print(f"❌ Both Jupiter and Raydium failed for {symbol}")
+                    return None, False
         else:
             # For unsupported chains, skip
             print(f"❌ Chain {chain_id.upper()} not supported - only Ethereum and Solana enabled")

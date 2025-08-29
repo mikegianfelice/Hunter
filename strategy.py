@@ -508,10 +508,17 @@ def check_buy_signal(token: dict) -> bool:
 
     # Jupiter tradeability pre-check for Solana tokens (PRE-TRADE SAFETY CHECK)
     # This prevents attempting to buy tokens that cannot be traded on Jupiter
-    if chain_id == "solana" and not is_trusted:
-        if not _check_jupiter_tradeable(address, token.get("symbol", "UNKNOWN")):
-            print("❌ Token not tradeable on Jupiter; skipping buy signal.")
-            return False
+    if chain_id == "solana" and not is_trusted and config.get('ENABLE_JUPITER_PRE_CHECK', True):
+        jupiter_result = _check_jupiter_tradeable(address, token.get("symbol", "UNKNOWN"))
+        if not jupiter_result:
+            if config.get('JUPITER_PRE_CHECK_STRICT', False):
+                print("❌ Token not tradeable on Jupiter; skipping buy signal.")
+                return False
+            else:
+                # Instead of rejecting, allow the token to proceed and let the actual swap attempt determine tradeability
+                # Many new tokens are not immediately available on Jupiter but may be tradeable on other DEXs
+                print("⚠️ Jupiter pre-check failed - allowing token to proceed (will attempt actual swap)")
+                # Don't return False - let it continue to the actual swap attempt
 
     # Pre-buy delisting check
     if config['ENABLE_PRE_BUY_DELISTING_CHECK'] and _check_token_delisted(token):
