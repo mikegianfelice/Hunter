@@ -7,12 +7,13 @@ slippage: 0.10
 take_profit: 0.5
 stop_loss: 0.25
 use_dynamic_tp: false
+min_trade_amount_usd: 2.0  # Minimum trade amount to avoid tiny trades that fail
 
 # === Advanced Trading Features ===
 # Order splitting for large trades
 enable_order_splitting: true
 max_price_impact_per_slice: 0.02  # 2% max price impact per slice
-min_slice_amount_usd: 1.0  # Minimum slice size
+min_slice_amount_usd: 2.0  # Minimum slice size (increased to avoid tiny trades)
 max_slices_per_trade: 5  # Maximum number of slices per trade
 
 # Dynamic slippage based on price impact
@@ -23,8 +24,8 @@ min_dynamic_slippage: 0.02  # Minimum 2% slippage
 
 # ExactOut trades for sketchy tokens
 enable_exactout_trades: true
-exactout_liquidity_threshold: 5000  # Use ExactOut for tokens with <$5k liquidity
-exactout_volume_threshold: 1000  # Use ExactOut for tokens with <$1k volume
+exactout_liquidity_threshold: 25000  # Use ExactOut for tokens with <$25k liquidity (increased from 5000)
+exactout_volume_threshold: 10000  # Use ExactOut for tokens with <$10k volume (increased from 1000)
 exactout_max_attempts: 3  # Maximum attempts for ExactOut trades
 
 # Route restrictions and direct pool swaps
@@ -44,13 +45,13 @@ min_pool_reserves_multiplier: 2.0  # Pool reserves must be 2x trade amount
 
 # === Strategy Thresholds ===
 min_momentum_pct: 0.0001  # Very low momentum requirement
-min_volume_24h_for_buy: 1000
-min_liquidity_usd_for_buy: 2000
+min_volume_24h_for_buy: 50000  # Increased from 1000 - minimum $50k volume
+min_liquidity_usd_for_buy: 50000  # Increased from 2000 - minimum $50k liquidity
 min_price_usd: 0.0000001
 
 # Fast-path thresholds for first-seen tokens
-fastpath_min_volume_24h: 5000
-fastpath_min_liquidity_usd: 10000
+fastpath_min_volume_24h: 100000  # Increased from 5000 - minimum $100k volume
+fastpath_min_liquidity_usd: 100000  # Increased from 10000 - minimum $100k liquidity
 fastpath_min_sent_score: 5
 
 # === Pre-buy Delisting Check ===
@@ -90,7 +91,7 @@ jupiter_pre_check_strict: false  # Don't reject tokens based on Jupiter pre-chec
 enable_raydium_fallback: true  # Enable Raydium fallback when Jupiter fails
 raydium_slippage: 0.10  # 10% slippage for Raydium trades
 raydium_timeout: 15  # Timeout for Raydium API calls
-min_raydium_liquidity: 1000.0  # Minimum liquidity required for Raydium trades
+min_raydium_liquidity: 25000.0  # Minimum liquidity required for Raydium trades (increased from 1000)
 
 # === Telegram ===
 telegram_bot_token: ""

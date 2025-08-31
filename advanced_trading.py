@@ -19,7 +19,7 @@ class AdvancedTradingEngine:
             # Order splitting
             'enable_order_splitting': get_config_bool("enable_order_splitting", True),
             'max_price_impact_per_slice': get_config_float("max_price_impact_per_slice", 0.02),
-            'min_slice_amount_usd': get_config_float("min_slice_amount_usd", 1.0),
+            'min_slice_amount_usd': get_config_float("min_slice_amount_usd", 2.0),
             'max_slices_per_trade': get_config_int("max_slices_per_trade", 5),
             
             # Dynamic slippage
@@ -171,8 +171,29 @@ class AdvancedTradingEngine:
         token_address = token_data.get('address', '')
         chain_id = token_data.get('chainId', 'ethereum').lower()
         symbol = token_data.get('symbol', '')
+        liquidity = token_data.get('liquidity', 0)
+        volume_24h = token_data.get('volume24h', 0)
         
         print(f"🔍 Enhanced preflight check for {symbol} ({chain_id})")
+        print(f"📊 Token metrics: Liquidity ${liquidity:,.0f}, Volume ${volume_24h:,.0f}")
+        
+        # Check minimum liquidity requirements
+        min_liquidity = 50000  # $50k minimum liquidity
+        if liquidity < min_liquidity:
+            print(f"❌ Insufficient liquidity: ${liquidity:,.0f} < ${min_liquidity:,.0f}")
+            return False, f"insufficient_liquidity_{liquidity:.0f}"
+        
+        # Check minimum volume requirements
+        min_volume = 50000  # $50k minimum volume
+        if volume_24h < min_volume:
+            print(f"❌ Insufficient volume: ${volume_24h:,.0f} < ${min_volume:,.0f}")
+            return False, f"insufficient_volume_{volume_24h:.0f}"
+        
+        # Check if trade amount is reasonable relative to liquidity
+        max_trade_ratio = 0.01  # Maximum 1% of liquidity
+        if trade_amount_usd > liquidity * max_trade_ratio:
+            print(f"❌ Trade amount too large: ${trade_amount_usd:.2f} > ${liquidity * max_trade_ratio:.2f} (1% of liquidity)")
+            return False, f"trade_amount_too_large"
         
         # Check token decimals
         if self.config['check_token_decimals']:
