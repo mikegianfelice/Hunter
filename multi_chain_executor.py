@@ -162,9 +162,8 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
     from advanced_trading import advanced_trading
     
     # Enhanced preflight check
-    import asyncio
     try:
-        preflight_passed, reason = asyncio.run(advanced_trading.enhanced_preflight_check(token, amount_usd))
+        preflight_passed, reason = advanced_trading.enhanced_preflight_check(token, amount_usd)
         if not preflight_passed:
             print(f"❌ Preflight check failed: {reason}")
             return None, False
@@ -231,11 +230,15 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
                     tx_hash = raydium_tx
                     ok = True
                 else:
-                    print(f"🔄 Raydium failed, trying Jupiter...")
-                    tx_hash, ok = buy_token_solana(token_address, slice_amount, symbol, test_mode=False)
+                                    print(f"🔄 Raydium failed, trying Jupiter...")
+                tx_hash, ok = buy_token_solana(token_address, slice_amount, symbol, test_mode=False, 
+                                              slippage=dynamic_slippage, route_preferences=route_preferences, 
+                                              use_exactout=use_exactout)
             else:
                 print(f"🔄 Attempting Jupiter trade for slice {i+1}...")
-                tx_hash, ok = buy_token_solana(token_address, slice_amount, symbol, test_mode=False)
+                tx_hash, ok = buy_token_solana(token_address, slice_amount, symbol, test_mode=False, 
+                                              slippage=dynamic_slippage, route_preferences=route_preferences, 
+                                              use_exactout=use_exactout)
                 
                 if not ok:
                     print(f"🔄 Jupiter failed, trying Raydium...")

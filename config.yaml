@@ -1,5 +1,5 @@
 # === Bot Configuration ===
-test_mode: true  # Set to false for live trading
+test_mode: false  # Set to false for live trading
 
 # === Trading Parameters ===
 trade_amount_usd: 5

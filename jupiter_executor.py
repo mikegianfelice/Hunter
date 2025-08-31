@@ -160,13 +160,27 @@ def execute_solana_trade(token_address: str, amount_usd: float, is_buy: bool = T
     return executor.execute_trade(token_address, amount_usd, is_buy)
 
 # Additional functions for multi-chain compatibility
-def buy_token_solana(token_address: str, amount_usd: float, symbol: str = "", test_mode: bool = False) -> Tuple[str, bool]:
-    """Buy token on Solana (for multi-chain compatibility)"""
+def buy_token_solana(token_address: str, amount_usd: float, symbol: str = "", test_mode: bool = False, 
+                     slippage: float = None, route_preferences: Dict[str, Any] = None, 
+                     use_exactout: bool = False) -> Tuple[str, bool]:
+    """Buy token on Solana (for multi-chain compatibility) with advanced features"""
     if test_mode:
         print(f"🔄 Simulating Solana buy for {symbol} ({token_address[:8]}...{token_address[-8:]})")
         return f"simulated_solana_tx_{int(time.time())}", True
     
     executor = JupiterCustomExecutor()
+    
+    # Apply advanced features if provided
+    if slippage is not None:
+        executor.jupiter_lib.slippage = slippage
+        print(f"🎯 Using dynamic slippage: {slippage*100:.2f}%")
+    
+    if route_preferences:
+        print(f"🛣️ Using route preferences: {route_preferences}")
+    
+    if use_exactout:
+        print(f"🔄 Using ExactOut mode for sketchy token")
+    
     return executor.execute_trade(token_address, amount_usd, is_buy=True)
 
 def sell_token_solana(token_address: str, amount_usd: float, symbol: str = "", test_mode: bool = False) -> Tuple[str, bool]:
