@@ -8,7 +8,7 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 
 ## 🎯 Features
 
-- **🌐 Dual-Chain Trading** - Real trading on Ethereum (MetaMask) and Solana (Phantom)
+- **🌐 Multi-Chain Trading** - Real trading on Ethereum (MetaMask), Solana (Phantom), and Base
 - **🔄 Real-time Token Scanning** - Monitors trending tokens across multiple platforms
 - **📊 Sentiment Analysis** - Analyzes social media sentiment from Reddit and Nitter (Ethereum-focused)
 - **⚡ High-Speed Execution** - Optimized for quick entry and exit strategies
@@ -35,8 +35,9 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 |-------|-------------|-----|--------|----------|
 | **Ethereum** | ETH | Uniswap V2/V3 | ✅ Full Support | Real trading, sentiment analysis, TokenSniffer |
 | **Solana** | SOL | Multi-DEX (Raydium, PumpSwap, Meteora, Heaven) | ✅ Full Support | Real trading, ATA creation, multi-DEX pool discovery, Raydium fallback |
+| **Base** | ETH | Uniswap V3 | ✅ Full Support | Real trading, EIP-1559 gas optimization, re-quote protection |
 
-*Note: Other chains (Base, Polygon, BSC, Arbitrum, Optimism, PulseChain) are disabled by default to focus on chains where you have active wallets.*
+*Note: Other chains (Polygon, BSC, Arbitrum, Optimism, PulseChain) are disabled by default to focus on chains where you have active wallets.*
 
 ### ⚠️ Current Solana/Jupiter API Issues
 - **Jupiter Quote API 400 Errors**: Invalid token addresses and insufficient liquidity causing quote failures
@@ -57,6 +58,16 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 - **Infura API key** (for Ethereum)
 
 ## 🔧 Recent Updates & Fixes
+
+### Latest Improvements (v3.5) - BASE Chain Integration
+- **🌐 BASE Chain Support**: Full buy/sell functionality for BASE network (Coinbase's L2)
+- **🔄 Multi-Chain Position Monitoring**: Enhanced position tracking with chain-specific selling logic
+- **📊 Chain-Aware Notifications**: Telegram alerts now include chain information for better tracking
+- **🛡️ Enhanced Position Storage**: Positions now store chain information for proper multi-chain management
+- **⚡ BASE Executor**: Complete trading executor with Uniswap V3 integration, EIP-1559 gas optimization
+- **🔄 Re-quote Protection**: Dynamic price protection with multiple fee tier support (0.3%, 0.05%, 1%)
+- **✅ Resolved 8-Hour No-Trades Issue**: Fixed hardcoded chain limitation that was blocking BASE tokens
+- **📈 Multi-Chain Balance Checking**: Chain-specific balance verification for accurate trading decisions
 
 ### Latest Improvements (v3.4) - Advanced Trading Features
 - **📊 Order Splitting**: Automatic order splitting to minimize price impact (≤2% per slice)
@@ -120,9 +131,9 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 - **🔧 Fixed Jupiter API Parameters**: Corrected boolean parameter format for Jupiter quote API calls
 - **📈 Enhanced Error Handling**: Better fallback mechanisms for price API failures
 
-### Latest Improvements (v2.8) - Smart Blacklist Management & Dual-Chain Focus
+### Latest Improvements (v2.8) - Smart Blacklist Management & Multi-Chain Focus
 - **🧹 Smart Blacklist Auto-Cleanup**: Automatic blacklist maintenance every 6 hours to maintain trading opportunities
-- **🎯 Dual-Chain Focus**: Simplified to Ethereum (MetaMask) and Solana (Phantom) only for better reliability
+- **🎯 Multi-Chain Focus**: Optimized for Ethereum (MetaMask), Solana (Phantom), and Base for better reliability
 - **🛡️ Enhanced Pre-Buy Delisting**: Improved detection of delisted tokens before trading to prevent losses
 - **✅ Real Trading Confirmed**: Bot now executes real transactions (no more simulated trades)
 - **📱 Clean Telegram Messages**: Real transaction hashes sent to Telegram instead of simulated ones
@@ -591,15 +602,16 @@ python main.py
 
 ## 📊 Configuration Options
 
-### Dual-Chain Strategy
-- **Two-Network Support**: Ethereum and Solana trading with full implementation
+### Multi-Chain Strategy
+- **Three-Network Support**: Ethereum, Solana, and Base trading with full implementation
 - **Chain-Specific Requirements**: Different volume/liquidity thresholds per chain
-- **Sentiment Analysis**: Ethereum-focused (skipped for Solana)
+- **Sentiment Analysis**: Ethereum-focused (skipped for Solana and Base)
 - **TokenSniffer Integration**: Ethereum token safety checks
-- **DEX-Specific Execution**: Optimized for each blockchain's DEX (Uniswap, Raydium)
-- **Wallet Integration**: MetaMask for Ethereum, Phantom for Solana
+- **DEX-Specific Execution**: Optimized for each blockchain's DEX (Uniswap V2/V3, Raydium, Uniswap V3 on Base)
+- **Wallet Integration**: MetaMask for Ethereum and Base, Phantom for Solana
 - **Multi-Chain Price Fetching**: Chain-specific price monitoring for accurate PnL
 - **Solana Features**: Multi-DEX integration (Raydium, PumpSwap, Meteora, Heaven), automatic token account creation, priority-based pool discovery
+- **Base Features**: Uniswap V3 integration, EIP-1559 gas optimization, re-quote protection, multiple fee tier support
 - **Smart Blacklist Management**: Automatic cleanup every 6 hours to maintain trading opportunities
 
 ### Trading Strategy

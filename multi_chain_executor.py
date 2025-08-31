@@ -4,6 +4,7 @@ import time
 import sys
 import subprocess
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any
 from web3 import Web3
@@ -47,7 +48,7 @@ CHAIN_CONFIGS = {
         "dex": "uniswap",
         "router": "0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24",
         "factory": "0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6",
-        "executor_module": "uniswap_executor"
+        "executor_module": "base_executor"
     },
     "polygon": {
         "rpc_url": "https://polygon-rpc.com",
@@ -121,9 +122,18 @@ def _log_position(token: dict):
         data = {}
     addr = token["address"]
     entry = float(token.get("priceUsd") or 0.0)
-    data[addr] = entry
+    chain_id = token.get("chainId", "ethereum").lower()
+    
+    # Store position with chain information
+    data[addr] = {
+        "entry_price": entry,
+        "chain_id": chain_id,
+        "symbol": token.get("symbol", "?"),
+        "timestamp": datetime.now().isoformat()
+    }
+    
     Path(POSITIONS_FILE).write_text(json.dumps(data, indent=2))
-    print(f"📝 Logged position: {token.get('symbol','?')} ({addr}) @ ${entry:.6f}")
+    print(f"📝 Logged position: {token.get('symbol','?')} ({addr}) on {chain_id.upper()} @ ${entry:.6f}")
 
 def _launch_monitor_detached():
     script = Path(MONITOR_SCRIPT).resolve()
@@ -208,6 +218,10 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
             if chain_id == "ethereum":
                 # Use existing uniswap executor for Ethereum (MetaMask)
                 from uniswap_executor import buy_token
+                tx_hash, ok = buy_token(token_address, slice_amount, symbol)
+            elif chain_id == "base":
+                # Use BASE executor for Base chain
+                from base_executor import buy_token
                 tx_hash, ok = buy_token(token_address, slice_amount, symbol)
             elif chain_id == "solana":
                 # Try Jupiter first, then fallback to Raydium if Jupiter fails

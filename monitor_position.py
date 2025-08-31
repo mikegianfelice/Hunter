@@ -6,7 +6,9 @@ import csv
 import signal
 from datetime import datetime
 
-from uniswap_executor import sell_token
+from uniswap_executor import sell_token as sell_token_ethereum
+from base_executor import sell_token as sell_token_base
+from solana_executor import sell_token_solana
 from utils import fetch_token_price_usd
 from telegram_bot import send_telegram_message
 from config_loader import get_config, get_config_float
@@ -196,6 +198,49 @@ def _fetch_token_price_multi_chain(token_address: str) -> float:
         print(f"⚠️ Price fetch failed for {token_address}: {e}")
         return 0.0
 
+def _sell_token_multi_chain(token_address: str, chain_id: str, symbol: str = "?") -> str:
+    """
+    Sell token using the appropriate executor based on chain
+    """
+    try:
+        if chain_id == "ethereum":
+            print(f"🔄 Selling {symbol} on Ethereum...")
+            tx_hash, success = sell_token_ethereum(token_address)
+        elif chain_id == "base":
+            print(f"🔄 Selling {symbol} on Base...")
+            # Get token balance for BASE
+            from base_executor import get_token_balance
+            balance = get_token_balance(token_address)
+            if balance > 0:
+                tx_hash, success = sell_token_base(token_address, balance, symbol)
+            else:
+                print(f"❌ No {symbol} balance to sell")
+                return None
+        elif chain_id == "solana":
+            print(f"🔄 Selling {symbol} on Solana...")
+            # For Solana, we need to get the balance first
+            from solana_executor import get_token_balance
+            balance = get_token_balance(token_address)
+            if balance > 0:
+                tx_hash, success = sell_token_solana(token_address, balance, symbol)
+            else:
+                print(f"❌ No {symbol} balance to sell")
+                return None
+        else:
+            print(f"❌ Unsupported chain for selling: {chain_id}")
+            return None
+            
+        if success:
+            print(f"✅ {symbol} sold successfully: {tx_hash}")
+            return tx_hash
+        else:
+            print(f"❌ Failed to sell {symbol}")
+            return None
+            
+    except Exception as e:
+        print(f"❌ Error selling {symbol} on {chain_id}: {e}")
+        return None
+
 def _detect_delisted_token(token_address: str, consecutive_failures: int) -> bool:
     """
     Detect if a token is likely delisted based on consecutive price fetch failures
@@ -219,14 +264,23 @@ def monitor_all_positions():
     # ephemeral state for trailing stop peaks
     trail_state = {}
 
-    for token_address, entry_price_raw in list(positions.items()):
-        try:
-            entry_price = float(entry_price_raw)
-        except Exception:
-            print(f"⚠️ Invalid entry price for {token_address}: {entry_price_raw}")
+    for token_address, position_data in list(positions.items()):
+        # Handle both old format (float) and new format (dict)
+        if isinstance(position_data, dict):
+            entry_price = float(position_data.get("entry_price", 0))
+            chain_id = position_data.get("chain_id", "ethereum").lower()
+            symbol = position_data.get("symbol", "?")
+        else:
+            # Legacy format - assume Ethereum
+            entry_price = float(position_data)
+            chain_id = "ethereum"
+            symbol = "?"
+            
+        if entry_price <= 0:
+            print(f"⚠️ Invalid entry price for {token_address}: {entry_price}")
             continue
 
-        print(f"\n🔍 Monitoring token: {token_address}")
+        print(f"\n🔍 Monitoring token: {symbol} ({token_address}) on {chain_id.upper()}")
         print(f"🎯 Entry price: ${entry_price:.6f}")
 
         # Fetch current price using multi-chain function
@@ -279,11 +333,12 @@ def monitor_all_positions():
         # Take-profit
         if gain >= config['TAKE_PROFIT']:
             print("💰 Take-profit hit! Selling...")
-            tx = sell_token(token_address)
+            tx = _sell_token_multi_chain(token_address, chain_id, symbol)
             log_trade(token_address, entry_price, current_price, "take_profit")
             send_telegram_message(
                 f"💰 Take-profit triggered!\n"
-                f"Token: {token_address}\n"
+                f"Token: {symbol} ({token_address})\n"
+                f"Chain: {chain_id.upper()}\n"
                 f"Entry: ${entry_price:.6f}\n"
                 f"Now: ${current_price:.6f} (+{gain * 100:.2f}%)\n"
                 f"TX: {tx or 'SIMULATED'}"
@@ -295,11 +350,12 @@ def monitor_all_positions():
         # Hard stop-loss
         if gain <= -config['STOP_LOSS']:
             print("🛑 Stop-loss hit! Selling...")
-            tx = sell_token(token_address)
+            tx = _sell_token_multi_chain(token_address, chain_id, symbol)
             log_trade(token_address, entry_price, current_price, "stop_loss")
             send_telegram_message(
                 f"🛑 Stop-loss triggered!\n"
-                f"Token: {token_address}\n"
+                f"Token: {symbol} ({token_address})\n"
+                f"Chain: {chain_id.upper()}\n"
                 f"Entry: ${entry_price:.6f}\n"
                 f"Now: ${current_price:.6f} ({gain * 100:.2f}%)\n"
                 f"TX: {tx or 'SIMULATED'}"
@@ -311,11 +367,12 @@ def monitor_all_positions():
         # Trailing stop (if enabled and price fell below dynamic level)
         if dyn_stop and current_price <= dyn_stop:
             print("🧵 Trailing stop-loss hit! Selling...")
-            tx = sell_token(token_address)
+            tx = _sell_token_multi_chain(token_address, chain_id, symbol)
             log_trade(token_address, entry_price, current_price, "trailing_stop")
             send_telegram_message(
                 f"🧵 Trailing stop-loss triggered!\n"
-                f"Token: {token_address}\n"
+                f"Token: {symbol} ({token_address})\n"
+                f"Chain: {chain_id.upper()}\n"
                 f"Entry: ${entry_price:.6f}\n"
                 f"Now: ${current_price:.6f}\n"
                 f"TX: {tx or 'SIMULATED'}"
