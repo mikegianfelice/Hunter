@@ -41,8 +41,8 @@ class RaydiumExecutor:
     def check_raydium_liquidity(self, token_address: str) -> Dict[str, Any]:
         """Check if token has liquidity on Raydium"""
         try:
-            # Use Raydium API to check liquidity
-            url = f"https://api.raydium.io/v2/sdk/liquidity/mainnet.json"
+            # Try Raydium API v2 first
+            url = "https://api.raydium.io/v2/sdk/liquidity/mainnet.json"
             response = requests.get(url, timeout=10)
             
             if response.status_code == 200:
@@ -51,6 +51,32 @@ class RaydiumExecutor:
                 
                 # Look for pools containing our token
                 for pool in pools:
+                    base_mint = pool.get("baseMint")
+                    quote_mint = pool.get("quoteMint")
+                    
+                    if base_mint == token_address or quote_mint == token_address:
+                        liquidity = pool.get("liquidity", 0)
+                        volume_24h = pool.get("volume24h", 0)
+                        
+                        if liquidity > 0:
+                            return {
+                                "has_liquidity": True,
+                                "liquidity": liquidity,
+                                "volume_24h": volume_24h,
+                                "pool_id": pool.get("id"),
+                                "base_mint": base_mint,
+                                "quote_mint": quote_mint
+                            }
+            
+            # Try alternative Raydium API endpoint
+            url2 = "https://api.raydium.io/v2/main/pool"
+            response2 = requests.get(url2, timeout=10)
+            
+            if response2.status_code == 200:
+                data2 = response2.json()
+                pools2 = data2.get("pools", [])
+                
+                for pool in pools2:
                     base_mint = pool.get("baseMint")
                     quote_mint = pool.get("quoteMint")
                     
@@ -77,8 +103,8 @@ class RaydiumExecutor:
     def get_raydium_quote(self, input_mint: str, output_mint: str, amount: int) -> Optional[Dict[str, Any]]:
         """Get quote from Raydium API"""
         try:
-            # Use Raydium quote API
-            url = "https://quote-api.raydium.io/v2/quote"
+            # Try Raydium API v2 for quotes
+            url = "https://api.raydium.io/v2/sdk/quote"
             params = {
                 "inputMint": input_mint,
                 "outputMint": output_mint,
@@ -98,6 +124,21 @@ class RaydiumExecutor:
                         "outAmount": data.get("outAmount"),
                         "priceImpact": data.get("priceImpact"),
                         "route": data.get("route")
+                    }
+            
+            # Try alternative Raydium quote endpoint
+            url2 = "https://api.raydium.io/v2/main/quote"
+            response2 = requests.get(url2, params=params, timeout=15)
+            
+            if response2.status_code == 200:
+                data2 = response2.json()
+                if data2.get("success"):
+                    return {
+                        "success": True,
+                        "inAmount": data2.get("inAmount"),
+                        "outAmount": data2.get("outAmount"),
+                        "priceImpact": data2.get("priceImpact"),
+                        "route": data2.get("route")
                     }
             
             return None
@@ -137,7 +178,24 @@ class RaydiumExecutor:
     def check_token_tradeable_on_raydium(self, token_address: str) -> bool:
         """Check if token is tradeable on Raydium"""
         try:
-            # Check liquidity first
+            # First try DexScreener to check if token has Raydium pairs
+            url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
+            response = requests.get(url, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                pairs = data.get("pairs", [])
+                
+                # Look for Raydium pairs
+                for pair in pairs:
+                    dex_id = pair.get("dexId", "").lower()
+                    if "raydium" in dex_id:
+                        liquidity = float(pair.get("liquidity", {}).get("usd", 0))
+                        if liquidity > 1000:  # Minimum $1000 liquidity
+                            print(f"✅ Token {token_address[:8]}... has Raydium liquidity: ${liquidity:,.2f}")
+                            return True
+            
+            # Fallback to direct Raydium API check
             liquidity_info = self.check_raydium_liquidity(token_address)
             if not liquidity_info.get("has_liquidity"):
                 print(f"❌ Token {token_address[:8]}... has no Raydium liquidity")

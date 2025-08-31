@@ -29,6 +29,16 @@ def test_raydium_liquidity_check():
                 "symbol": "MOON",
                 "address": "4KeTt4e3vs9KKvRWttdzYQretUpZSkQhXs5y6QURzd7y",
                 "description": "MOON token (from bot logs)"
+            },
+            {
+                "symbol": "SOL",
+                "address": "So11111111111111111111111111111111111111112",
+                "description": "Wrapped SOL (should have Raydium liquidity)"
+            },
+            {
+                "symbol": "USDC",
+                "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+                "description": "USDC (should have Raydium liquidity)"
             }
         ]
         
@@ -68,6 +78,22 @@ def test_raydium_quote():
             print(f"   💰 In: {quote['inAmount']}")
             print(f"   💰 Out: {quote['outAmount']}")
             print(f"   📈 Price Impact: {quote['priceImpact']}%")
+        else:
+            print(f"   ❌ Quote failed")
+            
+        # Test SOL -> USDC quote (should work better)
+        print("\n📊 Testing SOL -> USDC quote:")
+        quote2 = executor.get_raydium_quote(
+            "So11111111111111111111111111111111111111112",  # SOL
+            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
+            1000000000  # 1 SOL
+        )
+        
+        if quote2:
+            print(f"   ✅ Quote successful:")
+            print(f"   💰 In: {quote2['inAmount']}")
+            print(f"   💰 Out: {quote2['outAmount']}")
+            print(f"   📈 Price Impact: {quote2['priceImpact']}%")
         else:
             print(f"   ❌ Quote failed")
             
