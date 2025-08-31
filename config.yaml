@@ -8,6 +8,40 @@ take_profit: 0.5
 stop_loss: 0.25
 use_dynamic_tp: false
 
+# === Advanced Trading Features ===
+# Order splitting for large trades
+enable_order_splitting: true
+max_price_impact_per_slice: 0.02  # 2% max price impact per slice
+min_slice_amount_usd: 1.0  # Minimum slice size
+max_slices_per_trade: 5  # Maximum number of slices per trade
+
+# Dynamic slippage based on price impact
+enable_dynamic_slippage: true
+dynamic_slippage_multiplier: 1.5  # Multiply predicted impact by this factor
+max_dynamic_slippage: 0.15  # Maximum 15% slippage
+min_dynamic_slippage: 0.02  # Minimum 2% slippage
+
+# ExactOut trades for sketchy tokens
+enable_exactout_trades: true
+exactout_liquidity_threshold: 5000  # Use ExactOut for tokens with <$5k liquidity
+exactout_volume_threshold: 1000  # Use ExactOut for tokens with <$1k volume
+exactout_max_attempts: 3  # Maximum attempts for ExactOut trades
+
+# Route restrictions and direct pool swaps
+enable_route_restrictions: true
+prefer_direct_routes: true  # Prefer single-hop routes over multi-hop
+max_route_hops: 2  # Maximum number of hops in a route
+enable_direct_pool_swaps: true  # Bypass aggregators for known pools
+
+# Enhanced preflight checks
+enable_enhanced_preflight: true
+check_token_decimals: true
+check_ata_existence: true  # Solana: check associated token account
+check_mint_frozen: true  # Solana: check if mint is frozen
+check_transfer_fee: true  # Check for transfer fee configuration
+check_pool_reserves: true  # Verify pool has sufficient reserves
+min_pool_reserves_multiplier: 2.0  # Pool reserves must be 2x trade amount
+
 # === Strategy Thresholds ===
 min_momentum_pct: 0.0001  # Very low momentum requirement
 min_volume_24h_for_buy: 1000

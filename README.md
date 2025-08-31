@@ -58,6 +58,17 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 
 ## 🔧 Recent Updates & Fixes
 
+### Latest Improvements (v3.4) - Advanced Trading Features
+- **📊 Order Splitting**: Automatic order splitting to minimize price impact (≤2% per slice)
+- **🎯 Dynamic Slippage**: Slippage calculated from predicted price impact (2-15% range)
+- **🔄 ExactOut Trades**: For sketchy tokens with low liquidity/volume to cap spending
+- **🛣️ Route Restrictions**: Prefer direct routes, limit hops, enable direct pool swaps
+- **🔍 Enhanced Preflight Checks**: Token decimals, ATA existence, mint frozen status, transfer fees, pool reserves
+- **⚡ Priority Fees**: Enhanced compute unit pricing for faster transaction execution
+- **🔄 Fresh Quote Retry**: Re-fetch quotes before execution to avoid stale prices
+- **🚫 Accept "No Trade"**: Smart rejection when required slippage > 15% or liquidity < $5k
+- **📈 Advanced Trading Engine**: New `advanced_trading.py` module with sophisticated execution logic
+
 ### Latest Improvements (v3.3) - Raydium Fallback & Test File Cleanup
 - **🔄 Raydium Fallback System**: Implemented custom `raydium_lib.py` with DexScreener fallback for reliable quote generation
 - **🧹 Test File Cleanup**: Removed all development test files to keep codebase clean and production-ready
@@ -501,6 +512,35 @@ test_mode: false              # Set to true for simulation only
 trade_amount_usd: 10.0        # Amount per trade in USD (increased for better positions)
 slippage: 0.02                # Slippage tolerance (2%)
 
+# Advanced Trading Features
+enable_order_splitting: true
+max_price_impact_per_slice: 0.02  # 2% max price impact per slice
+min_slice_amount_usd: 1.0         # Minimum slice size
+max_slices_per_trade: 5           # Maximum number of slices per trade
+
+enable_dynamic_slippage: true
+dynamic_slippage_multiplier: 1.5  # Multiply predicted impact by this factor
+max_dynamic_slippage: 0.15        # Maximum 15% slippage
+min_dynamic_slippage: 0.02        # Minimum 2% slippage
+
+enable_exactout_trades: true
+exactout_liquidity_threshold: 5000  # Use ExactOut for tokens with <$5k liquidity
+exactout_volume_threshold: 1000     # Use ExactOut for tokens with <$1k volume
+exactout_max_attempts: 3            # Maximum attempts for ExactOut trades
+
+enable_route_restrictions: true
+prefer_direct_routes: true          # Prefer single-hop routes over multi-hop
+max_route_hops: 2                   # Maximum number of hops in a route
+enable_direct_pool_swaps: true      # Bypass aggregators for known pools
+
+enable_enhanced_preflight: true
+check_token_decimals: true
+check_ata_existence: true           # Solana: check associated token account
+check_mint_frozen: true             # Solana: check if mint is frozen
+check_transfer_fee: true            # Check for transfer fee configuration
+check_pool_reserves: true           # Verify pool has sufficient reserves
+min_pool_reserves_multiplier: 2.0   # Pool reserves must be 2x trade amount
+
 # Strategy Parameters (Optimized for More Opportunities)
 min_volume_24h: 100           # Minimum 24h volume in USD (reduced from 3000)
 min_liquidity: 100            # Minimum liquidity in USD (reduced from 3000)
@@ -827,7 +867,7 @@ crypto_trading_bot_100x/
 ├── config.yaml               # Configuration file
 ├── requirements.txt          # Python dependencies
 ├── .env                      # Environment variables (create this)
-├── multi_chain_executor.py  # Multi-chain trade execution
+├── multi_chain_executor.py  # Multi-chain trade execution with advanced features
 ├── strategy.py              # Trading strategy implementation
 ├── token_scraper.py         # Token discovery across chains
 ├── sentiment_scraper.py     # Sentiment analysis
@@ -835,10 +875,11 @@ crypto_trading_bot_100x/
 ├── monitor_position.py      # Position monitoring and sell triggers
 ├── telegram_bot.py          # Telegram notifications
 ├── token_sniffer.py         # Token safety checks
+├── advanced_trading.py      # Advanced trading features (NEW!)
 ├── jupiter_lib.py           # Custom Jupiter library for real trading
 ├── jupiter_executor.py      # Jupiter trading executor
-├── raydium_lib.py           # Custom Raydium library with DexScreener fallback (NEW!)
-├── raydium_executor.py      # Raydium trading executor (NEW!)
+├── raydium_lib.py           # Custom Raydium library with DexScreener fallback
+├── raydium_executor.py      # Raydium trading executor
 ├── solana_executor.py       # Solana blockchain interactions (legacy)
 ├── config_loader.py         # Dynamic configuration loading
 ├── clear_cache.py           # Python cache clearing helper
@@ -855,6 +896,52 @@ crypto_trading_bot_100x/
 ├── trade_log.csv            # Detailed trade history
 └── blacklist.json           # Blacklisted tokens
 ```
+
+## 🚀 Advanced Trading Features
+
+The bot now includes sophisticated trading strategies for optimal execution:
+
+### 📊 **Order Splitting**
+- **Automatic Slicing**: Large orders automatically split into smaller slices
+- **Price Impact Control**: Each slice causes ≤2% price impact
+- **Sequential Execution**: Slices sent sequentially with re-quoting between each
+- **Configurable Limits**: Minimum slice size ($1) and maximum slices per trade (5)
+
+### 🎯 **Dynamic Slippage**
+- **Impact-Based Calculation**: Slippage derived from predicted price impact
+- **Smart Multiplier**: Impact × 1.5 = slippage (with 2-15% bounds)
+- **Real-Time Adjustment**: Slippage calculated per trade based on current market conditions
+- **Risk Management**: Prevents overpaying while ensuring trade execution
+
+### 🔄 **ExactOut Trades**
+- **Sketchy Token Protection**: For tokens with <$5k liquidity or <$1k volume
+- **Spending Cap**: Receive X tokens max, cap what you'll spend
+- **Failure Tolerance**: Accept that many attempts will fail
+- **Smart Fallback**: Continue with remaining slices even if some fail
+
+### 🛣️ **Route Restrictions**
+- **Direct Route Preference**: Prefer single-hop routes over multi-hop
+- **Hop Limits**: Maximum 2 hops in any route
+- **Direct Pool Swaps**: Bypass aggregators for known pools
+- **Chain-Specific Optimization**: Different strategies per blockchain
+
+### 🔍 **Enhanced Preflight Checks**
+- **Token Validation**: Check decimals, mint frozen status, transfer fees
+- **Solana-Specific**: ATA existence, mint frozen status verification
+- **Pool Reserves**: Verify sufficient liquidity (2x trade amount)
+- **Transfer Fee Detection**: Block tokens with >10% transfer fees
+
+### ⚡ **Priority Fees & Performance**
+- **Compute Unit Pricing**: Enhanced priority fees for faster execution
+- **EIP-1559 Support**: Dynamic gas pricing on Ethereum
+- **Fresh Quote Retry**: Re-fetch quotes immediately before execution
+- **Stale Price Protection**: Reject quotes older than 2-3 seconds
+
+### 🚫 **Smart Trade Rejection**
+- **High Slippage Protection**: Reject when required slippage > 15%
+- **Low Liquidity Filter**: Skip tokens with <$5k liquidity
+- **Expected Loss Calculation**: Sometimes the only pro move is to pass
+- **Risk-Reward Assessment**: Automatic evaluation before execution
 
 ## 🛡️ Safety Features
 

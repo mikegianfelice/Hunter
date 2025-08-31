@@ -31,8 +31,9 @@ class JupiterCustomLib:
             print(f"❌ Failed to initialize wallet: {e}")
             self.keypair = None
 
-    def get_quote(self, input_mint: str, output_mint: str, amount: int, slippage: float = 0.10) -> Dict[str, Any]:
-        """Get swap quote from Jupiter v6 with enhanced error handling"""
+    def get_quote(self, input_mint: str, output_mint: str, amount: int, slippage: float = 0.10, 
+                  route_preferences: Dict[str, Any] = None, use_exactout: bool = False) -> Dict[str, Any]:
+        """Get swap quote from Jupiter v6 with enhanced error handling and advanced features"""
         try:
             url = "https://quote-api.jup.ag/v6/quote"
             params = {
@@ -43,6 +44,18 @@ class JupiterCustomLib:
                 "onlyDirectRoutes": "false",
                 "asLegacyTransaction": "false"
             }
+            
+            # Apply route preferences
+            if route_preferences:
+                if route_preferences.get('onlyDirectRoutes'):
+                    params["onlyDirectRoutes"] = "true"
+                if route_preferences.get('maxHops'):
+                    params["maxHops"] = str(route_preferences['maxHops'])
+            
+            # Use ExactOut for sketchy tokens
+            if use_exactout:
+                params["swapMode"] = "ExactOut"
+                print(f"🔄 Using ExactOut mode for sketchy token")
             
             # Try multiple times with different strategies
             for attempt in range(3):

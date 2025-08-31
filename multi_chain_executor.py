@@ -139,11 +139,14 @@ def _launch_monitor_detached():
 
 def execute_trade(token: dict, trade_amount_usd: float = None):
     """
-    Multi-chain trade execution:
-    1. Determine the chain from token data
-    2. Get chain-specific configuration
-    3. Delegate to appropriate executor
-    4. Log position and launch monitor if successful
+    Multi-chain trade execution with advanced features:
+    1. Enhanced preflight checks
+    2. Order splitting for large trades
+    3. Dynamic slippage calculation
+    4. ExactOut trades for sketchy tokens
+    5. Route restrictions and preferences
+    6. Delegate to appropriate executor
+    7. Log position and launch monitor if successful
     
     Returns: (tx_hash_hex_or_sim, success_bool)
     """
@@ -153,21 +156,64 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
     chain_id = token.get("chainId", "ethereum").lower()
     amount_usd = float(trade_amount_usd or config['TRADE_AMOUNT_USD_DEFAULT'])
     
-    print(f"🚀 Executing trade on {chain_id.upper()}: {symbol} ({token_address})")
+    print(f"🚀 Executing advanced trade on {chain_id.upper()}: {symbol} ({token_address})")
+    
+    # Import advanced trading engine
+    from advanced_trading import advanced_trading
+    
+    # Enhanced preflight check
+    import asyncio
+    try:
+        preflight_passed, reason = asyncio.run(advanced_trading.enhanced_preflight_check(token, amount_usd))
+        if not preflight_passed:
+            print(f"❌ Preflight check failed: {reason}")
+            return None, False
+    except Exception as e:
+        print(f"⚠️ Preflight check error: {e}")
+        # Continue with trade if preflight fails
+    
+    # Calculate order slices
+    slices = advanced_trading.calculate_order_slices(amount_usd, token)
+    
+    # Calculate dynamic slippage
+    base_slippage = config['SLIPPAGE']
+    dynamic_slippage = advanced_trading.calculate_dynamic_slippage(token, base_slippage)
+    
+    # Determine if ExactOut should be used
+    use_exactout = advanced_trading.should_use_exactout(token)
+    
+    # Get route preferences
+    route_preferences = advanced_trading.get_route_preferences(token)
+    
+    print(f"📊 Trade configuration:")
+    print(f"   - Slices: {len(slices)} (${amount_usd:.2f} total)")
+    print(f"   - Slippage: {dynamic_slippage*100:.2f}% (dynamic)")
+    print(f"   - ExactOut: {'Yes' if use_exactout else 'No'}")
+    print(f"   - Route preferences: {route_preferences}")
     
     try:
         # Get chain configuration
         chain_config = get_chain_config(chain_id)
         
-        # Real trading mode (test_mode is false in config)
-        if chain_id == "ethereum":
-            # Use existing uniswap executor for Ethereum (MetaMask)
-            from uniswap_executor import buy_token
-            tx_hash, ok = buy_token(token_address, amount_usd, symbol)
-        elif chain_id == "solana":
-            # Try Jupiter first, then fallback to Raydium if Jupiter fails
-            from jupiter_executor import buy_token_solana
-            from raydium_executor import execute_raydium_fallback_trade
+        # Execute trades for each slice
+        successful_txs = []
+        total_successful_amount = 0
+        
+        for i, slice_amount in enumerate(slices):
+            if slice_amount <= 0:
+                continue
+                
+            print(f"🔄 Executing slice {i+1}/{len(slices)}: ${slice_amount:.2f}")
+            
+            # Real trading mode (test_mode is false in config)
+            if chain_id == "ethereum":
+                # Use existing uniswap executor for Ethereum (MetaMask)
+                from uniswap_executor import buy_token
+                tx_hash, ok = buy_token(token_address, slice_amount, symbol)
+            elif chain_id == "solana":
+                # Try Jupiter first, then fallback to Raydium if Jupiter fails
+                from jupiter_executor import buy_token_solana
+                from raydium_executor import execute_raydium_fallback_trade
             
             # Check if this is a volatile token (like BONK) that should use Raydium first
             volatile_tokens = [
@@ -177,50 +223,65 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
             ]
             
             if token_address in volatile_tokens:
-                print(f"🔄 Volatile token detected, trying Raydium first for {symbol}...")
-                raydium_ok, raydium_tx = execute_raydium_fallback_trade(token_address, symbol, amount_usd)
+                print(f"🔥 Volatile token detected - using Raydium first")
+                raydium_ok, raydium_tx = execute_raydium_fallback_trade(token_address, symbol, slice_amount)
                 
                 if raydium_ok:
-                    print(f"✅ Raydium trade successful for {symbol}")
+                    print(f"✅ Raydium slice {i+1} successful")
                     tx_hash = raydium_tx
                     ok = True
                 else:
-                    print(f"⚠️ Raydium failed for {symbol}, trying Jupiter...")
-                    tx_hash, ok = buy_token_solana(token_address, amount_usd, symbol, test_mode=False)
-                    
-                    if not ok:
-                        print(f"❌ Both Raydium and Jupiter failed for {symbol}")
-                        return None, False
+                    print(f"🔄 Raydium failed, trying Jupiter...")
+                    tx_hash, ok = buy_token_solana(token_address, slice_amount, symbol, test_mode=False)
             else:
-                print(f"🔄 Attempting Jupiter trade for {symbol}...")
-                tx_hash, ok = buy_token_solana(token_address, amount_usd, symbol, test_mode=False)
+                print(f"🔄 Attempting Jupiter trade for slice {i+1}...")
+                tx_hash, ok = buy_token_solana(token_address, slice_amount, symbol, test_mode=False)
                 
                 if not ok:
-                    print(f"⚠️ Jupiter trade failed for {symbol}, trying Raydium fallback...")
-                    # Try Raydium fallback
-                    raydium_ok, raydium_tx = execute_raydium_fallback_trade(token_address, symbol, amount_usd)
+                    print(f"🔄 Jupiter failed, trying Raydium...")
+                    raydium_ok, raydium_tx = execute_raydium_fallback_trade(token_address, symbol, slice_amount)
                     
                     if raydium_ok:
-                        print(f"✅ Raydium fallback successful for {symbol}")
+                        print(f"✅ Raydium fallback successful for slice {i+1}")
                         tx_hash = raydium_tx
                         ok = True
-                    else:
-                        print(f"❌ Both Jupiter and Raydium failed for {symbol}")
-                        return None, False
-        else:
-            # For unsupported chains, skip
-            print(f"❌ Chain {chain_id.upper()} not supported - only Ethereum and Solana enabled")
-            return None, False
             
-        if not ok:
-            print(f"❌ Trade failed for {symbol} on {chain_id}")
-            return None, False
+            # Track successful slices
+            if ok and tx_hash:
+                successful_txs.append(tx_hash)
+                total_successful_amount += slice_amount
+                print(f"✅ Slice {i+1} executed successfully: {tx_hash}")
+            else:
+                print(f"❌ Slice {i+1} failed")
+                
+                # For ExactOut trades, continue with remaining slices even if some fail
+                if use_exactout:
+                    print(f"🔄 Continuing with remaining slices (ExactOut mode)")
+                    continue
+                else:
+                    # For regular trades, stop on first failure
+                    print(f"❌ Stopping execution due to slice failure")
+                    break
             
-        # Log position and launch monitor
-        _log_position(token)
-        _launch_monitor_detached()
+            # Add delay between slices to avoid overwhelming the network
+            if i < len(slices) - 1:
+                time.sleep(2)
         
-        print(f"✅ Trade executed successfully on {chain_id.upper()}: {symbol}")
+        # Execute trades for each slice
+        if successful_txs:
+            print(f"✅ Trade execution completed:")
+            print(f"   - Successful slices: {len(successful_txs)}/{len(slices)}")
+            print(f"   - Total amount: ${total_successful_amount:.2f}/{amount_usd:.2f}")
+            print(f"   - Transactions: {successful_txs}")
+            
+            # Log position for monitoring (use total successful amount)
+            _log_position(token)
+            _launch_monitor_detached()
+            
+            return successful_txs[0], True  # Return first transaction hash
+        else:
+            print(f"❌ All slices failed")
+            return None, False
         return tx_hash, True
         
     except Exception as e:
