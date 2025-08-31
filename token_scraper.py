@@ -106,7 +106,7 @@ def is_promotional_content(symbol, description=""):
     return False
 
 def is_valid_token_data(symbol, address, volume24h, liquidity):
-    """Enhanced validation that we have real token data"""
+    """Enhanced validation that we have real token data with strict liquidity requirements"""
     if not symbol or not address:
         return False
     
@@ -118,33 +118,34 @@ def is_valid_token_data(symbol, address, volume24h, liquidity):
     if len(address) < 10:
         return False
     
-    # Reduced minimum requirements for more opportunities
-    if volume24h < 10:  # Reduced from 100 to 10
+    # STRICT minimum requirements to prevent trading on low liquidity tokens
+    # These match the config.yaml thresholds to ensure consistency
+    if volume24h < 50000:  # Minimum $50k volume (increased from 10)
         return False
     
-    if liquidity < 50:  # Reduced from 500 to 50
+    if liquidity < 50000:  # Minimum $50k liquidity (increased from 50)
         return False
     
     return True
 
 def calculate_token_score(symbol, volume24h, liquidity, chain_id):
-    """Calculate a quality score for token filtering"""
+    """Calculate a quality score for token filtering with updated thresholds"""
     score = 0
     
-    # Volume scoring (0-3 points)
-    if volume24h >= 100000:
+    # Volume scoring (0-3 points) - updated for higher thresholds
+    if volume24h >= 500000:  # $500k+ volume
         score += 3
-    elif volume24h >= 50000:
+    elif volume24h >= 200000:  # $200k+ volume
         score += 2
-    elif volume24h >= 10000:
+    elif volume24h >= 100000:  # $100k+ volume
         score += 1
     
-    # Liquidity scoring (0-3 points)
-    if liquidity >= 100000:
+    # Liquidity scoring (0-3 points) - updated for higher thresholds
+    if liquidity >= 500000:  # $500k+ liquidity
         score += 3
-    elif liquidity >= 50000:
+    elif liquidity >= 200000:  # $200k+ liquidity
         score += 2
-    elif liquidity >= 10000:
+    elif liquidity >= 100000:  # $100k+ liquidity
         score += 1
     
     # Symbol quality scoring (0-2 points)
@@ -282,6 +283,18 @@ def fetch_trending_tokens(limit=100):
         if is_promotional_content(symbol):
             print(f"🚫 Skipping promotional content: {symbol[:50]}...")
             continue
+        
+        # Reject tokens with suspiciously low prices (likely scams)
+        if price < 0.000001:  # Less than $0.000001
+            print(f"🚫 Skipping suspiciously low price token: {symbol} (${price})")
+            continue
+        
+        # Reject tokens with extremely low volume/liquidity ratios (manipulation indicators)
+        if liq > 0 and vol24 > 0:
+            vol_liq_ratio = vol24 / liq
+            if vol_liq_ratio < 0.1:  # Volume less than 10% of liquidity (suspicious)
+                print(f"🚫 Skipping low volume/liquidity ratio: {symbol} (ratio: {vol_liq_ratio:.2f})")
+                continue
             
         # Enhanced token data validation
         if not is_valid_token_data(symbol, addr, vol24, liq):
@@ -331,8 +344,8 @@ def fetch_trending_tokens(limit=100):
         
         print(f"🧪 {symbol} | Vol: ${volume24h:,.0f} | LQ: ${liquidity:,.0f} | Score: {score}/8 | Chain: {chain}")
         
-        # Only include tokens with decent scores
-        if score >= 0:  # Reduced minimum score for more opportunities
+        # Only include tokens with good scores (increased minimum for quality)
+        if score >= 2:  # Minimum score of 2 for quality tokens (increased from 0)
             scored_tokens.append({
                 "symbol": symbol,
                 "address": row["address"],
@@ -343,6 +356,8 @@ def fetch_trending_tokens(limit=100):
                 "liquidity": liquidity,
                 "score": score
             })
+        else:
+            print(f"⛔ {symbol} rejected - score too low: {score}/8")
     
     # Sort by score (highest first) and ensure diversity
     scored_tokens.sort(key=lambda x: x["score"], reverse=True)
