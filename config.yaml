@@ -3,7 +3,7 @@ test_mode: true  # Set to false for live trading
 
 # === Trading Parameters ===
 trade_amount_usd: 5
-slippage: 0.02
+slippage: 0.10
 take_profit: 0.5
 stop_loss: 0.25
 use_dynamic_tp: false
@@ -54,7 +54,7 @@ jupiter_pre_check_strict: false  # Don't reject tokens based on Jupiter pre-chec
 
 # === Raydium Fallback Settings ===
 enable_raydium_fallback: true  # Enable Raydium fallback when Jupiter fails
-raydium_slippage: 0.02  # 2% slippage for Raydium trades
+raydium_slippage: 0.10  # 10% slippage for Raydium trades
 raydium_timeout: 15  # Timeout for Raydium API calls
 min_raydium_liquidity: 1000.0  # Minimum liquidity required for Raydium trades
 

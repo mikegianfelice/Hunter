@@ -12,8 +12,9 @@ from typing import Tuple, Optional, Dict, Any, List
 from dataclasses import dataclass
 import struct
 
-from secrets import SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
+from secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
 from config_loader import get_config, get_config_bool, get_config_float
+from raydium_lib import RaydiumCustomLib
 
 # Common token addresses
 WSOL_MINT = "So11111111111111111111111111111111111111112"  # Wrapped SOL
@@ -24,18 +25,23 @@ class RaydiumExecutor:
         self.wallet_address = SOLANA_WALLET_ADDRESS
         self.private_key = SOLANA_PRIVATE_KEY
         
-        # Initialize wallet (simplified for now)
+        # Initialize custom Raydium library
         try:
             if self.private_key:
-                # For now, just store the private key without creating keypair
-                # This will be used when we implement actual swap execution
+                self.raydium_lib = RaydiumCustomLib(
+                    SOLANA_RPC_URL,
+                    self.wallet_address,
+                    self.private_key
+                )
                 print(f"✅ Raydium executor initialized with wallet: {self.wallet_address[:8]}...{self.wallet_address[-8:]}")
-                self.keypair = True  # Placeholder
+                self.keypair = True
             else:
                 print("⚠️ No Solana private key provided for Raydium")
+                self.raydium_lib = None
                 self.keypair = None
         except Exception as e:
             print(f"❌ Failed to initialize Raydium wallet: {e}")
+            self.raydium_lib = None
             self.keypair = None
 
     def check_raydium_liquidity(self, token_address: str) -> Dict[str, Any]:
@@ -101,9 +107,9 @@ class RaydiumExecutor:
             return {"has_liquidity": False}
 
     def get_raydium_quote(self, input_mint: str, output_mint: str, amount: int) -> Optional[Dict[str, Any]]:
-        """Get quote from Raydium API"""
+        """Get quote from Raydium API using DexScreener as fallback"""
         try:
-            # Try Raydium API v2 for quotes
+            # Try Raydium API v2 for quotes first
             url = "https://api.raydium.io/v2/sdk/quote"
             params = {
                 "inputMint": input_mint,
@@ -141,35 +147,176 @@ class RaydiumExecutor:
                         "route": data2.get("route")
                     }
             
+            # Fallback: Use DexScreener to get price and calculate quote
+            print("   🔄 Using DexScreener fallback for quote...")
+            url3 = f"https://api.dexscreener.com/latest/dex/tokens/{output_mint}"
+            response3 = requests.get(url3, timeout=10)
+            
+            if response3.status_code == 200:
+                data3 = response3.json()
+                pairs = data3.get("pairs", [])
+                
+                # Find Raydium pair
+                for pair in pairs:
+                    dex_id = pair.get("dexId", "").lower()
+                    if "raydium" in dex_id:
+                        price_usd = float(pair.get("priceUsd", 0))
+                        if price_usd > 0:
+                            # Calculate quote based on price
+                            input_usd = amount / 1000000  # Convert from USDC decimals
+                            output_tokens = input_usd / price_usd
+                            
+                            return {
+                                "success": True,
+                                "inAmount": str(amount),
+                                "outAmount": str(int(output_tokens * 1000000000)),  # Convert to token decimals
+                                "priceImpact": 0.1,  # Estimated
+                                "route": "raydium-dexscreener-fallback"
+                            }
+            
             return None
             
         except Exception as e:
             print(f"⚠️ Raydium quote failed: {e}")
             return None
 
-    def execute_raydium_swap(self, input_mint: str, output_mint: str, amount: int, slippage: float = 0.02) -> Tuple[bool, str]:
-        """Execute swap on Raydium"""
+    def get_raydium_swap_transaction(self, quote: Dict[str, Any], slippage: float) -> Optional[str]:
+        """Get swap transaction from Raydium API"""
+        try:
+            # Use Raydium's swap API to get transaction
+            url = "https://api.raydium.io/v2/sdk/swap"
+            
+            payload = {
+                "quoteResponse": quote,
+                "userPublicKey": self.wallet_address,
+                "wrapUnwrapSOL": True,
+                "computeUnitPriceMicroLamports": 1000,
+                "asLegacyTransaction": True,
+                "useSharedAccounts": False,
+                "maxAccounts": 16
+            }
+            
+            response = requests.post(url, json=payload, timeout=15)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if "swapTransaction" in data:
+                    print(f"✅ Raydium swap transaction generated")
+                    return data["swapTransaction"]
+                else:
+                    print(f"❌ No swap transaction in response: {data}")
+                    return None
+            else:
+                print(f"❌ Raydium swap API failed: {response.status_code}")
+                return None
+                
+        except Exception as e:
+            print(f"❌ Failed to get Raydium swap transaction: {e}")
+            return None
+
+    def sign_raydium_transaction(self, transaction_data: str) -> Optional[str]:
+        """Sign Raydium transaction with wallet"""
         try:
             if not self.keypair:
-                print("❌ No wallet keypair available for Raydium swap")
-                return False, "No wallet keypair"
+                print("❌ No keypair available for signing")
+                return None
             
-            print(f"🔄 Executing Raydium swap: {input_mint[:8]}... -> {output_mint[:8]}...")
+            # Decode transaction
+            import base64
+            decoded_bytes = base64.b64decode(transaction_data)
             
-            # Get quote first
-            quote = self.get_raydium_quote(input_mint, output_mint, amount)
-            if not quote:
-                print("❌ Failed to get Raydium quote")
-                return False, "Quote failed"
+            # Parse transaction structure
+            num_signatures = decoded_bytes[0]
+            signature_length = 64
+            signatures_end = 1 + (num_signatures * signature_length)
+            message_bytes = decoded_bytes[signatures_end:]
             
-            print(f"✅ Raydium quote: {quote['inAmount']} -> {quote['outAmount']}")
+            # Sign the message
+            signature = self.keypair.sign_message(message_bytes)
+            signature_bytes = bytes(signature)
             
-            # For now, return success (actual implementation would require Raydium SDK)
-            # This is a placeholder - in production you'd use the Raydium SDK to execute the swap
-            print("⚠️ Raydium swap execution not fully implemented (placeholder)")
-            print("   Would execute swap using Raydium SDK with the quote above")
+            # Reconstruct transaction with signature
+            import struct
+            reconstructed = struct.pack('B', num_signatures)
+            reconstructed += signature_bytes
+            reconstructed += message_bytes
             
-            return True, "RAYDIUM_SWAP_SUCCESS"
+            # Encode back to base64
+            signed_transaction = base64.b64encode(reconstructed).decode('utf-8')
+            
+            print(f"✅ Raydium transaction signed successfully")
+            return signed_transaction
+            
+        except Exception as e:
+            print(f"❌ Raydium transaction signing failed: {e}")
+            return None
+
+    def send_raydium_transaction(self, signed_transaction: str) -> Optional[str]:
+        """Send signed Raydium transaction to Solana network"""
+        try:
+            # Check transaction size
+            import base64
+            decoded = base64.b64decode(signed_transaction)
+            tx_size = len(decoded)
+            max_size = 1644
+            
+            if tx_size > max_size:
+                print(f"❌ Transaction too large: {tx_size} bytes (max: {max_size})")
+                return None
+            
+            # Send to Solana RPC
+            rpc_payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "sendTransaction",
+                "params": [
+                    signed_transaction,
+                    {
+                        "encoding": "base64",
+                        "skipPreflight": True,
+                        "maxRetries": 3
+                    }
+                ]
+            }
+            
+            response = requests.post(self.rpc_url, json=rpc_payload, timeout=30)
+            
+            if response.status_code == 200:
+                result = response.json()
+                if "result" in result:
+                    tx_hash = result["result"]
+                    print(f"✅ Raydium transaction sent: {tx_hash}")
+                    return tx_hash
+                elif "error" in result:
+                    error_msg = result["error"]
+                    print(f"❌ RPC error: {error_msg}")
+                    return None
+            else:
+                print(f"❌ RPC request failed: {response.status_code}")
+                return None
+                
+        except Exception as e:
+            print(f"❌ Failed to send Raydium transaction: {e}")
+            return None
+
+    def execute_raydium_swap(self, input_mint: str, output_mint: str, amount: int, slippage: float = 0.10) -> Tuple[bool, str]:
+        """Execute real swap on Raydium using custom library"""
+        try:
+            if not self.raydium_lib:
+                print("❌ No Raydium library available for swap")
+                return False, "No Raydium library"
+            
+            print(f"🔄 Executing real Raydium swap: {input_mint[:8]}... -> {output_mint[:8]}...")
+            
+            # Use custom Raydium library to execute the swap
+            tx_hash, success = self.raydium_lib.execute_swap(input_mint, output_mint, amount, slippage)
+            
+            if success:
+                print(f"✅ Real Raydium swap executed! TX: {tx_hash}")
+                return True, tx_hash
+            else:
+                print(f"❌ Raydium swap failed: {tx_hash}")
+                return False, tx_hash
             
         except Exception as e:
             print(f"❌ Raydium swap failed: {e}")
@@ -186,11 +333,20 @@ class RaydiumExecutor:
                 data = response.json()
                 pairs = data.get("pairs", [])
                 
+                if pairs is None:
+                    print(f"❌ Token {token_address[:8]}... has no pairs data")
+                    return False
+                
                 # Look for Raydium pairs
                 for pair in pairs:
                     dex_id = pair.get("dexId", "").lower()
                     if "raydium" in dex_id:
-                        liquidity = float(pair.get("liquidity", {}).get("usd", 0))
+                        liquidity_data = pair.get("liquidity", {})
+                        if isinstance(liquidity_data, dict):
+                            liquidity = float(liquidity_data.get("usd", 0))
+                        else:
+                            liquidity = float(liquidity_data or 0)
+                        
                         if liquidity > 1000:  # Minimum $1000 liquidity
                             print(f"✅ Token {token_address[:8]}... has Raydium liquidity: ${liquidity:,.2f}")
                             return True

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Custom Jupiter Library - Direct transaction handling for Jupiter v6
+Custom Raydium Library - Direct transaction handling for Raydium swaps
 """
 
 import requests
@@ -12,7 +12,7 @@ from typing import Tuple, Optional, Dict, Any, List
 from solders.keypair import Keypair
 import base58
 
-class JupiterCustomLib:
+class RaydiumCustomLib:
     def __init__(self, rpc_url: str, wallet_address: str, private_key: str):
         self.rpc_url = rpc_url
         self.wallet_address = wallet_address
@@ -23,7 +23,7 @@ class JupiterCustomLib:
             if self.private_key:
                 secret_key_bytes = base58.b58decode(self.private_key)
                 self.keypair = Keypair.from_bytes(secret_key_bytes)
-                print(f"✅ Custom Jupiter lib initialized with wallet: {self.keypair.pubkey()}...{str(self.keypair.pubkey())[-8:]}")
+                print(f"✅ Custom Raydium lib initialized with wallet: {self.keypair.pubkey()}...{str(self.keypair.pubkey())[-8:]}")
             else:
                 print("⚠️ No Solana private key provided")
                 self.keypair = None
@@ -32,16 +32,16 @@ class JupiterCustomLib:
             self.keypair = None
 
     def get_quote(self, input_mint: str, output_mint: str, amount: int, slippage: float = 0.10) -> Dict[str, Any]:
-        """Get swap quote from Jupiter v6 with enhanced error handling"""
+        """Get swap quote from Raydium API with enhanced error handling"""
         try:
-            url = "https://quote-api.jup.ag/v6/quote"
+            # Try Raydium API v2 for quotes
+            url = "https://api.raydium.io/v2/sdk/quote"
             params = {
                 "inputMint": input_mint,
                 "outputMint": output_mint,
                 "amount": str(amount),
-                "slippageBps": int(slippage * 10000),
-                "onlyDirectRoutes": "false",
-                "asLegacyTransaction": "false"
+                "slippage": str(slippage),
+                "version": 4
             }
             
             # Try multiple times with different strategies
@@ -51,70 +51,113 @@ class JupiterCustomLib:
                     
                     if response.status_code == 200:
                         data = response.json()
-                        if data and not data.get("error"):
-                            print(f"✅ Jupiter quote: {data.get('inAmount', 'N/A')} -> {data.get('outAmount', 'N/A')}")
+                        if data and not data.get("error") and data.get("success") != False:
+                            print(f"✅ Raydium quote: {data.get('inAmount', 'N/A')} -> {data.get('outAmount', 'N/A')}")
                             return data
                         else:
                             error_msg = data.get('error', 'Unknown error')
-                            print(f"⚠️ Jupiter quote failed (attempt {attempt + 1}/3): {error_msg}")
+                            print(f"⚠️ Raydium quote failed (attempt {attempt + 1}/3): {error_msg}")
                             
-                            # If it's a parsing error, try with different parameters
-                            if "cannot be parsed" in error_msg.lower() or "invalid" in error_msg.lower():
-                                print(f"🔄 Trying alternative quote method for parsing issues...")
-                                # Try with legacy transaction format
-                                params["asLegacyTransaction"] = "true"
+                            # Try with different parameters
+                            if attempt == 1:
+                                print(f"🔄 Trying with different version...")
+                                params["version"] = 3
                                 continue
-                            
-                            # If it's a liquidity issue, try with smaller amount
-                            if "insufficient" in error_msg.lower() or "liquidity" in error_msg.lower():
-                                print(f"🔄 Trying with smaller amount due to liquidity issues...")
-                                amount = int(amount * 0.5)  # Try with 50% of original amount
+                            elif attempt == 2:
+                                print(f"🔄 Trying with smaller amount...")
+                                amount = int(amount * 0.5)
                                 params["amount"] = str(amount)
                                 continue
                             
                             return {}
                     else:
-                        print(f"⚠️ Jupiter quote failed (attempt {attempt + 1}/3): {response.status_code}")
+                        print(f"⚠️ Raydium quote failed (attempt {attempt + 1}/3): {response.status_code}")
                         
-                        # If it's a 400 error, try with different parameters
-                        if response.status_code == 400:
-                            print(f"🔄 Trying alternative quote method for 400 error...")
-                            # Try with legacy transaction format
-                            params["asLegacyTransaction"] = "true"
+                        # Try with different parameters on 400/404 errors
+                        if (response.status_code == 400 or response.status_code == 404) and attempt < 2:
+                            if attempt == 0:
+                                print(f"🔄 Trying with different version...")
+                                params["version"] = 3
+                            elif attempt == 1:
+                                print(f"🔄 Trying with smaller amount...")
+                                amount = int(amount * 0.5)
+                                params["amount"] = str(amount)
                             continue
                         
-                        return {}
+                        # If we can't retry, continue to next attempt
+                        continue
                         
                 except requests.exceptions.Timeout:
-                    print(f"⚠️ Jupiter quote timeout (attempt {attempt + 1}/3)")
+                    print(f"⚠️ Raydium quote timeout (attempt {attempt + 1}/3)")
                     if attempt < 2:
                         time.sleep(2)
                     continue
                 except Exception as e:
-                    print(f"⚠️ Jupiter quote error (attempt {attempt + 1}/3): {e}")
+                    print(f"⚠️ Raydium quote error (attempt {attempt + 1}/3): {e}")
                     if attempt < 2:
                         time.sleep(1)
                     continue
             
-            print(f"❌ All Jupiter quote attempts failed")
+            print(f"❌ All Raydium quote attempts failed")
+            
+            # Fallback: Use DexScreener to get price and calculate quote
+            print(f"🔄 Using DexScreener fallback for quote...")
+            try:
+                url3 = f"https://api.dexscreener.com/latest/dex/tokens/{output_mint}"
+                response3 = requests.get(url3, timeout=10)
+                
+                if response3.status_code == 200:
+                    data3 = response3.json()
+                    pairs = data3.get("pairs", [])
+                    
+                    print(f"Found {len(pairs)} pairs in DexScreener")
+                    
+                    # Find Raydium pair
+                    for pair in pairs:
+                        dex_id = pair.get("dexId", "").lower()
+                        if "raydium" in dex_id:
+                            price_usd = float(pair.get("priceUsd", 0))
+                            if price_usd > 0:
+                                # Calculate quote based on price
+                                input_usd = amount / 1000000  # Convert from USDC decimals
+                                output_tokens = input_usd / price_usd
+                                
+                                print(f"✅ DexScreener fallback quote: {amount} -> {int(output_tokens * 1000000000)}")
+                                print(f"   Price: ${price_usd}")
+                                print(f"   Rate: 1 USDC = {output_tokens * 1000000000:,.0f} tokens")
+                                
+                                return {
+                                    "success": True,
+                                    "inAmount": str(amount),
+                                    "outAmount": str(int(output_tokens * 1000000000)),  # Convert to token decimals
+                                    "priceImpact": 0.1,  # Estimated
+                                    "route": "raydium-dexscreener-fallback"
+                                }
+                    
+                    print(f"⚠️ No Raydium pairs found in DexScreener data")
+                else:
+                    print(f"❌ DexScreener API failed: {response3.status_code}")
+            except Exception as e:
+                print(f"⚠️ DexScreener fallback failed: {e}")
+            
             return {}
             
         except Exception as e:
-            print(f"❌ Jupiter quote error: {e}")
+            print(f"❌ Raydium quote error: {e}")
             return {}
 
     def get_swap_transaction(self, quote_response: Dict[str, Any]) -> str:
-        """Get swap transaction from Jupiter with enhanced error handling"""
+        """Get swap transaction from Raydium API with enhanced error handling"""
         try:
-            url = "https://quote-api.jup.ag/v6/swap"
+            url = "https://api.raydium.io/v2/sdk/swap"
             payload = {
                 "quoteResponse": quote_response,
                 "userPublicKey": self.wallet_address,
                 "wrapUnwrapSOL": True,
                 "computeUnitPriceMicroLamports": 1000,
-                "asLegacyTransaction": True,  # Use legacy format to reduce size
-                "useSharedAccounts": False,   # Disable shared accounts to reduce size
-                "maxAccounts": 16             # Reduce max accounts to reduce size
+                "asLegacyTransaction": True,
+                "useSharedAccounts": False,
+                "maxAccounts": 16
             }
             
             # Try multiple times with different strategies
@@ -125,11 +168,11 @@ class JupiterCustomLib:
                     if response.status_code == 200:
                         swap_data = response.json()
                         if "swapTransaction" in swap_data:
-                            print(f"✅ Swap transaction generated successfully")
+                            print(f"✅ Raydium swap transaction generated successfully")
                             return swap_data["swapTransaction"]
                         else:
                             error_msg = swap_data.get("error", "No swap transaction in response")
-                            print(f"⚠️ Jupiter swap failed (attempt {attempt + 1}/3): {error_msg}")
+                            print(f"⚠️ Raydium swap failed (attempt {attempt + 1}/3): {error_msg}")
                             
                             # Try with different parameters
                             if attempt == 1:
@@ -143,7 +186,7 @@ class JupiterCustomLib:
                             
                             return ""
                     else:
-                        print(f"⚠️ Jupiter swap request failed (attempt {attempt + 1}/3): {response.status_code}")
+                        print(f"⚠️ Raydium swap request failed (attempt {attempt + 1}/3): {response.status_code}")
                         
                         # Try with different parameters on 400 errors
                         if response.status_code == 400 and attempt < 2:
@@ -158,21 +201,21 @@ class JupiterCustomLib:
                         return ""
                         
                 except requests.exceptions.Timeout:
-                    print(f"⚠️ Jupiter swap timeout (attempt {attempt + 1}/3)")
+                    print(f"⚠️ Raydium swap timeout (attempt {attempt + 1}/3)")
                     if attempt < 2:
                         time.sleep(2)
                     continue
                 except Exception as e:
-                    print(f"⚠️ Jupiter swap error (attempt {attempt + 1}/3): {e}")
+                    print(f"⚠️ Raydium swap error (attempt {attempt + 1}/3): {e}")
                     if attempt < 2:
                         time.sleep(1)
                     continue
             
-            print(f"❌ All Jupiter swap attempts failed")
+            print(f"❌ All Raydium swap attempts failed")
             return ""
             
         except Exception as e:
-            print(f"❌ Jupiter swap error: {e}")
+            print(f"❌ Raydium swap error: {e}")
             return ""
 
     def decode_transaction(self, transaction_data: str) -> Dict[str, Any]:
@@ -240,18 +283,17 @@ class JupiterCustomLib:
             # Encode back to base64
             signed_transaction = base64.b64encode(reconstructed).decode('utf-8')
             
-            print(f"✅ Transaction signed successfully")
+            print(f"✅ Raydium transaction signed successfully")
             return signed_transaction
             
         except Exception as e:
-            print(f"❌ Transaction signing error: {e}")
+            print(f"❌ Raydium transaction signing error: {e}")
             return ""
 
     def send_transaction(self, signed_transaction: str) -> Tuple[str, bool]:
         """Send signed transaction to Solana network"""
         try:
             # Check transaction size before sending
-            import base64
             decoded = base64.b64decode(signed_transaction)
             tx_size = len(decoded)
             max_size = 1644  # Maximum transaction size
@@ -280,7 +322,7 @@ class JupiterCustomLib:
                 result = response.json()
                 if "result" in result:
                     tx_hash = result["result"]
-                    print(f"✅ Transaction sent: {tx_hash}")
+                    print(f"✅ Raydium transaction sent: {tx_hash}")
                     return tx_hash, True
                 elif "error" in result:
                     error_msg = result["error"]
@@ -291,30 +333,30 @@ class JupiterCustomLib:
                 return "", False
                 
         except Exception as e:
-            print(f"❌ Send transaction error: {e}")
+            print(f"❌ Send Raydium transaction error: {e}")
             return "", False
 
     def execute_swap(self, input_mint: str, output_mint: str, amount: int, slippage: float = 0.10) -> Tuple[str, bool]:
-        """Execute complete swap process with enhanced error handling"""
+        """Execute complete Raydium swap process with enhanced error handling"""
         try:
-            print(f"🔄 Executing swap: {input_mint[:8]}... -> {output_mint[:8]}...")
+            print(f"🔄 Executing Raydium swap: {input_mint[:8]}... -> {output_mint[:8]}...")
             
             # Step 1: Get quote
             quote = self.get_quote(input_mint, output_mint, amount, slippage)
             if not quote:
-                print(f"❌ Failed to get quote for swap")
+                print(f"❌ Failed to get Raydium quote for swap")
                 return "", False
             
             # Step 2: Get swap transaction
             transaction_data = self.get_swap_transaction(quote)
             if not transaction_data:
-                print(f"❌ Failed to get swap transaction")
+                print(f"❌ Failed to get Raydium swap transaction")
                 return "", False
             
             # Step 3: Sign transaction
             signed_transaction = self.sign_transaction(transaction_data)
             if not signed_transaction:
-                print(f"❌ Failed to sign transaction")
+                print(f"❌ Failed to sign Raydium transaction")
                 return "", False
             
             # Step 4: Send transaction
@@ -323,7 +365,7 @@ class JupiterCustomLib:
                 return tx_hash, True
             
             # Step 5: If failed due to size, try with smaller amount
-            print(f"🔄 Transaction failed, trying with smaller amount...")
+            print(f"🔄 Raydium transaction failed, trying with smaller amount...")
             smaller_amount = int(amount * 0.5)  # Try with 50% of original amount
             
             quote = self.get_quote(input_mint, output_mint, smaller_amount, slippage)
@@ -382,7 +424,7 @@ class JupiterCustomLib:
             return tx_hash, success
             
         except Exception as e:
-            print(f"❌ Swap execution error: {e}")
+            print(f"❌ Raydium swap execution error: {e}")
             return "", False
 
     def get_balance(self) -> float:
@@ -405,72 +447,3 @@ class JupiterCustomLib:
         except Exception as e:
             print(f"❌ Error getting balance: {e}")
             return 0.0
-
-    def get_sol_balance(self) -> float:
-        """Get SOL balance (alias for get_balance)"""
-        return self.get_balance()
-
-    def get_token_balance(self, token_mint: str) -> float:
-        """Get token balance for a specific mint"""
-        try:
-            # Get token accounts for the wallet
-            rpc_payload = {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "getTokenAccountsByOwner",
-                "params": [
-                    str(self.keypair.pubkey()),
-                    {
-                        "mint": token_mint
-                    },
-                    {
-                        "encoding": "jsonParsed"
-                    }
-                ]
-            }
-            
-            response = requests.post(self.rpc_url, json=rpc_payload, timeout=10)
-            if response.status_code == 200:
-                result = response.json()
-                if "result" in result and "value" in result["result"]:
-                    accounts = result["result"]["value"]
-                    if accounts:
-                        # Get the first account's balance
-                        account_info = accounts[0]["account"]["data"]["parsed"]["info"]
-                        balance = float(account_info["tokenAmount"]["uiAmount"])
-                        return balance
-            return 0.0
-        except Exception as e:
-            print(f"❌ Error getting token balance: {e}")
-            return 0.0
-
-    def swap_tokens(self, input_mint: str, output_mint: str, amount_in: float, slippage_bps: int) -> Dict[str, Any]:
-        """Execute token swap and return result dict"""
-        try:
-            # Convert amount to lamports (for SOL) or token units
-            if input_mint == "So11111111111111111111111111111111111111112":  # WSOL
-                amount_lamports = int(amount_in * 1_000_000_000)
-            else:
-                # For tokens, assume 6 decimals (like USDC)
-                amount_lamports = int(amount_in * 1_000_000)
-            
-            tx_hash, success = self.execute_swap(input_mint, output_mint, amount_lamports, slippage_bps / 10000)
-            
-            return {
-                "success": success,
-                "tx_hash": tx_hash if success else None,
-                "amount_in": amount_in,
-                "input_mint": input_mint,
-                "output_mint": output_mint
-            }
-        except Exception as e:
-            print(f"❌ Swap tokens error: {e}")
-            return {
-                "success": False,
-                "error": str(e)
-            }
-
-# Utility functions
-def create_jupiter_lib(rpc_url: str, wallet_address: str, private_key: str) -> JupiterCustomLib:
-    """Create Jupiter custom library instance"""
-    return JupiterCustomLib(rpc_url, wallet_address, private_key)

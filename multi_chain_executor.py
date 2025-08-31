@@ -169,21 +169,44 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
             from jupiter_executor import buy_token_solana
             from raydium_executor import execute_raydium_fallback_trade
             
-            print(f"🔄 Attempting Jupiter trade for {symbol}...")
-            tx_hash, ok = buy_token_solana(token_address, amount_usd, symbol, test_mode=False)
+            # Check if this is a volatile token (like BONK) that should use Raydium first
+            volatile_tokens = [
+                "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",  # BONK
+                "7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr",  # PEPE
+                "EPeUFDgHRxs9xxEPVaL6kfGQvCon7jmAWKVUHuux1Tpz",  # JITO
+            ]
             
-            if not ok:
-                print(f"⚠️ Jupiter trade failed for {symbol}, trying Raydium fallback...")
-                # Try Raydium fallback
+            if token_address in volatile_tokens:
+                print(f"🔄 Volatile token detected, trying Raydium first for {symbol}...")
                 raydium_ok, raydium_tx = execute_raydium_fallback_trade(token_address, symbol, amount_usd)
                 
                 if raydium_ok:
-                    print(f"✅ Raydium fallback successful for {symbol}")
+                    print(f"✅ Raydium trade successful for {symbol}")
                     tx_hash = raydium_tx
                     ok = True
                 else:
-                    print(f"❌ Both Jupiter and Raydium failed for {symbol}")
-                    return None, False
+                    print(f"⚠️ Raydium failed for {symbol}, trying Jupiter...")
+                    tx_hash, ok = buy_token_solana(token_address, amount_usd, symbol, test_mode=False)
+                    
+                    if not ok:
+                        print(f"❌ Both Raydium and Jupiter failed for {symbol}")
+                        return None, False
+            else:
+                print(f"🔄 Attempting Jupiter trade for {symbol}...")
+                tx_hash, ok = buy_token_solana(token_address, amount_usd, symbol, test_mode=False)
+                
+                if not ok:
+                    print(f"⚠️ Jupiter trade failed for {symbol}, trying Raydium fallback...")
+                    # Try Raydium fallback
+                    raydium_ok, raydium_tx = execute_raydium_fallback_trade(token_address, symbol, amount_usd)
+                    
+                    if raydium_ok:
+                        print(f"✅ Raydium fallback successful for {symbol}")
+                        tx_hash = raydium_tx
+                        ok = True
+                    else:
+                        print(f"❌ Both Jupiter and Raydium failed for {symbol}")
+                        return None, False
         else:
             # For unsupported chains, skip
             print(f"❌ Chain {chain_id.upper()} not supported - only Ethereum and Solana enabled")
