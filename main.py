@@ -426,13 +426,19 @@ def trade_loop():
                     try:
                         # Use the price data already available in the token object
                         current_price = float(token.get("priceUsd", 0))
-                        if current_price == 0:
-                            print(f"🚨 Trade failed and token has zero price - likely delisted")
+                        volume_24h = float(token.get("volume24h", 0))
+                        liquidity = float(token.get("liquidity", 0))
+                        
+                        # Only mark as delisted if price is 0 AND volume/liquidity are very low
+                        if current_price == 0 and volume_24h < 100 and liquidity < 500:
+                            print(f"🚨 Trade failed and token has zero price with very low metrics - likely delisted")
                             # Add to delisted tokens instead of cooldown
                             from strategy import _add_to_delisted_tokens
-                            _add_to_delisted_tokens(address, symbol, "Trade failed + zero price")
+                            _add_to_delisted_tokens(address, symbol, "Trade failed + zero price + low metrics")
                             rejections[REJECT_RISK].append((symbol, address))
                             continue
+                        elif current_price == 0:
+                            print(f"⚠️ Trade failed and token has zero price but decent metrics - not marking as delisted")
                         else:
                             print(f"✅ Token price verified: ${current_price}")
                     except Exception as e:

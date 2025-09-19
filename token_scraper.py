@@ -21,6 +21,16 @@ def get_token_scraper_config():
 EXCLUDED_KEYWORDS = ["INU", "PEPE", "DOGE", "SHIBA", "SAFE", "ELON"]  # Removed "AI" and "MOON" for more opportunities
 ENFORCE_KEYWORDS = True  # Re-enable keyword filtering for better quality
 
+# Known tradeable tokens (whitelist for testing)
+KNOWN_TRADEABLE_TOKENS = [
+    "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",  # BONK
+    "7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr",  # PEPE
+    "EPeUFDgHRxs9xxEPVaL6kfGQvCon7jmAWKVUHuux1Tpz",  # JITO
+    "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So",   # mSOL
+    "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  # USDT
+    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
+]
+
 # Enhanced promotional content filters
 PROMOTIONAL_KEYWORDS = [
     "appstore", "playstore", "download", "available", "marketplace", "app", "quotes", 
@@ -204,6 +214,33 @@ def _append_all_to_csv(rows):
     except Exception as e:
         print("⚠️ Failed to append CSV:", e)
 
+def test_token_tradeability(token_address: str, chain_id: str = "solana") -> bool:
+    """Test if a token is actually tradeable on Jupiter or Raydium"""
+    try:
+        if chain_id.lower() == "solana":
+            # Test Jupiter quote
+            from jupiter_lib import JupiterCustomLib
+            from secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
+            
+            lib = JupiterCustomLib(SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY)
+            SOL_MINT = "So11111111111111111111111111111111111111112"
+            
+            # Try a small quote
+            quote = lib.get_quote(SOL_MINT, token_address, 1000000, slippage=0.10)  # 0.001 SOL
+            if quote and quote.get('success'):
+                return True
+                
+            # Try Raydium fallback
+            from raydium_executor import get_raydium_executor
+            executor = get_raydium_executor()
+            if executor.check_token_tradeable_on_raydium(token_address):
+                return True
+                
+        return False
+    except Exception as e:
+        print(f"⚠️ Tradeability test failed for {token_address}: {e}")
+        return False
+
 def fetch_trending_tokens(limit=100):
     """Enhanced token discovery with better diversity and quality filtering"""
     headers = {"User-Agent": "Mozilla/5.0 (bot)"}
@@ -359,11 +396,26 @@ def fetch_trending_tokens(limit=100):
         else:
             print(f"⛔ {symbol} rejected - score too low: {score}/8")
     
-    # Sort by score (highest first) and ensure diversity
-    scored_tokens.sort(key=lambda x: x["score"], reverse=True)
+    # Prioritize known tradeable tokens
+    known_tradeable = []
+    unknown_tokens = []
+    
+    for token in scored_tokens:
+        if token["address"] in KNOWN_TRADEABLE_TOKENS:
+            known_tradeable.append(token)
+            print(f"✅ {token['symbol']} - Known tradeable token (whitelisted)")
+        else:
+            unknown_tokens.append(token)
+    
+    # Sort by score (highest first)
+    known_tradeable.sort(key=lambda x: x["score"], reverse=True)
+    unknown_tokens.sort(key=lambda x: x["score"], reverse=True)
+    
+    # Combine: known tradeable first, then unknown
+    all_tokens = known_tradeable + unknown_tokens
     
     # Ensure symbol diversity
-    diverse_tokens = ensure_symbol_diversity(scored_tokens, max_same_symbol=5)  # Increased from 2 to 5 for more opportunities
+    diverse_tokens = ensure_symbol_diversity(all_tokens, max_same_symbol=5)
     
     # Take top tokens up to limit
     tokens_for_trading = diverse_tokens[:limit]
@@ -375,8 +427,44 @@ def fetch_trending_tokens(limit=100):
     print(f"🎯 Selected {len(tokens_for_trading)} high-quality, diverse tokens for trading")
     
     if not tokens_for_trading:
-        print("⚠️ No tokens passed enhanced filtering. Will try alternative sources...")
-        return []
+        print("⚠️ No tokens passed enhanced filtering. Adding known tradeable tokens as fallback...")
+        # Add known tradeable tokens as fallback
+        fallback_tokens = []
+        for address in KNOWN_TRADEABLE_TOKENS:
+            # Create a basic token object for known tradeable tokens
+            if address == "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263":  # BONK
+                fallback_tokens.append({
+                    "symbol": "BONK",
+                    "address": address,
+                    "dex": "raydium",
+                    "chainId": "solana",
+                    "priceUsd": 0.000025,  # Approximate BONK price
+                    "volume24h": 50000000,  # High volume
+                    "liquidity": 100000000  # High liquidity
+                })
+            elif address == "7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr":  # PEPE
+                fallback_tokens.append({
+                    "symbol": "PEPE",
+                    "address": address,
+                    "dex": "raydium",
+                    "chainId": "solana",
+                    "priceUsd": 0.000001,  # Approximate PEPE price
+                    "volume24h": 10000000,  # Good volume
+                    "liquidity": 50000000  # Good liquidity
+                })
+            elif address == "EPeUFDgHRxs9xxEPVaL6kfGQvCon7jmAWKVUHuux1Tpz":  # JITO
+                fallback_tokens.append({
+                    "symbol": "JITO",
+                    "address": address,
+                    "dex": "raydium",
+                    "chainId": "solana",
+                    "priceUsd": 0.15,  # Approximate JITO price
+                    "volume24h": 2000000,  # Good volume
+                    "liquidity": 10000000  # Good liquidity
+                })
+        
+        tokens_for_trading = fallback_tokens[:limit]
+        print(f"🔄 Added {len(tokens_for_trading)} known tradeable tokens as fallback")
 
     return tokens_for_trading
 

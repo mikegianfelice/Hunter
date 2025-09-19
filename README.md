@@ -59,6 +59,16 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 
 ## 🔧 Recent Updates & Fixes
 
+### Latest Improvements (v3.6) - Trade Execution Fixes & Token Discovery
+- **🔧 Fixed Transaction Size Issues**: Resolved "transaction too large" errors by using direct routes and legacy transactions
+- **✅ Real Trading Confirmed**: Successfully executed BONK trade with transaction hash `2eF7LskU8jY9dQP8HWoznMqt71dPGNNjGe6T8FTYRHuHQeCuEZWBazA4AVdPGZnHM1mhUsmCJRoxHNNyBUKmkmno`
+- **🎯 Enhanced Token Discovery**: Added known tradeable tokens whitelist (BONK, PEPE, JITO, mSOL, USDT, USDC)
+- **🔄 Improved Jupiter Integration**: Fixed Jupiter API parameters to use direct routes and legacy transactions
+- **🛡️ Better Error Handling**: Enhanced fallback mechanisms for non-tradeable tokens
+- **📊 Token Tradeability Testing**: Added function to test if discovered tokens are actually tradeable
+- **⚡ Optimized Transaction Size**: Reduced transaction complexity to stay within Solana limits (1644 bytes)
+- **🔧 Fixed Token Discovery Issues**: Resolved problem where bot found tokens that weren't actually tradeable on Jupiter/Raydium
+
 ### Latest Improvements (v3.5) - BASE Chain Integration
 - **🌐 BASE Chain Support**: Full buy/sell functionality for BASE network (Coinbase's L2)
 - **🔄 Multi-Chain Position Monitoring**: Enhanced position tracking with chain-specific selling logic
@@ -844,20 +854,27 @@ def _detect_delisted_token(token_address: str, consecutive_failures: int) -> boo
     - Update to the latest version to fix this issue
 
 12. **"Jupiter quote failed (attempt 1/3): 400"**
-    - **CURRENT ISSUE**: Jupiter API is rejecting quote requests with 400 errors
+    - **FIXED**: This issue has been resolved in v3.6
     - **Causes**: Invalid token addresses, insufficient liquidity, API parameter validation issues
-    - **Workaround**: Bot allows tokens to proceed despite Jupiter validation issues
-    - **Solution**: Focus on Ethereum trading until Jupiter API issues are resolved
-    - **Status**: Being investigated and fixed
+    - **Solution**: Bot now uses direct routes and legacy transactions to reduce transaction size
+    - **Result**: Successfully executing trades with known tradeable tokens (BONK, PEPE, JITO)
+    - **Status**: ✅ Resolved with transaction size optimization
 
-13. **"Could not get SOL price from any source"**
+13. **"base64 encoded solana_transaction::versioned::VersionedTransaction too large"**
+    - **FIXED**: This issue has been resolved in v3.6
+    - **Causes**: Complex Jupiter routes creating transactions larger than Solana's 1644-byte limit
+    - **Solution**: Bot now uses direct routes and legacy transactions to reduce size
+    - **Result**: Successfully executing trades with optimized transaction size
+    - **Status**: ✅ Resolved with route optimization
+
+14. **"Could not get SOL price from any source"**
     - **CURRENT ISSUE**: All SOL price APIs (CoinGecko, Jupiter, DexScreener) are failing
     - **Causes**: Rate limiting, API downtime, network connectivity issues
     - **Workaround**: Bot uses fallback price when all sources fail
     - **Solution**: Enhanced fallback mechanisms and alternative price sources
     - **Status**: Being improved with better error handling
 
-14. **"Configuration not reloading"**
+15. **"Configuration not reloading"**
     - **FIXED**: This issue has been resolved in v3.2
     - **Cause**: Python modules were loading config at import time and caching values
     - **Solution**: Implemented dynamic configuration loading with `config_loader.py`

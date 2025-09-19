@@ -55,7 +55,7 @@ fastpath_min_liquidity_usd: 100000  # Increased from 10000 - minimum $100k liqui
 fastpath_min_sent_score: 5
 
 # === Pre-buy Delisting Check ===
-enable_pre_buy_delisting_check: false  # Temporarily disabled due to API issues
+enable_pre_buy_delisting_check: false  # Disabled to prevent false delisting detection
 pre_buy_check_sensitivity: "lenient"
 pre_buy_check_timeout: 10
 
@@ -82,6 +82,8 @@ delisted_cleanup_interval: 1  # Every loop
 enable_sentiment_checks: false  # Disabled due to Twitter/Nitter issues
 enable_tokensniffer: false  # Disabled temporarily
 enable_price_verification: false  # Trust DexScreener data more
+api_timeout_seconds: 8  # Reduced timeout for faster fallbacks
+api_retry_attempts: 2  # Reduced retry attempts for faster fallbacks
 
 # === Jupiter API Settings ===
 enable_jupiter_pre_check: false  # Allow tokens to proceed even if Jupiter pre-check fails

@@ -237,31 +237,45 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
             
             if token_address in volatile_tokens:
                 print(f"🔥 Volatile token detected - using Raydium first")
-                raydium_ok, raydium_tx = execute_raydium_fallback_trade(token_address, symbol, slice_amount)
-                
-                if raydium_ok:
-                    print(f"✅ Raydium slice {i+1} successful")
-                    tx_hash = raydium_tx
-                    ok = True
-                else:
-                                    print(f"🔄 Raydium failed, trying Jupiter...")
-                tx_hash, ok = buy_token_solana(token_address, slice_amount, symbol, test_mode=False, 
-                                              slippage=dynamic_slippage, route_preferences=route_preferences, 
-                                              use_exactout=use_exactout)
-            else:
-                print(f"🔄 Attempting Jupiter trade for slice {i+1}...")
-                tx_hash, ok = buy_token_solana(token_address, slice_amount, symbol, test_mode=False, 
-                                              slippage=dynamic_slippage, route_preferences=route_preferences, 
-                                              use_exactout=use_exactout)
-                
-                if not ok:
-                    print(f"🔄 Jupiter failed, trying Raydium...")
+                try:
                     raydium_ok, raydium_tx = execute_raydium_fallback_trade(token_address, symbol, slice_amount)
                     
                     if raydium_ok:
-                        print(f"✅ Raydium fallback successful for slice {i+1}")
+                        print(f"✅ Raydium slice {i+1} successful")
                         tx_hash = raydium_tx
                         ok = True
+                    else:
+                        print(f"🔄 Raydium failed, trying Jupiter...")
+                        tx_hash, ok = buy_token_solana(token_address, slice_amount, symbol, test_mode=False, 
+                                                      slippage=dynamic_slippage, route_preferences=route_preferences, 
+                                                      use_exactout=use_exactout)
+                except Exception as e:
+                    print(f"⚠️ Raydium execution error: {e}, trying Jupiter...")
+                    tx_hash, ok = buy_token_solana(token_address, slice_amount, symbol, test_mode=False, 
+                                                  slippage=dynamic_slippage, route_preferences=route_preferences, 
+                                                  use_exactout=use_exactout)
+            else:
+                print(f"🔄 Attempting Jupiter trade for slice {i+1}...")
+                try:
+                    tx_hash, ok = buy_token_solana(token_address, slice_amount, symbol, test_mode=False, 
+                                                  slippage=dynamic_slippage, route_preferences=route_preferences, 
+                                                  use_exactout=use_exactout)
+                    
+                    if not ok:
+                        print(f"🔄 Jupiter failed, trying Raydium...")
+                        try:
+                            raydium_ok, raydium_tx = execute_raydium_fallback_trade(token_address, symbol, slice_amount)
+                            
+                            if raydium_ok:
+                                print(f"✅ Raydium fallback successful for slice {i+1}")
+                                tx_hash = raydium_tx
+                                ok = True
+                        except Exception as e:
+                            print(f"⚠️ Raydium fallback error: {e}")
+                except Exception as e:
+                    print(f"⚠️ Jupiter execution error: {e}")
+                    ok = False
+                    tx_hash = None
             
             # Track successful slices
             if ok and tx_hash:

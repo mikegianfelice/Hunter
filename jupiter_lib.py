@@ -41,8 +41,8 @@ class JupiterCustomLib:
                 "outputMint": output_mint,
                 "amount": str(amount),
                 "slippageBps": int(slippage * 10000),
-                "onlyDirectRoutes": "false",
-                "asLegacyTransaction": "false"
+                "onlyDirectRoutes": "true",  # Use direct routes to reduce transaction size
+                "asLegacyTransaction": "true"  # Use legacy transactions to reduce size
             }
             
             # Apply route preferences
@@ -64,8 +64,10 @@ class JupiterCustomLib:
                     
                     if response.status_code == 200:
                         data = response.json()
-                        if data and not data.get("error"):
+                        if data and not data.get("error") and data.get("inAmount") and data.get("outAmount"):
                             print(f"✅ Jupiter quote: {data.get('inAmount', 'N/A')} -> {data.get('outAmount', 'N/A')}")
+                            # Add success field for compatibility
+                            data["success"] = True
                             return data
                         else:
                             error_msg = data.get('error', 'Unknown error')

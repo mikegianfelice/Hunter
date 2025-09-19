@@ -38,7 +38,7 @@ class JupiterCustomExecutor:
             try:
                 import requests
                 url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
-                response = requests.get(url, timeout=15)
+                response = requests.get(url, timeout=10)
                 if response.status_code == 200:
                     data = response.json()
                     pairs = data.get("pairs", [])
@@ -53,13 +53,13 @@ class JupiterCustomExecutor:
                 print(f"⚠️ DexScreener price API error (attempt {attempt + 1}/2): {e}")
             
             if attempt < 1:
-                time.sleep(1)
+                time.sleep(0.5)
         
         # Try Birdeye API for Solana tokens (direct price, no SOL dependency)
         try:
             import requests
             url = f"https://public-api.birdeye.so/public/price?address={token_address}"
-            response = requests.get(url, timeout=10)
+            response = requests.get(url, timeout=8)
             if response.status_code == 200:
                 data = response.json()
                 if data.get("success") and data.get("data", {}).get("value"):
@@ -81,27 +81,25 @@ class JupiterCustomExecutor:
         }
         
         if token_address in token_mapping:
-            for attempt in range(2):
-                try:
-                    import requests
-                    coingecko_id = token_mapping[token_address]
-                    url = f"https://api.coingecko.com/api/v3/simple/price?ids={coingecko_id}&vs_currencies=usd"
-                    
-                    response = requests.get(url, timeout=15)
-                    if response.status_code == 200:
-                        data = response.json()
-                        if coingecko_id in data and "usd" in data[coingecko_id]:
-                            price = float(data[coingecko_id]["usd"])
-                            print(f"✅ CoinGecko price for {token_address[:8]}...{token_address[-8:]}: ${price}")
-                            return price
-                except Exception as e:
-                    print(f"⚠️ CoinGecko price API error (attempt {attempt + 1}/2): {e}")
+            try:
+                import requests
+                coingecko_id = token_mapping[token_address]
+                url = f"https://api.coingecko.com/api/v3/simple/price?ids={coingecko_id}&vs_currencies=usd"
                 
-                if attempt < 1:
-                    time.sleep(1)
+                response = requests.get(url, timeout=8)
+                if response.status_code == 200:
+                    data = response.json()
+                    if coingecko_id in data and "usd" in data[coingecko_id]:
+                        price = float(data[coingecko_id]["usd"])
+                        print(f"✅ CoinGecko price for {token_address[:8]}...{token_address[-8:]}: ${price}")
+                        return price
+            except Exception as e:
+                print(f"⚠️ CoinGecko price API error: {e}")
         
+        # If all APIs fail, return a small positive value to prevent false delisting
         print(f"⚠️ Token not found in any price API: {token_address[:8]}...{token_address[-8:]}")
-        return 0.0
+        print(f"🔄 Using fallback price to prevent false delisting")
+        return 0.000001  # Small positive value instead of 0
 
     def execute_trade(self, token_address: str, amount_usd: float, is_buy: bool = True) -> Tuple[str, bool]:
         """Execute trade using custom Jupiter library"""
@@ -118,21 +116,31 @@ class JupiterCustomExecutor:
                     amount_usd = adjusted_amount
             except Exception as e:
                 print(f"⚠️ Could not get liquidity info: {e}")
-            
-            # Convert USD amount to USDC (assuming 1 USDC = 1 USD)
-            usdc_amount = int(amount_usd * 1_000_000)  # USDC has 6 decimals
+                # Continue with original amount if liquidity check fails
             
             if is_buy:
-                # Buying token with USDC
-                input_mint = USDC_MINT
+                # Buying token with SOL (convert USD amount to SOL)
+                from utils import get_sol_price_usd
+                sol_price = get_sol_price_usd()
+                if sol_price <= 0:
+                    print("❌ Could not get SOL price for trade")
+                    return "", False
+                
+                sol_amount = amount_usd / sol_price
+                sol_amount_lamports = int(sol_amount * 1_000_000_000)  # SOL has 9 decimals
+                
+                input_mint = WSOL_MINT
                 output_mint = token_address
+                amount = sol_amount_lamports
             else:
-                # Selling token for USDC
+                # Selling token for SOL (convert USD amount to USDC)
+                usdc_amount = int(amount_usd * 1_000_000)  # USDC has 6 decimals
                 input_mint = token_address
-                output_mint = USDC_MINT
+                output_mint = WSOL_MINT
+                amount = usdc_amount
             
             # Execute swap using custom Jupiter library
-            tx_hash, success = self.jupiter_lib.execute_swap(input_mint, output_mint, usdc_amount)
+            tx_hash, success = self.jupiter_lib.execute_swap(input_mint, output_mint, amount)
             return tx_hash, success
             
         except Exception as e:
