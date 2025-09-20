@@ -18,7 +18,7 @@ def get_token_scraper_config():
     }
 
 # === Enhanced Filters for TRADING ===
-EXCLUDED_KEYWORDS = ["INU", "PEPE", "DOGE", "SHIBA", "SAFE", "ELON"]  # Removed "AI" and "MOON" for more opportunities
+EXCLUDED_KEYWORDS = ["INU", "DOGE", "SHIBA", "SAFE", "ELON"]  # Removed "PEPE" to allow PEPE tokens
 ENFORCE_KEYWORDS = True  # Re-enable keyword filtering for better quality
 
 # Known tradeable tokens (whitelist for testing)
@@ -55,6 +55,8 @@ PRIMARY_URLS = [
     "https://api.dexscreener.com/latest/dex/search/?q=moon",
     "https://api.dexscreener.com/latest/dex/search/?q=pump",
     "https://api.dexscreener.com/latest/dex/search/?q=surge",
+    "https://api.dexscreener.com/latest/dex/search/?q=PEPE",  # Specific search for PEPE
+    "https://api.dexscreener.com/latest/dex/search/?q=JITO",  # Specific search for JITO
 ]
 
 FALLBACK_URLS = [
@@ -417,9 +419,9 @@ def fetch_trending_tokens(limit=100):
     # Ensure symbol diversity
     diverse_tokens = ensure_symbol_diversity(all_tokens, max_same_symbol=5)
     
-    # Apply tradeability filter to only include tradeable tokens
+    # Apply tradeability filter but make it less aggressive
     from tradeability_checker import filter_tradeable_tokens
-    tradeable_tokens = filter_tradeable_tokens(diverse_tokens, max_checks=30)  # Check top 30 tokens
+    tradeable_tokens = filter_tradeable_tokens(diverse_tokens, max_checks=10)  # Check fewer tokens to avoid API limits
     
     # Take top tokens up to limit
     tokens_for_trading = tradeable_tokens[:limit]
@@ -431,44 +433,9 @@ def fetch_trending_tokens(limit=100):
     print(f"🎯 Selected {len(tokens_for_trading)} tradeable, high-quality tokens for trading")
     
     if not tokens_for_trading:
-        print("⚠️ No tokens passed enhanced filtering. Adding known tradeable tokens as fallback...")
-        # Add known tradeable tokens as fallback
-        fallback_tokens = []
-        for address in KNOWN_TRADEABLE_TOKENS:
-            # Create a basic token object for known tradeable tokens
-            if address == "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263":  # BONK
-                fallback_tokens.append({
-                    "symbol": "BONK",
-                    "address": address,
-                    "dex": "raydium",
-                    "chainId": "solana",
-                    "priceUsd": 0.000025,  # Approximate BONK price
-                    "volume24h": 50000000,  # High volume
-                    "liquidity": 100000000  # High liquidity
-                })
-            elif address == "7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr":  # PEPE
-                fallback_tokens.append({
-                    "symbol": "PEPE",
-                    "address": address,
-                    "dex": "raydium",
-                    "chainId": "solana",
-                    "priceUsd": 0.000001,  # Approximate PEPE price
-                    "volume24h": 10000000,  # Good volume
-                    "liquidity": 50000000  # Good liquidity
-                })
-            elif address == "EPeUFDgHRxs9xxEPVaL6kfGQvCon7jmAWKVUHuux1Tpz":  # JITO
-                fallback_tokens.append({
-                    "symbol": "JITO",
-                    "address": address,
-                    "dex": "raydium",
-                    "chainId": "solana",
-                    "priceUsd": 0.15,  # Approximate JITO price
-                    "volume24h": 2000000,  # Good volume
-                    "liquidity": 10000000  # Good liquidity
-                })
-        
-        tokens_for_trading = fallback_tokens[:limit]
-        print(f"🔄 Added {len(tokens_for_trading)} known tradeable tokens as fallback")
+        print("⚠️ No tokens passed enhanced filtering. No trades this cycle.")
+        # Don't fall back to any tokens - just return empty list
+        tokens_for_trading = []
 
     return tokens_for_trading
 

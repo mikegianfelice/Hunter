@@ -27,7 +27,7 @@ def check_jupiter_tradeability(token_address: str, chain_id: str = "solana") -> 
             "onlyDirectRoutes": "true"
         }
         
-        response = requests.get(url, params=params, timeout=5)
+        response = requests.get(url, params=params, timeout=3)  # Shorter timeout
         
         if response.status_code == 200:
             data = response.json()
@@ -191,7 +191,7 @@ def filter_tradeable_tokens(tokens: List[Dict], max_checks: int = 50) -> List[Di
             print(f"❌ {token.get('symbol', '?')} - not tradeable ({reason})")
         
         # Small delay to avoid overwhelming APIs
-        time.sleep(0.1)
+        time.sleep(0.05)  # Reduced delay
     
     print(f"📊 Tradeability filter: {len(tradeable_tokens)}/{checked_count} tokens are tradeable")
     return tradeable_tokens
