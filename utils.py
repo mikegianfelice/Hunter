@@ -189,4 +189,5 @@ def get_sol_price_usd() -> float:
     # Using a more conservative but realistic fallback
     fallback_price = 150.0  # Updated fallback price
     print(f"⚠️ All SOL price sources failed, using fallback price: ${fallback_price}")
+    print(f"💡 This fallback price allows trading to continue when APIs are down")
     return fallback_price

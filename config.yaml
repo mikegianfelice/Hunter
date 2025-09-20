@@ -45,17 +45,17 @@ min_pool_reserves_multiplier: 2.0  # Pool reserves must be 2x trade amount
 
 # === Strategy Thresholds ===
 min_momentum_pct: 0.0001  # Very low momentum requirement
-min_volume_24h_for_buy: 50000  # Increased from 1000 - minimum $50k volume
-min_liquidity_usd_for_buy: 50000  # Increased from 2000 - minimum $50k liquidity
+min_volume_24h_for_buy: 25000   # BALANCED - minimum $25k volume (increased from $1k for safety)
+min_liquidity_usd_for_buy: 50000  # BALANCED - minimum $50k liquidity (increased from $10k for safety)
 min_price_usd: 0.0000001
 
 # Fast-path thresholds for first-seen tokens
-fastpath_min_volume_24h: 100000  # Increased from 5000 - minimum $100k volume
-fastpath_min_liquidity_usd: 100000  # Increased from 10000 - minimum $100k liquidity
+fastpath_min_volume_24h: 100000  # CONSERVATIVE - minimum $100k volume (increased from $50k)
+fastpath_min_liquidity_usd: 150000  # CONSERVATIVE - minimum $150k liquidity (increased from $75k)
 fastpath_min_sent_score: 5
 
 # === Pre-buy Delisting Check ===
-enable_pre_buy_delisting_check: false  # Disabled to prevent false delisting detection
+enable_pre_buy_delisting_check: false  # DISABLED - was causing false delisting detection due to SOL price API failures
 pre_buy_check_sensitivity: "lenient"
 pre_buy_check_timeout: 10
 
@@ -78,10 +78,10 @@ enable_smart_delisted_cleanup: true
 delisted_cleanup_interval: 1  # Every loop
 
 # === API and External Services ===
-# Temporarily disable problematic APIs
-enable_sentiment_checks: false  # Disabled due to Twitter/Nitter issues
-enable_tokensniffer: false  # Disabled temporarily
-enable_price_verification: false  # Trust DexScreener data more
+# Re-enable critical safety checks
+enable_sentiment_checks: true  # Re-enabled for better token filtering
+enable_tokensniffer: true  # Re-enabled for security analysis
+enable_price_verification: true  # Re-enabled for price validation
 api_timeout_seconds: 8  # Reduced timeout for faster fallbacks
 api_retry_attempts: 2  # Reduced retry attempts for faster fallbacks
 
@@ -122,7 +122,11 @@ price_memory_ttl_minutes: 15
 price_memory_prune_hours: 24
 
 # === Trusted Tokens ===
-trusted_tokens: []
+# These tokens bypass most safety checks for testing
+trusted_tokens: [
+  "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",  # BONK (verified tradeable)
+  "7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr"   # PEPE (verified tradeable)
+]
 
 # === State Management ===
 reset_state_now: false

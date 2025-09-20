@@ -417,14 +417,18 @@ def fetch_trending_tokens(limit=100):
     # Ensure symbol diversity
     diverse_tokens = ensure_symbol_diversity(all_tokens, max_same_symbol=5)
     
+    # Apply tradeability filter to only include tradeable tokens
+    from tradeability_checker import filter_tradeable_tokens
+    tradeable_tokens = filter_tradeable_tokens(diverse_tokens, max_checks=30)  # Check top 30 tokens
+    
     # Take top tokens up to limit
-    tokens_for_trading = diverse_tokens[:limit]
+    tokens_for_trading = tradeable_tokens[:limit]
     
     # Remove score from final output
     for token in tokens_for_trading:
         token.pop("score", None)
     
-    print(f"🎯 Selected {len(tokens_for_trading)} high-quality, diverse tokens for trading")
+    print(f"🎯 Selected {len(tokens_for_trading)} tradeable, high-quality tokens for trading")
     
     if not tokens_for_trading:
         print("⚠️ No tokens passed enhanced filtering. Adding known tradeable tokens as fallback...")

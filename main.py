@@ -321,6 +321,14 @@ def trade_loop():
                     print("⏳ Token is in cooldown.")
                     rejections[REJECT_COOLDOWN].append((symbol, address))
                     continue
+                
+                # Quick tradeability check for non-trusted tokens
+                from tradeability_checker import quick_tradeability_check
+                chain_id = token.get("chainId", "ethereum")
+                if not quick_tradeability_check(address, chain_id):
+                    print("❌ Token is not tradeable on current DEXs.")
+                    rejections[REJECT_RISK].append((symbol, address))  # Use REJECT_RISK for now
+                    continue
 
                 # TokenSniffer / safety gate
                 chain_id = token.get("chainId", "ethereum")

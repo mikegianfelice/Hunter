@@ -177,14 +177,14 @@ class AdvancedTradingEngine:
         print(f"🔍 Enhanced preflight check for {symbol} ({chain_id})")
         print(f"📊 Token metrics: Liquidity ${liquidity:,.0f}, Volume ${volume_24h:,.0f}")
         
-        # Check minimum liquidity requirements
-        min_liquidity = 50000  # $50k minimum liquidity
+        # Check minimum liquidity requirements (use config values)
+        min_liquidity = get_config_float("min_liquidity_usd_for_buy", 10000)  # Use config, default $10k
         if liquidity < min_liquidity:
             print(f"❌ Insufficient liquidity: ${liquidity:,.0f} < ${min_liquidity:,.0f}")
             return False, f"insufficient_liquidity_{liquidity:.0f}"
         
-        # Check minimum volume requirements
-        min_volume = 50000  # $50k minimum volume
+        # Check minimum volume requirements (use config values)
+        min_volume = get_config_float("min_volume_24h_for_buy", 25000)  # Use config, default $25k
         if volume_24h < min_volume:
             print(f"❌ Insufficient volume: ${volume_24h:,.0f} < ${min_volume:,.0f}")
             return False, f"insufficient_volume_{volume_24h:.0f}"
