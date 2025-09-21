@@ -55,7 +55,7 @@ fastpath_min_liquidity_usd: 150000  # CONSERVATIVE - minimum $150k liquidity (in
 fastpath_min_sent_score: 5
 
 # === Pre-buy Delisting Check ===
-enable_pre_buy_delisting_check: false  # DISABLED - was causing false delisting detection due to SOL price API failures
+enable_pre_buy_delisting_check: true  # ENABLED - important safety check to avoid delisted tokens
 pre_buy_check_sensitivity: "lenient"
 pre_buy_check_timeout: 10
 

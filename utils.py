@@ -96,17 +96,17 @@ def get_sol_price_usd() -> float:
     import time
     
     # Try CoinGecko first with retry
-    for attempt in range(2):
+    for attempt in range(3):
         try:
             url = "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd"
-            response = requests.get(url, timeout=10)
+            response = requests.get(url, timeout=15)
             if response.status_code == 200:
                 data = response.json()
                 # Check for rate limit error in response
                 if "status" in data and data["status"].get("error_code") == 429:
-                    print(f"⚠️ CoinGecko rate limited (attempt {attempt + 1}/2), trying fallback...")
-                    if attempt < 1:
-                        time.sleep(1)  # Wait before retry
+                    print(f"⚠️ CoinGecko rate limited (attempt {attempt + 1}/3), trying fallback...")
+                    if attempt < 2:
+                        time.sleep(2)  # Wait before retry
                         continue
                 else:
                     price = float(data.get("solana", {}).get("usd", 0))
@@ -114,21 +114,21 @@ def get_sol_price_usd() -> float:
                         print(f"✅ SOL price from CoinGecko: ${price}")
                         return price
             elif response.status_code == 429:
-                print(f"⚠️ CoinGecko rate limited (429) (attempt {attempt + 1}/2), trying fallback...")
-                if attempt < 1:
-                    time.sleep(1)
+                print(f"⚠️ CoinGecko rate limited (429) (attempt {attempt + 1}/3), trying fallback...")
+                if attempt < 2:
+                    time.sleep(2)
                     continue
         except Exception as e:
-            print(f"⚠️ CoinGecko SOL price error (attempt {attempt + 1}/2): {e}")
-            if attempt < 1:
-                time.sleep(0.5)
+            print(f"⚠️ CoinGecko SOL price error (attempt {attempt + 1}/3): {e}")
+            if attempt < 2:
+                time.sleep(1)
                 continue
     
     # Fallback to DexScreener API with retry
-    for attempt in range(2):
+    for attempt in range(3):
         try:
             url = "https://api.dexscreener.com/latest/dex/tokens/So11111111111111111111111111111111111111112"
-            response = requests.get(url, timeout=10)
+            response = requests.get(url, timeout=15)
             if response.status_code == 200:
                 data = response.json()
                 pairs = data.get("pairs", [])
@@ -147,23 +147,26 @@ def get_sol_price_usd() -> float:
                             print(f"✅ SOL price from DexScreener (non-USDC): ${price}")
                             return price
         except Exception as e:
-            print(f"⚠️ DexScreener SOL price error (attempt {attempt + 1}/2): {e}")
+            print(f"⚠️ DexScreener SOL price error (attempt {attempt + 1}/3): {e}")
         
-        if attempt < 1:
-            time.sleep(0.5)
+        if attempt < 2:
+            time.sleep(2)
     
     # Fallback to Birdeye API
-    try:
-        url = "https://public-api.birdeye.so/public/price?address=So11111111111111111111111111111111111111112"
-        response = requests.get(url, timeout=8)
-        if response.status_code == 200:
-            data = response.json()
-            if data.get("success") and data.get("data", {}).get("value"):
-                price = float(data["data"]["value"])
-                print(f"✅ SOL price from Birdeye: ${price}")
-                return price
-    except Exception as e:
-        print(f"⚠️ Birdeye SOL price error: {e}")
+    for attempt in range(2):
+        try:
+            url = "https://public-api.birdeye.so/public/price?address=So11111111111111111111111111111111111111112"
+            response = requests.get(url, timeout=15)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("success") and data.get("data", {}).get("value"):
+                    price = float(data["data"]["value"])
+                    print(f"✅ SOL price from Birdeye: ${price}")
+                    return price
+        except Exception as e:
+            print(f"⚠️ Birdeye SOL price error (attempt {attempt + 1}/2): {e}")
+            if attempt < 1:
+                time.sleep(1)
     
     # Fallback to Jupiter quote API (simplified)
     try:
@@ -187,7 +190,7 @@ def get_sol_price_usd() -> float:
     
     # Last resort: return a reasonable fallback price
     # Using a more conservative but realistic fallback
-    fallback_price = 150.0  # Updated fallback price
+    fallback_price = 240.0  # Updated fallback price based on current market
     print(f"⚠️ All SOL price sources failed, using fallback price: ${fallback_price}")
     print(f"💡 This fallback price allows trading to continue when APIs are down")
     return fallback_price
