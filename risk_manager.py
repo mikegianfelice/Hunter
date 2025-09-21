@@ -58,6 +58,10 @@ def _get_wallet_balance_usd(chain_id="ethereum"):
                 sol_balance = get_solana_balance()
                 sol_price = get_sol_price_usd()
                 
+                if sol_price is None:
+                    print(f"⚠️ Cannot get SOL price for balance calculation - using 0")
+                    return 0.0
+                
                 return float(sol_balance) * float(sol_price)
             except Exception as e:
                 print(f"⚠️ Error getting Solana balance: {e}")

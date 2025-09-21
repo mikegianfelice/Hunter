@@ -91,7 +91,9 @@ def get_sol_price_usd() -> float:
     2. DexScreener API (fallback)
     3. Birdeye API (fallback)
     4. Jupiter quote API (fallback)
-    5. Fixed fallback price
+    
+    Returns None if all sources fail to prevent trading with inaccurate pricing.
+    Callers should handle None return value appropriately.
     """
     import time
     
@@ -188,9 +190,9 @@ def get_sol_price_usd() -> float:
     except Exception as e:
         print(f"⚠️ Jupiter quote SOL price error: {e}")
     
-    # Last resort: return a reasonable fallback price
-    # Using a more conservative but realistic fallback
-    fallback_price = 240.0  # Updated fallback price based on current market
-    print(f"⚠️ All SOL price sources failed, using fallback price: ${fallback_price}")
-    print(f"💡 This fallback price allows trading to continue when APIs are down")
-    return fallback_price
+    # Last resort: try to get a cached price or return None to prevent bad trades
+    # Instead of using a hardcoded fallback, we should fail gracefully
+    print(f"❌ All SOL price sources failed - cannot determine current SOL price")
+    print(f"💡 Bot will skip SOL-based trades until price APIs recover")
+    print(f"💡 This prevents trading with inaccurate pricing data")
+    return None

@@ -46,7 +46,11 @@ class SimpleSolanaExecutor:
         # If the token is SOL, use the utility function
         sol_mint = "So11111111111111111111111111111111111111112"
         if token_address == sol_mint:
-            return get_sol_price_usd()
+            sol_price = get_sol_price_usd()
+            if sol_price is None:
+                print(f"❌ Cannot get SOL price - skipping SOL token")
+                return 0.0
+            return sol_price
         
         # Try DexScreener API for token price first (direct price, no SOL dependency)
         for attempt in range(2):
