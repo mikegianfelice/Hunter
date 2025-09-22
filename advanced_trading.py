@@ -273,10 +273,12 @@ class AdvancedTradingEngine:
     def _check_token_decimals(self, token_address: str, chain_id: str) -> Optional[int]:
         """Check token decimals"""
         try:
-            if chain_id == 'ethereum':
-                # Ethereum token decimals check
-                from web3 import Web3
-                from uniswap_executor import w3, _erc20
+            if chain_id in ['ethereum', 'base']:
+                # Ethereum and BASE token decimals check (both are EVM-compatible)
+                if chain_id == 'ethereum':
+                    from uniswap_executor import w3, _erc20
+                elif chain_id == 'base':
+                    from base_executor import w3, _erc20
                 
                 token = _erc20(token_address)
                 decimals = token.functions.decimals().call()
@@ -293,9 +295,12 @@ class AdvancedTradingEngine:
     def _check_pool_reserves(self, token_address: str, trade_amount_usd: float, chain_id: str) -> bool:
         """Check if pool has sufficient reserves"""
         try:
-            if chain_id == 'ethereum':
-                # Check Uniswap pool reserves
-                from uniswap_executor import w3, _erc20, WETH
+            if chain_id in ['ethereum', 'base']:
+                # Check Uniswap pool reserves for EVM chains
+                if chain_id == 'ethereum':
+                    from uniswap_executor import w3, _erc20, WETH
+                elif chain_id == 'base':
+                    from base_executor import w3, _erc20, WETH
                 
                 token = _erc20(token_address)
                 token_balance = token.functions.balanceOf(token_address).call()
@@ -352,10 +357,13 @@ class AdvancedTradingEngine:
     def _check_transfer_fee(self, token_address: str, chain_id: str) -> float:
         """Check transfer fee configuration"""
         try:
-            if chain_id == 'ethereum':
-                # Check for transfer fee in token contract
+            if chain_id in ['ethereum', 'base']:
+                # Check for transfer fee in token contract (EVM chains)
                 from web3 import Web3
-                from uniswap_executor import w3, _erc20
+                if chain_id == 'ethereum':
+                    from uniswap_executor import w3, _erc20
+                elif chain_id == 'base':
+                    from base_executor import w3, _erc20
                 
                 token = _erc20(token_address)
                 
