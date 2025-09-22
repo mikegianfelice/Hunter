@@ -24,8 +24,6 @@ ENFORCE_KEYWORDS = True  # Re-enable keyword filtering for better quality
 # Known tradeable tokens (whitelist for testing)
 KNOWN_TRADEABLE_TOKENS = [
     "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",  # BONK
-    "7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr",  # PEPE
-    "EPeUFDgHRxs9xxEPVaL6kfGQvCon7jmAWKVUHuux1Tpz",  # JITO
     "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So",   # mSOL
     "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  # USDT
     "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
@@ -55,8 +53,6 @@ PRIMARY_URLS = [
     "https://api.dexscreener.com/latest/dex/search/?q=moon",
     "https://api.dexscreener.com/latest/dex/search/?q=pump",
     "https://api.dexscreener.com/latest/dex/search/?q=surge",
-    "https://api.dexscreener.com/latest/dex/search/?q=PEPE",  # Specific search for PEPE
-    "https://api.dexscreener.com/latest/dex/search/?q=JITO",  # Specific search for JITO
 ]
 
 FALLBACK_URLS = [

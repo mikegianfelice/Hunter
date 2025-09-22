@@ -231,8 +231,6 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
             # Check if this is a volatile token (like BONK) that should use Raydium first
             volatile_tokens = [
                 "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",  # BONK
-                "7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr",  # PEPE
-                "EPeUFDgHRxs9xxEPVaL6kfGQvCon7jmAWKVUHuux1Tpz",  # JITO
             ]
             
             if token_address in volatile_tokens:
