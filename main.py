@@ -294,8 +294,9 @@ def trade_loop():
 
     for token in tokens:
         try:
-            symbol = token.get("symbol", "UNKNOWN")
-            address = (token.get("address") or "").lower()
+            # Safely extract token information with defensive programming
+            symbol = token.get("symbol", "UNKNOWN") if isinstance(token, dict) else "UNKNOWN"
+            address = (token.get("address") or "").lower() if isinstance(token, dict) else ""
             print(f"\n🚀 Evaluating token: {symbol}")
 
             if not address:
@@ -464,7 +465,10 @@ def trade_loop():
             time.sleep(3)
 
         except Exception as e:
-            print(f"🔥 Error while evaluating {token}: {e}")
+            # Get token info safely for error reporting
+            token_symbol = token.get("symbol", "UNKNOWN") if isinstance(token, dict) else "UNKNOWN"
+            token_address = token.get("address", "N/A") if isinstance(token, dict) else "N/A"
+            print(f"🔥 Error while evaluating {token_symbol} ({token_address}): {e}")
 
     # ---- End-of-loop debug summary ----
     _print_reject_summary(rejections, buys)

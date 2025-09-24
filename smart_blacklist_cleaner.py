@@ -101,7 +101,10 @@ def clean_delisted_tokens() -> Dict[str, any]:
         print(f"  • Original delisted tokens: {original_count}")
         print(f"  • Still delisted: {len(still_delisted)}")
         print(f"  • Reactivated: {len(now_active)}")
-        print(f"  • Cleanup ratio: {len(now_active)/original_count*100:.1f}%")
+        if original_count > 0:
+            print(f"  • Cleanup ratio: {len(now_active)/original_count*100:.1f}%")
+        else:
+            print(f"  • Cleanup ratio: N/A (no original tokens)")
         
         if now_active:
             print(f"\n🔄 Reactivated tokens:")
