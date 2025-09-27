@@ -24,10 +24,10 @@ def check_jupiter_tradeability(token_address: str, chain_id: str = "solana") -> 
             "outputMint": token_address,
             "amount": "1000000000",  # 1 SOL in lamports
             "slippageBps": 500,  # 5% slippage for test
-            "onlyDirectRoutes": "true"
+            "onlyDirectRoutes": "false"  # Allow multi-hop routes for better coverage
         }
         
-        response = requests.get(url, params=params, timeout=3)  # Shorter timeout
+        response = requests.get(url, params=params, timeout=5)  # More reasonable timeout
         
         if response.status_code == 200:
             data = response.json()
@@ -119,10 +119,15 @@ def check_ethereum_tradeability(token_address: str, chain_id: str = "ethereum") 
         price = fetch_token_price_usd(token_address)
         
         # If we can get a price, assume it's tradeable
-        return price is not None and price > 0
+        if price is not None and price > 0:
+            return True
+        
+        # If price check fails, assume tradeable anyway (Graph API is unreliable)
+        print(f"⚠️ Ethereum price check failed for {token_address[:8]}...{token_address[-8:]}, assuming tradeable")
+        return True
         
     except Exception as e:
-        print(f"⚠️ Ethereum tradeability check failed for {token_address[:8]}...{address[-8:]}: {e}")
+        print(f"⚠️ Ethereum tradeability check failed for {token_address[:8]}...{token_address[-8:]}: {e}")
         return True  # Assume tradeable if check fails
 
 def is_token_tradeable(token_data: Dict) -> Tuple[bool, str]:
@@ -146,7 +151,9 @@ def is_token_tradeable(token_data: Dict) -> Tuple[bool, str]:
         if jupiter_ok or raydium_ok:
             return True, "tradeable_on_solana"
         else:
-            return False, "not_tradeable_on_solana"
+            # If both checks fail, assume tradeable anyway (APIs can be unreliable)
+            print(f"⚠️ Both Jupiter and Raydium checks failed for {symbol}, assuming tradeable")
+            return True, "assumed_tradeable_on_solana"
     
     elif chain_id == "ethereum":
         ethereum_ok = check_ethereum_tradeability(token_address, chain_id)

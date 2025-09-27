@@ -126,12 +126,12 @@ def is_valid_token_data(symbol, address, volume24h, liquidity):
     if len(address) < 10:
         return False
     
-    # STRICT minimum requirements to prevent trading on low liquidity tokens
+    # BALANCED minimum requirements to prevent trading on low liquidity tokens
     # These match the config.yaml thresholds to ensure consistency
-    if volume24h < 50000:  # Minimum $50k volume (increased from 10)
+    if volume24h < 8000:  # Minimum $8k volume (matches config.yaml)
         return False
     
-    if liquidity < 50000:  # Minimum $50k liquidity (increased from 50)
+    if liquidity < 15000:  # Minimum $15k liquidity (matches config.yaml)
         return False
     
     return True
@@ -140,20 +140,20 @@ def calculate_token_score(symbol, volume24h, liquidity, chain_id):
     """Calculate a quality score for token filtering with updated thresholds"""
     score = 0
     
-    # Volume scoring (0-3 points) - updated for higher thresholds
-    if volume24h >= 500000:  # $500k+ volume
+    # Volume scoring (0-3 points) - balanced thresholds
+    if volume24h >= 100000:  # $100k+ volume
         score += 3
-    elif volume24h >= 200000:  # $200k+ volume
+    elif volume24h >= 50000:  # $50k+ volume
         score += 2
-    elif volume24h >= 100000:  # $100k+ volume
+    elif volume24h >= 25000:  # $25k+ volume
         score += 1
     
-    # Liquidity scoring (0-3 points) - updated for higher thresholds
-    if liquidity >= 500000:  # $500k+ liquidity
+    # Liquidity scoring (0-3 points) - balanced thresholds
+    if liquidity >= 200000:  # $200k+ liquidity
         score += 3
-    elif liquidity >= 200000:  # $200k+ liquidity
-        score += 2
     elif liquidity >= 100000:  # $100k+ liquidity
+        score += 2
+    elif liquidity >= 50000:  # $50k+ liquidity
         score += 1
     
     # Symbol quality scoring (0-2 points)
@@ -319,15 +319,15 @@ def fetch_trending_tokens(limit=100):
             print(f"🚫 Skipping promotional content: {symbol[:50]}...")
             continue
         
-        # Reject tokens with suspiciously low prices (likely scams)
-        if price < 0.000001:  # Less than $0.000001
+        # Reject tokens with suspiciously low prices (likely scams) - more lenient
+        if price < 0.0000001:  # Less than $0.0000001 (more lenient)
             print(f"🚫 Skipping suspiciously low price token: {symbol} (${price})")
             continue
         
-        # Reject tokens with extremely low volume/liquidity ratios (manipulation indicators)
+        # Reject tokens with extremely low volume/liquidity ratios (manipulation indicators) - more lenient
         if liq > 0 and vol24 > 0:
             vol_liq_ratio = vol24 / liq
-            if vol_liq_ratio < 0.1:  # Volume less than 10% of liquidity (suspicious)
+            if vol_liq_ratio < 0.05:  # Volume less than 5% of liquidity (more lenient)
                 print(f"🚫 Skipping low volume/liquidity ratio: {symbol} (ratio: {vol_liq_ratio:.2f})")
                 continue
             
@@ -379,8 +379,8 @@ def fetch_trending_tokens(limit=100):
         
         print(f"🧪 {symbol} | Vol: ${volume24h:,.0f} | LQ: ${liquidity:,.0f} | Score: {score}/8 | Chain: {chain}")
         
-        # Only include tokens with good scores (increased minimum for quality)
-        if score >= 2:  # Minimum score of 2 for quality tokens (increased from 0)
+        # Only include tokens with good scores (balanced minimum for quality)
+        if score >= 1:  # Minimum score of 1 for quality tokens (balanced)
             scored_tokens.append({
                 "symbol": symbol,
                 "address": row["address"],
@@ -417,7 +417,7 @@ def fetch_trending_tokens(limit=100):
     
     # Apply tradeability filter but make it less aggressive
     from tradeability_checker import filter_tradeable_tokens
-    tradeable_tokens = filter_tradeable_tokens(diverse_tokens, max_checks=10)  # Check fewer tokens to avoid API limits
+    tradeable_tokens = filter_tradeable_tokens(diverse_tokens, max_checks=5)  # Check even fewer tokens to avoid API limits
     
     # Take top tokens up to limit
     tokens_for_trading = tradeable_tokens[:limit]

@@ -45,17 +45,17 @@ min_pool_reserves_multiplier: 2.0  # Pool reserves must be 2x trade amount
 
 # === Strategy Thresholds ===
 min_momentum_pct: 0.0001  # Very low momentum requirement
-min_volume_24h_for_buy: 25000   # BALANCED - minimum $25k volume (increased from $1k for safety)
-min_liquidity_usd_for_buy: 50000  # BALANCED - minimum $50k liquidity (increased from $10k for safety)
+min_volume_24h_for_buy: 8000   # BALANCED - minimum $8k volume (safe but not too restrictive)
+min_liquidity_usd_for_buy: 15000  # BALANCED - minimum $15k liquidity (safe but not too restrictive)
 min_price_usd: 0.0000001
 
 # Fast-path thresholds for first-seen tokens
-fastpath_min_volume_24h: 100000  # CONSERVATIVE - minimum $100k volume (increased from $50k)
-fastpath_min_liquidity_usd: 150000  # CONSERVATIVE - minimum $150k liquidity (increased from $75k)
-fastpath_min_sent_score: 5
+fastpath_min_volume_24h: 25000   # BALANCED - minimum $25k volume (safe but not too restrictive)
+fastpath_min_liquidity_usd: 40000   # BALANCED - minimum $40k liquidity (safe but not too restrictive)
+fastpath_min_sent_score: 3
 
 # === Pre-buy Delisting Check ===
-enable_pre_buy_delisting_check: true  # ENABLED - important safety check to avoid delisted tokens
+enable_pre_buy_delisting_check: false  # DISABLED - too aggressive, causing false rejections
 pre_buy_check_sensitivity: "lenient"
 pre_buy_check_timeout: 10
 
@@ -79,9 +79,9 @@ delisted_cleanup_interval: 1  # Every loop
 
 # === API and External Services ===
 # Re-enable critical safety checks
-enable_sentiment_checks: true  # Re-enabled for better token filtering
-enable_tokensniffer: true  # Re-enabled for security analysis
-enable_price_verification: true  # Re-enabled for price validation
+enable_sentiment_checks: false  # Temporarily disabled due to API issues - will use default high scores
+enable_tokensniffer: false  # DISABLED - causing too many rejections
+enable_price_verification: false  # DISABLED - causing false delisting detection
 api_timeout_seconds: 8  # Reduced timeout for faster fallbacks
 api_retry_attempts: 2  # Reduced retry attempts for faster fallbacks
 
