@@ -214,11 +214,18 @@ def _check_solana_token_delisted(token: dict) -> bool:
             print(f"✅ Pre-buy check: {symbol} has reasonable DexScreener data (vol: ${volume_24h:.0f}, liq: ${liquidity:.0f}) - trusting in lenient mode")
             return False
     
-    # If we have a valid price from DexScreener, trust it even with lower volume/liquidity
+    # CRITICAL: If we have valid price from DexScreener, trust it over API checks
+    # This prevents false delisting when APIs are rate-limited or down
     if price_usd > 0.0000001:  # Very low but non-zero price threshold
-        print(f"✅ Pre-buy check: {symbol} has valid price (${price_usd}) from DexScreener - trusting data")
-        return False
+        # If DexScreener shows valid price AND decent volume/liquidity, trust it completely
+        if volume_24h > poor_vol_threshold or liquidity > poor_liq_threshold:
+            print(f"✅ Pre-buy check: {symbol} has valid DexScreener price (${price_usd}) and decent metrics (vol: ${volume_24h:.0f}, liq: ${liquidity:.0f}) - trusting data")
+            return False
+        else:
+            print(f"✅ Pre-buy check: {symbol} has valid price (${price_usd}) from DexScreener but low metrics - trusting price data")
+            return False
     
+    # Only do API price verification if DexScreener price is missing/zero
     # Try to get current price from multiple sources to verify if token is actually delisted
     # Only mark as delisted if we can confirm it has zero price from multiple sources
     try:
@@ -226,17 +233,18 @@ def _check_solana_token_delisted(token: dict) -> bool:
         executor = SimpleSolanaExecutor()
         current_price = executor.get_token_price_usd(address)
         
-        if current_price > 0:
+        # Note: executor may return 0.000001 as a fallback, not actual zero
+        if current_price > 0.00001:  # Higher threshold to account for fallback value
             print(f"✅ Pre-buy check: {symbol} has current price ${current_price} - not delisted")
             return False
-        elif current_price == 0:
-            # Only mark as delisted if we have very poor metrics AND zero price
+        elif current_price <= 0.00001:
+            # Only mark as delisted if we have very poor metrics AND API also shows zero/fallback
             if volume_24h < poor_vol_threshold and liquidity < poor_liq_threshold:
-                print(f"🚨 Pre-buy check: {symbol} has zero price and very low metrics - marking as delisted")
+                print(f"🚨 Pre-buy check: {symbol} has zero/unknown price and very low metrics - marking as delisted")
                 _add_to_delisted_tokens(address, symbol, f"Zero price and low metrics (vol: ${volume_24h:.0f}, liq: ${liquidity:.0f})")
                 return True
             else:
-                print(f"⚠️ Pre-buy check: {symbol} has zero price but decent metrics - skipping but not blacklisting")
+                print(f"⚠️ Pre-buy check: {symbol} has zero/unknown price but decent metrics - skipping but not blacklisting")
                 return True
     except Exception as e:
         print(f"⚠️ Pre-buy check: Price verification failed for {symbol}: {e}")

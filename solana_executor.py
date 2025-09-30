@@ -116,8 +116,11 @@ class SimpleSolanaExecutor:
                 if attempt < 1:
                     time.sleep(1)
         
+        # If all APIs fail, return a small positive value to prevent false delisting
+        # This indicates "price unknown" rather than "price is zero"
         print(f"⚠️ Token not found in any price API: {token_address[:8]}...{token_address[-8:]}")
-        return 0.0
+        print(f"🔄 Returning fallback price to prevent false delisting - actual price unknown")
+        return 0.000001  # Small positive value instead of 0
 
     def get_jupiter_quote(self, input_mint: str, output_mint: str, amount: int, slippage: float = 0.02) -> Dict[str, Any]:
         """Get swap quote from Jupiter with better error handling"""

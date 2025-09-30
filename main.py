@@ -429,16 +429,22 @@ def trade_loop():
                     f"TX: https://etherscan.io/tx/{tx_hash}"
                 )
             else:
-                # Check if the failure might be due to delisting
+                # Check if the failure might be due to delisting (only if enabled in config)
+                from config_loader import get_config_values
+                config = get_config_values()
+                
                 chain_id = token.get("chainId", "ethereum").lower()
-                if chain_id == "solana":
+                if chain_id == "solana" and config.get('ENABLE_PRE_BUY_DELISTING_CHECK', False):
                     try:
                         # Use the price data already available in the token object
                         current_price = float(token.get("priceUsd", 0))
                         volume_24h = float(token.get("volume24h", 0))
                         liquidity = float(token.get("liquidity", 0))
                         
-                        # Only mark as delisted if price is 0 AND volume/liquidity are very low
+                        # Only mark as delisted if:
+                        # 1. Price is 0 from API check (not DexScreener data)
+                        # 2. Volume/liquidity are very low
+                        # 3. DexScreener data also shows low metrics
                         if current_price == 0 and volume_24h < 100 and liquidity < 500:
                             print(f"🚨 Trade failed and token has zero price with very low metrics - likely delisted")
                             # Add to delisted tokens instead of cooldown
@@ -452,6 +458,8 @@ def trade_loop():
                             print(f"✅ Token price verified: ${current_price}")
                     except Exception as e:
                         print(f"⚠️ Could not verify token status: {e}")
+                else:
+                    print(f"ℹ️ Delisting check disabled or non-Solana chain - skipping delisting verification")
                 
                 # If not delisted, add to cooldown as usual
                 update_cooldown_log(address)

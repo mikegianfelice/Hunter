@@ -59,6 +59,15 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 
 ## 🔧 Recent Updates & Fixes
 
+### Latest Improvements (v3.7) - Critical Token Buying Fixes
+- **🔧 Fixed Duplicate Symbol Issue**: Increased max_same_symbol from 5 to 10, allowing more PUMP tokens and similar symbols
+- **📊 Smart Token Sorting**: Tokens now sorted by volume+liquidity before diversity filter, keeping highest quality instances
+- **✅ Fixed False Delisting**: Price API fallback now returns 0.000001 instead of 0 to prevent false "delisted" flags
+- **🛡️ DexScreener Data Priority**: Bot now trusts DexScreener price/volume data over API checks, preventing legitimate tokens from being rejected
+- **⚙️ Config-Aware Delisting**: Trade failures only trigger delisting when `enable_pre_buy_delisting_check: true`, respecting config settings
+- **🎯 Enhanced Resilience**: Multiple layers of fallback logic ensure tokens with valid DexScreener data aren't incorrectly rejected
+- **📈 Better Token Discovery**: Fixes allow high-volume tokens like PUMP (with $1M+ daily volume) to be properly evaluated and traded
+
 ### Latest Improvements (v3.6) - Trade Execution Fixes & Token Discovery
 - **🔧 Fixed Transaction Size Issues**: Resolved "transaction too large" errors by using direct routes and legacy transactions
 - **✅ Real Trading Confirmed**: Successfully executed BONK trade with transaction hash `2eF7LskU8jY9dQP8HWoznMqt71dPGNNjGe6T8FTYRHuHQeCuEZWBazA4AVdPGZnHM1mhUsmCJRoxHNNyBUKmkmno`

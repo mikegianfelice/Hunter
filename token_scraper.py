@@ -412,8 +412,12 @@ def fetch_trending_tokens(limit=100):
     # Combine: known tradeable first, then unknown
     all_tokens = known_tradeable + unknown_tokens
     
-    # Ensure symbol diversity
-    diverse_tokens = ensure_symbol_diversity(all_tokens, max_same_symbol=5)
+    # Sort by volume and liquidity before applying diversity filter
+    # This ensures we keep the highest quality tokens for each symbol
+    all_tokens.sort(key=lambda x: (x.get("volume24h", 0) + x.get("liquidity", 0)), reverse=True)
+    
+    # Ensure symbol diversity (increased from 5 to 10 to allow more PUMP tokens)
+    diverse_tokens = ensure_symbol_diversity(all_tokens, max_same_symbol=10)
     
     # Apply tradeability filter but make it less aggressive
     from tradeability_checker import filter_tradeable_tokens
