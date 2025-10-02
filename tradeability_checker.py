@@ -54,7 +54,7 @@ def check_jupiter_tradeability(token_address: str, chain_id: str = "solana") -> 
         return False
         
     except Exception as e:
-        print(f"⚠️ Jupiter tradeability check failed for {token_address[:8]}...{address[-8:]}: {e}")
+        print(f"⚠️ Jupiter tradeability check failed for {token_address[:8]}...{token_address[-8:]}: {e}")
         return True  # Assume tradeable if check fails
 
 def check_raydium_tradeability(token_address: str, chain_id: str = "solana") -> bool:
@@ -83,7 +83,7 @@ def check_raydium_tradeability(token_address: str, chain_id: str = "solana") -> 
         return _test_raydium_quote(token_address)
         
     except Exception as e:
-        print(f"⚠️ Raydium tradeability check failed for {token_address[:8]}...{address[-8:]}: {e}")
+        print(f"⚠️ Raydium tradeability check failed for {token_address[:8]}...{token_address[-8:]}: {e}")
         return True  # Assume tradeable if check fails
 
 def _test_raydium_quote(token_address: str) -> bool:
@@ -102,7 +102,7 @@ def _test_raydium_quote(token_address: str) -> bool:
         return False
         
     except Exception as e:
-        print(f"⚠️ Raydium quote test failed for {token_address[:8]}...{address[-8:]}: {e}")
+        print(f"⚠️ Raydium quote test failed for {token_address[:8]}...{token_address[-8:]}: {e}")
         return False
 
 def check_ethereum_tradeability(token_address: str, chain_id: str = "ethereum") -> bool:
