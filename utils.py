@@ -84,18 +84,48 @@ def get_eth_price_usd() -> float:
         # Last-ditch: return None; caller should handle
         return None
 
+def _cache_sol_price(price: float):
+    """Cache SOL price with timestamp"""
+    try:
+        cache_data = {
+            'price': price,
+            'timestamp': time.time()
+        }
+        with open("sol_price_cache.json", 'w') as f:
+            json.dump(cache_data, f)
+    except Exception:
+        pass  # If caching fails, continue without it
+
 def get_sol_price_usd() -> float:
     """
-    Get SOL/USD price from multiple sources with retry logic:
+    Get SOL/USD price from multiple sources with retry logic and caching:
     1. CoinGecko API (primary)
     2. DexScreener API (fallback)
     3. Birdeye API (fallback)
     4. Jupiter quote API (fallback)
+    5. Cached price (if recent)
+    6. Fallback price (last resort)
     
-    Returns None if all sources fail to prevent trading with inaccurate pricing.
-    Callers should handle None return value appropriately.
+    Returns a reasonable price even if all APIs fail to prevent trading halt.
     """
     import time
+    
+    # Check for cached price (valid for 5 minutes to reduce API calls)
+    cache_file = "sol_price_cache.json"
+    try:
+        if os.path.exists(cache_file):
+            with open(cache_file, 'r') as f:
+                cache_data = json.load(f)
+                cached_price = cache_data.get('price')
+                cached_time = cache_data.get('timestamp', 0)
+                current_time = time.time()
+                
+                # Use cached price if less than 5 minutes old
+                if cached_price and (current_time - cached_time) < 300:
+                    print(f"✅ SOL price from cache: ${cached_price}")
+                    return cached_price
+    except Exception:
+        pass  # If cache fails, continue with API calls
     
     # Try CoinGecko first with retry
     for attempt in range(3):
@@ -114,6 +144,8 @@ def get_sol_price_usd() -> float:
                     price = float(data.get("solana", {}).get("usd", 0))
                     if price > 0:
                         print(f"✅ SOL price from CoinGecko: ${price}")
+                        # Cache the successful price
+                        _cache_sol_price(price)
                         return price
             elif response.status_code == 429:
                 print(f"⚠️ CoinGecko rate limited (429) (attempt {attempt + 1}/3), trying fallback...")
@@ -141,12 +173,14 @@ def get_sol_price_usd() -> float:
                             price = float(pair.get("priceUsd", 0))
                             if price > 0:
                                 print(f"✅ SOL price from DexScreener: ${price}")
+                                _cache_sol_price(price)
                                 return price
                     # If no USDC pair, use any pair with price
                     for pair in pairs:
                         price = float(pair.get("priceUsd", 0))
                         if price > 0:
                             print(f"✅ SOL price from DexScreener (non-USDC): ${price}")
+                            _cache_sol_price(price)
                             return price
         except Exception as e:
             print(f"⚠️ DexScreener SOL price error (attempt {attempt + 1}/3): {e}")
@@ -164,6 +198,7 @@ def get_sol_price_usd() -> float:
                 if data.get("success") and data.get("data", {}).get("value"):
                     price = float(data["data"]["value"])
                     print(f"✅ SOL price from Birdeye: ${price}")
+                    _cache_sol_price(price)
                     return price
         except Exception as e:
             print(f"⚠️ Birdeye SOL price error (attempt {attempt + 1}/2): {e}")
@@ -186,6 +221,7 @@ def get_sol_price_usd() -> float:
             if data.get("swapUsdValue"):
                 price = float(data["swapUsdValue"])
                 print(f"✅ SOL price from Jupiter quote: ${price}")
+                _cache_sol_price(price)
                 return price
     except Exception as e:
         print(f"⚠️ Jupiter quote SOL price error: {e}")

@@ -219,6 +219,7 @@ peak_prices.json
 price_memory.json
 cooldown_log.json
 delisted_tokens.json
+sol_price_cache.json
 .monitor_heartbeat
 .monitor_lock
 

@@ -1,4 +1,4 @@
-# 🚀 Crypto Trading Bot 100X
+# 🚀 Hunter: The Crypto Bot
 
 A sophisticated automated cryptocurrency trading bot designed for high-frequency trading on **Ethereum and Solana**. This bot uses advanced strategies including sentiment analysis, trend detection, and risk management to identify and execute profitable trades with real-time monitoring and smart blacklist management.
 
@@ -412,8 +412,8 @@ enable_pre_buy_delisting_check: true   # Enable pre-buy delisting checks
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/mikegianfelice/CRYPTO_TRADING_BOT_100X.git
-cd CRYPTO_TRADING_BOT_100X
+git clone https://github.com/mikegianfelice/Hunter.git
+cd Hunter
 ```
 
 ### 2. Install Dependencies
@@ -900,7 +900,7 @@ log_level: DEBUG
 ## 📚 File Structure
 
 ```
-crypto_trading_bot_100x/
+Hunter/
 ├── main.py                    # Main entry point
 ├── config.yaml               # Configuration file
 ├── requirements.txt          # Python dependencies

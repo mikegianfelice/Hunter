@@ -22,8 +22,8 @@ def get_config_values():
         'FASTPATH_VOL': get_config_float("fastpath_min_volume_24h", 100000),
         'FASTPATH_LIQ': get_config_float("fastpath_min_liquidity_usd", 100000),
         'FASTPATH_SENT': get_config_int("fastpath_min_sent_score", 30),
-        'ENABLE_PRE_BUY_DELISTING_CHECK': get_config_bool("enable_pre_buy_delisting_check", True),
-        'PRE_BUY_CHECK_SENSITIVITY': get_config("pre_buy_check_sensitivity", "moderate"),
+        'ENABLE_PRE_BUY_DELISTING_CHECK': get_config_bool("enable_pre_buy_delisting_check", False),
+        'PRE_BUY_CHECK_SENSITIVITY': get_config("pre_buy_check_sensitivity", "lenient"),
         'PRE_BUY_CHECK_TIMEOUT': get_config_int("pre_buy_check_timeout", 10)
     }
 
