@@ -206,8 +206,9 @@ def get_sol_price_usd() -> float:
                 time.sleep(1)
     
     # Fallback to Jupiter quote API (simplified)
+    # NOTE: Jupiter API endpoint has changed to api.jup.ag
     try:
-        url = "https://quote-api.jup.ag/v6/quote"
+        url = "https://api.jup.ag/v6/quote"
         params = {
             "inputMint": "So11111111111111111111111111111111111111112",
             "outputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",

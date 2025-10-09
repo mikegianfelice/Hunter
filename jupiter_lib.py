@@ -34,9 +34,14 @@ class JupiterCustomLib:
 
     def get_quote(self, input_mint: str, output_mint: str, amount: int, slippage: float = 0.10, 
                   route_preferences: Dict[str, Any] = None, use_exactout: bool = False) -> Dict[str, Any]:
-        """Get swap quote from Jupiter v6 with enhanced error handling and advanced features"""
+        """Get swap quote from Jupiter v6 with enhanced error handling and advanced features
+        
+        NOTE: Jupiter API has changed. quote-api.jup.ag no longer exists (DNS fails).
+        Using api.jup.ag as fallback, though it may require authentication.
+        """
         try:
-            base_url = "https://quote-api.jup.ag/v6/quote"
+            # Try new endpoint first (may require API key)
+            base_url = "https://api.jup.ag/v6/quote"
             params = {
                 "inputMint": input_mint,
                 "outputMint": output_mint,
@@ -130,9 +135,12 @@ class JupiterCustomLib:
             return {}
 
     def get_swap_transaction(self, quote_response: Dict[str, Any]) -> str:
-        """Get swap transaction from Jupiter with enhanced error handling"""
+        """Get swap transaction from Jupiter with enhanced error handling
+        
+        NOTE: Jupiter API has changed. Using api.jup.ag endpoint.
+        """
         try:
-            url = "https://quote-api.jup.ag/v6/swap"
+            url = "https://api.jup.ag/v6/swap"
             payload = {
                 "quoteResponse": quote_response,
                 "userPublicKey": self.wallet_address,

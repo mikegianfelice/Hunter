@@ -123,9 +123,12 @@ class SimpleSolanaExecutor:
         return 0.000001  # Small positive value instead of 0
 
     def get_jupiter_quote(self, input_mint: str, output_mint: str, amount: int, slippage: float = 0.02) -> Dict[str, Any]:
-        """Get swap quote from Jupiter with better error handling"""
+        """Get swap quote from Jupiter with better error handling
+        
+        NOTE: Jupiter API has changed to api.jup.ag (may require authentication)
+        """
         try:
-            url = "https://quote-api.jup.ag/v6/quote"
+            url = "https://api.jup.ag/v6/quote"
             params = {
                 "inputMint": input_mint,
                 "outputMint": output_mint,
@@ -182,8 +185,8 @@ class SimpleSolanaExecutor:
             if not quote_response:
                 return "", False
             
-            # Get swap transaction
-            url = "https://quote-api.jup.ag/v6/swap"
+            # Get swap transaction  
+            url = "https://api.jup.ag/v6/swap"
             payload = {
                 "quoteResponse": quote_response,
                 "userPublicKey": self.wallet_address,
@@ -296,7 +299,7 @@ class SimpleSolanaExecutor:
             print(f"🔄 Trying alternative Jupiter swap method...")
             
             # Try using Jupiter's POST endpoint with different parameters
-            url = "https://quote-api.jup.ag/v6/swap"
+            url = "https://api.jup.ag/v6/swap"
             payload = {
                 "quoteResponse": quote_response,
                 "userPublicKey": self.wallet_address,

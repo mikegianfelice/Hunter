@@ -442,7 +442,8 @@ def _check_jupiter_tradeable(token_address: str, symbol: str) -> bool:
             return False
         
         # Try a small quote to see if Jupiter supports this token
-        url = "https://quote-api.jup.ag/v6/quote"
+        # NOTE: Jupiter API endpoint has changed to api.jup.ag  
+        url = "https://api.jup.ag/v6/quote"
         params = {
             "inputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
             "outputMint": token_address,

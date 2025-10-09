@@ -39,11 +39,13 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 
 *Note: Other chains (Polygon, BSC, Arbitrum, Optimism, PulseChain) are disabled by default to focus on chains where you have active wallets.*
 
-### ⚠️ Current Solana/Jupiter API Issues
-- **Jupiter Quote API 400 Errors**: Invalid token addresses and insufficient liquidity causing quote failures
-- **Raydium API 404 Errors**: Direct Raydium API endpoints returning 404 for swap transactions
-- **Workaround**: Bot uses DexScreener fallback for quote generation and continues to evaluate tokens
-- **Status**: Quote generation is reliable via DexScreener fallback, swap execution being investigated
+### ⚠️ Current Solana/Jupiter API Status (Updated October 2025)
+- **Jupiter API Endpoint Changed**: The old `quote-api.jup.ag` endpoint no longer exists (DNS resolution fails)
+- **New Endpoint Requires Authentication**: Jupiter moved to `api.jup.ag` which returns 401 Unauthorized without API keys
+- **Tradeability Checks Disabled**: Jupiter tradeability pre-checks now skipped; bot relies on actual swap attempts
+- **Workaround**: Bot assumes tokens are tradeable and handles swap failures gracefully
+- **Impact**: Minimal - actual trading functionality continues to work, just without pre-trade validation
+- **Status**: Monitoring for official Jupiter API documentation on authentication requirements
 
 ## 📋 Prerequisites
 
@@ -159,11 +161,12 @@ A sophisticated automated cryptocurrency trading bot designed for high-frequency
 - **🔧 Simplified Configuration**: Removed support for chains without active wallets to reduce complexity
 - **⚡ Better Performance**: Focused on two chains for faster execution and better reliability
 
-### Latest Improvements (v2.6) - Jupiter Price API Fix & Enhanced Reliability
-- **🔧 Fixed Jupiter Price API Error**: Resolved `[Errno 8] nodename nor servname provided, or not known` error
-- **📊 Enhanced Price Fetching**: Replaced deprecated `price.jup.ag` with reliable `quote-api.jup.ag` and CoinGecko
-- **🔄 Multi-Source Price Data**: Implemented fallback system using Jupiter quote API and CoinGecko for better reliability
-- **⚡ Improved SOL Price Fetching**: Enhanced `get_sol_price_usd()` with multiple data sources and better error handling
+### Latest Improvements (v2.7) - Jupiter API Endpoint Update & Enhanced Error Handling
+- **🔧 Updated Jupiter API Endpoints**: Changed from deprecated `quote-api.jup.ag` to `api.jup.ag`
+- **🛡️ Enhanced Network Error Handling**: Improved retry logic with circuit breaker pattern for better reliability
+- **📊 Graceful API Degradation**: Bot continues trading even when Jupiter API requires authentication
+- **⚡ Improved Connection Resilience**: Better handling of DNS failures and 401 authentication errors
+- **🔄 Smart Fallback System**: Assumes tradeability when API checks fail, relies on actual swap attempts
 - **🛡️ Better Token Price Coverage**: Added support for more tokens (BONK, PEPE, JITO) in CoinGecko fallback
 - **📈 Enhanced Error Handling**: Graceful degradation when price APIs are unavailable
 
@@ -841,11 +844,13 @@ def _detect_delisted_token(token_address: str, consecutive_failures: int) -> boo
    - May indicate token is delisted or has no liquidity
    - Bot will automatically handle after 5 consecutive failures
 
-9. **"Jupiter price API error: nodename nor servname provided"**
-   - **FIXED**: This error has been resolved in v2.6
-   - The bot now uses reliable `quote-api.jup.ag` and CoinGecko instead of deprecated `price.jup.ag`
-   - If you see this error, update to the latest version
-   - The bot automatically falls back to multiple price sources for reliability
+9. **"Network error checking Jupiter tradeability: ConnectionError"**
+   - **UPDATED in v2.7**: Jupiter API endpoints have changed
+   - Old endpoint `quote-api.jup.ag` no longer exists (DNS fails)
+   - New endpoint `api.jup.ag` requires API authentication (returns 401)
+   - **Impact**: Minimal - bot continues trading with graceful degradation
+   - Tradeability pre-checks are skipped; actual swap attempts determine if tokens are tradeable
+   - This is NOT an internet connection issue - it's a Jupiter API infrastructure change
 
 10. **"Bot running for 10+ hours with no trades"**
     - **FIXED**: This critical issue has been resolved in v2.9

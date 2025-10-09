@@ -51,8 +51,11 @@ def test_https_request(url: str, timeout: float = 10.0) -> Tuple[bool, str, int]
         return False, f"Error: {e}", 0
 
 def test_jupiter_api() -> Dict[str, any]:
-    """Test connectivity to Jupiter API"""
-    hostname = "quote-api.jup.ag"
+    """Test connectivity to Jupiter API
+    
+    NOTE: Jupiter API endpoint changed from quote-api.jup.ag to api.jup.ag
+    """
+    hostname = "api.jup.ag"  # Changed from quote-api.jup.ag
     port = 443
     
     print(f"\n{'='*60}")
@@ -85,7 +88,7 @@ def test_jupiter_api() -> Dict[str, any]:
     
     # Test 3: HTTPS Request (simple health check)
     print(f"\n3. Testing HTTPS request to Jupiter API...")
-    test_url = "https://quote-api.jup.ag/v6/quote?inputMint=So11111111111111111111111111111111111111112&outputMint=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&amount=1000000000&slippageBps=50"
+    test_url = "https://api.jup.ag/v6/quote?inputMint=So11111111111111111111111111111111111111112&outputMint=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&amount=1000000000&slippageBps=50"
     https_ok, https_msg, status_code = test_https_request(test_url)
     results['https'] = {'success': https_ok, 'message': https_msg, 'status_code': status_code}
     

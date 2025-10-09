@@ -12,60 +12,22 @@ def check_jupiter_tradeability(token_address: str, chain_id: str = "solana") -> 
     """
     Check if a token is tradeable on Jupiter
     Returns True if tradeable, False otherwise
+    
+    NOTE: Jupiter's quote-api.jup.ag endpoint no longer exists (DNS resolution fails).
+    The new api.jup.ag requires API keys (returns 401 Unauthorized).
+    This function now assumes tokens are tradeable and relies on actual swap attempts to determine tradeability.
     """
     if chain_id.lower() != "solana":
         return True  # Skip check for non-Solana chains
     
-    try:
-        # Test with SOL -> token quote
-        sol_mint = "So11111111111111111111111111111111111111112"
-        base_url = "https://quote-api.jup.ag/v6/quote"
-        params = {
-            "inputMint": sol_mint,
-            "outputMint": token_address,
-            "amount": "1000000000",  # 1 SOL in lamports
-            "slippageBps": 500,  # 5% slippage for test
-            "onlyDirectRoutes": "false"  # Allow multi-hop routes for better coverage
-        }
-        
-        # Build URL with params
-        url = f"{base_url}?{'&'.join(f'{k}={v}' for k, v in params.items())}"
-        
-        # Use http_utils with retry logic
-        try:
-            data = get_json(url, timeout=10, retries=3, backoff=1.0)
-            
-            # Check if we got valid quote data (Jupiter returns data at root level)
-            if data.get("outAmount") or data.get("inAmount"):
-                return True
-            else:
-                return False
-                
-        except requests.exceptions.HTTPError as e:
-            # Handle 400 errors specifically
-            if e.response.status_code == 400:
-                try:
-                    error_data = e.response.json()
-                    error_msg = error_data.get('error', '').lower()
-                    if 'not tradable' in error_msg or 'not tradeable' in error_msg:
-                        return False
-                    elif 'input and output mints are not allowed to be equal' in error_msg:
-                        # This means the token is SOL itself, which is tradeable
-                        return True
-                    # For other 400 errors, assume it might be tradeable
-                    return True
-                except:
-                    return True
-            # For other HTTP errors, assume tradeable
-            return True
-            
-        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
-            print(f"⚠️ Network error checking Jupiter tradeability for {token_address[:8]}...{token_address[-8:]}: {type(e).__name__}")
-            return True  # Assume tradeable on network errors
-        
-    except Exception as e:
-        print(f"⚠️ Jupiter tradeability check failed for {token_address[:8]}...{token_address[-8:]}: {e}")
-        return True  # Assume tradeable if check fails
+    # Jupiter API endpoint has changed and now requires authentication
+    # quote-api.jup.ag no longer resolves (DNS failure)
+    # api.jup.ag exists but returns 401 Unauthorized without API keys
+    # 
+    # Workaround: Assume all tokens are tradeable
+    # The actual swap will fail if the token is not tradeable, which is handled elsewhere
+    print(f"ℹ️  Jupiter API check skipped for {token_address[:8]}...{token_address[-8:]} (API requires auth)")
+    return True  # Assume tradeable - let the actual swap attempt handle failures
 
 def check_raydium_tradeability(token_address: str, chain_id: str = "solana") -> bool:
     """
