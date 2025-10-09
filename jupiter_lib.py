@@ -11,6 +11,7 @@ import time
 from typing import Tuple, Optional, Dict, Any, List
 from solders.keypair import Keypair
 import base58
+from http_utils import get_json, post_json
 
 class JupiterCustomLib:
     def __init__(self, rpc_url: str, wallet_address: str, private_key: str):
@@ -35,7 +36,7 @@ class JupiterCustomLib:
                   route_preferences: Dict[str, Any] = None, use_exactout: bool = False) -> Dict[str, Any]:
         """Get swap quote from Jupiter v6 with enhanced error handling and advanced features"""
         try:
-            url = "https://quote-api.jup.ag/v6/quote"
+            base_url = "https://quote-api.jup.ag/v6/quote"
             params = {
                 "inputMint": input_mint,
                 "outputMint": output_mint,
@@ -57,54 +58,64 @@ class JupiterCustomLib:
                 params["swapMode"] = "ExactOut"
                 print(f"🔄 Using ExactOut mode for sketchy token")
             
+            # Build URL with params
+            url = f"{base_url}?{'&'.join(f'{k}={v}' for k, v in params.items())}"
+            
             # Try multiple times with different strategies
             for attempt in range(3):
                 try:
-                    response = requests.get(url, params=params, timeout=15)
+                    # Use http_utils with retry logic for better network error handling
+                    data = get_json(url, timeout=15, retries=2, backoff=1.0)
                     
-                    if response.status_code == 200:
-                        data = response.json()
-                        if data and not data.get("error") and data.get("inAmount") and data.get("outAmount"):
-                            print(f"✅ Jupiter quote: {data.get('inAmount', 'N/A')} -> {data.get('outAmount', 'N/A')}")
-                            # Add success field for compatibility
-                            data["success"] = True
-                            return data
-                        else:
-                            error_msg = data.get('error', 'Unknown error')
-                            print(f"⚠️ Jupiter quote failed (attempt {attempt + 1}/3): {error_msg}")
-                            
-                            # If it's a parsing error, try with different parameters
-                            if "cannot be parsed" in error_msg.lower() or "invalid" in error_msg.lower():
-                                print(f"🔄 Trying alternative quote method for parsing issues...")
-                                # Try with legacy transaction format
-                                params["asLegacyTransaction"] = "true"
-                                continue
-                            
-                            # If it's a liquidity issue, try with smaller amount
-                            if "insufficient" in error_msg.lower() or "liquidity" in error_msg.lower():
-                                print(f"🔄 Trying with smaller amount due to liquidity issues...")
-                                amount = int(amount * 0.5)  # Try with 50% of original amount
-                                params["amount"] = str(amount)
-                                continue
-                            
-                            return {}
+                    if data and not data.get("error") and data.get("inAmount") and data.get("outAmount"):
+                        print(f"✅ Jupiter quote: {data.get('inAmount', 'N/A')} -> {data.get('outAmount', 'N/A')}")
+                        # Add success field for compatibility
+                        data["success"] = True
+                        return data
                     else:
-                        print(f"⚠️ Jupiter quote failed (attempt {attempt + 1}/3): {response.status_code}")
+                        error_msg = data.get('error', 'Unknown error')
+                        print(f"⚠️ Jupiter quote failed (attempt {attempt + 1}/3): {error_msg}")
                         
-                        # If it's a 400 error, try with different parameters
-                        if response.status_code == 400:
-                            print(f"🔄 Trying alternative quote method for 400 error...")
+                        # If it's a parsing error, try with different parameters
+                        if "cannot be parsed" in error_msg.lower() or "invalid" in error_msg.lower():
+                            print(f"🔄 Trying alternative quote method for parsing issues...")
                             # Try with legacy transaction format
                             params["asLegacyTransaction"] = "true"
+                            url = f"{base_url}?{'&'.join(f'{k}={v}' for k, v in params.items())}"
+                            continue
+                        
+                        # If it's a liquidity issue, try with smaller amount
+                        if "insufficient" in error_msg.lower() or "liquidity" in error_msg.lower():
+                            print(f"🔄 Trying with smaller amount due to liquidity issues...")
+                            amount = int(amount * 0.5)  # Try with 50% of original amount
+                            params["amount"] = str(amount)
+                            url = f"{base_url}?{'&'.join(f'{k}={v}' for k, v in params.items())}"
                             continue
                         
                         return {}
                         
-                except requests.exceptions.Timeout:
-                    print(f"⚠️ Jupiter quote timeout (attempt {attempt + 1}/3)")
+                except requests.exceptions.HTTPError as e:
+                    print(f"⚠️ Jupiter quote HTTP error (attempt {attempt + 1}/3): {e.response.status_code if hasattr(e, 'response') else e}")
+                    
+                    # If it's a 400 error, try with different parameters
+                    if hasattr(e, 'response') and e.response.status_code == 400:
+                        print(f"🔄 Trying alternative quote method for 400 error...")
+                        # Try with legacy transaction format
+                        params["asLegacyTransaction"] = "true"
+                        url = f"{base_url}?{'&'.join(f'{k}={v}' for k, v in params.items())}"
+                        continue
+                    
+                    if attempt < 2:
+                        time.sleep(2)
+                        continue
+                    return {}
+                    
+                except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+                    print(f"⚠️ Network error getting Jupiter quote (attempt {attempt + 1}/3): {type(e).__name__}")
                     if attempt < 2:
                         time.sleep(2)
                     continue
+                    
                 except Exception as e:
                     print(f"⚠️ Jupiter quote error (attempt {attempt + 1}/3): {e}")
                     if attempt < 2:
@@ -135,48 +146,53 @@ class JupiterCustomLib:
             # Try multiple times with different strategies
             for attempt in range(3):
                 try:
-                    response = requests.post(url, json=payload, timeout=15)
+                    # Use post_json with retry logic for better network error handling
+                    swap_data = post_json(url, payload, timeout=15, retries=2, backoff=1.0)
                     
-                    if response.status_code == 200:
-                        swap_data = response.json()
-                        if "swapTransaction" in swap_data:
-                            print(f"✅ Swap transaction generated successfully")
-                            return swap_data["swapTransaction"]
-                        else:
-                            error_msg = swap_data.get("error", "No swap transaction in response")
-                            print(f"⚠️ Jupiter swap failed (attempt {attempt + 1}/3): {error_msg}")
-                            
-                            # Try with different parameters
-                            if attempt == 1:
-                                print(f"🔄 Trying with minimal accounts...")
-                                payload["maxAccounts"] = 8
-                                continue
-                            elif attempt == 2:
-                                print(f"🔄 Trying with compute budget disabled...")
-                                payload["computeUnitPriceMicroLamports"] = 0
-                                continue
-                            
-                            return ""
+                    if "swapTransaction" in swap_data:
+                        print(f"✅ Swap transaction generated successfully")
+                        return swap_data["swapTransaction"]
                     else:
-                        print(f"⚠️ Jupiter swap request failed (attempt {attempt + 1}/3): {response.status_code}")
+                        error_msg = swap_data.get("error", "No swap transaction in response")
+                        print(f"⚠️ Jupiter swap failed (attempt {attempt + 1}/3): {error_msg}")
                         
-                        # Try with different parameters on 400 errors
-                        if response.status_code == 400 and attempt < 2:
-                            if attempt == 0:
-                                print(f"🔄 Trying with minimal accounts...")
-                                payload["maxAccounts"] = 8
-                            elif attempt == 1:
-                                print(f"🔄 Trying with compute budget disabled...")
-                                payload["computeUnitPriceMicroLamports"] = 0
+                        # Try with different parameters
+                        if attempt == 1:
+                            print(f"🔄 Trying with minimal accounts...")
+                            payload["maxAccounts"] = 8
+                            continue
+                        elif attempt == 2:
+                            print(f"🔄 Trying with compute budget disabled...")
+                            payload["computeUnitPriceMicroLamports"] = 0
                             continue
                         
                         return ""
                         
-                except requests.exceptions.Timeout:
-                    print(f"⚠️ Jupiter swap timeout (attempt {attempt + 1}/3)")
+                except requests.exceptions.HTTPError as e:
+                    status_code = e.response.status_code if hasattr(e, 'response') else None
+                    print(f"⚠️ Jupiter swap HTTP error (attempt {attempt + 1}/3): {status_code}")
+                    
+                    # Try with different parameters on 400 errors
+                    if status_code == 400 and attempt < 2:
+                        if attempt == 0:
+                            print(f"🔄 Trying with minimal accounts...")
+                            payload["maxAccounts"] = 8
+                        elif attempt == 1:
+                            print(f"🔄 Trying with compute budget disabled...")
+                            payload["computeUnitPriceMicroLamports"] = 0
+                        continue
+                    
+                    if attempt < 2:
+                        time.sleep(2)
+                        continue
+                    return ""
+                    
+                except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+                    print(f"⚠️ Network error getting swap transaction (attempt {attempt + 1}/3): {type(e).__name__}")
                     if attempt < 2:
                         time.sleep(2)
                     continue
+                    
                 except Exception as e:
                     print(f"⚠️ Jupiter swap error (attempt {attempt + 1}/3): {e}")
                     if attempt < 2:

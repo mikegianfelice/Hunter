@@ -6,6 +6,7 @@ Tradeability Checker - Pre-filter tokens to only include tradeable ones
 import requests
 import time
 from typing import Dict, List, Tuple, Optional
+from http_utils import get_json
 
 def check_jupiter_tradeability(token_address: str, chain_id: str = "solana") -> bool:
     """
@@ -18,7 +19,7 @@ def check_jupiter_tradeability(token_address: str, chain_id: str = "solana") -> 
     try:
         # Test with SOL -> token quote
         sol_mint = "So11111111111111111111111111111111111111112"
-        url = "https://quote-api.jup.ag/v6/quote"
+        base_url = "https://quote-api.jup.ag/v6/quote"
         params = {
             "inputMint": sol_mint,
             "outputMint": token_address,
@@ -27,31 +28,40 @@ def check_jupiter_tradeability(token_address: str, chain_id: str = "solana") -> 
             "onlyDirectRoutes": "false"  # Allow multi-hop routes for better coverage
         }
         
-        response = requests.get(url, params=params, timeout=5)  # More reasonable timeout
+        # Build URL with params
+        url = f"{base_url}?{'&'.join(f'{k}={v}' for k, v in params.items())}"
         
-        if response.status_code == 200:
-            data = response.json()
+        # Use http_utils with retry logic
+        try:
+            data = get_json(url, timeout=10, retries=3, backoff=1.0)
+            
             # Check if we got valid quote data (Jupiter returns data at root level)
             if data.get("outAmount") or data.get("inAmount"):
                 return True
             else:
                 return False
-        elif response.status_code == 400:
-            # Check if it's a "not tradeable" error
-            try:
-                error_data = response.json()
-                error_msg = error_data.get('error', '').lower()
-                if 'not tradable' in error_msg or 'not tradeable' in error_msg:
-                    return False
-                elif 'input and output mints are not allowed to be equal' in error_msg:
-                    # This means the token is SOL itself, which is tradeable
+                
+        except requests.exceptions.HTTPError as e:
+            # Handle 400 errors specifically
+            if e.response.status_code == 400:
+                try:
+                    error_data = e.response.json()
+                    error_msg = error_data.get('error', '').lower()
+                    if 'not tradable' in error_msg or 'not tradeable' in error_msg:
+                        return False
+                    elif 'input and output mints are not allowed to be equal' in error_msg:
+                        # This means the token is SOL itself, which is tradeable
+                        return True
+                    # For other 400 errors, assume it might be tradeable
                     return True
-                # For other 400 errors, assume it might be tradeable
-                return True
-            except:
-                return True
-        
-        return False
+                except:
+                    return True
+            # For other HTTP errors, assume tradeable
+            return True
+            
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            print(f"⚠️ Network error checking Jupiter tradeability for {token_address[:8]}...{token_address[-8:]}: {type(e).__name__}")
+            return True  # Assume tradeable on network errors
         
     except Exception as e:
         print(f"⚠️ Jupiter tradeability check failed for {token_address[:8]}...{token_address[-8:]}: {e}")
@@ -66,18 +76,21 @@ def check_raydium_tradeability(token_address: str, chain_id: str = "solana") -> 
         return True  # Skip check for non-Solana chains
     
     try:
-        # Try to get token info from Raydium API
-        url = f"https://api.raydium.io/v2/sdk/token/raydium.mainnet.json"
+        # Try to get token info from Raydium API with retry logic
+        url = "https://api.raydium.io/v2/sdk/token/raydium.mainnet.json"
         
-        response = requests.get(url, timeout=5)
-        if response.status_code == 200:
-            data = response.json()
+        try:
+            data = get_json(url, timeout=10, retries=3, backoff=1.0)
             official_tokens = data.get("official", [])
             
             # Check if token is in official Raydium tokens
             for token_info in official_tokens:
                 if token_info.get("mint", "").lower() == token_address.lower():
                     return True
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            print(f"⚠️ Network error checking Raydium token list for {token_address[:8]}...{token_address[-8:]}: {type(e).__name__}")
+        except Exception as e:
+            print(f"⚠️ Error checking Raydium token list for {token_address[:8]}...{token_address[-8:]}: {e}")
         
         # If not in official list, try a quote test
         return _test_raydium_quote(token_address)
@@ -89,17 +102,21 @@ def check_raydium_tradeability(token_address: str, chain_id: str = "solana") -> 
 def _test_raydium_quote(token_address: str) -> bool:
     """Test if we can get a quote from Raydium for this token"""
     try:
-        # Try to get pool info for the token
-        url = "https://api.raydium.io/v2/main/price"
-        params = {"ids": token_address}
+        # Try to get pool info for the token with retry logic
+        base_url = "https://api.raydium.io/v2/main/price"
+        url = f"{base_url}?ids={token_address}"
         
-        response = requests.get(url, params=params, timeout=5)
-        if response.status_code == 200:
-            data = response.json()
+        try:
+            data = get_json(url, timeout=10, retries=3, backoff=1.0)
             if data.get("data") and token_address in data["data"]:
                 return True
-        
-        return False
+            return False
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            print(f"⚠️ Network error checking Raydium price for {token_address[:8]}...{token_address[-8:]}: {type(e).__name__}")
+            return False
+        except Exception as e:
+            print(f"⚠️ Raydium quote test failed for {token_address[:8]}...{token_address[-8:]}: {e}")
+            return False
         
     except Exception as e:
         print(f"⚠️ Raydium quote test failed for {token_address[:8]}...{token_address[-8:]}: {e}")
