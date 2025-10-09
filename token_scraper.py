@@ -126,12 +126,12 @@ def is_valid_token_data(symbol, address, volume24h, liquidity):
     if len(address) < 10:
         return False
     
-    # BALANCED minimum requirements to prevent trading on low liquidity tokens
+    # REDUCED minimum requirements to allow more trading opportunities
     # These match the config.yaml thresholds to ensure consistency
-    if volume24h < 8000:  # Minimum $8k volume (matches config.yaml)
+    if volume24h < 3000:  # Minimum $3k volume (matches config.yaml)
         return False
     
-    if liquidity < 15000:  # Minimum $15k liquidity (matches config.yaml)
+    if liquidity < 8000:  # Minimum $8k liquidity (matches config.yaml)
         return False
     
     return True

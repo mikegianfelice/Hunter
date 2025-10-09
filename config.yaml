@@ -45,13 +45,13 @@ min_pool_reserves_multiplier: 2.0  # Pool reserves must be 2x trade amount
 
 # === Strategy Thresholds ===
 min_momentum_pct: 0.0001  # Very low momentum requirement
-min_volume_24h_for_buy: 8000   # BALANCED - minimum $8k volume (safe but not too restrictive)
-min_liquidity_usd_for_buy: 15000  # BALANCED - minimum $15k liquidity (safe but not too restrictive)
+min_volume_24h_for_buy: 3000   # REDUCED - minimum $3k volume (more opportunities while still filtering spam)
+min_liquidity_usd_for_buy: 8000  # REDUCED - minimum $8k liquidity (more opportunities while still filtering spam)
 min_price_usd: 0.0000001
 
 # Fast-path thresholds for first-seen tokens
-fastpath_min_volume_24h: 25000   # BALANCED - minimum $25k volume (safe but not too restrictive)
-fastpath_min_liquidity_usd: 40000   # BALANCED - minimum $40k liquidity (safe but not too restrictive)
+fastpath_min_volume_24h: 10000   # REDUCED - minimum $10k volume (more opportunities for new tokens)
+fastpath_min_liquidity_usd: 20000   # REDUCED - minimum $20k liquidity (more opportunities for new tokens)
 fastpath_min_sent_score: 3
 
 # === Pre-buy Delisting Check ===
