@@ -170,6 +170,9 @@ def _check_solana_token_delisted(token: dict) -> bool:
     Enhanced Solana token delisting check with better fallback logic.
     More lenient when DexScreener shows good data and when APIs are down.
     
+    IMPROVED: Now trusts DexScreener data first, only uses API as confirmation.
+    Emergency bypass for tokens with excellent metrics.
+    
     Returns True if token appears to be delisted/inactive.
     """
     config = get_config_values()
@@ -178,6 +181,17 @@ def _check_solana_token_delisted(token: dict) -> bool:
     volume_24h = float(token.get("volume24h", 0))
     liquidity = float(token.get("liquidity", 0))
     price_usd = float(token.get("priceUsd", 0))
+    
+    # EMERGENCY BYPASS: If token has excellent metrics from DexScreener, trust it completely
+    # This prevents API failures from blocking obviously good tokens
+    if volume_24h > 50000 and liquidity > 100000 and price_usd > 0:
+        print(f"✅✅ Pre-buy check: {symbol} has EXCELLENT metrics (vol: ${volume_24h:,.0f}, liq: ${liquidity:,.0f}) - BYPASSING all API checks")
+        return False  # NOT delisted - trade it!
+    
+    # STRONG BYPASS: Very good metrics
+    if volume_24h > 25000 and liquidity > 50000 and price_usd > 0:
+        print(f"✅ Pre-buy check: {symbol} has VERY GOOD metrics (vol: ${volume_24h:,.0f}, liq: ${liquidity:,.0f}) - BYPASSING API checks")
+        return False  # NOT delisted
     
     # Adjust thresholds based on sensitivity setting
     if config['PRE_BUY_CHECK_SENSITIVITY'] == "lenient":
@@ -227,7 +241,7 @@ def _check_solana_token_delisted(token: dict) -> bool:
     
     # Only do API price verification if DexScreener price is missing/zero
     # Try to get current price from multiple sources to verify if token is actually delisted
-    # Only mark as delisted if we can confirm it has zero price from multiple sources
+    # IMPORTANT: Only mark as delisted if we can CONFIRM it's delisted, not on API failures
     try:
         from solana_executor import SimpleSolanaExecutor
         executor = SimpleSolanaExecutor()
@@ -247,15 +261,20 @@ def _check_solana_token_delisted(token: dict) -> bool:
                 print(f"⚠️ Pre-buy check: {symbol} has zero/unknown price but decent metrics - skipping but not blacklisting")
                 return True
     except Exception as e:
-        print(f"⚠️ Pre-buy check: Price verification failed for {symbol}: {e}")
-        # Graceful degradation: When APIs fail, trust DexScreener data more
+        print(f"⚠️ Pre-buy check: Price verification FAILED for {symbol}: {e}")
+        print(f"🔄 API Error detected - will NOT blacklist {symbol}")
+        # Graceful degradation: When APIs fail, trust DexScreener data
         # This prevents false rejections during API outages
-        if volume_24h > 10 or liquidity > 50:
-            print(f"✅ Pre-buy check: {symbol} price verification failed but has reasonable DexScreener data - allowing token (API outage resilience)")
-            return False
+        # CRITICAL: Never blacklist on API failures!
+        if volume_24h > 5000 or liquidity > 10000:
+            print(f"✅✅ Pre-buy check: {symbol} API failed but has GOOD DexScreener data (vol: ${volume_24h:,.0f}, liq: ${liquidity:,.0f}) - ALLOWING token")
+            return False  # NOT delisted - API just failed
+        elif volume_24h > 1000 or liquidity > 5000:
+            print(f"✅ Pre-buy check: {symbol} API failed but has reasonable DexScreener data - ALLOWING token (API outage resilience)")
+            return False  # NOT delisted - API just failed
         else:
-            print(f"⚠️ Pre-buy check: {symbol} price verification failed and poor DexScreener data - skipping but not blacklisting (API may be down)")
-            return True
+            print(f"⚠️ Pre-buy check: {symbol} API failed and poor DexScreener data - skipping but NOT blacklisting (API may be down)")
+            return True  # Skip this cycle but don't blacklist
     
     # If we're unsure, be conservative but don't blacklist
     print(f"⚠️ Pre-buy check: {symbol} has uncertain metrics - skipping but not blacklisting")
@@ -265,6 +284,8 @@ def _check_ethereum_token_delisted(token: dict) -> bool:
     """
     Enhanced Ethereum token delisting check with better error handling.
     More lenient when APIs are down but DexScreener shows good data.
+    
+    IMPROVED: Now trusts DexScreener data first, emergency bypass for excellent metrics.
     """
     config = get_config_values()
     address = token.get("address", "")
@@ -272,6 +293,16 @@ def _check_ethereum_token_delisted(token: dict) -> bool:
     volume_24h = float(token.get("volume24h", 0))
     liquidity = float(token.get("liquidity", 0))
     price_usd = float(token.get("priceUsd", 0))
+    
+    # EMERGENCY BYPASS: If token has excellent metrics from DexScreener, trust it completely
+    if volume_24h > 100000 and liquidity > 200000 and price_usd > 0:
+        print(f"✅✅ Pre-buy check: {symbol} has EXCELLENT metrics (vol: ${volume_24h:,.0f}, liq: ${liquidity:,.0f}) - BYPASSING all API checks")
+        return False  # NOT delisted
+    
+    # STRONG BYPASS: Very good metrics
+    if volume_24h > 50000 and liquidity > 100000 and price_usd > 0:
+        print(f"✅ Pre-buy check: {symbol} has VERY GOOD metrics (vol: ${volume_24h:,.0f}, liq: ${liquidity:,.0f}) - BYPASSING API checks")
+        return False  # NOT delisted
     
     # Adjust thresholds based on sensitivity setting
     if config['PRE_BUY_CHECK_SENSITIVITY'] == "lenient":
@@ -312,31 +343,27 @@ def _check_ethereum_token_delisted(token: dict) -> bool:
     current_price = _get_ethereum_token_price_with_fallbacks(address, symbol)
     
     if current_price is None:
-        # In lenient mode, be much more trusting of DexScreener data when APIs fail
-        if config['PRE_BUY_CHECK_SENSITIVITY'] == "lenient":
-            if (volume_24h > 50 or liquidity > 200) and price_usd > 0:
-                print(f"✅ Pre-buy check: {symbol} price verification failed but has reasonable DexScreener data - trusting in lenient mode")
-                return False
-            else:
-                print(f"⚠️ Pre-buy check: {symbol} price verification failed and poor DexScreener data - skipping but not blacklisting")
-                return True
+        # API FAILED - Never blacklist on API failures!
+        print(f"⚠️ Pre-buy check: All price APIs failed for {symbol}")
+        print(f"🔄 API Error detected - will NOT blacklist {symbol}")
+        
+        # Trust DexScreener data when APIs fail
+        if volume_24h > 10000 or liquidity > 20000:
+            print(f"✅✅ Pre-buy check: {symbol} API failed but has GOOD DexScreener data (vol: ${volume_24h:,.0f}, liq: ${liquidity:,.0f}) - ALLOWING token")
+            return False  # NOT delisted - API just failed
+        elif volume_24h > 5000 or liquidity > 10000:
+            print(f"✅ Pre-buy check: {symbol} API failed but has reasonable DexScreener data - ALLOWING token (API outage resilience)")
+            return False  # NOT delisted - API just failed
+        elif volume_24h > 1000 or liquidity > 5000:
+            print(f"✅ Pre-buy check: {symbol} API failed but has moderate DexScreener data - ALLOWING token")
+            return False  # NOT delisted - API just failed
+        elif volume_24h < poor_vol_threshold and liquidity < poor_liq_threshold:
+            # Only skip (not blacklist) if metrics are very poor AND API failed
+            print(f"⚠️ Pre-buy check: {symbol} API failed and very poor metrics - skipping but NOT blacklisting (could be API issue)")
+            return True  # Skip this cycle but don't blacklist
         else:
-            # If we can't get price from any source, check if we have good DexScreener data
-            if volume_24h > vol_threshold/2 and liquidity > liq_threshold/2 and price_usd > 0:
-                print(f"✅ Pre-buy check: {symbol} has good DexScreener data despite API failures - trusting DexScreener")
-                return False
-            elif volume_24h > vol_threshold/4 and liquidity > liq_threshold/4 and price_usd > 0:
-                print(f"✅ Pre-buy check: {symbol} has moderate DexScreener data despite API failures - trusting DexScreener")
-                return False
-            
-            # If we can't verify and don't have good DexScreener data, skip but don't blacklist unless metrics are very poor
-            if volume_24h < poor_vol_threshold and liquidity < poor_liq_threshold:
-                print(f"🚨 Pre-buy check: {symbol} price verification failed and very poor metrics - marking as delisted")
-                _add_to_delisted_tokens(address, symbol, "Price verification failed and very poor metrics")
-                return True
-            else:
-                print(f"⚠️ Pre-buy check: {symbol} price verification failed but has reasonable metrics - skipping but not blacklisting")
-                return True
+            print(f"⚠️ Pre-buy check: {symbol} API failed - skipping but NOT blacklisting (API may be down)")
+            return True  # Skip this cycle but don't blacklist
     
     if current_price == 0:
         # Only mark as delisted if we also have poor metrics
@@ -520,14 +547,15 @@ def check_buy_signal(token: dict) -> bool:
                 print("⚠️ Jupiter pre-check failed - allowing token to proceed (will attempt actual swap)")
                 # Don't return False - let it continue to the actual swap attempt
 
-    # Pre-buy delisting check (only if explicitly enabled in config)
-    # This check is disabled by default as it can cause false rejections when APIs fail
-    if config.get('ENABLE_PRE_BUY_DELISTING_CHECK', False):
-        if _check_token_delisted(token):
-            print("🚨 Token appears delisted/inactive; skipping buy signal.")
-            return False
-    else:
-        print("🔓 Pre-buy delisting check disabled - skipping verification")
+    # Pre-buy delisting check (DISABLED - causes too many false positives)
+    # The actual trade attempt will determine if token is tradeable
+    # Other safety checks (cooldown, blacklist, risk manager) provide sufficient protection
+    # if config.get('ENABLE_PRE_BUY_DELISTING_CHECK', False):
+    #     if _check_token_delisted(token):
+    #         print("🚨 Token appears delisted/inactive; skipping buy signal.")
+    #         return False
+    # else:
+    print("🔓 Pre-buy delisting check disabled - relying on trade execution and other safety checks")
 
     # For trusted tokens, require milder depth floors
     min_vol = config['MIN_VOL_24H_BUY'] if not is_trusted else max(2000.0, config['MIN_VOL_24H_BUY'] * 0.5)
