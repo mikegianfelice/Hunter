@@ -55,16 +55,37 @@ def clear_python_cache():
 clear_python_cache()
 
 # Now import all modules (they'll be fresh)
+import os
 import time
 import json
 import yaml
 import signal
+import logging
 from datetime import datetime
 from collections import defaultdict
 from pathlib import Path
 
 from dotenv import load_dotenv
 load_dotenv()
+
+# Configure logging - write to both console and bot.log
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s | %(message)s',  # Add timestamp for better tracking
+    datefmt='%Y-%m-%d %H:%M:%S',
+    handlers=[
+        logging.FileHandler('bot.log', mode='a', encoding='utf-8'),
+        logging.StreamHandler()  # Also print to console
+    ]
+)
+
+# Create logger instance
+logger = logging.getLogger(__name__)
+
+# Helper function to replace print statements
+def log_print(msg):
+    """Print to console and log to file"""
+    logger.info(msg)
 
 from secrets import WALLET_ADDRESS, validate_secrets  # loaded from secure backend via secrets.py
 from clear_state import ensure_mode_transition_clean
@@ -167,7 +188,7 @@ def smart_blacklist_maintenance():
     
     blacklist_cleanup_counter = 0  # Reset counter
     
-    print("\n🧹 Running smart blacklist maintenance...")
+    log_print("\n🧹 Running smart blacklist maintenance...")
     
     try:
         # Load current blacklist data
@@ -181,7 +202,7 @@ def smart_blacklist_maintenance():
         failure_counts = data.get("failure_counts", {})
         
         if not delisted_tokens:
-            print("✅ Blacklist is already clean")
+            log_print("✅ Blacklist is already clean")
             return
         
         # Identify high-risk tokens to keep
@@ -208,7 +229,7 @@ def smart_blacklist_maintenance():
                 safe_to_remove.append(token)
         
         if not safe_to_remove:
-            print("⚠️ No safe tokens to remove - all are high-risk")
+            log_print("⚠️ No safe tokens to remove - all are high-risk")
             return
         
         # Remove safe tokens (keep high-risk ones)
@@ -225,12 +246,12 @@ def smart_blacklist_maintenance():
         with open("delisted_tokens.json", "w") as f:
             json.dump(data, f, indent=2)
         
-        print(f"✅ Smart cleanup: removed {len(safe_to_remove)} safer tokens")
-        print(f"📊 Kept {len(high_risk_tokens)} high-risk tokens")
-        print(f"📊 Remaining blacklist: {len(delisted_tokens)} tokens")
+        log_print(f"✅ Smart cleanup: removed {len(safe_to_remove)} safer tokens")
+        log_print(f"📊 Kept {len(high_risk_tokens)} high-risk tokens")
+        log_print(f"📊 Remaining blacklist: {len(delisted_tokens)} tokens")
         
     except Exception as e:
-        print(f"⚠️ Blacklist maintenance failed: {e}")
+        log_print(f"⚠️ Blacklist maintenance failed: {e}")
 
 def smart_delisted_cleanup():
     """Automatically clean delisted tokens list to maintain trading opportunities"""
@@ -248,7 +269,7 @@ def smart_delisted_cleanup():
     
     delisted_cleanup_counter = 0  # Reset counter
     
-    print("\n🧹 Running smart delisted token cleanup...")
+    log_print("\n🧹 Running smart delisted token cleanup...")
     
     try:
         from smart_blacklist_cleaner import clean_delisted_tokens
@@ -257,15 +278,15 @@ def smart_delisted_cleanup():
         if result:
             removed_count = result.get("removed_count", 0)
             remaining_count = result.get("remaining_count", 0)
-            print(f"✅ Delisted cleanup completed: {removed_count} tokens reactivated, {remaining_count} still delisted")
+            log_print(f"✅ Delisted cleanup completed: {removed_count} tokens reactivated, {remaining_count} still delisted")
         else:
-            print("⚠️ Delisted cleanup failed")
+            log_print("⚠️ Delisted cleanup failed")
             
     except Exception as e:
-        print(f"❌ Error during delisted cleanup: {e}")
+        log_print(f"❌ Error during delisted cleanup: {e}")
 
 def trade_loop():
-    print("🔁 Starting trade loop...")
+    log_print("🔁 Starting trade loop...")
 
     # Smart blacklist maintenance (runs every 6 loops)
     smart_blacklist_maintenance()
@@ -276,20 +297,20 @@ def trade_loop():
     # Housekeeping: prune stale price memory each loop
     removed = prune_price_memory()
     if removed:
-        print(f"🧽 Price memory cleanup: removed {removed} stale entries")
+        log_print(f"🧽 Price memory cleanup: removed {removed} stale entries")
 
     tokens = fetch_trending_tokens(limit=200)  # Increased from 100 to 200 for more opportunities
 
     # optional: print current risk state each loop
     risk = status_summary()
-    print(f"🧯 Risk status: {risk}")
+    log_print(f"🧯 Risk status: {risk}")
 
     # For end-of-loop summary
     rejections = defaultdict(list)  # reason -> list of (symbol, addr)
     buys = []
     
     if not tokens:
-        print("😴 No valid tokens found this cycle. Waiting for next discovery...")
+        log_print("😴 No valid tokens found this cycle. Waiting for next discovery...")
         return
 
     for token in tokens:
@@ -297,10 +318,10 @@ def trade_loop():
             # Safely extract token information with defensive programming
             symbol = token.get("symbol", "UNKNOWN") if isinstance(token, dict) else "UNKNOWN"
             address = (token.get("address") or "").lower() if isinstance(token, dict) else ""
-            print(f"\n🚀 Evaluating token: {symbol}")
+            log_print(f"\n🚀 Evaluating token: {symbol}")
 
             if not address:
-                print("⚠️ Missing token address; skipping.")
+                log_print("⚠️ Missing token address; skipping.")
                 rejections[REJECT_MISSINGADDR].append((symbol, ""))
                 continue
 
@@ -314,12 +335,12 @@ def trade_loop():
             # --- Safety / hygiene (skip for trusted tokens) ---
             if not is_trusted:
                 if is_blacklisted(address):
-                    print("⛔ Token is blacklisted.")
+                    log_print("⛔ Token is blacklisted.")
                     rejections[REJECT_BLACKLIST].append((symbol, address))
                     continue
 
                 if is_token_on_cooldown(address):
-                    print("⏳ Token is in cooldown.")
+                    log_print("⏳ Token is in cooldown.")
                     rejections[REJECT_COOLDOWN].append((symbol, address))
                     continue
                 
@@ -327,39 +348,39 @@ def trade_loop():
                 from tradeability_checker import quick_tradeability_check
                 chain_id = token.get("chainId", "ethereum")
                 if not quick_tradeability_check(address, chain_id):
-                    print("❌ Token is not tradeable on current DEXs.")
+                    log_print("❌ Token is not tradeable on current DEXs.")
                     rejections[REJECT_RISK].append((symbol, address))  # Use REJECT_RISK for now
                     continue
 
                 # TokenSniffer / safety gate
                 chain_id = token.get("chainId", "ethereum")
-                print(f"🔍 Checking safety for {symbol} on {chain_id.upper()}")
-                print(f"   Token data: {token}")
+                log_print(f"🔍 Checking safety for {symbol} on {chain_id.upper()}")
+                log_print(f"   Token data: {token}")
                 
                 # Check if TokenSniffer is enabled
                 if get_config_bool("enable_tokensniffer", False):
                     # Enhanced error handling for TokenSniffer
                     try:
                         if not is_token_safe(address, chain_id):
-                            print("⚠️ TokenSniffer marked as unsafe.")
+                            log_print("⚠️ TokenSniffer marked as unsafe.")
                             # Use failure tracking instead of immediate blacklisting
                             if record_failure(address, "tokensniffer_unsafe"):
                                 rejections[REJECT_SNIFFER].append((symbol, address))
                                 continue
                             else:
-                                print("⚠️ Token marked as unsafe but not blacklisted (failure tracking)")
+                                log_print("⚠️ Token marked as unsafe but not blacklisted (failure tracking)")
                                 rejections[REJECT_SNIFFER].append((symbol, address))
                                 continue
                     except Exception as e:
-                        print(f"⚠️ TokenSniffer check failed for {symbol}: {e}")
+                        log_print(f"⚠️ TokenSniffer check failed for {symbol}: {e}")
                         # Record failure but don't blacklist for API errors
                         record_failure(address, "tokensniffer_api_error", should_blacklist=False)
-                        print("⚠️ Skipping TokenSniffer check due to API error")
+                        log_print("⚠️ Skipping TokenSniffer check due to API error")
                         # Continue with evaluation instead of rejecting
                 else:
-                    print("🔓 TokenSniffer disabled in config - skipping safety check")
+                    log_print("🔓 TokenSniffer disabled in config - skipping safety check")
             else:
-                print("🔓 Trusted token — skipping blacklist, cooldown, and TokenSniffer")
+                log_print("🔓 Trusted token — skipping blacklist, cooldown, and TokenSniffer")
 
             # --- Sentiment (Ethereum only) ---
             chain_id = token.get("chainId", "ethereum").lower()
@@ -369,7 +390,7 @@ def trade_loop():
             if get_config_bool("enable_sentiment_checks", False):
                 if chain_id == "ethereum":
                     sentiment = get_sentiment_score(token) or {}
-                    print(f"🧠 Sentiment for ${symbol}: {sentiment}")
+                    log_print(f"🧠 Sentiment for ${symbol}: {sentiment}")
 
                     # Attach sentiment to token so strategy/executor can use it
                     token["sent_score"] = sentiment.get("score")
@@ -383,25 +404,25 @@ def trade_loop():
                             or (sentiment.get("mentions") or 0) < 1
                             or (sentiment.get("score") or 0) < 30
                         ):
-                            print("📉 Token failed sentiment check.")
+                            log_print("📉 Token failed sentiment check.")
                             rejections[REJECT_SENTIMENT].append((symbol, address))
                             continue
                 else:
                     # Skip sentiment for non-Ethereum chains
-                    print(f"🔓 Skipping sentiment for {chain_id.upper()} token (not required)")
+                    log_print(f"🔓 Skipping sentiment for {chain_id.upper()} token (not required)")
                     token["sent_score"] = 100  # Default high score for non-Ethereum
                     token["sent_mentions"] = 10  # Default high mentions for non-Ethereum
                     token["sent_status"] = "ok"
             else:
                 # Sentiment checks disabled - use default values
-                print("🔓 Sentiment checks disabled in config")
+                log_print("🔓 Sentiment checks disabled in config")
                 token["sent_score"] = 100  # Default high score
                 token["sent_mentions"] = 10  # Default high mentions
                 token["sent_status"] = "ok"
 
             # --- Strategy signal ---
             if not check_buy_signal(token):
-                print("❌ No buy signal.")
+                log_print("❌ No buy signal.")
                 rejections[REJECT_BUY_SIGNAL].append((symbol, address))
                 continue
 
@@ -409,7 +430,7 @@ def trade_loop():
             chain_id = token.get("chainId", "ethereum")
             allowed, reason = allow_new_trade(TRADE_AMOUNT, address, chain_id)
             if not allowed:
-                print(f"🛑 Risk manager blocked trade: {reason}")
+                log_print(f"🛑 Risk manager blocked trade: {reason}")
                 send_telegram_message(f"🛑 Trade blocked by risk controls: {reason}")
                 rejections[REJECT_RISK].append((symbol, address))
                 continue
@@ -446,20 +467,20 @@ def trade_loop():
                         # 2. Volume/liquidity are very low
                         # 3. DexScreener data also shows low metrics
                         if current_price == 0 and volume_24h < 100 and liquidity < 500:
-                            print(f"🚨 Trade failed and token has zero price with very low metrics - likely delisted")
+                            log_print(f"🚨 Trade failed and token has zero price with very low metrics - likely delisted")
                             # Add to delisted tokens instead of cooldown
                             from strategy import _add_to_delisted_tokens
                             _add_to_delisted_tokens(address, symbol, "Trade failed + zero price + low metrics")
                             rejections[REJECT_RISK].append((symbol, address))
                             continue
                         elif current_price == 0:
-                            print(f"⚠️ Trade failed and token has zero price but decent metrics - not marking as delisted")
+                            log_print(f"⚠️ Trade failed and token has zero price but decent metrics - not marking as delisted")
                         else:
-                            print(f"✅ Token price verified: ${current_price}")
+                            log_print(f"✅ Token price verified: ${current_price}")
                     except Exception as e:
-                        print(f"⚠️ Could not verify token status: {e}")
+                        log_print(f"⚠️ Could not verify token status: {e}")
                 else:
-                    print(f"ℹ️ Delisting check disabled or non-Solana chain - skipping delisting verification")
+                    log_print(f"ℹ️ Delisting check disabled or non-Solana chain - skipping delisting verification")
                 
                 # If not delisted, add to cooldown as usual
                 update_cooldown_log(address)
@@ -476,7 +497,7 @@ def trade_loop():
             # Get token info safely for error reporting
             token_symbol = token.get("symbol", "UNKNOWN") if isinstance(token, dict) else "UNKNOWN"
             token_address = token.get("address", "N/A") if isinstance(token, dict) else "N/A"
-            print(f"🔥 Error while evaluating {token_symbol} ({token_address}): {e}")
+            log_print(f"🔥 Error while evaluating {token_symbol} ({token_address}): {e}")
 
     # ---- End-of-loop debug summary ----
     _print_reject_summary(rejections, buys)
@@ -484,33 +505,33 @@ def trade_loop():
 
 def _print_reject_summary(rejections, buys):
     total_eval = sum(len(v) for v in rejections.values()) + len(buys)
-    print("\n📋 Evaluation summary")
-    print(f"• Tokens evaluated: {total_eval}")
-    print(f"• Buys executed:   {len(buys)}")
+    log_print("\n📋 Evaluation summary")
+    log_print(f"• Tokens evaluated: {total_eval}")
+    log_print(f"• Buys executed:   {len(buys)}")
     if buys:
         sample = ", ".join([s for s, _ in buys[:5]])
-        print(f"  ↳ {sample}{'…' if len(buys) > 5 else ''}")
+        log_print(f"  ↳ {sample}{'…' if len(buys) > 5 else ''}")
 
     counts = {reason: len(items) for reason, items in rejections.items()}
     if not counts:
-        print("• No rejections recorded this loop.")
+        log_print("• No rejections recorded this loop.")
         return
 
     # Order reasons by most frequent
     for reason, count in sorted(counts.items(), key=lambda x: x[1], reverse=True):
-        print(f"• Rejected ({reason}): {count}")
+        log_print(f"• Rejected ({reason}): {count}")
         samples = rejections[reason][:5]
         if samples:
             names = ", ".join([s for s, _ in samples])
-            print(f"  ↳ {names}{'…' if count > 5 else ''}")
+            log_print(f"  ↳ {names}{'…' if count > 5 else ''}")
 
 if __name__ == "__main__":
     # Validate secrets before starting
     if not validate_secrets():
-        print("❌ Exiting due to missing secrets")
+        log_print("❌ Exiting due to missing secrets")
         exit(1)
     
-    print("🔐 Secrets validated successfully")
+    log_print("🔐 Secrets validated successfully")
     
     # Initialize blacklist review counter
     blacklist_review_counter = 0
@@ -524,19 +545,19 @@ if __name__ == "__main__":
             # Periodic blacklist review (every 24 hours)
             blacklist_review_counter += 1
             if blacklist_review_counter >= 1440:  # 24 hours (1440 minutes)
-                print("\n🔄 Running periodic blacklist review...")
+                log_print("\n🔄 Running periodic blacklist review...")
                 removed_count = review_blacklisted_tokens()
                 if removed_count > 0:
-                    print(f"✅ Removed {removed_count} old blacklisted tokens")
+                    log_print(f"✅ Removed {removed_count} old blacklisted tokens")
                 
                 # Print blacklist statistics
                 stats = get_blacklist_stats()
-                print(f"📊 Blacklist stats: {stats['blacklisted_count']} blacklisted, {stats['failure_tracking_count']} tracked")
+                log_print(f"📊 Blacklist stats: {stats['blacklisted_count']} blacklisted, {stats['failure_tracking_count']} tracked")
                 
                 blacklist_review_counter = 0  # Reset counter
             
             trade_loop()
             time.sleep(60)  # wait before next discovery cycle
         except Exception as e:
-            print(f"🔥 Bot crashed: {e}")
+            log_print(f"🔥 Bot crashed: {e}")
             time.sleep(30)
