@@ -77,3 +77,23 @@ def get_config_list(key: str, default: list = None) -> list:
 def reload_config():
     """Force reload of configuration"""
     config_loader.reload()
+
+def get_config_values():
+    """Get current configuration values dynamically"""
+    return {
+        'PRICE_MEM_TTL_SECS': get_config_int("price_memory_ttl_minutes", 15) * 60,
+        'PRICE_MEM_PRUNE_SECS': get_config_int("price_memory_prune_hours", 24) * 3600,
+        'BASE_TP': get_config_float("take_profit", 0.5),
+        'TP_MIN': get_config_float("tp_min", 0.20),
+        'TP_MAX': get_config_float("tp_max", 1.00),
+        'MIN_MOMENTUM_PCT': get_config_float("min_momentum_pct", 0.003),
+        'MIN_VOL_24H_BUY': get_config_float("min_volume_24h_for_buy", 50000),
+        'MIN_LIQ_USD_BUY': get_config_float("min_liquidity_usd_for_buy", 50000),
+        'MIN_PRICE_USD': get_config_float("min_price_usd", 0.0000001),
+        'FASTPATH_VOL': get_config_float("fastpath_min_volume_24h", 100000),
+        'FASTPATH_LIQ': get_config_float("fastpath_min_liquidity_usd", 100000),
+        'FASTPATH_SENT': get_config_int("fastpath_min_sent_score", 30),
+        'ENABLE_PRE_BUY_DELISTING_CHECK': get_config_bool("enable_pre_buy_delisting_check", False),
+        'PRE_BUY_CHECK_SENSITIVITY': get_config("pre_buy_check_sensitivity", "lenient"),
+        'PRE_BUY_CHECK_TIMEOUT': get_config_int("pre_buy_check_timeout", 10)
+    }
