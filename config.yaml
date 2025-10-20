@@ -1325,3 +1325,132 @@ enable_portfolio_rebalancing_insights: true  # Show portfolio rebalancing insigh
 enable_portfolio_rebalancing_reporting: true  # Include portfolio rebalancing metrics in notifications
 enable_portfolio_rebalancing_analytics: true  # Track portfolio rebalancing performance over time
 portfolio_rebalancing_analytics_retention_days: 90  # Days to retain portfolio rebalancing analytics
+
+# === AI EMERGENCY STOP SYSTEM ===
+# Enable AI-powered emergency stop system for critical safety
+enable_ai_emergency_stop: true  # Enable AI emergency stop system
+emergency_stop_cache_duration: 60  # Cache emergency analysis for 1 minute (seconds)
+emergency_stop_api_timeout: 10  # API timeout for emergency analysis (seconds)
+emergency_stop_max_retries: 3  # Maximum retries for emergency analysis
+
+# Emergency stop thresholds
+emergency_critical_drawdown_threshold: 0.25  # 25% critical drawdown threshold
+emergency_urgent_drawdown_threshold: 0.15  # 15% urgent drawdown threshold
+emergency_warning_drawdown_threshold: 0.10  # 10% warning drawdown threshold
+
+# Market volatility thresholds
+emergency_extreme_volatility_threshold: 0.50  # 50% extreme volatility threshold
+emergency_high_volatility_threshold: 0.30  # 30% high volatility threshold
+
+# Loss streak thresholds
+emergency_critical_loss_streak: 5  # 5 consecutive losses
+emergency_urgent_loss_streak: 3  # 3 consecutive losses
+
+# System error thresholds
+emergency_critical_error_count: 10  # 10 errors
+emergency_urgent_error_count: 5  # 5 errors
+
+# News impact thresholds
+emergency_critical_news_impact: 0.9  # 90% negative impact
+emergency_urgent_news_impact: 0.7  # 70% negative impact
+
+# Emergency stop insights and reporting
+enable_emergency_stop_insights: true  # Show emergency stop insights in trading loop
+enable_emergency_stop_reporting: true  # Include emergency stop metrics in notifications
+enable_emergency_stop_analytics: true  # Track emergency stop performance over time
+emergency_stop_analytics_retention_days: 90  # Days to retain emergency stop analytics
+
+# === AI POSITION SIZE VALIDATOR ===
+# Enable AI-powered position size validation for wallet protection
+enable_ai_position_size_validation: true  # Enable AI position size validation
+position_validation_cache_duration: 120  # Cache position validation for 2 minutes (seconds)
+position_validation_api_timeout: 10  # API timeout for position validation (seconds)
+position_validation_max_retries: 3  # Maximum retries for position validation
+
+# Position size limits
+max_position_size_usd: 50.0  # $50 maximum position size
+min_position_size_usd: 1.0  # $1 minimum position size
+max_wallet_usage_percent: 0.1  # 10% maximum wallet usage per trade
+max_total_exposure_usd: 200.0  # $200 maximum total exposure
+
+# Risk-based position sizing
+high_risk_position_multiplier: 0.5  # 50% reduction for high risk
+medium_risk_position_multiplier: 0.8  # 80% for medium risk
+low_risk_position_multiplier: 1.0  # 100% for low risk
+
+# Market condition adjustments
+bear_market_position_multiplier: 0.6  # 60% in bear market
+high_volatility_position_multiplier: 0.7  # 70% in high volatility
+low_liquidity_position_multiplier: 0.5  # 50% for low liquidity
+
+# Position validation insights and reporting
+enable_position_validation_insights: true  # Show position validation insights in trading loop
+enable_position_validation_reporting: true  # Include position validation metrics in notifications
+enable_position_validation_analytics: true  # Track position validation performance over time
+position_validation_analytics_retention_days: 90  # Days to retain position validation analytics
+
+# === AI TRADE EXECUTION MONITOR ===
+# Enable AI-powered trade execution monitoring for reliability
+enable_ai_trade_execution_monitoring: true  # Enable AI trade execution monitoring
+execution_monitoring_cache_duration: 60  # Cache execution monitoring for 1 minute (seconds)
+execution_monitoring_api_timeout: 10  # API timeout for execution monitoring (seconds)
+execution_monitoring_max_retries: 3  # Maximum retries for execution monitoring
+
+# Execution monitoring thresholds
+max_execution_time_seconds: 300  # 5 minutes maximum execution time
+max_retry_attempts: 3  # Maximum retry attempts
+retry_delay_seconds: 30  # 30 seconds retry delay
+stuck_transaction_threshold: 600  # 10 minutes stuck transaction threshold
+
+# Gas optimization thresholds
+low_gas_threshold: 0.001  # 0.1% gas price threshold
+high_gas_threshold: 0.01  # 1% gas price threshold
+gas_optimization_enabled: true  # Enable gas optimization
+
+# Slippage monitoring thresholds
+max_slippage_threshold: 0.05  # 5% maximum slippage
+high_slippage_threshold: 0.03  # 3% high slippage
+slippage_monitoring_enabled: true  # Enable slippage monitoring
+
+# Execution success thresholds
+success_rate_threshold: 0.8  # 80% success rate threshold
+warning_success_rate: 0.9  # 90% warning success rate
+
+# Execution monitoring insights and reporting
+enable_execution_monitoring_insights: true  # Show execution monitoring insights in trading loop
+enable_execution_monitoring_reporting: true  # Include execution monitoring metrics in notifications
+enable_execution_monitoring_analytics: true  # Track execution monitoring performance over time
+execution_monitoring_analytics_retention_days: 90  # Days to retain execution monitoring analytics
+
+# === AI MARKET CONDITION GUARDIAN ===
+# Enable AI-powered market condition guardian for trading safety
+enable_ai_market_condition_guardian: true  # Enable AI market condition guardian
+market_guardian_cache_duration: 60  # Cache market condition analysis for 1 minute (seconds)
+market_guardian_api_timeout: 10  # API timeout for market condition analysis (seconds)
+market_guardian_max_retries: 3  # Maximum retries for market condition analysis
+
+# Market condition thresholds
+extreme_volatility_threshold: 0.50  # 50% extreme volatility threshold
+high_volatility_threshold: 0.30  # 30% high volatility threshold
+critical_liquidity_threshold: 0.1  # 10% critical liquidity drop
+low_liquidity_threshold: 0.3  # 30% low liquidity threshold
+
+# Market crash detection thresholds
+critical_price_drop_threshold: 0.20  # 20% critical price drop
+significant_price_drop_threshold: 0.10  # 10% significant price drop
+volume_spike_threshold: 5.0  # 5x volume spike threshold
+
+# Manipulation detection thresholds
+manipulation_price_spike_threshold: 0.15  # 15% manipulation price spike
+manipulation_volume_spike_threshold: 3.0  # 3x manipulation volume spike
+manipulation_pattern_threshold: 0.8  # 80% manipulation pattern match
+
+# News impact thresholds
+critical_news_impact_threshold: 0.9  # 90% critical news impact
+significant_news_impact_threshold: 0.7  # 70% significant news impact
+
+# Market condition guardian insights and reporting
+enable_market_guardian_insights: true  # Show market guardian insights in trading loop
+enable_market_guardian_reporting: true  # Include market guardian metrics in notifications
+enable_market_guardian_analytics: true  # Track market guardian performance over time
+market_guardian_analytics_retention_days: 90  # Days to retain market guardian analytics

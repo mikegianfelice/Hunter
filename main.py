@@ -9,6 +9,7 @@ import sys
 import time
 import json
 import logging
+import random
 from datetime import datetime
 from collections import defaultdict
 from typing import Dict, List
@@ -91,6 +92,10 @@ from ai_drawdown_protection_system import ai_drawdown_protection_system
 from ai_performance_attribution_analyzer import ai_performance_attribution_analyzer
 from ai_market_anomaly_detector import ai_market_anomaly_detector
 from ai_portfolio_rebalancing_engine import ai_portfolio_rebalancing_engine
+from ai_emergency_stop_system import ai_emergency_stop_system
+from ai_position_size_validator import ai_position_size_validator
+from ai_trade_execution_monitor import ai_trade_execution_monitor
+from ai_market_condition_guardian import ai_market_condition_guardian
 
 def calculate_ai_enhanced_quality_score(token: Dict) -> float:
     """
@@ -232,6 +237,94 @@ def check_practical_buy_signal(token: Dict) -> bool:
     symbol = token.get("symbol", "")
     
     print(f"🔍 Evaluating {symbol} for practical sustainable trading...")
+    
+    # === SAFETY SYSTEM CHECKS ===
+    
+    # 1. AI Emergency Stop System Check
+    try:
+        portfolio_data = {
+            'total_value': sum(pos.get('position_size_usd', 0) for pos in performance_tracker.get_open_trades()),
+            'initial_value': 10000,  # Mock initial value
+            'timestamp': datetime.now().isoformat()
+        }
+        trade_history = performance_tracker.get_trade_history() if hasattr(performance_tracker, 'get_trade_history') else []
+        system_errors = []  # Mock system errors
+        market_data = {'timestamp': datetime.now().isoformat()}
+        
+        emergency_analysis = ai_emergency_stop_system.check_emergency_conditions(
+            portfolio_data, trade_history, market_data, system_errors
+        )
+        
+        if emergency_analysis['emergency_level'] in ['emergency', 'critical']:
+            print(f"🚨 {symbol}: Emergency stop activated - {emergency_analysis['emergency_level']}")
+            return False
+            
+    except Exception as e:
+        print(f"⚠️ Emergency stop check failed: {e}")
+    
+    # 2. AI Market Condition Guardian Check
+    try:
+        market_data = {
+            'timestamp': datetime.now().isoformat(),
+            'volatility': random.uniform(0.1, 0.4),
+            'regime': 'normal'
+        }
+        news_data = {'sentiment': 'neutral', 'impact': 0.3}
+        historical_data = {'price': price, 'volume': volume_24h}
+        
+        guardian_analysis = ai_market_condition_guardian.check_market_conditions(
+            market_data, token, news_data, historical_data
+        )
+        
+        if not guardian_analysis['trading_safety'] in ['safe', 'cautious']:
+            print(f"🛡️ {symbol}: Market conditions unsafe - {guardian_analysis['condition_level']}")
+            return False
+            
+    except Exception as e:
+        print(f"⚠️ Market guardian check failed: {e}")
+    
+    # 3. AI Position Size Validator Check
+    try:
+        proposed_amount = get_config_float("trade_amount_usd", 5.0)
+        wallet_balance = 1000.0  # Mock wallet balance
+        current_positions = performance_tracker.get_open_trades()
+        market_conditions = {'regime': 'normal', 'volatility': 0.2}
+        
+        validation_analysis = ai_position_size_validator.validate_position_size(
+            token, proposed_amount, wallet_balance, current_positions, market_conditions
+        )
+        
+        if validation_analysis['validation_result'] in ['critical', 'rejected']:
+            print(f"🔍 {symbol}: Position size validation failed - {validation_analysis['validation_result']}")
+            return False
+            
+    except Exception as e:
+        print(f"⚠️ Position size validation failed: {e}")
+    
+    # 4. AI Trade Execution Monitor Check
+    try:
+        trade_data = {
+            'trade_id': f"{symbol}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            'status': 'pending',
+            'success': False,
+            'start_time': datetime.now().isoformat(),
+            'retry_count': 0
+        }
+        execution_history = []
+        market_conditions = {'regime': 'normal'}
+        
+        monitoring_analysis = ai_trade_execution_monitor.monitor_trade_execution(
+            trade_data, execution_history, market_conditions
+        )
+        
+        if monitoring_analysis['monitoring_level'] in ['critical', 'emergency']:
+            print(f"🔍 {symbol}: Execution monitoring critical - {monitoring_analysis['monitoring_level']}")
+            return False
+            
+    except Exception as e:
+        print(f"⚠️ Execution monitoring failed: {e}")
+    
+    # === END SAFETY SYSTEM CHECKS ===
     
     # Basic requirements
     if not address or price <= 0.00001:  # $0.00001 minimum price
@@ -1788,7 +1881,7 @@ def _show_drawdown_protection_insights():
     try:
         # Get current portfolio data
         open_positions = performance_tracker.get_open_trades()
-        trade_history = performance_tracker.get_trade_history()
+        trade_history = performance_tracker.get_trade_history() if hasattr(performance_tracker, 'get_trade_history') else []
         
         if not open_positions:
             log_print("\n🛡️ Drawdown Protection: No open positions to analyze")
