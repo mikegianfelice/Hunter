@@ -1,19 +1,19 @@
 # === Bot Configuration ===
-test_mode: false  # LIVE TRADING ENABLED - Micro Live Testing
+test_mode: false  # LIVE TRADING ENABLED - Realistic Scaling
 
 # === Trading Parameters ===
-trade_amount_usd: 1.0  # MICRO LIVE TESTING - $1 trades only
+trade_amount_usd: 5.0  # REALISTIC SCALING - $10 trades for meaningful returns
 slippage: 0.05  # Reduced from 10% to 5% for better execution
 take_profit: 0.15  # Reduced from 50% to 15% for realistic targets
 stop_loss: 0.08  # Reduced from 25% to 8% for tighter risk control
 use_dynamic_tp: true  # Enable dynamic take profit
-min_trade_amount_usd: 1.0  # Minimum trade amount for micro testing
+min_trade_amount_usd: 5.0  # Minimum trade amount for realistic scaling
 
 # === Advanced Trading Features ===
 # Order splitting for large trades
 enable_order_splitting: true
 max_price_impact_per_slice: 0.02  # 2% max price impact per slice
-min_slice_amount_usd: 1.0  # Minimum slice size for micro testing
+min_slice_amount_usd: 5.0  # Minimum slice size for realistic scaling
 max_slices_per_trade: 5  # Maximum number of slices per trade
 
 # Dynamic slippage based on price impact
@@ -63,11 +63,11 @@ pre_buy_check_timeout: 10
 supported_chains: ["ethereum", "solana", "base"]
 
 # === Risk Management ===
-max_concurrent_positions: 1  # MICRO TESTING - Single position only
-daily_loss_limit_usd: 5.0  # MICRO TESTING - $5 daily loss limit
+max_concurrent_positions: 3  # REALISTIC SCALING - 3 positions for diversification
+daily_loss_limit_usd: 50.0  # REALISTIC SCALING - $50 daily loss limit
 max_losing_streak: 2  # Stop after 2 losses
 circuit_breaker_minutes: 120  # Longer cooldown after losses
-per_trade_max_usd: 5  # Keep current limit
+per_trade_max_usd: 25  # REALISTIC SCALING - $25 max per trade
 min_wallet_balance_buffer: 0.05  # Higher buffer for safety
 
 # === Smart Cleanup ===
@@ -132,7 +132,7 @@ reset_state_now: false
 
 # === Sustainable Trading Settings ===
 # Quality scoring thresholds
-min_quality_score: 45  # Minimum quality score (0-100)
+min_quality_score: 35  # Minimum quality score (0-100) - reduced for more opportunities
 quality_volume_weight: 0.4  # 40% weight for volume in quality score
 quality_liquidity_weight: 0.4  # 40% weight for liquidity in quality score
 quality_price_weight: 0.2  # 20% weight for price stability in quality score
@@ -1334,9 +1334,9 @@ emergency_stop_api_timeout: 10  # API timeout for emergency analysis (seconds)
 emergency_stop_max_retries: 3  # Maximum retries for emergency analysis
 
 # Emergency stop thresholds
-emergency_critical_drawdown_threshold: 0.25  # 25% critical drawdown threshold
-emergency_urgent_drawdown_threshold: 0.15  # 15% urgent drawdown threshold
-emergency_warning_drawdown_threshold: 0.10  # 10% warning drawdown threshold
+emergency_critical_drawdown_threshold: 0.30  # 30% critical drawdown threshold (more lenient)
+emergency_urgent_drawdown_threshold: 0.20  # 20% urgent drawdown threshold (more lenient)
+emergency_warning_drawdown_threshold: 0.15  # 15% warning drawdown threshold (more lenient)
 
 # Market volatility thresholds
 emergency_extreme_volatility_threshold: 0.50  # 50% extreme volatility threshold
@@ -1368,10 +1368,10 @@ position_validation_api_timeout: 10  # API timeout for position validation (seco
 position_validation_max_retries: 3  # Maximum retries for position validation
 
 # Position size limits
-max_position_size_usd: 50.0  # $50 maximum position size
-min_position_size_usd: 1.0  # $1 minimum position size
-max_wallet_usage_percent: 0.1  # 10% maximum wallet usage per trade
-max_total_exposure_usd: 200.0  # $200 maximum total exposure
+max_position_size_usd: 25.0  # $25 maximum position size (realistic scaling)
+min_position_size_usd: 2.0  # $2 minimum position size (more flexible)
+max_wallet_usage_percent: 0.10  # 10% maximum wallet usage per trade (more flexible)
+max_total_exposure_usd: 100.0  # $100 maximum total exposure (realistic scaling)
 
 # Risk-based position sizing
 high_risk_position_multiplier: 0.5  # 50% reduction for high risk

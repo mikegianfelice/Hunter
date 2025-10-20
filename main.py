@@ -286,7 +286,10 @@ def check_practical_buy_signal(token: Dict) -> bool:
     # 3. AI Position Size Validator Check
     try:
         proposed_amount = get_config_float("trade_amount_usd", 5.0)
-        wallet_balance = 1000.0  # Mock wallet balance
+        # Get real wallet balance for the token's chain
+        chain_id = token.get("chainId", "ethereum").lower()
+        from risk_manager import _get_wallet_balance_usd
+        wallet_balance = _get_wallet_balance_usd(chain_id)
         current_positions = performance_tracker.get_open_trades()
         market_conditions = {'regime': 'normal', 'volatility': 0.2}
         

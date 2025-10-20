@@ -38,7 +38,7 @@ def fetch_token_price_usd(token_address: str):
     }
     """ % token_address
 
-    url = "https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3"
+    url = "https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3-ethereum"
     try:
         r = requests.post(url, json={"query": query}, timeout=10)
         if r.status_code != 200:

@@ -449,11 +449,11 @@ def fetch_trending_tokens(limit=200):  # INCREASED for more opportunities
     all_tokens.sort(key=lambda x: (x.get("volume24h", 0) + x.get("liquidity", 0)), reverse=True)
     
     # Ensure symbol diversity (increased from 5 to 10 to allow more PUMP tokens)
-    diverse_tokens = ensure_symbol_diversity(all_tokens, max_same_symbol=10)
+    diverse_tokens = ensure_symbol_diversity(all_tokens, max_same_symbol=20)  # Increased for more opportunities
     
     # Apply tradeability filter but make it less aggressive
     from tradeability_checker import filter_tradeable_tokens
-    tradeable_tokens = filter_tradeable_tokens(diverse_tokens, max_checks=10)  # INCREASED for more opportunities
+    tradeable_tokens = filter_tradeable_tokens(diverse_tokens, max_checks=25)  # INCREASED for more opportunities
     
     # Take top tokens up to limit
     tokens_for_trading = tradeable_tokens[:limit]

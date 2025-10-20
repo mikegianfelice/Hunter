@@ -40,8 +40,8 @@ class JupiterCustomLib:
         Using api.jup.ag as fallback, though it may require authentication.
         """
         try:
-            # Try new endpoint first (may require API key)
-            base_url = "https://api.jup.ag/v6/quote"
+            # Try old endpoint first (no auth required)
+            base_url = "https://quote-api.jup.ag/v6/quote"
             params = {
                 "inputMint": input_mint,
                 "outputMint": output_mint,

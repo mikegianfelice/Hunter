@@ -163,11 +163,10 @@ def allow_new_trade(trade_amount_usd: float, token_address: str = None, chain_id
         return False, f"trade_amount_exceeds_cap_{config['PER_TRADE_MAX_USD']}"
 
     # Check wallet balance for specific chain
-    # Temporarily disabled for testing - uncomment below lines for production
-    # wallet_balance = _get_wallet_balance_usd(chain_id)
-    # required_amount = trade_amount_usd + (wallet_balance * config['MIN_WALLET_BALANCE_BUFFER'])  # Include buffer for gas
-    # if wallet_balance < required_amount:
-    #     return False, f"insufficient_balance_{wallet_balance:.2f}_usd_needs_{required_amount:.2f}_usd"
+    wallet_balance = _get_wallet_balance_usd(chain_id)
+    required_amount = trade_amount_usd + (wallet_balance * config['MIN_WALLET_BALANCE_BUFFER'])  # Include buffer for gas
+    if wallet_balance < required_amount:
+        return False, f"insufficient_balance_{wallet_balance:.2f}_usd_needs_{required_amount:.2f}_usd"
 
     # Check if token is already held (prevent duplicate buys)
     if token_address and _is_token_already_held(token_address):

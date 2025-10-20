@@ -45,10 +45,10 @@ class AIPositionSizeValidator:
         self.high_volatility_position_multiplier = self.config.get('high_volatility_position_multiplier', 0.7) # 70% in high volatility
         self.low_liquidity_position_multiplier = self.config.get('low_liquidity_position_multiplier', 0.5) # 50% for low liquidity
         
-        # Validation thresholds
-        self.critical_validation_threshold = 0.9 # 90% of limits
-        self.warning_validation_threshold = 0.7 # 70% of limits
-        self.safe_validation_threshold = 0.5 # 50% of limits
+        # Validation thresholds (adjusted for more reasonable validation)
+        self.critical_validation_threshold = 0.95 # 95% of limits (more lenient)
+        self.warning_validation_threshold = 0.8 # 80% of limits (more lenient)
+        self.safe_validation_threshold = 0.6 # 60% of limits (more lenient)
         
         if not self.enable_analysis:
             logger.warning("⚠️ AI Position Size Validator is disabled in config.yaml.")
