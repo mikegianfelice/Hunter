@@ -244,18 +244,18 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
                         ok = True
                     else:
                         print(f"🔄 Raydium failed, trying Jupiter...")
-                        tx_hash, ok = buy_token_solana(token_address, slice_amount, symbol, test_mode=False, 
+                        tx_hash, ok = buy_token_solana(token_address, slice_amount, symbol, test_mode=False,  # LIVE TRADING ENABLED
                                                       slippage=dynamic_slippage, route_preferences=route_preferences, 
                                                       use_exactout=use_exactout)
                 except Exception as e:
                     print(f"⚠️ Raydium execution error: {e}, trying Jupiter...")
-                    tx_hash, ok = buy_token_solana(token_address, slice_amount, symbol, test_mode=False, 
+                    tx_hash, ok = buy_token_solana(token_address, slice_amount, symbol, test_mode=False,  # LIVE TRADING ENABLED 
                                                   slippage=dynamic_slippage, route_preferences=route_preferences, 
                                                   use_exactout=use_exactout)
             else:
                 print(f"🔄 Attempting Jupiter trade for slice {i+1}...")
                 try:
-                    tx_hash, ok = buy_token_solana(token_address, slice_amount, symbol, test_mode=False, 
+                    tx_hash, ok = buy_token_solana(token_address, slice_amount, symbol, test_mode=False,  # LIVE TRADING ENABLED 
                                                   slippage=dynamic_slippage, route_preferences=route_preferences, 
                                                   use_exactout=use_exactout)
                     

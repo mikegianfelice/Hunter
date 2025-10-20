@@ -1,12 +1,12 @@
 # === Bot Configuration ===
-test_mode: false  # Set to false for live trading
+test_mode: false  # LIVE TRADING ENABLED - Sustainable Strategy
 
 # === Trading Parameters ===
 trade_amount_usd: 5
-slippage: 0.10
-take_profit: 0.5
-stop_loss: 0.25
-use_dynamic_tp: false
+slippage: 0.05  # Reduced from 10% to 5% for better execution
+take_profit: 0.15  # Reduced from 50% to 15% for realistic targets
+stop_loss: 0.08  # Reduced from 25% to 8% for tighter risk control
+use_dynamic_tp: true  # Enable dynamic take profit
 min_trade_amount_usd: 2.0  # Minimum trade amount to avoid tiny trades that fail
 
 # === Advanced Trading Features ===
@@ -44,15 +44,15 @@ check_pool_reserves: true  # Verify pool has sufficient reserves
 min_pool_reserves_multiplier: 2.0  # Pool reserves must be 2x trade amount
 
 # === Strategy Thresholds ===
-min_momentum_pct: 0.0001  # Very low momentum requirement
-min_volume_24h_for_buy: 3000   # REDUCED - minimum $3k volume (more opportunities while still filtering spam)
-min_liquidity_usd_for_buy: 8000  # REDUCED - minimum $8k liquidity (more opportunities while still filtering spam)
-min_price_usd: 0.0000001
+min_momentum_pct: 0.001  # Increased momentum requirement for quality
+min_volume_24h_for_buy: 25000   # SUSTAINABLE - minimum $25k volume (quality over quantity)
+min_liquidity_usd_for_buy: 75000  # SUSTAINABLE - minimum $75k liquidity (quality over quantity)
+min_price_usd: 0.00001  # Higher minimum price to avoid micro-caps
 
 # Fast-path thresholds for first-seen tokens
-fastpath_min_volume_24h: 10000   # REDUCED - minimum $10k volume (more opportunities for new tokens)
-fastpath_min_liquidity_usd: 20000   # REDUCED - minimum $20k liquidity (more opportunities for new tokens)
-fastpath_min_sent_score: 3
+fastpath_min_volume_24h: 50000   # SUSTAINABLE - minimum $50k volume for quality
+fastpath_min_liquidity_usd: 100000   # SUSTAINABLE - minimum $100k liquidity for quality
+fastpath_min_sent_score: 50  # Higher sentiment requirement
 
 # === Pre-buy Delisting Check ===
 enable_pre_buy_delisting_check: false  # DISABLED - too aggressive, causing false rejections
@@ -63,12 +63,12 @@ pre_buy_check_timeout: 10
 supported_chains: ["ethereum", "solana", "base"]
 
 # === Risk Management ===
-max_concurrent_positions: 5
-daily_loss_limit_usd: 50.0
-max_losing_streak: 3
-circuit_breaker_minutes: 60
-per_trade_max_usd: 5
-min_wallet_balance_buffer: 0.01
+max_concurrent_positions: 3  # Reduced for quality focus
+daily_loss_limit_usd: 30.0  # Reduced for conservative approach
+max_losing_streak: 2  # Stop after 2 losses
+circuit_breaker_minutes: 120  # Longer cooldown after losses
+per_trade_max_usd: 5  # Keep current limit
+min_wallet_balance_buffer: 0.05  # Higher buffer for safety
 
 # === Smart Cleanup ===
 enable_smart_blacklist_cleanup: true
@@ -78,12 +78,12 @@ enable_smart_delisted_cleanup: true
 delisted_cleanup_interval: 1  # Every loop
 
 # === API and External Services ===
-# Re-enable critical safety checks
-enable_sentiment_checks: false  # Temporarily disabled due to API issues - will use default high scores
-enable_tokensniffer: false  # DISABLED - causing too many rejections
-enable_price_verification: false  # DISABLED - causing false delisting detection
-api_timeout_seconds: 8  # Reduced timeout for faster fallbacks
-api_retry_attempts: 2  # Reduced retry attempts for faster fallbacks
+# Re-enable critical safety checks for sustainable trading
+enable_sentiment_checks: true  # Re-enabled for quality control
+enable_tokensniffer: true  # Re-enabled for safety
+enable_price_verification: true  # Re-enabled for accuracy
+api_timeout_seconds: 15  # Longer timeout for reliability
+api_retry_attempts: 3  # More retries for reliability
 
 # === Jupiter API Settings ===
 enable_jupiter_pre_check: false  # Allow tokens to proceed even if Jupiter pre-check fails
@@ -129,3 +129,526 @@ trusted_tokens: [
 
 # === State Management ===
 reset_state_now: false
+
+# === Sustainable Trading Settings ===
+# Quality scoring thresholds
+min_quality_score: 45  # Minimum quality score (0-100)
+quality_volume_weight: 0.4  # 40% weight for volume in quality score
+quality_liquidity_weight: 0.4  # 40% weight for liquidity in quality score
+quality_price_weight: 0.2  # 20% weight for price stability in quality score
+
+# Dynamic take profit settings
+base_take_profit: 0.12  # 12% base take profit
+max_take_profit: 0.20  # 20% maximum take profit
+min_take_profit: 0.08  # 8% minimum take profit
+quality_tp_bonus: 0.03  # +3% for high quality tokens
+volume_tp_bonus: 0.02  # +2% for high volume tokens
+liquidity_tp_bonus: 0.02  # +2% for high liquidity tokens
+
+# Sustainable trading limits
+max_sustainable_trades_per_day: 5  # Maximum sustainable trades per day
+sustainable_trade_cooldown_minutes: 30  # Cooldown between sustainable trades
+
+# === Dynamic Position Sizing ===
+# Position sizing based on token quality
+enable_dynamic_position_sizing: true  # Enable dynamic position sizing
+base_position_size_usd: 5.0  # Base position size in USD
+min_position_size_usd: 2.0  # Minimum position size
+max_position_size_usd: 10.0  # Maximum position size (respects per_trade_max_usd)
+
+# Quality-based position multipliers
+excellent_quality_threshold: 80  # Quality score >= 80
+excellent_quality_multiplier: 1.5  # 50% increase for excellent quality
+high_quality_threshold: 70  # Quality score >= 70
+high_quality_multiplier: 1.3  # 30% increase for high quality
+good_quality_threshold: 60  # Quality score >= 60
+good_quality_multiplier: 1.1  # 10% increase for good quality
+low_quality_threshold: 50  # Quality score < 50
+low_quality_multiplier: 0.8  # 20% decrease for low quality
+
+# Volume-based position adjustments
+high_volume_threshold: 1000000  # $1M+ volume
+high_volume_multiplier: 1.1  # +10% for high volume
+good_volume_threshold: 500000  # $500k+ volume
+good_volume_multiplier: 1.05  # +5% for good volume
+low_volume_threshold: 50000  # <$50k volume
+low_volume_multiplier: 0.9  # -10% for low volume
+
+# Liquidity-based position adjustments
+high_liquidity_threshold: 2000000  # $2M+ liquidity
+high_liquidity_multiplier: 1.05  # +5% for high liquidity
+low_liquidity_threshold: 100000  # <$100k liquidity
+low_liquidity_multiplier: 0.9  # -10% for low liquidity
+
+# === Performance Tracking ===
+# Enable performance tracking and analytics
+enable_performance_tracking: true  # Enable performance tracking
+performance_data_file: "performance_data.json"  # File to store performance data
+performance_report_days: 30  # Days to include in performance reports
+performance_cleanup_days: 90  # Days to keep performance data
+
+# Performance tracking features
+track_quality_tiers: true  # Track performance by quality tiers
+track_daily_stats: true  # Track daily performance statistics
+track_win_rates: true  # Track win rates by quality and time period
+track_pnl_analysis: true  # Track PnL analysis and trends
+
+# Performance reporting
+enable_performance_insights: true  # Show performance insights in trading loop
+performance_insights_days: 7  # Days to show in trading loop insights
+enable_quality_analysis: true  # Enable quality vs performance analysis
+enable_risk_analysis: true  # Enable risk-adjusted return analysis
+
+# Performance alerts
+enable_performance_alerts: true  # Enable performance-based alerts
+low_win_rate_threshold: 40  # Alert if win rate drops below 40%
+high_loss_threshold: -50  # Alert if daily loss exceeds $50
+quality_tier_alert_threshold: 3  # Alert if quality tier performance drops significantly
+
+# === AI Sentiment Analysis ===
+# Enable AI-powered sentiment analysis for enhanced quality scoring
+enable_ai_sentiment_analysis: true  # Enable AI sentiment analysis
+sentiment_cache_duration: 300  # Cache sentiment data for 5 minutes (seconds)
+sentiment_api_timeout: 10  # API timeout for sentiment analysis (seconds)
+sentiment_max_retries: 3  # Maximum retries for sentiment analysis
+
+# Sentiment analysis weights (must sum to 1.0)
+sentiment_social_media_weight: 0.4  # 40% weight for social media sentiment
+sentiment_news_weight: 0.3  # 30% weight for news sentiment
+sentiment_market_weight: 0.2  # 20% weight for market sentiment
+sentiment_technical_weight: 0.1  # 10% weight for technical sentiment
+
+# Sentiment thresholds
+sentiment_positive_threshold: 0.6  # Score >= 0.6 is positive
+sentiment_negative_threshold: 0.4  # Score <= 0.4 is negative
+sentiment_very_positive_threshold: 0.8  # Score >= 0.8 is very positive
+sentiment_very_negative_threshold: 0.2  # Score <= 0.2 is very negative
+
+# AI-enhanced quality scoring
+enable_ai_enhanced_quality: true  # Enable AI-enhanced quality scoring
+ai_quality_sentiment_weight: 0.3  # Base weight for sentiment in quality score
+ai_quality_confidence_bonus: 0.2  # Additional weight for high confidence sentiment
+ai_quality_sentiment_boost: 0.1  # Boost factor for positive sentiment (1.1x)
+ai_quality_sentiment_penalty: 0.9  # Penalty factor for negative sentiment (0.9x)
+
+# Sentiment analysis features
+enable_social_sentiment: true  # Analyze social media sentiment
+enable_news_sentiment: true  # Analyze news sentiment
+enable_market_sentiment: true  # Analyze market sentiment
+enable_technical_sentiment: true  # Analyze technical sentiment
+
+# Sentiment confidence thresholds
+sentiment_high_confidence: 0.7  # High confidence threshold
+sentiment_medium_confidence: 0.5  # Medium confidence threshold
+sentiment_low_confidence: 0.3  # Low confidence threshold
+
+# === AI Market Regime Detection ===
+# Enable AI-powered market regime detection for adaptive trading
+enable_market_regime_detection: true  # Enable market regime detection
+market_regime_cache_duration: 1800  # Cache regime data for 30 minutes (seconds)
+market_regime_api_timeout: 15  # API timeout for market data (seconds)
+market_regime_max_retries: 3  # Maximum retries for market data collection
+
+# Market regime detection weights (must sum to 1.0)
+regime_btc_trend_weight: 0.25  # 25% weight for BTC trend
+regime_eth_trend_weight: 0.20  # 20% weight for ETH trend
+regime_market_correlation_weight: 0.15  # 15% weight for market correlation
+regime_volatility_weight: 0.15  # 15% weight for volatility index
+regime_volume_trends_weight: 0.10  # 10% weight for volume trends
+regime_fear_greed_weight: 0.10  # 10% weight for fear & greed index
+regime_market_cap_weight: 0.05  # 5% weight for market cap trend
+
+# Market regime thresholds
+regime_confidence_threshold: 0.6  # Minimum confidence for regime decisions
+regime_high_confidence_threshold: 0.8  # High confidence threshold
+regime_volatility_threshold: 0.8  # High volatility threshold
+regime_correlation_threshold: 0.7  # High correlation threshold
+
+# Market regime trading adjustments
+regime_bull_position_multiplier: 1.2  # Position size multiplier for bull market
+regime_bear_position_multiplier: 0.7  # Position size multiplier for bear market
+regime_sideways_position_multiplier: 1.0  # Position size multiplier for sideways market
+regime_high_volatility_position_multiplier: 0.5  # Position size multiplier for high volatility
+regime_recovery_position_multiplier: 0.9  # Position size multiplier for recovery market
+
+# Market regime quality threshold adjustments
+regime_bull_quality_adjustment: -5  # Quality threshold adjustment for bull market
+regime_bear_quality_adjustment: 10  # Quality threshold adjustment for bear market
+regime_sideways_quality_adjustment: 0  # Quality threshold adjustment for sideways market
+regime_high_volatility_quality_adjustment: 15  # Quality threshold adjustment for high volatility
+regime_recovery_quality_adjustment: 5  # Quality threshold adjustment for recovery market
+
+# Market regime volume/liquidity adjustments
+regime_bear_volume_multiplier: 1.5  # Volume requirement multiplier for bear market
+regime_high_volatility_volume_multiplier: 2.0  # Volume requirement multiplier for high volatility
+regime_bear_liquidity_multiplier: 1.5  # Liquidity requirement multiplier for bear market
+regime_high_volatility_liquidity_multiplier: 2.0  # Liquidity requirement multiplier for high volatility
+
+# Market regime trading controls
+enable_regime_trading_controls: true  # Enable regime-based trading controls
+pause_trading_high_volatility: true  # Pause trading in high volatility regime
+pause_trading_bear_market: true  # Pause trading in strong bear market
+regime_trading_pause_confidence: 0.8  # Confidence threshold for trading pauses
+
+# === AI Price Prediction ===
+# Enable AI-powered price prediction for success probability analysis
+enable_ai_price_prediction: true  # Enable AI price prediction
+price_prediction_cache_duration: 600  # Cache predictions for 10 minutes (seconds)
+price_prediction_api_timeout: 15  # API timeout for prediction data (seconds)
+price_prediction_max_retries: 3  # Maximum retries for prediction analysis
+
+# Price prediction targets
+prediction_target_gains: [0.10, 0.15, 0.20]  # 10%, 15%, 20% target gains
+prediction_horizon_hours: 24  # 24 hours prediction horizon
+prediction_sequence_length: 24  # 24 data points for prediction
+
+# Feature weights for prediction (must sum to 1.0)
+prediction_price_momentum_weight: 0.25  # 25% weight for price momentum
+prediction_volume_trend_weight: 0.20  # 20% weight for volume trend
+prediction_liquidity_stability_weight: 0.15  # 15% weight for liquidity stability
+prediction_sentiment_weight: 0.15  # 15% weight for sentiment score
+prediction_market_regime_weight: 0.10  # 10% weight for market regime impact
+prediction_technical_indicators_weight: 0.10  # 10% weight for technical indicators
+prediction_volatility_pattern_weight: 0.05  # 5% weight for volatility pattern
+
+# Success probability thresholds
+prediction_high_confidence_threshold: 0.75  # High confidence threshold
+prediction_medium_confidence_threshold: 0.60  # Medium confidence threshold
+prediction_low_confidence_threshold: 0.45  # Low confidence threshold
+prediction_very_low_confidence_threshold: 0.30  # Very low confidence threshold
+
+# AI-enhanced quality scoring weights
+ai_quality_traditional_weight: 0.4  # 40% weight for traditional quality score
+ai_quality_sentiment_weight: 0.3  # 30% weight for sentiment analysis
+ai_quality_prediction_weight: 0.3  # 30% weight for price prediction
+
+# Prediction-based adjustments
+prediction_high_confidence_boost: 0.1  # +10% boost for high confidence predictions
+prediction_low_confidence_penalty: 0.1  # -10% penalty for low confidence predictions
+prediction_success_probability_boost: 0.05  # +5% boost for high success probability
+prediction_expected_return_weight: 0.02  # +2% weight for expected return
+
+# Price prediction features
+enable_price_momentum_analysis: true  # Analyze price momentum patterns
+enable_volume_trend_analysis: true  # Analyze volume trend patterns
+enable_liquidity_stability_analysis: true  # Analyze liquidity stability
+enable_technical_indicators_analysis: true  # Analyze technical indicators
+enable_volatility_pattern_analysis: true  # Analyze volatility patterns
+
+# Prediction insights and reporting
+enable_prediction_insights: true  # Show prediction insights in trading loop
+enable_prediction_reporting: true  # Include predictions in trade notifications
+enable_prediction_analytics: true  # Track prediction accuracy over time
+prediction_analytics_retention_days: 90  # Days to retain prediction analytics
+
+# === AI Portfolio Optimization ===
+# Enable AI-powered portfolio optimization for capital allocation
+enable_ai_portfolio_optimization: true  # Enable AI portfolio optimization
+portfolio_optimization_cache_duration: 1800  # Cache optimization for 30 minutes (seconds)
+portfolio_optimization_api_timeout: 15  # API timeout for portfolio analysis (seconds)
+portfolio_optimization_max_retries: 3  # Maximum retries for portfolio optimization
+
+# Portfolio optimization constraints
+portfolio_max_risk: 0.20  # 20% maximum portfolio risk
+portfolio_max_position_weight: 0.30  # 30% maximum position weight
+portfolio_min_position_weight: 0.05  # 5% minimum position weight
+portfolio_target_sharpe_ratio: 1.5  # Target Sharpe ratio
+portfolio_max_total_exposure: 1.0  # 100% maximum total exposure
+portfolio_max_sector_exposure: 0.4  # 40% maximum sector exposure
+portfolio_max_correlation_threshold: 0.7  # 70% maximum correlation
+portfolio_min_diversification: 3  # Minimum 3 positions for diversification
+
+# Risk factor weights (must sum to 1.0)
+portfolio_volatility_weight: 0.25  # 25% weight for volatility risk
+portfolio_correlation_weight: 0.20  # 20% weight for correlation risk
+portfolio_liquidity_weight: 0.15  # 15% weight for liquidity risk
+portfolio_market_regime_weight: 0.15  # 15% weight for market regime risk
+portfolio_sentiment_weight: 0.10  # 10% weight for sentiment risk
+portfolio_technical_weight: 0.10  # 10% weight for technical risk
+portfolio_concentration_weight: 0.05  # 5% weight for concentration risk
+
+# Portfolio optimization features
+enable_concentration_analysis: true  # Analyze position concentration
+enable_correlation_analysis: true  # Analyze position correlations
+enable_volatility_analysis: true  # Analyze portfolio volatility
+enable_diversification_analysis: true  # Analyze portfolio diversification
+enable_risk_budgeting: true  # Enable risk budget allocation
+enable_dynamic_rebalancing: true  # Enable dynamic portfolio rebalancing
+
+# Portfolio optimization insights and reporting
+enable_portfolio_insights: true  # Show portfolio insights in trading loop
+enable_portfolio_reporting: true  # Include portfolio metrics in notifications
+enable_portfolio_analytics: true  # Track portfolio performance over time
+portfolio_analytics_retention_days: 90  # Days to retain portfolio analytics
+enable_portfolio_recommendations: true  # Generate portfolio recommendations
+enable_risk_alerts: true  # Enable portfolio risk alerts
+portfolio_risk_alert_threshold: 0.25  # Alert if portfolio risk exceeds 25%
+
+# === AI Risk Assessment ===
+# Enable AI-powered risk assessment for loss prevention
+enable_ai_risk_assessment: true  # Enable AI risk assessment
+risk_assessment_cache_duration: 600  # Cache risk assessments for 10 minutes (seconds)
+risk_assessment_api_timeout: 10  # API timeout for risk analysis (seconds)
+risk_assessment_max_retries: 3  # Maximum retries for risk assessment
+
+# Risk assessment thresholds
+risk_high_threshold: 0.7  # 70% risk score = high risk
+risk_medium_threshold: 0.4  # 40% risk score = medium risk
+risk_low_threshold: 0.2  # 20% risk score = low risk
+
+# Risk factor weights (must sum to 1.0)
+risk_volume_volatility_weight: 0.20  # 20% weight for volume volatility
+risk_liquidity_stability_weight: 0.18  # 18% weight for liquidity stability
+risk_price_momentum_weight: 0.15  # 15% weight for price momentum
+risk_market_cap_weight: 0.12  # 12% weight for market cap risk
+risk_correlation_weight: 0.10  # 10% weight for correlation risk
+risk_sentiment_weight: 0.08  # 8% weight for sentiment risk
+risk_technical_weight: 0.08  # 8% weight for technical risk
+risk_regime_weight: 0.09  # 9% weight for market regime risk
+
+# Risk pattern detection
+enable_volume_spike_detection: true  # Detect volume spikes
+enable_liquidity_drop_detection: true  # Detect liquidity drops
+enable_price_manipulation_detection: true  # Detect price manipulation
+enable_correlation_breakdown_detection: true  # Detect correlation breakdown
+enable_sentiment_crash_detection: true  # Detect sentiment crashes
+
+# Risk mitigation strategies
+risk_high_mitigation: "avoid_trade"  # Strategy for high risk tokens
+risk_medium_mitigation: "reduce_position"  # Strategy for medium risk tokens
+risk_low_mitigation: "normal_trade"  # Strategy for low risk tokens
+
+# Position size adjustments based on risk
+risk_high_position_adjustment: 0.0  # No position for high risk
+risk_medium_position_adjustment: 0.5  # 50% position for medium risk
+risk_low_position_adjustment: 1.0  # Full position for low risk
+
+# Risk assessment features
+enable_loss_probability_prediction: true  # Predict probability of loss
+enable_risk_pattern_recognition: true  # Recognize risk patterns
+enable_dynamic_risk_scoring: true  # Dynamic risk scoring
+enable_risk_insights: true  # Generate risk insights
+enable_risk_recommendations: true  # Generate risk recommendations
+
+# Risk alerts and notifications
+enable_risk_alerts: true  # Enable risk-based alerts
+risk_alert_threshold: 0.6  # Alert if risk score exceeds 60%
+enable_high_risk_warnings: true  # Warn about high-risk tokens
+enable_risk_summary_reports: true  # Generate risk summary reports
+risk_report_frequency: "daily"  # Risk report frequency (daily, weekly, monthly)
+
+# Risk assessment analytics
+enable_risk_analytics: true  # Track risk assessment accuracy
+risk_analytics_retention_days: 90  # Days to retain risk analytics
+enable_risk_performance_tracking: true  # Track risk vs performance
+enable_risk_correlation_analysis: true  # Analyze risk correlation with outcomes
+
+# === AI Pattern Recognition ===
+# Enable AI-powered pattern recognition for improved entry timing
+enable_ai_pattern_recognition: true  # Enable AI pattern recognition
+pattern_recognition_cache_duration: 300  # Cache pattern recognition for 5 minutes (seconds)
+pattern_recognition_api_timeout: 10  # API timeout for pattern analysis (seconds)
+pattern_recognition_max_retries: 3  # Maximum retries for pattern recognition
+
+# Pattern recognition thresholds
+pattern_confidence_threshold: 0.7  # 70% confidence threshold for patterns
+pattern_strong_threshold: 0.8  # 80% confidence for strong patterns
+pattern_weak_threshold: 0.5  # 50% confidence for weak patterns
+
+# Pattern type weights (must sum to 1.0)
+pattern_bullish_engulfing_weight: 0.15  # 15% weight for bullish engulfing
+pattern_bearish_engulfing_weight: 0.15  # 15% weight for bearish engulfing
+pattern_hammer_weight: 0.12  # 12% weight for hammer
+pattern_doji_weight: 0.10  # 10% weight for doji
+pattern_shooting_star_weight: 0.10  # 10% weight for shooting star
+pattern_morning_star_weight: 0.08  # 8% weight for morning star
+pattern_evening_star_weight: 0.08  # 8% weight for evening star
+pattern_breakout_weight: 0.10  # 10% weight for breakout
+pattern_support_resistance_weight: 0.12  # 12% weight for support/resistance
+
+# Pattern strength indicators
+pattern_volume_confirmation_weight: 0.25  # 25% weight for volume confirmation
+pattern_momentum_alignment_weight: 0.20  # 20% weight for momentum alignment
+pattern_timeframe_consistency_weight: 0.15  # 15% weight for timeframe consistency
+pattern_completeness_weight: 0.20  # 20% weight for pattern completeness
+pattern_market_context_weight: 0.20  # 20% weight for market context
+
+# Pattern detection features
+enable_candlestick_patterns: true  # Detect candlestick patterns
+enable_chart_patterns: true  # Detect chart patterns
+enable_support_resistance_detection: true  # Detect support/resistance levels
+enable_momentum_patterns: true  # Detect momentum patterns
+enable_breakout_patterns: true  # Detect breakout patterns
+enable_reversal_patterns: true  # Detect reversal patterns
+
+# Pattern signal generation
+enable_bullish_signals: true  # Generate bullish signals
+enable_bearish_signals: true  # Generate bearish signals
+enable_neutral_signals: true  # Generate neutral signals
+enable_breakout_signals: true  # Generate breakout signals
+enable_reversal_signals: true  # Generate reversal signals
+
+# Pattern trading controls
+pattern_require_bullish: true  # Require bullish patterns for trading
+pattern_avoid_bearish: true  # Avoid bearish patterns
+pattern_min_strength: 0.4  # Minimum pattern strength for trading
+pattern_confidence_requirement: 0.6  # Minimum confidence for trading
+
+# Pattern insights and reporting
+enable_pattern_insights: true  # Show pattern insights in trading loop
+enable_pattern_reporting: true  # Include patterns in trade notifications
+enable_pattern_analytics: true  # Track pattern accuracy over time
+pattern_analytics_retention_days: 90  # Days to retain pattern analytics
+enable_pattern_recommendations: true  # Generate pattern-based recommendations
+
+# Pattern recognition alerts
+enable_pattern_alerts: true  # Enable pattern-based alerts
+pattern_strong_signal_threshold: 0.8  # Alert for strong pattern signals
+pattern_breakout_alert_threshold: 0.7  # Alert for breakout patterns
+pattern_reversal_alert_threshold: 0.6  # Alert for reversal patterns
+enable_pattern_summary_reports: true  # Generate pattern summary reports
+pattern_report_frequency: "daily"  # Pattern report frequency (daily, weekly, monthly)
+
+# === AI Trade Execution Optimizer ===
+# Enable AI-powered trade execution optimization for maximum profitability
+enable_ai_execution_optimization: true  # Enable AI execution optimization
+execution_optimization_cache_duration: 60  # Cache execution optimization for 1 minute (seconds)
+execution_optimization_api_timeout: 10  # API timeout for execution analysis (seconds)
+execution_optimization_max_retries: 3  # Maximum retries for execution optimization
+
+# Execution optimization thresholds
+execution_max_slippage_threshold: 0.05  # 5% maximum slippage threshold
+execution_optimal_slippage_target: 0.02  # 2% optimal slippage target
+execution_gas_optimization_threshold: 0.8  # 80% gas efficiency threshold
+execution_success_threshold: 0.9  # 90% execution success threshold
+
+# Execution factor weights (must sum to 1.0)
+execution_timing_optimization_weight: 0.25  # 25% weight for timing optimization
+execution_slippage_minimization_weight: 0.30  # 30% weight for slippage minimization
+execution_gas_optimization_weight: 0.20  # 20% weight for gas optimization
+execution_route_selection_weight: 0.15  # 15% weight for route selection
+execution_liquidity_analysis_weight: 0.10  # 10% weight for liquidity analysis
+
+# DEX/Router configuration
+execution_dex_options: ["uniswap_v3", "uniswap_v2", "sushiswap", "jupiter"]  # Available DEX options
+execution_prefer_uniswap_v3: true  # Prefer Uniswap V3 for better execution
+execution_prefer_jupiter: true  # Prefer Jupiter for Solana
+execution_route_optimization: true  # Enable route optimization
+execution_slippage_optimization: true  # Enable slippage optimization
+execution_gas_optimization: true  # Enable gas optimization
+
+# Execution timing factors
+execution_market_volatility_weight: 0.30  # 30% weight for market volatility
+execution_volume_patterns_weight: 0.25  # 25% weight for volume patterns
+execution_liquidity_cycles_weight: 0.20  # 20% weight for liquidity cycles
+execution_gas_price_trends_weight: 0.15  # 15% weight for gas price trends
+execution_network_congestion_weight: 0.10  # 10% weight for network congestion
+
+# Execution optimization features
+enable_timing_optimization: true  # Optimize execution timing
+enable_slippage_minimization: true  # Minimize slippage
+enable_gas_optimization: true  # Optimize gas usage
+enable_route_selection: true  # Select optimal routes
+enable_liquidity_analysis: true  # Analyze liquidity for execution
+enable_success_prediction: true  # Predict execution success
+
+# Execution insights and reporting
+enable_execution_insights: true  # Show execution insights in trading loop
+enable_execution_reporting: true  # Include execution metrics in notifications
+enable_execution_analytics: true  # Track execution performance over time
+execution_analytics_retention_days: 90  # Days to retain execution analytics
+enable_execution_recommendations: true  # Generate execution recommendations
+
+# Execution alerts and notifications
+enable_execution_alerts: true  # Enable execution-based alerts
+execution_high_slippage_threshold: 0.03  # Alert if slippage exceeds 3%
+execution_low_success_threshold: 0.7  # Alert if success probability below 70%
+execution_gas_spike_threshold: 0.005  # Alert if gas cost exceeds $0.005
+enable_execution_summary_reports: true  # Generate execution summary reports
+execution_report_frequency: "daily"  # Execution report frequency (daily, weekly, monthly)
+
+# Execution performance tracking
+enable_execution_performance_tracking: true  # Track execution performance
+execution_performance_metrics: ["slippage", "gas_cost", "success_rate", "execution_time"]  # Metrics to track
+execution_benchmark_threshold: 0.8  # Benchmark threshold for execution performance
+enable_execution_optimization_suggestions: true  # Generate optimization suggestions
+
+# === AI Market Microstructure Analyzer ===
+# Enable AI-powered market microstructure analysis for optimal execution timing
+enable_ai_microstructure_analysis: true  # Enable AI microstructure analysis
+microstructure_analysis_cache_duration: 30  # Cache microstructure analysis for 30 seconds (seconds)
+microstructure_analysis_api_timeout: 10  # API timeout for microstructure analysis (seconds)
+microstructure_analysis_max_retries: 3  # Maximum retries for microstructure analysis
+
+# Microstructure analysis thresholds
+microstructure_max_order_book_depth: 20  # Maximum order book depth to analyze
+microstructure_trade_flow_window: 300  # 5 minutes trade flow window (seconds)
+microstructure_liquidity_window: 600  # 10 minutes liquidity window (seconds)
+microstructure_whale_threshold: 10000  # $10k+ trades considered whale activity
+
+# Microstructure factor weights (must sum to 1.0)
+microstructure_order_book_weight: 0.25  # 25% weight for order book analysis
+microstructure_trade_flow_weight: 0.20  # 20% weight for trade flow analysis
+microstructure_liquidity_weight: 0.20  # 20% weight for liquidity analysis
+microstructure_whale_activity_weight: 0.15  # 15% weight for whale activity
+microstructure_market_maker_weight: 0.10  # 10% weight for market maker detection
+microstructure_manipulation_weight: 0.10  # 10% weight for manipulation detection
+
+# Order book analysis thresholds
+microstructure_bid_ask_spread_threshold: 0.02  # 2% bid-ask spread threshold
+microstructure_order_book_imbalance_threshold: 0.3  # 30% order book imbalance threshold
+microstructure_depth_analysis_threshold: 0.1  # 10% depth analysis threshold
+
+# Trade flow analysis thresholds
+microstructure_trade_size_threshold: 1000  # $1k+ trades for analysis
+microstructure_trade_frequency_threshold: 10  # 10+ trades per minute
+microstructure_volume_spike_threshold: 2.0  # 2x volume spike threshold
+
+# Liquidity analysis thresholds
+microstructure_liquidity_stability_threshold: 0.8  # 80% liquidity stability threshold
+microstructure_liquidity_drain_threshold: 0.3  # 30% liquidity drain threshold
+microstructure_liquidity_provider_threshold: 0.5  # 50% liquidity provider threshold
+
+# Whale activity analysis thresholds
+microstructure_whale_trade_size: 5000  # $5k+ whale trades
+microstructure_whale_frequency_threshold: 3  # 3+ whale trades per window
+microstructure_whale_impact_threshold: 0.05  # 5% whale impact threshold
+
+# Market maker detection thresholds
+microstructure_mm_pattern_threshold: 0.7  # 70% market maker pattern threshold
+microstructure_mm_frequency_threshold: 20  # 20+ MM trades per window
+microstructure_mm_spread_threshold: 0.01  # 1% MM spread threshold
+
+# Manipulation detection thresholds
+microstructure_pump_dump_threshold: 0.2  # 20% pump/dump threshold
+microstructure_wash_trading_threshold: 0.8  # 80% wash trading threshold
+microstructure_spoofing_threshold: 0.6  # 60% spoofing threshold
+
+# Microstructure analysis features
+enable_order_book_analysis: true  # Analyze order book microstructure
+enable_trade_flow_analysis: true  # Analyze trade flow patterns
+enable_liquidity_analysis: true  # Analyze liquidity microstructure
+enable_whale_activity_analysis: true  # Analyze whale activity
+enable_market_maker_detection: true  # Detect market maker activity
+enable_manipulation_detection: true  # Detect market manipulation
+
+# Microstructure insights and reporting
+enable_microstructure_insights: true  # Show microstructure insights in trading loop
+enable_microstructure_reporting: true  # Include microstructure metrics in notifications
+enable_microstructure_analytics: true  # Track microstructure performance over time
+microstructure_analytics_retention_days: 90  # Days to retain microstructure analytics
+enable_microstructure_recommendations: true  # Generate microstructure recommendations
+
+# Microstructure alerts and notifications
+enable_microstructure_alerts: true  # Enable microstructure-based alerts
+microstructure_high_risk_threshold: 0.7  # Alert if microstructure risk exceeds 70%
+microstructure_manipulation_alert_threshold: 0.6  # Alert if manipulation detected
+microstructure_whale_activity_alert_threshold: 0.8  # Alert if high whale activity
+enable_microstructure_summary_reports: true  # Generate microstructure summary reports
+microstructure_report_frequency: "daily"  # Microstructure report frequency (daily, weekly, monthly)
+
+# Microstructure performance tracking
+enable_microstructure_performance_tracking: true  # Track microstructure performance
+microstructure_performance_metrics: ["order_book_quality", "trade_flow_quality", "liquidity_quality", "whale_activity", "manipulation_risk"]  # Metrics to track
+microstructure_benchmark_threshold: 0.8  # Benchmark threshold for microstructure performance
+enable_microstructure_optimization_suggestions: true  # Generate microstructure optimization suggestions
