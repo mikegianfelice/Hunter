@@ -652,3 +652,417 @@ enable_microstructure_performance_tracking: true  # Track microstructure perform
 microstructure_performance_metrics: ["order_book_quality", "trade_flow_quality", "liquidity_quality", "whale_activity", "manipulation_risk"]  # Metrics to track
 microstructure_benchmark_threshold: 0.8  # Benchmark threshold for microstructure performance
 enable_microstructure_optimization_suggestions: true  # Generate microstructure optimization suggestions
+
+# === AI Market Intelligence Aggregator ===
+# Enable AI-powered market intelligence analysis for comprehensive market insights
+enable_ai_market_intelligence: true  # Enable AI market intelligence analysis
+market_intelligence_cache_duration: 300  # Cache market intelligence for 5 minutes (seconds)
+market_intelligence_api_timeout: 15  # API timeout for market intelligence analysis (seconds)
+market_intelligence_max_retries: 3  # Maximum retries for market intelligence analysis
+
+# Intelligence analysis thresholds
+market_intelligence_news_sources: ["coindesk", "cointelegraph", "decrypt", "theblock", "cryptonews", "bitcoinmagazine", "crypto-news", "cryptoslate", "beincrypto"]  # News sources to analyze
+market_intelligence_social_platforms: ["twitter", "reddit", "discord", "telegram", "youtube"]  # Social platforms to analyze
+market_intelligence_influencer_tiers: ["tier1", "tier2", "tier3"]  # Influencer tiers to track
+
+# Intelligence factor weights (must sum to 1.0)
+market_intelligence_news_sentiment_weight: 0.25  # 25% weight for news sentiment
+market_intelligence_social_sentiment_weight: 0.20  # 20% weight for social sentiment
+market_intelligence_influencer_activity_weight: 0.15  # 15% weight for influencer activity
+market_intelligence_market_events_weight: 0.15  # 15% weight for market events
+market_intelligence_trend_analysis_weight: 0.10  # 10% weight for trend analysis
+market_intelligence_fear_greed_weight: 0.10  # 10% weight for fear & greed
+market_intelligence_market_correlation_weight: 0.05  # 5% weight for market correlation
+
+# News analysis thresholds
+market_intelligence_positive_sentiment_threshold: 0.6  # 60% positive sentiment threshold
+market_intelligence_negative_sentiment_threshold: 0.4  # 40% negative sentiment threshold
+market_intelligence_very_positive_threshold: 0.8  # 80% very positive threshold
+market_intelligence_very_negative_threshold: 0.2  # 20% very negative threshold
+market_intelligence_breaking_news_threshold: 0.8  # 80% breaking news threshold
+market_intelligence_market_impact_threshold: 0.7  # 70% market impact threshold
+market_intelligence_credibility_threshold: 0.6  # 60% credibility threshold
+
+# Social media analysis thresholds
+market_intelligence_viral_threshold: 1000  # 1000+ engagements for viral content
+market_intelligence_trending_threshold: 100  # 100+ mentions for trending
+market_intelligence_influence_threshold: 0.7  # 70% influence score threshold
+
+# Influencer analysis thresholds
+market_intelligence_tier1_influencers: ["elonmusk", "vitalikbuterin", "cz_binance", "naval", "balajis"]  # Tier 1 influencers
+market_intelligence_tier2_influencers: ["michael_saylor", "rogerkver", "adam3us", "aantonop", "nic__carter"]  # Tier 2 influencers
+market_intelligence_tier3_influencers: ["crypto_rand", "cryptowhale", "cryptocurrency", "bitcoin", "ethereum"]  # Tier 3 influencers
+market_intelligence_influencer_activity_threshold: 0.6  # 60% influencer activity threshold
+market_intelligence_influence_score_threshold: 0.7  # 70% influence score threshold
+
+# Event detection thresholds
+market_intelligence_major_event_threshold: 0.8  # 80% major event threshold
+market_intelligence_market_moving_threshold: 0.7  # 70% market moving threshold
+market_intelligence_urgency_threshold: 0.6  # 60% urgency threshold
+
+# Trend analysis thresholds
+market_intelligence_trend_strength_threshold: 0.6  # 60% trend strength threshold
+market_intelligence_momentum_threshold: 0.5  # 50% momentum threshold
+market_intelligence_volume_trend_threshold: 0.4  # 40% volume trend threshold
+market_intelligence_price_trend_threshold: 0.5  # 50% price trend threshold
+market_intelligence_adoption_trend_threshold: 0.6  # 60% adoption trend threshold
+
+# Fear and greed analysis thresholds
+market_intelligence_fear_greed_extreme_greed: 75  # 75+ extreme greed
+market_intelligence_fear_greed_greed: 55  # 55+ greed
+market_intelligence_fear_greed_neutral: 45  # 45-55 neutral
+market_intelligence_fear_greed_fear: 25  # 25- fear
+market_intelligence_fear_greed_extreme_fear: 25  # 25- extreme fear
+
+# Market correlation analysis thresholds
+market_intelligence_btc_correlation_threshold: 0.5  # 50% BTC correlation threshold
+market_intelligence_eth_correlation_threshold: 0.4  # 40% ETH correlation threshold
+market_intelligence_market_correlation_threshold: 0.6  # 60% market correlation threshold
+market_intelligence_sector_correlation_threshold: 0.5  # 50% sector correlation threshold
+
+# Intelligence analysis features
+enable_news_sentiment_analysis: true  # Analyze news sentiment
+enable_social_sentiment_analysis: true  # Analyze social media sentiment
+enable_influencer_activity_analysis: true  # Analyze influencer activity
+enable_market_events_analysis: true  # Analyze market events
+enable_trend_analysis: true  # Analyze market trends
+enable_fear_greed_analysis: true  # Analyze fear and greed index
+enable_market_correlation_analysis: true  # Analyze market correlations
+
+# Intelligence insights and reporting
+enable_market_intelligence_insights: true  # Show market intelligence insights in trading loop
+enable_market_intelligence_reporting: true  # Include market intelligence metrics in notifications
+enable_market_intelligence_analytics: true  # Track market intelligence performance over time
+market_intelligence_analytics_retention_days: 90  # Days to retain market intelligence analytics
+enable_market_intelligence_recommendations: true  # Generate market intelligence recommendations
+
+# Market intelligence alerts and notifications
+enable_market_intelligence_alerts: true  # Enable market intelligence-based alerts
+market_intelligence_high_risk_threshold: 0.7  # Alert if market intelligence risk exceeds 70%
+market_intelligence_negative_sentiment_alert_threshold: 0.3  # Alert if negative sentiment detected
+market_intelligence_influencer_activity_alert_threshold: 0.8  # Alert if high influencer activity
+enable_market_intelligence_summary_reports: true  # Generate market intelligence summary reports
+market_intelligence_report_frequency: "daily"  # Market intelligence report frequency (daily, weekly, monthly)
+
+# Market intelligence performance tracking
+enable_market_intelligence_performance_tracking: true  # Track market intelligence performance
+market_intelligence_performance_metrics: ["news_quality", "social_quality", "influencer_quality", "event_quality", "trend_quality", "fear_greed_quality", "correlation_quality"]  # Metrics to track
+market_intelligence_benchmark_threshold: 0.8  # Benchmark threshold for market intelligence performance
+enable_market_intelligence_optimization_suggestions: true  # Generate market intelligence optimization suggestions
+
+# === AI Predictive Analytics Engine ===
+# Enable AI-powered predictive analytics for price movement prediction and optimal timing
+enable_ai_predictive_analytics: true  # Enable AI predictive analytics
+predictive_analytics_cache_duration: 180  # Cache predictions for 3 minutes (seconds)
+predictive_analytics_api_timeout: 20  # API timeout for predictive analytics (seconds)
+predictive_analytics_max_retries: 3  # Maximum retries for predictive analytics
+
+# Prediction analysis timeframes
+predictive_analytics_timeframes: ["1m", "5m", "15m", "1h", "4h", "1d"]  # Timeframes to analyze
+predictive_analytics_horizons: [5, 15, 30, 60, 240, 1440]  # Prediction horizons in minutes
+predictive_analytics_volatility_windows: [5, 15, 30, 60, 240]  # Volatility analysis windows in minutes
+
+# Prediction factor weights (must sum to 1.0)
+predictive_analytics_technical_analysis_weight: 0.25  # 25% weight for technical analysis
+predictive_analytics_sentiment_analysis_weight: 0.20  # 20% weight for sentiment analysis
+predictive_analytics_volume_analysis_weight: 0.15  # 15% weight for volume analysis
+predictive_analytics_market_regime_weight: 0.15  # 15% weight for market regime
+predictive_analytics_news_impact_weight: 0.10  # 10% weight for news impact
+predictive_analytics_social_momentum_weight: 0.10  # 10% weight for social momentum
+predictive_analytics_correlation_analysis_weight: 0.05  # 5% weight for correlation analysis
+
+# Technical analysis thresholds
+predictive_analytics_rsi_oversold: 30  # RSI oversold threshold
+predictive_analytics_rsi_overbought: 70  # RSI overbought threshold
+predictive_analytics_macd_signal_threshold: 0.1  # MACD signal threshold
+predictive_analytics_bollinger_bands_threshold: 2.0  # Bollinger Bands threshold
+predictive_analytics_support_resistance_threshold: 0.02  # 2% support/resistance threshold
+
+# Sentiment analysis thresholds
+predictive_analytics_positive_sentiment_threshold: 0.6  # 60% positive sentiment threshold
+predictive_analytics_negative_sentiment_threshold: 0.4  # 40% negative sentiment threshold
+predictive_analytics_very_positive_threshold: 0.8  # 80% very positive threshold
+predictive_analytics_very_negative_threshold: 0.2  # 20% very negative threshold
+
+# Volume analysis thresholds
+predictive_analytics_volume_spike_threshold: 2.0  # 2x volume spike threshold
+predictive_analytics_volume_momentum_threshold: 1.5  # 1.5x volume momentum threshold
+predictive_analytics_volume_trend_threshold: 0.6  # 60% volume trend threshold
+
+# Market regime thresholds
+predictive_analytics_bull_market_threshold: 0.6  # 60% bull market threshold
+predictive_analytics_bear_market_threshold: 0.4  # 40% bear market threshold
+predictive_analytics_sideways_market_threshold: 0.5  # 50% sideways market threshold
+predictive_analytics_volatile_market_threshold: 0.7  # 70% volatile market threshold
+
+# News impact thresholds
+predictive_analytics_major_news_threshold: 0.8  # 80% major news impact threshold
+predictive_analytics_breaking_news_threshold: 0.9  # 90% breaking news impact threshold
+predictive_analytics_news_sentiment_threshold: 0.6  # 60% news sentiment threshold
+
+# Social momentum thresholds
+predictive_analytics_viral_threshold: 1000  # 1000+ engagements for viral
+predictive_analytics_trending_threshold: 100  # 100+ mentions for trending
+predictive_analytics_social_momentum_threshold: 0.6  # 60% social momentum threshold
+
+# Correlation analysis thresholds
+predictive_analytics_strong_correlation_threshold: 0.7  # 70% strong correlation threshold
+predictive_analytics_weak_correlation_threshold: 0.3  # 30% weak correlation threshold
+predictive_analytics_correlation_breakdown_threshold: 0.5  # 50% correlation breakdown threshold
+
+# Prediction analysis features
+enable_technical_analysis: true  # Analyze technical indicators
+enable_sentiment_analysis: true  # Analyze sentiment momentum
+enable_volume_analysis: true  # Analyze volume patterns
+enable_market_regime_analysis: true  # Analyze market regime
+enable_news_impact_analysis: true  # Analyze news impact
+enable_social_momentum_analysis: true  # Analyze social momentum
+enable_correlation_analysis: true  # Analyze correlation patterns
+
+# Prediction insights and reporting
+enable_predictive_analytics_insights: true  # Show predictive analytics insights in trading loop
+enable_predictive_analytics_reporting: true  # Include predictive analytics metrics in notifications
+enable_predictive_analytics_analytics: true  # Track predictive analytics performance over time
+predictive_analytics_analytics_retention_days: 90  # Days to retain predictive analytics analytics
+enable_predictive_analytics_recommendations: true  # Generate predictive analytics recommendations
+
+# Predictive analytics alerts and notifications
+enable_predictive_analytics_alerts: true  # Enable predictive analytics-based alerts
+predictive_analytics_high_risk_threshold: 0.7  # Alert if prediction risk exceeds 70%
+predictive_analytics_low_confidence_threshold: 0.3  # Alert if prediction confidence below 30%
+predictive_analytics_strong_signal_threshold: 0.8  # Alert if strong prediction signal
+enable_predictive_analytics_summary_reports: true  # Generate predictive analytics summary reports
+predictive_analytics_report_frequency: "daily"  # Predictive analytics report frequency (daily, weekly, monthly)
+
+# Predictive analytics performance tracking
+enable_predictive_analytics_performance_tracking: true  # Track predictive analytics performance
+predictive_analytics_performance_metrics: ["technical_accuracy", "sentiment_accuracy", "volume_accuracy", "regime_accuracy", "news_accuracy", "social_accuracy", "correlation_accuracy"]  # Metrics to track
+predictive_analytics_benchmark_threshold: 0.8  # Benchmark threshold for predictive analytics performance
+enable_predictive_analytics_optimization_suggestions: true  # Generate predictive analytics optimization suggestions
+
+# === AI Dynamic Strategy Selector ===
+# Enable AI-powered dynamic strategy selection for optimal performance across market conditions
+enable_ai_dynamic_strategy_selector: true  # Enable AI dynamic strategy selector
+dynamic_strategy_cache_duration: 300  # Cache strategy selection for 5 minutes (seconds)
+dynamic_strategy_api_timeout: 15  # API timeout for strategy selection (seconds)
+dynamic_strategy_max_retries: 3  # Maximum retries for strategy selection
+
+# Available trading strategies
+dynamic_strategy_available_strategies: ["momentum_strategy", "mean_reversion_strategy", "breakout_strategy", "scalping_strategy", "swing_strategy", "trend_following_strategy"]  # Available strategies
+dynamic_strategy_strategy_names: {
+  "momentum_strategy": "Momentum Strategy",
+  "mean_reversion_strategy": "Mean Reversion Strategy", 
+  "breakout_strategy": "Breakout Strategy",
+  "scalping_strategy": "Scalping Strategy",
+  "swing_strategy": "Swing Strategy",
+  "trend_following_strategy": "Trend Following Strategy"
+}  # Strategy display names
+
+# Strategy selection factor weights (must sum to 1.0)
+dynamic_strategy_market_regime_weight: 0.30  # 30% weight for market regime
+dynamic_strategy_performance_history_weight: 0.25  # 25% weight for performance history
+dynamic_strategy_risk_tolerance_weight: 0.20  # 20% weight for risk tolerance
+dynamic_strategy_market_volatility_weight: 0.15  # 15% weight for market volatility
+dynamic_strategy_timeframe_preference_weight: 0.10  # 10% weight for timeframe preference
+
+# Market regime thresholds
+dynamic_strategy_bull_market_threshold: 0.6  # 60% bull market threshold
+dynamic_strategy_bear_market_threshold: 0.4  # 40% bear market threshold
+dynamic_strategy_sideways_market_threshold: 0.5  # 50% sideways market threshold
+dynamic_strategy_volatile_market_threshold: 0.7  # 70% volatile market threshold
+
+# Performance tracking thresholds
+dynamic_strategy_high_performance_threshold: 0.8  # 80% high performance threshold
+dynamic_strategy_medium_performance_threshold: 0.6  # 60% medium performance threshold
+dynamic_strategy_low_performance_threshold: 0.4  # 40% low performance threshold
+
+# Risk tolerance levels
+dynamic_strategy_risk_tolerance_levels: {
+  "conservative": 0.3,  # 30% risk tolerance
+  "moderate": 0.5,  # 50% risk tolerance
+  "aggressive": 0.7  # 70% risk tolerance
+}  # Risk tolerance levels
+
+# Volatility thresholds
+dynamic_strategy_low_volatility_threshold: 0.3  # 30% low volatility threshold
+dynamic_strategy_high_volatility_threshold: 0.7  # 70% high volatility threshold
+
+# Timeframe preferences
+dynamic_strategy_timeframe_preferences: {
+  "very_short_term": 1,  # 1 minute
+  "short_term": 5,  # 5 minutes
+  "medium_term": 15,  # 15 minutes
+  "long_term": 60  # 60 minutes
+}  # Timeframe preferences in minutes
+
+# Strategy characteristics
+dynamic_strategy_momentum_strategy: {
+  "name": "Momentum Strategy",
+  "description": "Focuses on trending markets with strong momentum",
+  "market_conditions": ["bull_market", "volatile_market"],
+  "risk_level": "medium",
+  "timeframe": "short_term",
+  "position_sizing": "aggressive"
+}  # Momentum strategy configuration
+
+dynamic_strategy_mean_reversion_strategy: {
+  "name": "Mean Reversion Strategy",
+  "description": "Focuses on oversold/overbought conditions",
+  "market_conditions": ["sideways_market", "bear_market"],
+  "risk_level": "low",
+  "timeframe": "short_term",
+  "position_sizing": "conservative"
+}  # Mean reversion strategy configuration
+
+dynamic_strategy_breakout_strategy: {
+  "name": "Breakout Strategy",
+  "description": "Focuses on price breakouts and volume spikes",
+  "market_conditions": ["bull_market", "volatile_market"],
+  "risk_level": "high",
+  "timeframe": "medium_term",
+  "position_sizing": "aggressive"
+}  # Breakout strategy configuration
+
+dynamic_strategy_scalping_strategy: {
+  "name": "Scalping Strategy",
+  "description": "Focuses on quick profits from small price movements",
+  "market_conditions": ["sideways_market", "volatile_market"],
+  "risk_level": "low",
+  "timeframe": "very_short_term",
+  "position_sizing": "conservative"
+}  # Scalping strategy configuration
+
+dynamic_strategy_swing_strategy: {
+  "name": "Swing Strategy",
+  "description": "Focuses on medium-term price swings",
+  "market_conditions": ["bull_market", "bear_market"],
+  "risk_level": "medium",
+  "timeframe": "medium_term",
+  "position_sizing": "moderate"
+}  # Swing strategy configuration
+
+dynamic_strategy_trend_following_strategy: {
+  "name": "Trend Following Strategy",
+  "description": "Focuses on following established trends",
+  "market_conditions": ["bull_market", "bear_market"],
+  "risk_level": "medium",
+  "timeframe": "long_term",
+  "position_sizing": "moderate"
+}  # Trend following strategy configuration
+
+# Strategy selection features
+enable_market_regime_analysis: true  # Analyze market regime for strategy selection
+enable_performance_history_analysis: true  # Analyze historical strategy performance
+enable_risk_tolerance_analysis: true  # Analyze risk tolerance for strategy selection
+enable_volatility_analysis: true  # Analyze market volatility for strategy selection
+enable_timeframe_analysis: true  # Analyze timeframe preferences for strategy selection
+
+# Strategy insights and reporting
+enable_dynamic_strategy_insights: true  # Show dynamic strategy insights in trading loop
+enable_dynamic_strategy_reporting: true  # Include dynamic strategy metrics in notifications
+enable_dynamic_strategy_analytics: true  # Track dynamic strategy performance over time
+dynamic_strategy_analytics_retention_days: 90  # Days to retain dynamic strategy analytics
+enable_dynamic_strategy_recommendations: true  # Generate dynamic strategy recommendations
+
+# Dynamic strategy alerts and notifications
+enable_dynamic_strategy_alerts: true  # Enable dynamic strategy-based alerts
+dynamic_strategy_low_confidence_threshold: 0.3  # Alert if strategy confidence below 30%
+dynamic_strategy_performance_decline_threshold: 0.2  # Alert if strategy performance declines 20%
+dynamic_strategy_regime_change_threshold: 0.5  # Alert if market regime changes significantly
+enable_dynamic_strategy_summary_reports: true  # Generate dynamic strategy summary reports
+dynamic_strategy_report_frequency: "daily"  # Dynamic strategy report frequency (daily, weekly, monthly)
+
+# Dynamic strategy performance tracking
+enable_dynamic_strategy_performance_tracking: true  # Track dynamic strategy performance
+dynamic_strategy_performance_metrics: ["strategy_accuracy", "regime_alignment", "performance_consistency", "risk_adjustment", "volatility_adaptation", "timeframe_optimization"]  # Metrics to track
+dynamic_strategy_benchmark_threshold: 0.8  # Benchmark threshold for dynamic strategy performance
+enable_dynamic_strategy_optimization_suggestions: true  # Generate dynamic strategy optimization suggestions
+
+# === AI Risk Prediction & Prevention System ===
+# Enable AI-powered risk prediction and prevention for capital protection
+enable_ai_risk_prediction_prevention: true  # Enable AI risk prediction and prevention
+risk_prediction_cache_duration: 120  # Cache risk analysis for 2 minutes (seconds)
+risk_prediction_api_timeout: 10  # API timeout for risk analysis (seconds)
+risk_prediction_max_retries: 3  # Maximum retries for risk analysis
+
+# Risk categories and severity levels
+risk_prediction_categories: ["flash_crash", "rug_pull", "market_manipulation", "liquidity_drain", "correlation_breakdown", "black_swan"]  # Risk categories to monitor
+risk_prediction_severity_levels: {
+  "low": 0.3,  # 30% risk level
+  "medium": 0.5,  # 50% risk level
+  "high": 0.7,  # 70% risk level
+  "critical": 0.9  # 90% risk level
+}  # Risk severity levels
+
+# Risk prediction factor weights (must sum to 1.0)
+risk_prediction_price_volatility_weight: 0.25  # 25% weight for price volatility
+risk_prediction_volume_anomalies_weight: 0.20  # 20% weight for volume anomalies
+risk_prediction_liquidity_analysis_weight: 0.20  # 20% weight for liquidity analysis
+risk_prediction_market_manipulation_weight: 0.15  # 15% weight for manipulation detection
+risk_prediction_correlation_analysis_weight: 0.10  # 10% weight for correlation analysis
+risk_prediction_news_sentiment_weight: 0.10  # 10% weight for news sentiment
+
+# Flash crash detection thresholds
+risk_prediction_flash_crash_price_drop_threshold: 0.15  # 15% price drop threshold
+risk_prediction_flash_crash_volume_spike_threshold: 3.0  # 3x volume spike threshold
+risk_prediction_flash_crash_time_window: 300  # 5 minutes time window (seconds)
+risk_prediction_flash_crash_confidence_threshold: 0.8  # 80% confidence threshold
+
+# Rug pull detection thresholds
+risk_prediction_rug_pull_liquidity_drop_threshold: 0.5  # 50% liquidity drop threshold
+risk_prediction_rug_pull_volume_drop_threshold: 0.7  # 70% volume drop threshold
+risk_prediction_rug_pull_price_drop_threshold: 0.3  # 30% price drop threshold
+risk_prediction_rug_pull_confidence_threshold: 0.7  # 70% confidence threshold
+
+# Market manipulation detection thresholds
+risk_prediction_manipulation_price_spike_threshold: 0.2  # 20% price spike threshold
+risk_prediction_manipulation_volume_spike_threshold: 5.0  # 5x volume spike threshold
+risk_prediction_manipulation_pattern_threshold: 0.8  # 80% pattern threshold
+risk_prediction_manipulation_confidence_threshold: 0.6  # 60% confidence threshold
+
+# Liquidity drain detection thresholds
+risk_prediction_liquidity_drain_threshold: 0.3  # 30% liquidity drain threshold
+risk_prediction_liquidity_drain_volume_threshold: 0.5  # 50% volume drop threshold
+risk_prediction_liquidity_drain_price_threshold: 0.1  # 10% price drop threshold
+risk_prediction_liquidity_drain_confidence_threshold: 0.7  # 70% confidence threshold
+
+# Correlation breakdown detection thresholds
+risk_prediction_correlation_breakdown_threshold: 0.3  # 30% correlation breakdown threshold
+risk_prediction_correlation_breakdown_time_window: 600  # 10 minutes time window (seconds)
+risk_prediction_correlation_breakdown_confidence_threshold: 0.6  # 60% confidence threshold
+
+# Black swan event detection thresholds
+risk_prediction_black_swan_price_drop_threshold: 0.25  # 25% price drop threshold
+risk_prediction_black_swan_volume_spike_threshold: 10.0  # 10x volume spike threshold
+risk_prediction_black_swan_news_impact_threshold: 0.9  # 90% news impact threshold
+risk_prediction_black_swan_confidence_threshold: 0.9  # 90% confidence threshold
+
+# Risk prediction features
+enable_flash_crash_detection: true  # Detect flash crash risks
+enable_rug_pull_detection: true  # Detect rug pull risks
+enable_manipulation_detection: true  # Detect market manipulation
+enable_liquidity_drain_detection: true  # Detect liquidity drain risks
+enable_correlation_breakdown_detection: true  # Detect correlation breakdown
+enable_black_swan_detection: true  # Detect black swan events
+
+# Risk insights and reporting
+enable_risk_prediction_insights: true  # Show risk prediction insights in trading loop
+enable_risk_prediction_reporting: true  # Include risk prediction metrics in notifications
+enable_risk_prediction_analytics: true  # Track risk prediction performance over time
+risk_prediction_analytics_retention_days: 90  # Days to retain risk prediction analytics
+enable_risk_prediction_recommendations: true  # Generate risk prediction recommendations
+
+# Risk prediction alerts and notifications
+enable_risk_prediction_alerts: true  # Enable risk prediction-based alerts
+risk_prediction_critical_risk_threshold: 0.9  # Alert if critical risk detected
+risk_prediction_high_risk_threshold: 0.7  # Alert if high risk detected
+risk_prediction_medium_risk_threshold: 0.5  # Alert if medium risk detected
+enable_risk_prediction_emergency_protocols: true  # Enable emergency protocols for critical risk
+enable_risk_prediction_summary_reports: true  # Generate risk prediction summary reports
+risk_prediction_report_frequency: "daily"  # Risk prediction report frequency (daily, weekly, monthly)
+
+# Risk prediction performance tracking
+enable_risk_prediction_performance_tracking: true  # Track risk prediction performance
+risk_prediction_performance_metrics: ["flash_crash_accuracy", "rug_pull_accuracy", "manipulation_accuracy", "liquidity_drain_accuracy", "correlation_breakdown_accuracy", "black_swan_accuracy"]  # Metrics to track
+risk_prediction_benchmark_threshold: 0.8  # Benchmark threshold for risk prediction performance
+enable_risk_prediction_optimization_suggestions: true  # Generate risk prediction optimization suggestions

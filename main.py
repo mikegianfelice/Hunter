@@ -79,6 +79,10 @@ from ai_risk_assessor import ai_risk_assessor
 from ai_pattern_recognizer import ai_pattern_recognizer
 from ai_execution_optimizer import ai_execution_optimizer
 from ai_microstructure_analyzer import ai_microstructure_analyzer
+from ai_market_intelligence_aggregator import ai_market_intelligence_aggregator
+from ai_predictive_analytics_engine import ai_predictive_analytics_engine
+from ai_dynamic_strategy_selector import ai_dynamic_strategy_selector
+from ai_risk_prediction_prevention_system import ai_risk_prediction_prevention_system
 
 def calculate_ai_enhanced_quality_score(token: Dict) -> float:
     """
@@ -311,7 +315,75 @@ def check_practical_buy_signal(token: Dict) -> bool:
         print(f"❌ {symbol}: High microstructure risk detected ({risk_category})")
         return False
     
-    print(f"✅ {symbol}: Quality score {quality_score:.1f}, Volume ${volume_24h:,.0f}, Liquidity ${liquidity:,.0f}, Risk: {risk_category} ({risk_score:.2f}), Pattern: {overall_signal} ({pattern_strength:.2f}), Microstructure: {microstructure_score:.2f} (Regime: {regime})")
+    # AI market intelligence analysis
+    intelligence_analysis = ai_market_intelligence_aggregator.analyze_market_intelligence(token, 5.0)
+    intelligence_score = intelligence_analysis['intelligence_score']
+    trading_recommendation = intelligence_analysis['trading_recommendations']['trading_recommendation']
+    market_sentiment = intelligence_analysis['market_sentiment']['sentiment_category']
+    
+    # Check market intelligence trading recommendation
+    if trading_recommendation in ['sell', 'strong_sell']:
+        print(f"❌ {symbol}: Market intelligence recommends {trading_recommendation}")
+        return False
+    
+    # Check market sentiment
+    if market_sentiment in ['very_negative', 'negative']:
+        print(f"❌ {symbol}: Negative market sentiment detected ({market_sentiment})")
+        return False
+    
+    # AI predictive analytics analysis
+    prediction_analysis = ai_predictive_analytics_engine.predict_price_movement(token, 5.0)
+    prediction_score = prediction_analysis['prediction_score']
+    trading_signal = prediction_analysis['trading_signals']['trading_signal']
+    confidence_level = prediction_analysis['confidence_level']
+    
+    # Check predictive analytics trading signal
+    if trading_signal in ['sell', 'strong_sell']:
+        print(f"❌ {symbol}: Predictive analytics recommends {trading_signal}")
+        return False
+    
+    # Check prediction confidence
+    if confidence_level == 'low' and prediction_score < 0.4:
+        print(f"❌ {symbol}: Low prediction confidence ({confidence_level}) with score {prediction_score:.2f}")
+        return False
+    
+    # AI dynamic strategy selection
+    market_conditions = {
+        'bull_market_probability': 0.6 if regime == 'bull' else 0.3,
+        'bear_market_probability': 0.3 if regime == 'bear' else 0.6,
+        'sideways_market_probability': 0.4 if regime == 'sideways' else 0.3,
+        'volatile_market_probability': 0.5,
+        'volatility_score': 0.5,
+        'volatility_trend': 'stable',
+        'volatility_regime': 'moderate'
+    }
+    
+    strategy_selection = ai_dynamic_strategy_selector.select_optimal_strategy(token, 5.0, market_conditions)
+    selected_strategy = strategy_selection['selected_strategy']
+    strategy_confidence = strategy_selection['strategy_confidence']
+    
+    # Check strategy confidence
+    if strategy_confidence == 'low' and selected_strategy in ['breakout_strategy', 'momentum_strategy']:
+        print(f"❌ {symbol}: Low strategy confidence ({strategy_confidence}) for {selected_strategy}")
+        return False
+    
+    # AI risk prediction and prevention analysis
+    risk_analysis = ai_risk_prediction_prevention_system.predict_risk(token, 5.0)
+    risk_score = risk_analysis['risk_score']
+    risk_level = risk_analysis['risk_level']
+    risk_confidence = risk_analysis['risk_confidence']
+    
+    # Check critical risk levels
+    if risk_level in ['critical', 'high']:
+        print(f"❌ {symbol}: High risk detected ({risk_level}) with score {risk_score:.2f}")
+        return False
+    
+    # Check risk confidence for medium risk
+    if risk_level == 'medium' and risk_confidence == 'high' and risk_score > 0.6:
+        print(f"❌ {symbol}: Medium risk with high confidence ({risk_score:.2f})")
+        return False
+    
+    print(f"✅ {symbol}: Quality score {quality_score:.1f}, Volume ${volume_24h:,.0f}, Liquidity ${liquidity:,.0f}, Risk: {risk_category} ({risk_score:.2f}), Pattern: {overall_signal} ({pattern_strength:.2f}), Microstructure: {microstructure_score:.2f}, Intelligence: {intelligence_score:.2f}, Sentiment: {market_sentiment}, Prediction: {prediction_score:.2f} ({trading_signal}), Strategy: {selected_strategy} ({strategy_confidence}), Risk: {risk_level} ({risk_score:.2f}) (Regime: {regime})")
     return True
 
 def get_dynamic_position_size(token: Dict) -> float:
@@ -680,6 +752,18 @@ def practical_trade_loop():
     
     # Show AI microstructure analysis insights
     _show_microstructure_insights()
+    
+    # Show AI market intelligence insights
+    _show_market_intelligence_insights()
+    
+    # Show AI predictive analytics insights
+    _show_predictive_analytics_insights()
+    
+    # Show AI dynamic strategy selector insights
+    _show_dynamic_strategy_insights()
+    
+    # Show AI risk prediction and prevention insights
+    _show_risk_prediction_insights()
 
 def _print_practical_summary(rejections, successful_trades):
     """Print trading summary"""
@@ -1039,6 +1123,306 @@ def _show_microstructure_insights():
                 
     except Exception as e:
         log_print(f"⚠️ Could not generate microstructure insights: {e}")
+
+def _show_market_intelligence_insights():
+    """Show AI market intelligence insights"""
+    try:
+        # Get current open positions for intelligence analysis
+        open_positions = performance_tracker.get_open_trades()
+        
+        if not open_positions:
+            log_print("\n🧠 Market Intelligence: No open positions to analyze")
+            return
+        
+        # Create position data for intelligence analysis
+        current_positions = []
+        trade_amounts = []
+        for pos in open_positions:
+            current_positions.append({
+                'symbol': pos.get('symbol', 'UNKNOWN'),
+                'priceUsd': pos.get('entry_price', 0),
+                'volume24h': pos.get('volume_24h', 0),
+                'liquidity': pos.get('liquidity', 0),
+                'chainId': pos.get('chain_id', 'ethereum')
+            })
+            trade_amounts.append(pos.get('position_size_usd', 5.0))
+        
+        # Get intelligence summary
+        intelligence_summary = ai_market_intelligence_aggregator.get_intelligence_summary(current_positions, trade_amounts)
+        
+        log_print("\n🧠 AI Market Intelligence Insights")
+        log_print(f"• Total Positions: {intelligence_summary['total_tokens']}")
+        log_print(f"• High Intelligence: {intelligence_summary['high_intelligence']}")
+        log_print(f"• Medium Intelligence: {intelligence_summary['medium_intelligence']}")
+        log_print(f"• Low Intelligence: {intelligence_summary['low_intelligence']}")
+        log_print(f"• Overall Intelligence: {intelligence_summary['overall_intelligence']}")
+        
+        # Show individual position intelligence analysis
+        intelligence_summaries = intelligence_summary.get('intelligence_summaries', [])
+        if intelligence_summaries:
+            log_print("\n📊 Position Intelligence Analysis:")
+            for intel_info in intelligence_summaries[:5]:  # Show top 5 positions
+                symbol = intel_info['symbol']
+                intelligence_score = intel_info['intelligence_score']
+                market_sentiment = intel_info['market_sentiment']
+                trading_recommendation = intel_info['trading_recommendation']
+                
+                intelligence_emoji = "🧠" if intelligence_score > 0.8 else "🔍" if intelligence_score > 0.6 else "⚠️"
+                log_print(f"  {intelligence_emoji} {symbol}: {trading_recommendation} (score: {intelligence_score:.2f}, sentiment: {market_sentiment})")
+        
+        # Show intelligence recommendations
+        if intelligence_summary['overall_intelligence'] == 'high':
+            log_print("\n✅ High Intelligence Portfolio:")
+            log_print("  • Excellent market intelligence")
+            log_print("  • Strong news and social sentiment")
+            log_print("  • High influencer activity")
+            log_print("  • Continue current strategy")
+        elif intelligence_summary['overall_intelligence'] == 'medium':
+            log_print("\n⚠️ Medium Intelligence Portfolio:")
+            log_print("  • Mixed market intelligence")
+            log_print("  • Monitor news and social sentiment")
+            log_print("  • Consider intelligence-based adjustments")
+        else:
+            log_print("\n⚠️ Low Intelligence Portfolio:")
+            log_print("  • Limited market intelligence")
+            log_print("  • Weak news and social sentiment")
+            log_print("  • Consider waiting for better conditions")
+                
+    except Exception as e:
+        log_print(f"⚠️ Could not generate market intelligence insights: {e}")
+
+def _show_predictive_analytics_insights():
+    """Show AI predictive analytics insights"""
+    try:
+        # Get current open positions for predictive analysis
+        open_positions = performance_tracker.get_open_trades()
+        
+        if not open_positions:
+            log_print("\n🔮 Predictive Analytics: No open positions to analyze")
+            return
+        
+        # Create position data for predictive analysis
+        current_positions = []
+        trade_amounts = []
+        for pos in open_positions:
+            current_positions.append({
+                'symbol': pos.get('symbol', 'UNKNOWN'),
+                'priceUsd': pos.get('entry_price', 0),
+                'volume24h': pos.get('volume_24h', 0),
+                'liquidity': pos.get('liquidity', 0),
+                'chainId': pos.get('chain_id', 'ethereum')
+            })
+            trade_amounts.append(pos.get('position_size_usd', 5.0))
+        
+        # Get prediction summary
+        prediction_summary = ai_predictive_analytics_engine.get_prediction_summary(current_positions, trade_amounts)
+        
+        log_print("\n🔮 AI Predictive Analytics Insights")
+        log_print(f"• Total Positions: {prediction_summary['total_tokens']}")
+        log_print(f"• High Prediction: {prediction_summary['high_prediction']}")
+        log_print(f"• Medium Prediction: {prediction_summary['medium_prediction']}")
+        log_print(f"• Low Prediction: {prediction_summary['low_prediction']}")
+        log_print(f"• Overall Prediction: {prediction_summary['overall_prediction']}")
+        
+        # Show individual position prediction analysis
+        prediction_summaries = prediction_summary.get('prediction_summaries', [])
+        if prediction_summaries:
+            log_print("\n📊 Position Prediction Analysis:")
+            for pred_info in prediction_summaries[:5]:  # Show top 5 positions
+                symbol = pred_info['symbol']
+                prediction_score = pred_info['prediction_score']
+                trading_signal = pred_info['trading_signal']
+                confidence_level = pred_info['confidence_level']
+                
+                prediction_emoji = "🔮" if prediction_score > 0.8 else "📈" if prediction_score > 0.6 else "⚠️"
+                log_print(f"  {prediction_emoji} {symbol}: {trading_signal} (score: {prediction_score:.2f}, confidence: {confidence_level})")
+        
+        # Show prediction recommendations
+        if prediction_summary['overall_prediction'] == 'high':
+            log_print("\n✅ High Prediction Portfolio:")
+            log_print("  • Excellent prediction accuracy")
+            log_print("  • Strong technical and sentiment signals")
+            log_print("  • High confidence predictions")
+            log_print("  • Continue current strategy")
+        elif prediction_summary['overall_prediction'] == 'medium':
+            log_print("\n⚠️ Medium Prediction Portfolio:")
+            log_print("  • Mixed prediction accuracy")
+            log_print("  • Monitor prediction signals")
+            log_print("  • Consider prediction-based adjustments")
+        else:
+            log_print("\n⚠️ Low Prediction Portfolio:")
+            log_print("  • Limited prediction accuracy")
+            log_print("  • Weak prediction signals")
+            log_print("  • Consider waiting for better conditions")
+                
+    except Exception as e:
+        log_print(f"⚠️ Could not generate predictive analytics insights: {e}")
+
+def _show_dynamic_strategy_insights():
+    """Show AI dynamic strategy selector insights"""
+    try:
+        # Get current open positions for strategy analysis
+        open_positions = performance_tracker.get_open_trades()
+        
+        if not open_positions:
+            log_print("\n🎯 Dynamic Strategy: No open positions to analyze")
+            return
+        
+        # Create position data for strategy analysis
+        current_positions = []
+        trade_amounts = []
+        market_conditions = []
+        for pos in open_positions:
+            current_positions.append({
+                'symbol': pos.get('symbol', 'UNKNOWN'),
+                'priceUsd': pos.get('entry_price', 0),
+                'volume24h': pos.get('volume_24h', 0),
+                'liquidity': pos.get('liquidity', 0),
+                'chainId': pos.get('chain_id', 'ethereum')
+            })
+            trade_amounts.append(pos.get('position_size_usd', 5.0))
+            
+            # Create market conditions for each position
+            market_conditions.append({
+                'bull_market_probability': 0.6,
+                'bear_market_probability': 0.3,
+                'sideways_market_probability': 0.4,
+                'volatile_market_probability': 0.5,
+                'volatility_score': 0.5,
+                'volatility_trend': 'stable',
+                'volatility_regime': 'moderate'
+            })
+        
+        # Get strategy summary
+        strategy_summary = ai_dynamic_strategy_selector.get_strategy_summary(current_positions, trade_amounts, market_conditions)
+        
+        log_print("\n🎯 AI Dynamic Strategy Selector Insights")
+        log_print(f"• Total Positions: {strategy_summary['total_tokens']}")
+        log_print(f"• Most Common Strategy: {strategy_summary['most_common_strategy']}")
+        log_print(f"• Overall Confidence: {strategy_summary['overall_confidence']}")
+        
+        # Show strategy distribution
+        strategy_counts = strategy_summary.get('strategy_counts', {})
+        if strategy_counts:
+            log_print(f"\n📊 Strategy Distribution:")
+            for strategy, count in strategy_counts.items():
+                strategy_name = strategy.replace('_strategy', '').replace('_', ' ').title()
+                log_print(f"  • {strategy_name}: {count}")
+        
+        # Show confidence distribution
+        confidence_counts = strategy_summary.get('confidence_counts', {})
+        if confidence_counts:
+            log_print(f"\n🎯 Confidence Distribution:")
+            for confidence, count in confidence_counts.items():
+                confidence_emoji = "🟢" if confidence == 'high' else "🟡" if confidence == 'medium' else "🔴"
+                log_print(f"  {confidence_emoji} {confidence.title()}: {count}")
+        
+        # Show individual position strategy analysis
+        strategy_summaries = strategy_summary.get('strategy_summaries', [])
+        if strategy_summaries:
+            log_print("\n📊 Position Strategy Analysis:")
+            for strategy_info in strategy_summaries[:5]:  # Show top 5 positions
+                symbol = strategy_info['symbol']
+                selected_strategy = strategy_info['selected_strategy']
+                strategy_confidence = strategy_info['strategy_confidence']
+                regime = strategy_info['regime']
+                
+                strategy_emoji = "🎯" if strategy_confidence == 'high' else "📈" if strategy_confidence == 'medium' else "⚠️"
+                strategy_name = selected_strategy.replace('_strategy', '').replace('_', ' ').title()
+                log_print(f"  {strategy_emoji} {symbol}: {strategy_name} (confidence: {strategy_confidence}, regime: {regime})")
+        
+        # Show strategy recommendations
+        if strategy_summary['overall_confidence'] == 'high':
+            log_print("\n✅ High Strategy Confidence:")
+            log_print("  • Excellent strategy selection")
+            log_print("  • Strong market regime alignment")
+            log_print("  • High historical performance")
+            log_print("  • Continue current strategy mix")
+        elif strategy_summary['overall_confidence'] == 'medium':
+            log_print("\n⚠️ Medium Strategy Confidence:")
+            log_print("  • Mixed strategy performance")
+            log_print("  • Monitor strategy effectiveness")
+            log_print("  • Consider strategy adjustments")
+        else:
+            log_print("\n⚠️ Low Strategy Confidence:")
+            log_print("  • Limited strategy confidence")
+            log_print("  • Weak market regime alignment")
+            log_print("  • Consider strategy optimization")
+                
+    except Exception as e:
+        log_print(f"⚠️ Could not generate dynamic strategy insights: {e}")
+
+def _show_risk_prediction_insights():
+    """Show AI risk prediction and prevention insights"""
+    try:
+        # Get current open positions for risk analysis
+        open_positions = performance_tracker.get_open_trades()
+        
+        if not open_positions:
+            log_print("\n🛡️ Risk Prediction: No open positions to analyze")
+            return
+        
+        # Create position data for risk analysis
+        current_positions = []
+        trade_amounts = []
+        for pos in open_positions:
+            current_positions.append({
+                'symbol': pos.get('symbol', 'UNKNOWN'),
+                'priceUsd': pos.get('entry_price', 0),
+                'volume24h': pos.get('volume_24h', 0),
+                'liquidity': pos.get('liquidity', 0),
+                'chainId': pos.get('chain_id', 'ethereum')
+            })
+            trade_amounts.append(pos.get('position_size_usd', 5.0))
+        
+        # Get risk summary
+        risk_summary = ai_risk_prediction_prevention_system.get_risk_summary(current_positions, trade_amounts)
+        
+        log_print("\n🛡️ AI Risk Prediction & Prevention Insights")
+        log_print(f"• Total Positions: {risk_summary['total_tokens']}")
+        log_print(f"• Critical Risk: {risk_summary['critical_risk']}")
+        log_print(f"• High Risk: {risk_summary['high_risk']}")
+        log_print(f"• Medium Risk: {risk_summary['medium_risk']}")
+        log_print(f"• Low Risk: {risk_summary['low_risk']}")
+        log_print(f"• Overall Risk: {risk_summary['overall_risk']}")
+        
+        # Show individual position risk analysis
+        risk_summaries = risk_summary.get('risk_summaries', [])
+        if risk_summaries:
+            log_print("\n📊 Position Risk Analysis:")
+            for risk_info in risk_summaries[:5]:  # Show top 5 positions
+                symbol = risk_info['symbol']
+                risk_score = risk_info['risk_score']
+                risk_level = risk_info['risk_level']
+                risk_confidence = risk_info['risk_confidence']
+                
+                risk_emoji = "🔴" if risk_level == 'critical' else "🟠" if risk_level == 'high' else "🟡" if risk_level == 'medium' else "🟢"
+                log_print(f"  {risk_emoji} {symbol}: {risk_level} (score: {risk_score:.2f}, confidence: {risk_confidence})")
+        
+        # Show risk recommendations
+        if risk_summary['overall_risk'] == 'critical':
+            log_print("\n🚨 CRITICAL RISK DETECTED:")
+            log_print("  • Exit all positions immediately")
+            log_print("  • Stop all new trades")
+            log_print("  • Activate emergency protocols")
+        elif risk_summary['overall_risk'] == 'high':
+            log_print("\n⚠️ HIGH RISK DETECTED:")
+            log_print("  • Reduce position sizes significantly")
+            log_print("  • Avoid new positions")
+            log_print("  • Monitor for exit signals")
+        elif risk_summary['overall_risk'] == 'medium':
+            log_print("\n⚠️ MEDIUM RISK DETECTED:")
+            log_print("  • Use conservative position sizing")
+            log_print("  • Monitor risk indicators")
+            log_print("  • Consider risk-adjusted strategies")
+        else:
+            log_print("\n✅ LOW RISK CONDITIONS:")
+            log_print("  • Normal trading conditions")
+            log_print("  • Continue current strategy")
+            log_print("  • Monitor for risk changes")
+                
+    except Exception as e:
+        log_print(f"⚠️ Could not generate risk prediction insights: {e}")
 
 def main():
     """Main entry point"""
