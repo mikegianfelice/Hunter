@@ -83,6 +83,14 @@ from ai_market_intelligence_aggregator import ai_market_intelligence_aggregator
 from ai_predictive_analytics_engine import ai_predictive_analytics_engine
 from ai_dynamic_strategy_selector import ai_dynamic_strategy_selector
 from ai_risk_prediction_prevention_system import ai_risk_prediction_prevention_system
+from ai_market_regime_transition_detector import ai_market_regime_transition_detector
+from ai_liquidity_flow_analyzer import ai_liquidity_flow_analyzer
+from ai_multi_timeframe_analysis_engine import ai_multi_timeframe_analysis_engine
+from ai_market_cycle_predictor import ai_market_cycle_predictor
+from ai_drawdown_protection_system import ai_drawdown_protection_system
+from ai_performance_attribution_analyzer import ai_performance_attribution_analyzer
+from ai_market_anomaly_detector import ai_market_anomaly_detector
+from ai_portfolio_rebalancing_engine import ai_portfolio_rebalancing_engine
 
 def calculate_ai_enhanced_quality_score(token: Dict) -> float:
     """
@@ -383,7 +391,106 @@ def check_practical_buy_signal(token: Dict) -> bool:
         print(f"❌ {symbol}: Medium risk with high confidence ({risk_score:.2f})")
         return False
     
-    print(f"✅ {symbol}: Quality score {quality_score:.1f}, Volume ${volume_24h:,.0f}, Liquidity ${liquidity:,.0f}, Risk: {risk_category} ({risk_score:.2f}), Pattern: {overall_signal} ({pattern_strength:.2f}), Microstructure: {microstructure_score:.2f}, Intelligence: {intelligence_score:.2f}, Sentiment: {market_sentiment}, Prediction: {prediction_score:.2f} ({trading_signal}), Strategy: {selected_strategy} ({strategy_confidence}), Risk: {risk_level} ({risk_score:.2f}) (Regime: {regime})")
+    # AI market regime transition detection
+    transition_analysis = ai_market_regime_transition_detector.detect_regime_transition(token, 5.0)
+    transition_probability = transition_analysis['transition_probability']
+    transition_confidence = transition_analysis['transition_confidence']
+    
+    # Check for high probability regime transition
+    if transition_probability > 0.8 and transition_confidence == 'high':
+        print(f"❌ {symbol}: High probability regime transition detected ({transition_probability:.2f})")
+        return False
+    
+    # AI liquidity flow analysis
+    liquidity_analysis = ai_liquidity_flow_analyzer.analyze_liquidity_flow(token, 5.0)
+    liquidity_score = liquidity_analysis['liquidity_score']
+    flow_recommendation = liquidity_analysis['flow_recommendations']['flow_recommendation']
+    
+    # Check liquidity flow recommendation
+    if flow_recommendation == 'avoid_trading':
+        print(f"❌ {symbol}: Liquidity flow analysis recommends avoiding trading")
+        return False
+    
+    # AI multi-timeframe analysis
+    timeframe_analysis = ai_multi_timeframe_analysis_engine.analyze_multi_timeframe(token, 5.0)
+    timeframe_score = timeframe_analysis['timeframe_score']
+    timeframe_signal = timeframe_analysis['timeframe_signals']['overall_signal']
+    
+    # Check multi-timeframe signal
+    if timeframe_signal in ['sell', 'strong_sell']:
+        print(f"❌ {symbol}: Multi-timeframe analysis recommends {timeframe_signal}")
+        return False
+    
+    # AI market cycle prediction
+    cycle_analysis = ai_market_cycle_predictor.predict_market_cycle(token, 5.0)
+    cycle_phase = cycle_analysis['cycle_phase']
+    cycle_confidence = cycle_analysis['cycle_confidence']
+    
+    # Check market cycle phase
+    if cycle_phase in ['decline', 'trough'] and cycle_confidence == 'high':
+        print(f"❌ {symbol}: Unfavorable market cycle phase ({cycle_phase})")
+        return False
+    
+    # AI drawdown protection analysis
+    portfolio_data = {
+        'total_value': sum(pos.get('position_size_usd', 0) for pos in performance_tracker.get_open_trades()),
+        'position_count': len(performance_tracker.get_open_trades()),
+        'timestamp': datetime.now().isoformat()
+    }
+    trade_history = performance_tracker.get_trade_history()
+    market_data = {'timestamp': datetime.now().isoformat(), 'regime': regime}
+    
+    drawdown_analysis = ai_drawdown_protection_system.analyze_drawdown_protection(portfolio_data, trade_history, market_data)
+    drawdown_severity = drawdown_analysis['drawdown_severity']
+    protection_urgency = drawdown_analysis['protection_urgency']
+    
+    # Check drawdown protection urgency
+    if protection_urgency in ['urgent', 'emergency']:
+        print(f"❌ {symbol}: High drawdown protection urgency ({protection_urgency})")
+        return False
+    
+    # AI performance attribution analysis
+    attribution_analysis = ai_performance_attribution_analyzer.analyze_performance_attribution(token, 5.0)
+    attribution_score = attribution_analysis['attribution_score']
+    performance_recommendation = attribution_analysis['performance_recommendations']['performance_recommendation']
+    
+    # Check performance attribution recommendation
+    if performance_recommendation == 'avoid_trading':
+        print(f"❌ {symbol}: Performance attribution analysis recommends avoiding trading")
+        return False
+    
+    # AI market anomaly detection
+    anomaly_analysis = ai_market_anomaly_detector.detect_market_anomalies(token, market_data, {})
+    anomaly_score = anomaly_analysis['anomaly_score']
+    anomaly_severity = anomaly_analysis['anomaly_severity']
+    
+    # Check for high anomaly severity
+    if anomaly_severity in ['major', 'extreme']:
+        print(f"❌ {symbol}: High anomaly severity detected ({anomaly_severity})")
+        return False
+    
+    # AI portfolio rebalancing analysis
+    current_positions = []
+    for pos in performance_tracker.get_open_trades():
+        current_positions.append({
+            'symbol': pos.get('symbol', 'UNKNOWN'),
+            'position_size_usd': pos.get('position_size_usd', 0),
+            'entry_price': pos.get('entry_price', 0),
+            'volume_24h': pos.get('volume_24h', 0),
+            'liquidity': pos.get('liquidity', 0),
+            'chainId': pos.get('chain_id', 'ethereum')
+        })
+    
+    rebalancing_analysis = ai_portfolio_rebalancing_engine.optimize_portfolio_allocation(current_positions, market_data)
+    rebalancing_urgency = rebalancing_analysis['rebalancing_needs']['rebalancing_urgency']
+    portfolio_efficiency = rebalancing_analysis['portfolio_efficiency']
+    
+    # Check portfolio rebalancing urgency
+    if rebalancing_urgency in ['urgent', 'emergency']:
+        print(f"❌ {symbol}: High portfolio rebalancing urgency ({rebalancing_urgency})")
+        return False
+    
+    print(f"✅ {symbol}: Quality score {quality_score:.1f}, Volume ${volume_24h:,.0f}, Liquidity ${liquidity:,.0f}, Risk: {risk_category} ({risk_score:.2f}), Pattern: {overall_signal} ({pattern_strength:.2f}), Microstructure: {microstructure_score:.2f}, Intelligence: {intelligence_score:.2f}, Sentiment: {market_sentiment}, Prediction: {prediction_score:.2f} ({trading_signal}), Strategy: {selected_strategy} ({strategy_confidence}), Risk: {risk_level} ({risk_score:.2f}), Transition: {transition_probability:.2f}, Liquidity: {liquidity_score:.2f}, Timeframe: {timeframe_score:.2f}, Cycle: {cycle_phase}, Drawdown: {drawdown_severity}, Attribution: {attribution_score:.2f}, Anomaly: {anomaly_severity}, Rebalancing: {rebalancing_urgency} (Regime: {regime})")
     return True
 
 def get_dynamic_position_size(token: Dict) -> float:
@@ -764,6 +871,30 @@ def practical_trade_loop():
     
     # Show AI risk prediction and prevention insights
     _show_risk_prediction_insights()
+    
+    # Show AI market regime transition insights
+    _show_regime_transition_insights()
+    
+    # Show AI liquidity flow insights
+    _show_liquidity_flow_insights()
+    
+    # Show AI multi-timeframe analysis insights
+    _show_multi_timeframe_insights()
+    
+    # Show AI market cycle prediction insights
+    _show_market_cycle_insights()
+    
+    # Show AI drawdown protection insights
+    _show_drawdown_protection_insights()
+    
+    # Show AI performance attribution insights
+    _show_performance_attribution_insights()
+    
+    # Show AI market anomaly detection insights
+    _show_market_anomaly_insights()
+    
+    # Show AI portfolio rebalancing insights
+    _show_portfolio_rebalancing_insights()
 
 def _print_practical_summary(rejections, successful_trades):
     """Print trading summary"""
@@ -1470,6 +1601,372 @@ def main():
             except:
                 pass
             time.sleep(60)  # Wait 1 minute before retry
+
+def _show_regime_transition_insights():
+    """Show AI market regime transition insights"""
+    try:
+        # Get current open positions for transition analysis
+        open_positions = performance_tracker.get_open_trades()
+        
+        if not open_positions:
+            log_print("\n🔄 Regime Transition: No open positions to analyze")
+            return
+        
+        # Create position data for transition analysis
+        current_positions = []
+        for pos in open_positions:
+            current_positions.append({
+                'symbol': pos.get('symbol', 'UNKNOWN'),
+                'priceUsd': pos.get('entry_price', 0),
+                'volume24h': pos.get('volume_24h', 0),
+                'liquidity': pos.get('liquidity', 0),
+                'chainId': pos.get('chain_id', 'ethereum')
+            })
+        
+        # Get transition summary
+        transition_summary = ai_market_regime_transition_detector.get_transition_summary(current_positions)
+        
+        log_print("\n🔄 AI Market Regime Transition Insights")
+        log_print(f"• Total Positions: {transition_summary['total_tokens']}")
+        log_print(f"• Transition Probability: {transition_summary['transition_probability']:.2f}")
+        log_print(f"• Transition Confidence: {transition_summary['transition_confidence']}")
+        log_print(f"• Current Regime: {transition_summary['current_regime']}")
+        log_print(f"• Predicted Regime: {transition_summary['predicted_regime']}")
+        
+        # Show transition recommendations
+        if transition_summary['transition_probability'] > 0.7:
+            log_print("\n⚠️ HIGH TRANSITION PROBABILITY DETECTED:")
+            log_print("  • Monitor market conditions closely")
+            log_print("  • Consider reducing position sizes")
+            log_print("  • Prepare for regime change")
+        else:
+            log_print("\n✅ STABLE REGIME CONDITIONS:")
+            log_print("  • Continue current strategy")
+            log_print("  • Monitor for regime changes")
+            log_print("  • Maintain position sizes")
+                
+    except Exception as e:
+        log_print(f"⚠️ Could not generate regime transition insights: {e}")
+
+def _show_liquidity_flow_insights():
+    """Show AI liquidity flow insights"""
+    try:
+        # Get current open positions for liquidity analysis
+        open_positions = performance_tracker.get_open_trades()
+        
+        if not open_positions:
+            log_print("\n💧 Liquidity Flow: No open positions to analyze")
+            return
+        
+        # Create position data for liquidity analysis
+        current_positions = []
+        for pos in open_positions:
+            current_positions.append({
+                'symbol': pos.get('symbol', 'UNKNOWN'),
+                'priceUsd': pos.get('entry_price', 0),
+                'volume24h': pos.get('volume_24h', 0),
+                'liquidity': pos.get('liquidity', 0),
+                'chainId': pos.get('chain_id', 'ethereum')
+            })
+        
+        # Get liquidity flow summary
+        liquidity_summary = ai_liquidity_flow_analyzer.get_liquidity_flow_summary(current_positions)
+        
+        log_print("\n💧 AI Liquidity Flow Insights")
+        log_print(f"• Total Positions: {liquidity_summary['total_tokens']}")
+        log_print(f"• Average Liquidity Score: {liquidity_summary['average_liquidity_score']:.2f}")
+        log_print(f"• Flow Recommendation: {liquidity_summary['flow_recommendation']}")
+        log_print(f"• Market Imbalance: {liquidity_summary['market_imbalance']:.2f}")
+        
+        # Show liquidity flow recommendations
+        if liquidity_summary['flow_recommendation'] == 'avoid_trading':
+            log_print("\n⚠️ LIQUIDITY FLOW WARNING:")
+            log_print("  • Avoid new positions")
+            log_print("  • Monitor existing positions")
+            log_print("  • Consider reducing exposure")
+        else:
+            log_print("\n✅ FAVORABLE LIQUIDITY CONDITIONS:")
+            log_print("  • Continue trading strategy")
+            log_print("  • Monitor liquidity changes")
+            log_print("  • Maintain current positions")
+                
+    except Exception as e:
+        log_print(f"⚠️ Could not generate liquidity flow insights: {e}")
+
+def _show_multi_timeframe_insights():
+    """Show AI multi-timeframe analysis insights"""
+    try:
+        # Get current open positions for timeframe analysis
+        open_positions = performance_tracker.get_open_trades()
+        
+        if not open_positions:
+            log_print("\n⏰ Multi-Timeframe: No open positions to analyze")
+            return
+        
+        # Create position data for timeframe analysis
+        current_positions = []
+        for pos in open_positions:
+            current_positions.append({
+                'symbol': pos.get('symbol', 'UNKNOWN'),
+                'priceUsd': pos.get('entry_price', 0),
+                'volume24h': pos.get('volume_24h', 0),
+                'liquidity': pos.get('liquidity', 0),
+                'chainId': pos.get('chain_id', 'ethereum')
+            })
+        
+        # Get timeframe analysis summary
+        timeframe_summary = ai_multi_timeframe_analysis_engine.get_timeframe_summary(current_positions)
+        
+        log_print("\n⏰ AI Multi-Timeframe Analysis Insights")
+        log_print(f"• Total Positions: {timeframe_summary['total_tokens']}")
+        log_print(f"• Average Timeframe Score: {timeframe_summary['average_timeframe_score']:.2f}")
+        log_print(f"• Overall Signal: {timeframe_summary['overall_signal']}")
+        log_print(f"• Signal Confidence: {timeframe_summary['signal_confidence']}")
+        
+        # Show timeframe recommendations
+        if timeframe_summary['overall_signal'] in ['sell', 'strong_sell']:
+            log_print("\n⚠️ BEARISH TIMEFRAME SIGNALS:")
+            log_print("  • Consider reducing positions")
+            log_print("  • Monitor for exit signals")
+            log_print("  • Avoid new positions")
+        else:
+            log_print("\n✅ BULLISH TIMEFRAME SIGNALS:")
+            log_print("  • Continue current strategy")
+            log_print("  • Monitor timeframe alignment")
+            log_print("  • Consider new positions")
+                
+    except Exception as e:
+        log_print(f"⚠️ Could not generate multi-timeframe insights: {e}")
+
+def _show_market_cycle_insights():
+    """Show AI market cycle prediction insights"""
+    try:
+        # Get current open positions for cycle analysis
+        open_positions = performance_tracker.get_open_trades()
+        
+        if not open_positions:
+            log_print("\n🔄 Market Cycle: No open positions to analyze")
+            return
+        
+        # Create position data for cycle analysis
+        current_positions = []
+        for pos in open_positions:
+            current_positions.append({
+                'symbol': pos.get('symbol', 'UNKNOWN'),
+                'priceUsd': pos.get('entry_price', 0),
+                'volume24h': pos.get('volume_24h', 0),
+                'liquidity': pos.get('liquidity', 0),
+                'chainId': pos.get('chain_id', 'ethereum')
+            })
+        
+        # Get cycle analysis summary
+        cycle_summary = ai_market_cycle_predictor.get_cycle_summary(current_positions)
+        
+        log_print("\n🔄 AI Market Cycle Prediction Insights")
+        log_print(f"• Total Positions: {cycle_summary['total_tokens']}")
+        log_print(f"• Current Cycle Phase: {cycle_summary['current_cycle_phase']}")
+        log_print(f"• Cycle Confidence: {cycle_summary['cycle_confidence']}")
+        log_print(f"• Predicted Phase: {cycle_summary['predicted_phase']}")
+        
+        # Show cycle recommendations
+        if cycle_summary['current_cycle_phase'] in ['decline', 'trough']:
+            log_print("\n⚠️ UNFAVORABLE CYCLE PHASE:")
+            log_print("  • Reduce position sizes")
+            log_print("  • Monitor for cycle change")
+            log_print("  • Avoid new positions")
+        else:
+            log_print("\n✅ FAVORABLE CYCLE PHASE:")
+            log_print("  • Continue current strategy")
+            log_print("  • Monitor cycle progression")
+            log_print("  • Consider new positions")
+                
+    except Exception as e:
+        log_print(f"⚠️ Could not generate market cycle insights: {e}")
+
+def _show_drawdown_protection_insights():
+    """Show AI drawdown protection insights"""
+    try:
+        # Get current portfolio data
+        open_positions = performance_tracker.get_open_trades()
+        trade_history = performance_tracker.get_trade_history()
+        
+        if not open_positions:
+            log_print("\n🛡️ Drawdown Protection: No open positions to analyze")
+            return
+        
+        # Create portfolio data
+        portfolio_data = {
+            'total_value': sum(pos.get('position_size_usd', 0) for pos in open_positions),
+            'position_count': len(open_positions),
+            'timestamp': datetime.now().isoformat()
+        }
+        market_data = {'timestamp': datetime.now().isoformat()}
+        
+        # Get drawdown protection summary
+        drawdown_summary = ai_drawdown_protection_system.get_drawdown_summary(portfolio_data, trade_history, market_data)
+        
+        log_print("\n🛡️ AI Drawdown Protection Insights")
+        log_print(f"• Total Value: ${portfolio_data['total_value']:,.0f}")
+        log_print(f"• Position Count: {portfolio_data['position_count']}")
+        log_print(f"• Current Drawdown: {drawdown_summary['current_drawdown']:.1%}")
+        log_print(f"• Drawdown Severity: {drawdown_summary['drawdown_severity']}")
+        log_print(f"• Protection Urgency: {drawdown_summary['protection_urgency']}")
+        
+        # Show drawdown protection recommendations
+        if drawdown_summary['protection_urgency'] in ['urgent', 'emergency']:
+            log_print("\n🚨 HIGH DRAWDOWN PROTECTION URGENCY:")
+            log_print("  • Reduce position sizes immediately")
+            log_print("  • Consider emergency stop-loss")
+            log_print("  • Monitor for recovery signals")
+        else:
+            log_print("\n✅ NORMAL DRAWDOWN CONDITIONS:")
+            log_print("  • Continue current strategy")
+            log_print("  • Monitor drawdown levels")
+            log_print("  • Maintain position sizes")
+                
+    except Exception as e:
+        log_print(f"⚠️ Could not generate drawdown protection insights: {e}")
+
+def _show_performance_attribution_insights():
+    """Show AI performance attribution insights"""
+    try:
+        # Get current open positions for attribution analysis
+        open_positions = performance_tracker.get_open_trades()
+        
+        if not open_positions:
+            log_print("\n📊 Performance Attribution: No open positions to analyze")
+            return
+        
+        # Create position data for attribution analysis
+        current_positions = []
+        for pos in open_positions:
+            current_positions.append({
+                'symbol': pos.get('symbol', 'UNKNOWN'),
+                'priceUsd': pos.get('entry_price', 0),
+                'volume24h': pos.get('volume_24h', 0),
+                'liquidity': pos.get('liquidity', 0),
+                'chainId': pos.get('chain_id', 'ethereum')
+            })
+        
+        # Get attribution analysis summary
+        attribution_summary = ai_performance_attribution_analyzer.get_attribution_summary(current_positions)
+        
+        log_print("\n📊 AI Performance Attribution Insights")
+        log_print(f"• Total Positions: {attribution_summary['total_tokens']}")
+        log_print(f"• Average Attribution Score: {attribution_summary['average_attribution_score']:.2f}")
+        log_print(f"• Performance Recommendation: {attribution_summary['performance_recommendation']}")
+        log_print(f"• Risk-Adjusted Return: {attribution_summary['risk_adjusted_return']:.2f}")
+        
+        # Show attribution recommendations
+        if attribution_summary['performance_recommendation'] == 'avoid_trading':
+            log_print("\n⚠️ PERFORMANCE ATTRIBUTION WARNING:")
+            log_print("  • Avoid new positions")
+            log_print("  • Review current strategy")
+            log_print("  • Consider strategy adjustment")
+        else:
+            log_print("\n✅ FAVORABLE PERFORMANCE ATTRIBUTION:")
+            log_print("  • Continue current strategy")
+            log_print("  • Monitor performance drivers")
+            log_print("  • Consider new positions")
+                
+    except Exception as e:
+        log_print(f"⚠️ Could not generate performance attribution insights: {e}")
+
+def _show_market_anomaly_insights():
+    """Show AI market anomaly detection insights"""
+    try:
+        # Get current open positions for anomaly analysis
+        open_positions = performance_tracker.get_open_trades()
+        
+        if not open_positions:
+            log_print("\n🔍 Market Anomaly: No open positions to analyze")
+            return
+        
+        # Create position data for anomaly analysis
+        current_positions = []
+        for pos in open_positions:
+            current_positions.append({
+                'symbol': pos.get('symbol', 'UNKNOWN'),
+                'priceUsd': pos.get('entry_price', 0),
+                'volume24h': pos.get('volume_24h', 0),
+                'liquidity': pos.get('liquidity', 0),
+                'chainId': pos.get('chain_id', 'ethereum')
+            })
+        
+        # Get anomaly analysis summary
+        anomaly_summary = ai_market_anomaly_detector.get_anomaly_summary(current_positions)
+        
+        log_print("\n🔍 AI Market Anomaly Detection Insights")
+        log_print(f"• Total Positions: {anomaly_summary['total_tokens']}")
+        log_print(f"• Average Anomaly Score: {anomaly_summary['average_anomaly_score']:.2f}")
+        log_print(f"• Anomaly Severity: {anomaly_summary['anomaly_severity']}")
+        log_print(f"• Opportunities: {anomaly_summary['opportunities']}")
+        log_print(f"• Risks: {anomaly_summary['risks']}")
+        
+        # Show anomaly recommendations
+        if anomaly_summary['anomaly_severity'] in ['major', 'extreme']:
+            log_print("\n⚠️ HIGH ANOMALY SEVERITY DETECTED:")
+            log_print("  • Monitor positions closely")
+            log_print("  • Consider reducing exposure")
+            log_print("  • Watch for market changes")
+        else:
+            log_print("\n✅ NORMAL MARKET CONDITIONS:")
+            log_print("  • Continue current strategy")
+            log_print("  • Monitor for anomalies")
+            log_print("  • Maintain position sizes")
+                
+    except Exception as e:
+        log_print(f"⚠️ Could not generate market anomaly insights: {e}")
+
+def _show_portfolio_rebalancing_insights():
+    """Show AI portfolio rebalancing insights"""
+    try:
+        # Get current open positions for rebalancing analysis
+        open_positions = performance_tracker.get_open_trades()
+        
+        if not open_positions:
+            log_print("\n⚖️ Portfolio Rebalancing: No open positions to analyze")
+            return
+        
+        # Create position data for rebalancing analysis
+        current_positions = []
+        for pos in open_positions:
+            current_positions.append({
+                'symbol': pos.get('symbol', 'UNKNOWN'),
+                'position_size_usd': pos.get('position_size_usd', 0),
+                'entry_price': pos.get('entry_price', 0),
+                'volume_24h': pos.get('volume_24h', 0),
+                'liquidity': pos.get('liquidity', 0),
+                'chainId': pos.get('chain_id', 'ethereum')
+            })
+        
+        market_data = {'timestamp': datetime.now().isoformat()}
+        
+        # Get rebalancing analysis summary
+        rebalancing_summary = ai_portfolio_rebalancing_engine.get_rebalancing_summary(current_positions, market_data)
+        
+        log_print("\n⚖️ AI Portfolio Rebalancing Insights")
+        log_print(f"• Total Positions: {rebalancing_summary['total_positions']}")
+        log_print(f"• Total Value: ${rebalancing_summary['total_value']:,.0f}")
+        log_print(f"• Risk Score: {rebalancing_summary['risk_score']:.2f}")
+        log_print(f"• Diversification Score: {rebalancing_summary['diversification_score']:.2f}")
+        log_print(f"• Rebalancing Urgency: {rebalancing_summary['rebalancing_urgency']}")
+        log_print(f"• Positions to Rebalance: {rebalancing_summary['positions_to_rebalance']}")
+        
+        # Show rebalancing recommendations
+        if rebalancing_summary['rebalancing_urgency'] in ['urgent', 'emergency']:
+            log_print("\n⚠️ HIGH REBALANCING URGENCY:")
+            log_print("  • Execute rebalancing immediately")
+            log_print("  • Adjust position sizes")
+            log_print("  • Monitor portfolio efficiency")
+        else:
+            log_print("\n✅ PORTFOLIO WELL BALANCED:")
+            log_print("  • Continue current allocation")
+            log_print("  • Monitor rebalancing needs")
+            log_print("  • Maintain position sizes")
+                
+    except Exception as e:
+        log_print(f"⚠️ Could not generate portfolio rebalancing insights: {e}")
 
 if __name__ == "__main__":
     main()

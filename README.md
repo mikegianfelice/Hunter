@@ -21,6 +21,14 @@ A sophisticated AI-powered cryptocurrency trading bot designed for **consistent 
 - **🔮 AI Predictive Analytics Engine** - Advanced price movement prediction using technical analysis, sentiment analysis, volume analysis, and correlation analysis
 - **🎯 AI Dynamic Strategy Selector** - Adaptive strategy selection that automatically switches between momentum, mean reversion, breakout, scalping, swing, and trend-following strategies based on market conditions
 - **🛡️ AI Risk Prediction & Prevention System** - Comprehensive risk protection including flash crash detection, rug pull prevention, manipulation detection, liquidity drain monitoring, correlation breakdown analysis, and black swan event detection
+- **🔄 AI Market Regime Transition Detector** - Real-time market regime change detection for optimal strategy switching and risk management
+- **💧 AI Liquidity Flow Analyzer** - Advanced liquidity flow analysis for market imbalance detection and optimal entry/exit timing
+- **⏰ AI Multi-Timeframe Analysis Engine** - Comprehensive multi-timeframe analysis integrating data from multiple timeframes for robust market view
+- **🔄 AI Market Cycle Predictor** - Market cycle prediction for strategic positioning and anticipating major market shifts
+- **🛡️ AI Drawdown Protection System** - Advanced drawdown protection with portfolio analysis, individual trade analysis, and market condition monitoring
+- **📊 AI Performance Attribution Analyzer** - Performance driver identification for strategy optimization and performance improvement
+- **🔍 AI Market Anomaly Detector** - Unusual market condition detection for opportunity and risk identification
+- **⚖️ AI Portfolio Rebalancing Engine** - Optimal portfolio allocation using modern portfolio theory for risk-adjusted returns and diversification
 
 ### **🌐 Multi-Chain Trading**
 - **Real trading on Ethereum (MetaMask), Solana (Phantom), and Base**
@@ -75,7 +83,7 @@ The bot has evolved from high-frequency "moonshot" trading to a **sustainable 10
 - **Comprehensive Risk Management** - Multi-layered risk assessment with AI-powered loss prevention
 
 ### **🧠 AI System Integration**
-The bot now features **12 integrated AI systems** working together:
+The bot now features **20 integrated AI systems** working together:
 
 1. **🔍 Market Microstructure Analyzer** - Analyzes order book, trade flow, liquidity, whale activity, and manipulation
 2. **⚡ Execution Optimizer** - Optimizes timing, routing, slippage, and gas costs for maximum profitability
@@ -89,6 +97,14 @@ The bot now features **12 integrated AI systems** working together:
 10. **🔮 Predictive Analytics Engine** - Advanced price movement prediction using multiple analysis methods
 11. **🎯 Dynamic Strategy Selector** - Adaptive strategy selection based on market conditions and performance
 12. **🛡️ Risk Prediction & Prevention** - Comprehensive risk protection including flash crash, rug pull, and manipulation detection
+13. **🔄 Market Regime Transition Detector** - Real-time market regime change detection for optimal strategy switching
+14. **💧 Liquidity Flow Analyzer** - Advanced liquidity flow analysis for market imbalance detection
+15. **⏰ Multi-Timeframe Analysis Engine** - Comprehensive multi-timeframe analysis for robust market view
+16. **🔄 Market Cycle Predictor** - Market cycle prediction for strategic positioning and anticipating shifts
+17. **🛡️ Drawdown Protection System** - Advanced drawdown protection with portfolio and trade analysis
+18. **📊 Performance Attribution Analyzer** - Performance driver identification for strategy optimization
+19. **🔍 Market Anomaly Detector** - Unusual market condition detection for opportunity and risk identification
+20. **⚖️ Portfolio Rebalancing Engine** - Optimal portfolio allocation using modern portfolio theory
 
 ### **📊 Performance Metrics**
 - **Target Gains**: 10-20% consistent returns
@@ -618,6 +634,14 @@ enable_ai_market_intelligence: true
 enable_ai_predictive_analytics: true
 enable_ai_dynamic_strategy_selector: true
 enable_ai_risk_prediction_prevention: true
+enable_ai_market_regime_transition_detection: true
+enable_ai_liquidity_flow_analysis: true
+enable_ai_multi_timeframe_analysis: true
+enable_ai_market_cycle_prediction: true
+enable_ai_drawdown_protection: true
+enable_ai_performance_attribution: true
+enable_ai_market_anomaly_detection: true
+enable_ai_portfolio_rebalancing: true
 
 # Advanced Trading Features
 enable_order_splitting: true
@@ -1021,6 +1045,14 @@ Hunter/
 ├── ai_predictive_analytics_engine.py # AI predictive analytics engine
 ├── ai_dynamic_strategy_selector.py # AI dynamic strategy selector
 ├── ai_risk_prediction_prevention_system.py # AI risk prediction and prevention system
+├── ai_market_regime_transition_detector.py # AI market regime transition detector
+├── ai_liquidity_flow_analyzer.py # AI liquidity flow analyzer
+├── ai_multi_timeframe_analysis_engine.py # AI multi-timeframe analysis engine
+├── ai_market_cycle_predictor.py # AI market cycle predictor
+├── ai_drawdown_protection_system.py # AI drawdown protection system
+├── ai_performance_attribution_analyzer.py # AI performance attribution analyzer
+├── ai_market_anomaly_detector.py # AI market anomaly detector
+├── ai_portfolio_rebalancing_engine.py # AI portfolio rebalancing engine
 
 ├── SOLANA_IMPLEMENTATION.md # Solana documentation
 ├── secrets_manager.py       # Secure secrets management

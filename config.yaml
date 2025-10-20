@@ -1066,3 +1066,262 @@ enable_risk_prediction_performance_tracking: true  # Track risk prediction perfo
 risk_prediction_performance_metrics: ["flash_crash_accuracy", "rug_pull_accuracy", "manipulation_accuracy", "liquidity_drain_accuracy", "correlation_breakdown_accuracy", "black_swan_accuracy"]  # Metrics to track
 risk_prediction_benchmark_threshold: 0.8  # Benchmark threshold for risk prediction performance
 enable_risk_prediction_optimization_suggestions: true  # Generate risk prediction optimization suggestions
+
+# === AI Market Regime Transition Detector ===
+# Enable AI-powered market regime transition detection for optimal strategy switching
+enable_ai_market_regime_transition_detection: true  # Enable AI market regime transition detection
+regime_transition_cache_duration: 300  # Cache regime transition analysis for 5 minutes (seconds)
+regime_transition_api_timeout: 10  # API timeout for regime transition analysis (seconds)
+regime_transition_max_retries: 3  # Maximum retries for regime transition analysis
+
+# Regime transition detection thresholds
+regime_transition_probability_threshold: 0.7  # 70% probability threshold for regime transition
+regime_transition_confidence_threshold: 0.8  # 80% confidence threshold for regime transition
+regime_transition_time_window: 3600  # 1 hour time window for regime transition analysis (seconds)
+
+# Regime transition factors
+regime_transition_factors: {
+  "price_momentum": 0.25,
+  "volume_analysis": 0.20,
+  "volatility_analysis": 0.20,
+  "sentiment_analysis": 0.15,
+  "technical_indicators": 0.10,
+  "market_structure": 0.10
+}  # Regime transition detection factors
+
+# Regime transition insights and reporting
+enable_regime_transition_insights: true  # Show regime transition insights in trading loop
+enable_regime_transition_reporting: true  # Include regime transition metrics in notifications
+enable_regime_transition_analytics: true  # Track regime transition performance over time
+regime_transition_analytics_retention_days: 90  # Days to retain regime transition analytics
+
+# === AI Liquidity Flow Analyzer ===
+# Enable AI-powered liquidity flow analysis for market imbalance detection
+enable_ai_liquidity_flow_analysis: true  # Enable AI liquidity flow analysis
+liquidity_flow_cache_duration: 180  # Cache liquidity flow analysis for 3 minutes (seconds)
+liquidity_flow_api_timeout: 10  # API timeout for liquidity flow analysis (seconds)
+liquidity_flow_max_retries: 3  # Maximum retries for liquidity flow analysis
+
+# Liquidity flow analysis thresholds
+liquidity_flow_imbalance_threshold: 0.3  # 30% liquidity imbalance threshold
+liquidity_flow_flow_threshold: 0.5  # 50% liquidity flow threshold
+liquidity_flow_volatility_threshold: 0.4  # 40% liquidity volatility threshold
+
+# Liquidity flow analysis factors
+liquidity_flow_factors: {
+  "order_book_analysis": 0.30,
+  "trade_flow_analysis": 0.25,
+  "liquidity_depth_analysis": 0.20,
+  "market_maker_analysis": 0.15,
+  "whale_activity_analysis": 0.10
+}  # Liquidity flow analysis factors
+
+# Liquidity flow insights and reporting
+enable_liquidity_flow_insights: true  # Show liquidity flow insights in trading loop
+enable_liquidity_flow_reporting: true  # Include liquidity flow metrics in notifications
+enable_liquidity_flow_analytics: true  # Track liquidity flow performance over time
+liquidity_flow_analytics_retention_days: 90  # Days to retain liquidity flow analytics
+
+# === AI Multi-Timeframe Analysis Engine ===
+# Enable AI-powered multi-timeframe analysis for comprehensive market view
+enable_ai_multi_timeframe_analysis: true  # Enable AI multi-timeframe analysis
+multi_timeframe_cache_duration: 240  # Cache multi-timeframe analysis for 4 minutes (seconds)
+multi_timeframe_api_timeout: 10  # API timeout for multi-timeframe analysis (seconds)
+multi_timeframe_max_retries: 3  # Maximum retries for multi-timeframe analysis
+
+# Multi-timeframe analysis timeframes
+multi_timeframe_timeframes: ["1m", "5m", "15m", "1h", "4h", "1d"]  # Timeframes to analyze
+multi_timeframe_weights: {
+  "1m": 0.10,
+  "5m": 0.15,
+  "15m": 0.20,
+  "1h": 0.25,
+  "4h": 0.20,
+  "1d": 0.10
+}  # Weights for each timeframe
+
+# Multi-timeframe analysis factors
+multi_timeframe_factors: {
+  "trend_analysis": 0.25,
+  "momentum_analysis": 0.20,
+  "support_resistance": 0.20,
+  "volume_analysis": 0.15,
+  "volatility_analysis": 0.10,
+  "pattern_analysis": 0.10
+}  # Multi-timeframe analysis factors
+
+# Multi-timeframe insights and reporting
+enable_multi_timeframe_insights: true  # Show multi-timeframe insights in trading loop
+enable_multi_timeframe_reporting: true  # Include multi-timeframe metrics in notifications
+enable_multi_timeframe_analytics: true  # Track multi-timeframe performance over time
+multi_timeframe_analytics_retention_days: 90  # Days to retain multi-timeframe analytics
+
+# === AI Market Cycle Predictor ===
+# Enable AI-powered market cycle prediction for strategic positioning
+enable_ai_market_cycle_prediction: true  # Enable AI market cycle prediction
+market_cycle_cache_duration: 360  # Cache market cycle analysis for 6 minutes (seconds)
+market_cycle_api_timeout: 10  # API timeout for market cycle analysis (seconds)
+market_cycle_max_retries: 3  # Maximum retries for market cycle analysis
+
+# Market cycle phases
+market_cycle_phases: ["accumulation", "markup", "distribution", "decline", "trough"]  # Market cycle phases
+market_cycle_phase_weights: {
+  "accumulation": 0.20,
+  "markup": 0.25,
+  "distribution": 0.20,
+  "decline": 0.20,
+  "trough": 0.15
+}  # Weights for each cycle phase
+
+# Market cycle prediction factors
+market_cycle_factors: {
+  "price_action_analysis": 0.25,
+  "volume_analysis": 0.20,
+  "sentiment_analysis": 0.20,
+  "technical_indicators": 0.15,
+  "market_structure": 0.10,
+  "macro_indicators": 0.10
+}  # Market cycle prediction factors
+
+# Market cycle insights and reporting
+enable_market_cycle_insights: true  # Show market cycle insights in trading loop
+enable_market_cycle_reporting: true  # Include market cycle metrics in notifications
+enable_market_cycle_analytics: true  # Track market cycle performance over time
+market_cycle_analytics_retention_days: 90  # Days to retain market cycle analytics
+
+# === AI Drawdown Protection System ===
+# Enable AI-powered drawdown protection for capital preservation
+enable_ai_drawdown_protection: true  # Enable AI drawdown protection
+drawdown_protection_cache_duration: 300  # Cache drawdown protection analysis for 5 minutes (seconds)
+drawdown_protection_api_timeout: 10  # API timeout for drawdown protection analysis (seconds)
+drawdown_protection_max_retries: 3  # Maximum retries for drawdown protection analysis
+
+# Drawdown protection thresholds
+drawdown_minor_threshold: 0.05  # 5% minor drawdown threshold
+drawdown_moderate_threshold: 0.10  # 10% moderate drawdown threshold
+drawdown_significant_threshold: 0.20  # 20% significant drawdown threshold
+drawdown_severe_threshold: 0.30  # 30% severe drawdown threshold
+
+# Drawdown protection activation thresholds
+drawdown_immediate_protection_threshold: 0.15  # 15% immediate protection threshold
+drawdown_urgent_protection_threshold: 0.25  # 25% urgent protection threshold
+drawdown_emergency_protection_threshold: 0.35  # 35% emergency protection threshold
+
+# Drawdown protection factors
+drawdown_protection_factors: {
+  "portfolio_performance": 0.30,
+  "individual_trades": 0.25,
+  "market_conditions": 0.20,
+  "risk_metrics": 0.15,
+  "trading_frequency": 0.10
+}  # Drawdown protection factors
+
+# Drawdown protection insights and reporting
+enable_drawdown_protection_insights: true  # Show drawdown protection insights in trading loop
+enable_drawdown_protection_reporting: true  # Include drawdown protection metrics in notifications
+enable_drawdown_protection_analytics: true  # Track drawdown protection performance over time
+drawdown_protection_analytics_retention_days: 90  # Days to retain drawdown protection analytics
+
+# === AI Performance Attribution Analyzer ===
+# Enable AI-powered performance attribution analysis for strategy optimization
+enable_ai_performance_attribution: true  # Enable AI performance attribution analysis
+performance_attribution_cache_duration: 300  # Cache performance attribution analysis for 5 minutes (seconds)
+performance_attribution_api_timeout: 10  # API timeout for performance attribution analysis (seconds)
+performance_attribution_max_retries: 3  # Maximum retries for performance attribution analysis
+
+# Performance attribution factors
+performance_attribution_factors: {
+  "strategy_attribution": 0.25,
+  "market_attribution": 0.20,
+  "risk_attribution": 0.20,
+  "timing_attribution": 0.15,
+  "selection_attribution": 0.10,
+  "execution_attribution": 0.10
+}  # Performance attribution factors
+
+# Performance attribution insights and reporting
+enable_performance_attribution_insights: true  # Show performance attribution insights in trading loop
+enable_performance_attribution_reporting: true  # Include performance attribution metrics in notifications
+enable_performance_attribution_analytics: true  # Track performance attribution performance over time
+performance_attribution_analytics_retention_days: 90  # Days to retain performance attribution analytics
+
+# === AI Market Anomaly Detector ===
+# Enable AI-powered market anomaly detection for opportunity and risk identification
+enable_ai_market_anomaly_detection: true  # Enable AI market anomaly detection
+anomaly_detection_cache_duration: 180  # Cache anomaly detection analysis for 3 minutes (seconds)
+anomaly_detection_api_timeout: 10  # API timeout for anomaly detection analysis (seconds)
+anomaly_detection_max_retries: 3  # Maximum retries for anomaly detection analysis
+
+# Anomaly detection thresholds
+anomaly_minor_threshold: 0.3  # 30% minor anomaly threshold
+anomaly_moderate_threshold: 0.5  # 50% moderate anomaly threshold
+anomaly_major_threshold: 0.7  # 70% major anomaly threshold
+anomaly_extreme_threshold: 0.9  # 90% extreme anomaly threshold
+
+# Anomaly detection factors
+anomaly_detection_factors: {
+  "price_analysis": 0.20,
+  "volume_analysis": 0.20,
+  "liquidity_analysis": 0.15,
+  "sentiment_analysis": 0.15,
+  "pattern_analysis": 0.15,
+  "correlation_analysis": 0.15
+}  # Anomaly detection factors
+
+# Anomaly detection insights and reporting
+enable_anomaly_detection_insights: true  # Show anomaly detection insights in trading loop
+enable_anomaly_detection_reporting: true  # Include anomaly detection metrics in notifications
+enable_anomaly_detection_analytics: true  # Track anomaly detection performance over time
+anomaly_detection_analytics_retention_days: 90  # Days to retain anomaly detection analytics
+
+# === AI Portfolio Rebalancing Engine ===
+# Enable AI-powered portfolio rebalancing for optimal allocation
+enable_ai_portfolio_rebalancing: true  # Enable AI portfolio rebalancing
+portfolio_rebalancing_cache_duration: 300  # Cache portfolio rebalancing analysis for 5 minutes (seconds)
+portfolio_rebalancing_api_timeout: 10  # API timeout for portfolio rebalancing analysis (seconds)
+portfolio_rebalancing_max_retries: 3  # Maximum retries for portfolio rebalancing analysis
+
+# Portfolio rebalancing thresholds
+portfolio_rebalancing_threshold: 0.05  # 5% rebalancing threshold
+portfolio_urgent_rebalancing_threshold: 0.15  # 15% urgent rebalancing threshold
+portfolio_emergency_rebalancing_threshold: 0.25  # 25% emergency rebalancing threshold
+
+# Portfolio rebalancing strategies
+portfolio_rebalancing_strategies: {
+  "conservative": {
+    "name": "Conservative Rebalancing",
+    "strategy": "gradual_rebalancing",
+    "rebalancing_frequency": "weekly",
+    "risk_tolerance": 0.1,
+    "diversification_target": 0.8
+  },
+  "moderate": {
+    "name": "Moderate Rebalancing",
+    "strategy": "balanced_rebalancing",
+    "rebalancing_frequency": "daily",
+    "risk_tolerance": 0.2,
+    "diversification_target": 0.7
+  },
+  "aggressive": {
+    "name": "Aggressive Rebalancing",
+    "strategy": "dynamic_rebalancing",
+    "rebalancing_frequency": "continuous",
+    "risk_tolerance": 0.3,
+    "diversification_target": 0.6
+  }
+}  # Portfolio rebalancing strategies
+
+# Portfolio optimization factors
+portfolio_optimization_factors: {
+  "risk_return_ratio": 0.30,
+  "diversification": 0.25,
+  "correlation_analysis": 0.20,
+  "volatility_analysis": 0.15,
+  "liquidity_analysis": 0.10
+}  # Portfolio optimization factors
+
+# Portfolio rebalancing insights and reporting
+enable_portfolio_rebalancing_insights: true  # Show portfolio rebalancing insights in trading loop
+enable_portfolio_rebalancing_reporting: true  # Include portfolio rebalancing metrics in notifications
+enable_portfolio_rebalancing_analytics: true  # Track portfolio rebalancing performance over time
+portfolio_rebalancing_analytics_retention_days: 90  # Days to retain portfolio rebalancing analytics
