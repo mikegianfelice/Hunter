@@ -201,7 +201,12 @@ class AIMarketRegimeTransitionDetector:
             
         except Exception as e:
             logger.error(f"❌ Regime transition detection failed: {e}")
-            return self._get_default_transition_analysis()
+            # Try to determine current regime for fallback, or use default
+            try:
+                current_regime = self._determine_current_regime(market_data)
+            except:
+                current_regime = "sideways_market"  # Default fallback regime
+            return self._get_default_transition_analysis(current_regime)
     
     def _determine_current_regime(self, market_data: Dict) -> str:
         """Determine current market regime from market data"""
