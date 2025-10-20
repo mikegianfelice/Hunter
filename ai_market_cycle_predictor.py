@@ -136,7 +136,7 @@ class AIMarketCyclePredictor:
         self.long_cycle_threshold = 180  # 180 days long cycle
         self.extended_cycle_threshold = 365  # 365 days extended cycle
     
-    def predict_market_cycle(self, market_data: Dict, historical_data: Dict) -> Dict:
+    def predict_market_cycle(self, token: Dict, trade_amount: float) -> Dict:
         """
         Predict current market cycle phase and upcoming transitions
         Returns comprehensive cycle analysis with trading recommendations

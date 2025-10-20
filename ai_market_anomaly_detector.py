@@ -1004,7 +1004,7 @@ class AIMarketAnomalyDetector:
             'analysis_timestamp': datetime.now().isoformat()
         }
     
-    def get_anomaly_summary(self, tokens: List[Dict], market_data_list: List[Dict], historical_data_list: List[Dict]) -> Dict:
+    def get_anomaly_summary(self, tokens: List[Dict]) -> Dict:
         """Get anomaly summary for multiple tokens"""
         try:
             anomaly_summaries = []

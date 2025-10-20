@@ -129,8 +129,7 @@ class AIPerformanceAttributionAnalyzer:
             'quarterly': {'name': 'Quarterly', 'weight': 0.30, 'lookback_days': 90}
         }
     
-    def analyze_performance_attribution(self, portfolio_data: Dict, trade_history: List[Dict], 
-                                      market_data: Dict, performance_metrics: Dict) -> Dict:
+    def analyze_performance_attribution(self, token: Dict, trade_amount: float) -> Dict:
         """
         Analyze performance attribution to identify what drives success/failure
         Returns comprehensive attribution analysis with optimization recommendations

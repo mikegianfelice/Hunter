@@ -102,7 +102,7 @@ class AIMultiTimeframeAnalysisEngine:
         self.good_alignment_threshold = 0.7  # 70% good alignment
         self.poor_alignment_threshold = 0.4  # 40% poor alignment
     
-    def analyze_multi_timeframe(self, token: Dict, market_data: Dict) -> Dict:
+    def analyze_multi_timeframe(self, token: Dict, trade_amount: float) -> Dict:
         """
         Analyze multiple timeframes for comprehensive market view
         Returns multi-timeframe analysis with signal confirmation

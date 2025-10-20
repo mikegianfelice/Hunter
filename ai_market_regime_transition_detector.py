@@ -97,20 +97,29 @@ class AIMarketRegimeTransitionDetector:
             'news_impact': 0.7  # 70% news impact threshold
         }
     
-    def detect_regime_transition(self, market_data: Dict, current_regime: str) -> Dict:
+    def detect_regime_transition(self, token: Dict, trade_amount: float) -> Dict:
         """
         Detect potential market regime transitions
         Returns comprehensive transition analysis with early warning signals
         """
         try:
-            cache_key = f"transition_{current_regime}_{market_data.get('timestamp', 'current')}"
+            symbol = token.get('symbol', 'UNKNOWN')
+            cache_key = f"transition_{symbol}_{token.get('timestamp', 'current')}"
             
             # Check cache
             if cache_key in self.transition_cache:
                 cached_data = self.transition_cache[cache_key]
                 if (datetime.now() - cached_data['timestamp']).total_seconds() < self.cache_duration:
-                    logger.debug(f"Using cached transition analysis for {current_regime}")
+                    logger.debug(f"Using cached transition analysis for {symbol}")
                     return cached_data['transition_data']
+            
+            # Create market data from token
+            market_data = {
+                'timestamp': datetime.now().isoformat(),
+                'price': float(token.get('priceUsd', 0)),
+                'volume': float(token.get('volume24h', 0)),
+                'liquidity': float(token.get('liquidity', 0))
+            }
             
             # Analyze transition components
             price_momentum_analysis = self._analyze_price_momentum(market_data)
@@ -145,6 +154,9 @@ class AIMarketRegimeTransitionDetector:
                 volatility_change_analysis, correlation_break_analysis, news_impact_analysis
             )
             
+            # Determine current regime from market data
+            current_regime = self._determine_current_regime(market_data)
+            
             # Calculate regime stability
             regime_stability = self._calculate_regime_stability(
                 current_regime, market_data, transition_probability
@@ -163,8 +175,9 @@ class AIMarketRegimeTransitionDetector:
             
             result = {
                 'current_regime': current_regime,
-                'next_regime_prediction': next_regime_prediction,
+                'predicted_regime': next_regime_prediction,
                 'transition_probability': transition_probability,
+                'transition_confidence': 'high' if transition_probability > 0.7 else 'medium' if transition_probability > 0.4 else 'low',
                 'transition_strength': transition_strength,
                 'transition_timing': transition_timing,
                 'regime_stability': regime_stability,
@@ -188,7 +201,23 @@ class AIMarketRegimeTransitionDetector:
             
         except Exception as e:
             logger.error(f"❌ Regime transition detection failed: {e}")
-            return self._get_default_transition_analysis(current_regime)
+            return self._get_default_transition_analysis()
+    
+    def _determine_current_regime(self, market_data: Dict) -> str:
+        """Determine current market regime from market data"""
+        try:
+            # Simple regime determination based on price and volume
+            price = market_data.get('price', 0)
+            volume = market_data.get('volume', 0)
+            
+            if price > 0 and volume > 100000:  # High volume
+                return 'bull'
+            elif price > 0 and volume < 10000:  # Low volume
+                return 'bear'
+            else:
+                return 'sideways'
+        except Exception:
+            return 'sideways'
     
     def _analyze_price_momentum(self, market_data: Dict) -> Dict:
         """Analyze price momentum for regime transition signals"""

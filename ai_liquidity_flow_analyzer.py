@@ -95,14 +95,14 @@ class AILiquidityFlowAnalyzer:
         self.fair_execution_threshold = 0.4  # 40% fair execution
         self.poor_execution_threshold = 0.2  # 20% poor execution
     
-    def analyze_liquidity_flow(self, token: Dict, market_data: Dict) -> Dict:
+    def analyze_liquidity_flow(self, token: Dict, trade_amount: float) -> Dict:
         """
         Analyze liquidity flow patterns for a token
         Returns comprehensive liquidity analysis with execution optimization
         """
         try:
             symbol = token.get("symbol", "UNKNOWN")
-            cache_key = f"liquidity_{symbol}_{market_data.get('timestamp', 'current')}"
+            cache_key = f"liquidity_{symbol}_{token.get('timestamp', 'current')}"
             
             # Check cache
             if cache_key in self.liquidity_cache:
@@ -110,6 +110,14 @@ class AILiquidityFlowAnalyzer:
                 if (datetime.now() - cached_data['timestamp']).total_seconds() < self.cache_duration:
                     logger.debug(f"Using cached liquidity analysis for {symbol}")
                     return cached_data['liquidity_data']
+            
+            # Create market data from token
+            market_data = {
+                'timestamp': datetime.now().isoformat(),
+                'price': float(token.get('priceUsd', 0)),
+                'volume': float(token.get('volume24h', 0)),
+                'liquidity': float(token.get('liquidity', 0))
+            }
             
             # Analyze liquidity components
             volume_flow_analysis = self._analyze_volume_flow(token, market_data)
