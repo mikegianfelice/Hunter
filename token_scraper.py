@@ -38,7 +38,7 @@ PROMOTIONAL_KEYWORDS = [
     "presale", "airdrop", "whitelist", "ico", "ido", "fairlaunch", "stealth"
 ]
 
-# Enhanced API sources for better diversity
+# Enhanced API sources for better diversity - EXPANDED FOR MORE OPPORTUNITIES
 PRIMARY_URLS = [
     "https://api.dexscreener.com/latest/dex/search/?q=trending",
     "https://api.dexscreener.com/latest/dex/search/?q=hot",
@@ -50,9 +50,41 @@ PRIMARY_URLS = [
     "https://api.dexscreener.com/latest/dex/search/?q=popular",
     "https://api.dexscreener.com/latest/dex/search/?q=active",
     "https://api.dexscreener.com/latest/dex/search/?q=top",
+    # Additional sources for more opportunities
     "https://api.dexscreener.com/latest/dex/search/?q=moon",
     "https://api.dexscreener.com/latest/dex/search/?q=pump",
     "https://api.dexscreener.com/latest/dex/search/?q=surge",
+    "https://api.dexscreener.com/latest/dex/search/?q=spike",
+    "https://api.dexscreener.com/latest/dex/search/?q=breakout",
+    "https://api.dexscreener.com/latest/dex/search/?q=momentum",
+    "https://api.dexscreener.com/latest/dex/search/?q=breakthrough",
+    "https://api.dexscreener.com/latest/dex/search/?q=explosive",
+    "https://api.dexscreener.com/latest/dex/search/?q=rocket",
+    "https://api.dexscreener.com/latest/dex/search/?q=blast",
+    "https://api.dexscreener.com/latest/dex/search/?q=gem",
+    "https://api.dexscreener.com/latest/dex/search/?q=alpha",
+    "https://api.dexscreener.com/latest/dex/search/?q=beta",
+    "https://api.dexscreener.com/latest/dex/search/?q=gamma",
+    "https://api.dexscreener.com/latest/dex/search/?q=delta",
+    "https://api.dexscreener.com/latest/dex/search/?q=omega",
+    "https://api.dexscreener.com/latest/dex/search/?q=sigma",
+    "https://api.dexscreener.com/latest/dex/search/?q=lambda",
+    "https://api.dexscreener.com/latest/dex/search/?q=theta",
+    "https://api.dexscreener.com/latest/dex/search/?q=phi",
+    # Time-based searches for more opportunities
+    "https://api.dexscreener.com/latest/dex/search/?q=1h",
+    "https://api.dexscreener.com/latest/dex/search/?q=4h", 
+    "https://api.dexscreener.com/latest/dex/search/?q=24h",
+    "https://api.dexscreener.com/latest/dex/search/?q=7d",
+    # Category-based searches
+    "https://api.dexscreener.com/latest/dex/search/?q=defi",
+    "https://api.dexscreener.com/latest/dex/search/?q=memes",
+    "https://api.dexscreener.com/latest/dex/search/?q=gaming",
+    "https://api.dexscreener.com/latest/dex/search/?q=nft",
+    "https://api.dexscreener.com/latest/dex/search/?q=ai",
+    "https://api.dexscreener.com/latest/dex/search/?q=layer2",
+    "https://api.dexscreener.com/latest/dex/search/?q=privacy",
+    "https://api.dexscreener.com/latest/dex/search/?q=scaling",
 ]
 
 FALLBACK_URLS = [
@@ -239,7 +271,7 @@ def test_token_tradeability(token_address: str, chain_id: str = "solana") -> boo
         print(f"⚠️ Tradeability test failed for {token_address}: {e}")
         return False
 
-def fetch_trending_tokens(limit=100):
+def fetch_trending_tokens(limit=200):  # INCREASED for more opportunities
     """Enhanced token discovery with better diversity and quality filtering"""
     headers = {"User-Agent": "Mozilla/5.0 (bot)"}
     all_pairs = []
@@ -248,7 +280,7 @@ def fetch_trending_tokens(limit=100):
     primary_urls = PRIMARY_URLS.copy()
     random.shuffle(primary_urls)  # Randomize order to avoid bias
     
-    for u in primary_urls:
+    for u in primary_urls[:15]:  # INCREASED to 15 sources for more opportunities
         try:
             data = get_json(u, headers=headers, timeout=10, retries=3, backoff=0.7)
             if data and data.get("pairs"):
@@ -421,7 +453,7 @@ def fetch_trending_tokens(limit=100):
     
     # Apply tradeability filter but make it less aggressive
     from tradeability_checker import filter_tradeable_tokens
-    tradeable_tokens = filter_tradeable_tokens(diverse_tokens, max_checks=5)  # Check even fewer tokens to avoid API limits
+    tradeable_tokens = filter_tradeable_tokens(diverse_tokens, max_checks=10)  # INCREASED for more opportunities
     
     # Take top tokens up to limit
     tokens_for_trading = tradeable_tokens[:limit]

@@ -1,19 +1,19 @@
 # === Bot Configuration ===
-test_mode: false  # LIVE TRADING ENABLED - Sustainable Strategy
+test_mode: false  # LIVE TRADING ENABLED - Micro Live Testing
 
 # === Trading Parameters ===
-trade_amount_usd: 5
+trade_amount_usd: 1.0  # MICRO LIVE TESTING - $1 trades only
 slippage: 0.05  # Reduced from 10% to 5% for better execution
 take_profit: 0.15  # Reduced from 50% to 15% for realistic targets
 stop_loss: 0.08  # Reduced from 25% to 8% for tighter risk control
 use_dynamic_tp: true  # Enable dynamic take profit
-min_trade_amount_usd: 2.0  # Minimum trade amount to avoid tiny trades that fail
+min_trade_amount_usd: 1.0  # Minimum trade amount for micro testing
 
 # === Advanced Trading Features ===
 # Order splitting for large trades
 enable_order_splitting: true
 max_price_impact_per_slice: 0.02  # 2% max price impact per slice
-min_slice_amount_usd: 2.0  # Minimum slice size (increased to avoid tiny trades)
+min_slice_amount_usd: 1.0  # Minimum slice size for micro testing
 max_slices_per_trade: 5  # Maximum number of slices per trade
 
 # Dynamic slippage based on price impact
@@ -45,14 +45,14 @@ min_pool_reserves_multiplier: 2.0  # Pool reserves must be 2x trade amount
 
 # === Strategy Thresholds ===
 min_momentum_pct: 0.001  # Increased momentum requirement for quality
-min_volume_24h_for_buy: 25000   # SUSTAINABLE - minimum $25k volume (quality over quantity)
-min_liquidity_usd_for_buy: 75000  # SUSTAINABLE - minimum $75k liquidity (quality over quantity)
-min_price_usd: 0.00001  # Higher minimum price to avoid micro-caps
+min_volume_24h_for_buy: 10000   # MICRO TESTING - reduced to $10k volume for more opportunities
+min_liquidity_usd_for_buy: 25000  # MICRO TESTING - reduced to $25k liquidity for more opportunities
+min_price_usd: 0.000001  # MICRO TESTING - reduced minimum price for more opportunities
 
 # Fast-path thresholds for first-seen tokens
-fastpath_min_volume_24h: 50000   # SUSTAINABLE - minimum $50k volume for quality
-fastpath_min_liquidity_usd: 100000   # SUSTAINABLE - minimum $100k liquidity for quality
-fastpath_min_sent_score: 50  # Higher sentiment requirement
+fastpath_min_volume_24h: 20000   # MICRO TESTING - reduced to $20k volume for more opportunities
+fastpath_min_liquidity_usd: 50000   # MICRO TESTING - reduced to $50k liquidity for more opportunities
+fastpath_min_sent_score: 30  # MICRO TESTING - reduced sentiment requirement for more opportunities
 
 # === Pre-buy Delisting Check ===
 enable_pre_buy_delisting_check: false  # DISABLED - too aggressive, causing false rejections
@@ -63,8 +63,8 @@ pre_buy_check_timeout: 10
 supported_chains: ["ethereum", "solana", "base"]
 
 # === Risk Management ===
-max_concurrent_positions: 3  # Reduced for quality focus
-daily_loss_limit_usd: 30.0  # Reduced for conservative approach
+max_concurrent_positions: 1  # MICRO TESTING - Single position only
+daily_loss_limit_usd: 5.0  # MICRO TESTING - $5 daily loss limit
 max_losing_streak: 2  # Stop after 2 losses
 circuit_breaker_minutes: 120  # Longer cooldown after losses
 per_trade_max_usd: 5  # Keep current limit
