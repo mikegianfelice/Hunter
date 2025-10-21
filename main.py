@@ -37,7 +37,13 @@ def safe_print(msg):
         print(msg)
     except BrokenPipeError:
         # Handle broken pipe error gracefully
+        logger.warning("Broken pipe error in print - connection may have been closed")
         pass
+    except OSError as e:
+        if e.errno == 32:  # Broken pipe
+            logger.warning(f"Broken pipe error (errno 32): {e}")
+        else:
+            logger.error(f"OS error in print: {e}")
     except Exception as e:
         # Handle any other print errors
         logger.error(f"Print error: {e}")

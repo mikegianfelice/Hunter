@@ -254,7 +254,21 @@ class SimpleSolanaExecutor:
                             ]
                         }
                         
-                        rpc_response = requests.post(SOLANA_RPC_URL, json=rpc_payload, timeout=30)
+                        try:
+                            rpc_response = requests.post(SOLANA_RPC_URL, json=rpc_payload, timeout=30)
+                        except requests.exceptions.ConnectionError as e:
+                            error_msg = str(e).lower()
+                            if "broken pipe" in error_msg or "errno 32" in error_msg:
+                                print(f"❌ Broken pipe error sending Solana transaction: Connection closed unexpectedly")
+                            else:
+                                print(f"❌ Connection error sending Solana transaction: {e}")
+                            return "", False
+                        except OSError as e:
+                            if e.errno == 32:  # Broken pipe
+                                print(f"❌ Broken pipe error (errno 32) sending Solana transaction: {e}")
+                            else:
+                                print(f"❌ OS error sending Solana transaction: {e}")
+                            return "", False
                         
                         if rpc_response.status_code == 200:
                             rpc_result = rpc_response.json()

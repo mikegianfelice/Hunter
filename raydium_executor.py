@@ -131,6 +131,10 @@ class RaydiumExecutor:
                         "priceImpact": data.get("priceImpact"),
                         "route": data.get("route")
                     }
+            elif response.status_code == 500:
+                print(f"⚠️ Raydium SDK quote API server error (500) - trying alternative...")
+            else:
+                print(f"⚠️ Raydium SDK quote returned {response.status_code}")
             
             # Try alternative Raydium quote endpoint
             url2 = "https://api.raydium.io/v2/main/quote"
@@ -146,6 +150,10 @@ class RaydiumExecutor:
                         "priceImpact": data2.get("priceImpact"),
                         "route": data2.get("route")
                     }
+            elif response2.status_code == 500:
+                print(f"⚠️ Raydium main quote API also returning 500 server error")
+            else:
+                print(f"⚠️ Raydium main quote returned {response2.status_code}")
             
             # Fallback: Use DexScreener to get price and calculate quote
             print("   🔄 Using DexScreener fallback for quote...")
@@ -279,7 +287,21 @@ class RaydiumExecutor:
                 ]
             }
             
-            response = requests.post(self.rpc_url, json=rpc_payload, timeout=30)
+            try:
+                response = requests.post(self.rpc_url, json=rpc_payload, timeout=30)
+            except requests.exceptions.ConnectionError as e:
+                error_msg = str(e).lower()
+                if "broken pipe" in error_msg or "errno 32" in error_msg:
+                    print(f"❌ Broken pipe error sending Raydium transaction: Connection closed unexpectedly")
+                else:
+                    print(f"❌ Connection error sending Raydium transaction: {e}")
+                return None
+            except OSError as e:
+                if e.errno == 32:  # Broken pipe
+                    print(f"❌ Broken pipe error (errno 32) sending Raydium transaction: {e}")
+                else:
+                    print(f"❌ OS error sending Raydium transaction: {e}")
+                return None
             
             if response.status_code == 200:
                 result = response.json()

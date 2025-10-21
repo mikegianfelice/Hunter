@@ -73,6 +73,17 @@ class RaydiumCustomLib:
                     else:
                         print(f"⚠️ Raydium quote failed (attempt {attempt + 1}/3): {response.status_code}")
                         
+                        # Handle 500 server errors specifically
+                        if response.status_code == 500:
+                            print(f"⚠️ Raydium API server error (500) - trying alternative approach...")
+                            if attempt < 2:
+                                time.sleep(3)  # Wait longer for server errors
+                                continue
+                            else:
+                                # Try alternative endpoint on final attempt
+                                print(f"🔄 Trying alternative Raydium endpoint...")
+                                return self._try_alternative_raydium_quote(input_mint, output_mint, amount, slippage)
+                        
                         # Try with different parameters on 400/404 errors
                         if (response.status_code == 400 or response.status_code == 404) and attempt < 2:
                             if attempt == 0:
@@ -145,6 +156,81 @@ class RaydiumCustomLib:
         except Exception as e:
             print(f"❌ Raydium quote error: {e}")
             return {}
+
+    def _try_alternative_raydium_quote(self, input_mint: str, output_mint: str, amount: int, slippage: float) -> Dict[str, Any]:
+        """Try alternative Raydium endpoints when main quote API fails"""
+        try:
+            # Try Raydium main quote endpoint as alternative
+            url = "https://api.raydium.io/v2/main/quote"
+            params = {
+                "inputMint": input_mint,
+                "outputMint": output_mint,
+                "amount": str(amount),
+                "slippage": str(slippage),
+                "version": "4"
+            }
+            
+            print(f"🔄 Trying Raydium main quote endpoint...")
+            response = requests.get(url, params=params, timeout=15)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data and not data.get("error") and data.get("success") != False:
+                    print(f"✅ Raydium alternative quote: {data.get('inAmount', 'N/A')} -> {data.get('outAmount', 'N/A')}")
+                    return data
+                else:
+                    print(f"⚠️ Raydium alternative quote failed: {data.get('error', 'Unknown error')}")
+            elif response.status_code == 500:
+                print(f"⚠️ Raydium main quote also returning 500 server error")
+            else:
+                print(f"⚠️ Raydium main quote returned {response.status_code}")
+            
+            # If alternative also fails, try DexScreener fallback
+            return self._try_dexscreener_fallback(output_mint, amount)
+            
+        except Exception as e:
+            print(f"❌ Raydium alternative quote error: {e}")
+            return self._try_dexscreener_fallback(output_mint, amount)
+
+    def _try_dexscreener_fallback(self, output_mint: str, amount: int) -> Dict[str, Any]:
+        """Try DexScreener as final fallback for quote calculation"""
+        try:
+            print(f"🔄 Using DexScreener fallback for quote...")
+            url = f"https://api.dexscreener.com/latest/dex/tokens/{output_mint}"
+            response = requests.get(url, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                pairs = data.get("pairs", [])
+                
+                # Find Raydium pair
+                for pair in pairs:
+                    dex_id = pair.get("dexId", "").lower()
+                    if "raydium" in dex_id:
+                        price_usd = float(pair.get("priceUsd", 0))
+                        if price_usd > 0:
+                            # Calculate quote based on price
+                            input_usd = amount / 1000000  # Convert from USDC decimals
+                            output_tokens = input_usd / price_usd
+                            
+                            print(f"✅ DexScreener fallback quote: {amount} -> {int(output_tokens * 1000000000)}")
+                            print(f"   Price: ${price_usd}")
+                            
+                            return {
+                                "success": True,
+                                "inAmount": str(amount),
+                                "outAmount": str(int(output_tokens * 1000000000)),  # Convert to token decimals
+                                "priceImpact": 0.1,  # Estimated
+                                "route": "raydium-dexscreener-fallback"
+                            }
+                
+                print(f"⚠️ No Raydium pairs found in DexScreener data")
+            else:
+                print(f"❌ DexScreener API failed: {response.status_code}")
+        except Exception as e:
+            print(f"⚠️ DexScreener fallback failed: {e}")
+        
+        return {}
 
     def get_swap_transaction(self, quote_response: Dict[str, Any]) -> str:
         """Get swap transaction from Raydium API with enhanced error handling"""
@@ -316,7 +402,21 @@ class RaydiumCustomLib:
                 ]
             }
             
-            response = requests.post(self.rpc_url, json=rpc_payload, timeout=30)
+            try:
+                response = requests.post(self.rpc_url, json=rpc_payload, timeout=30)
+            except requests.exceptions.ConnectionError as e:
+                error_msg = str(e).lower()
+                if "broken pipe" in error_msg or "errno 32" in error_msg:
+                    print(f"❌ Broken pipe error sending transaction: Connection closed unexpectedly")
+                else:
+                    print(f"❌ Connection error sending transaction: {e}")
+                return "", False
+            except OSError as e:
+                if e.errno == 32:  # Broken pipe
+                    print(f"❌ Broken pipe error (errno 32) sending transaction: {e}")
+                else:
+                    print(f"❌ OS error sending transaction: {e}")
+                return "", False
             
             if response.status_code == 200:
                 result = response.json()

@@ -76,7 +76,11 @@ def get_json(url, headers=None, timeout=DEFAULT_TIMEOUT, retries=DEFAULT_RETRIES
             return resp.json()
         except requests.exceptions.ConnectionError as e:
             last_err = e
-            print(f"⚠️ Connection error (attempt {attempt}/{retries}): {type(e).__name__}")
+            error_msg = str(e).lower()
+            if "broken pipe" in error_msg or "errno 32" in error_msg:
+                print(f"⚠️ Broken pipe error (attempt {attempt}/{retries}): Connection closed unexpectedly")
+            else:
+                print(f"⚠️ Connection error (attempt {attempt}/{retries}): {type(e).__name__}")
             if attempt < retries:
                 _sleep(attempt, backoff)
             else:
@@ -99,6 +103,17 @@ def get_json(url, headers=None, timeout=DEFAULT_TIMEOUT, retries=DEFAULT_RETRIES
             else:
                 _record_failure()
         except requests.exceptions.RequestException as e:
+            last_err = e
+            if attempt < retries:
+                _sleep(attempt, backoff)
+            else:
+                _record_failure()
+        except OSError as e:
+            # Handle broken pipe and other OS-level network errors
+            if e.errno == 32:  # Broken pipe
+                print(f"⚠️ Broken pipe error (attempt {attempt}/{retries}): {e}")
+            else:
+                print(f"⚠️ OS error (attempt {attempt}/{retries}): {e}")
             last_err = e
             if attempt < retries:
                 _sleep(attempt, backoff)
@@ -130,7 +145,11 @@ def post_json(url, payload, headers=None, timeout=DEFAULT_TIMEOUT, retries=DEFAU
             return resp.json()
         except requests.exceptions.ConnectionError as e:
             last_err = e
-            print(f"⚠️ Connection error (attempt {attempt}/{retries}): {type(e).__name__}")
+            error_msg = str(e).lower()
+            if "broken pipe" in error_msg or "errno 32" in error_msg:
+                print(f"⚠️ Broken pipe error (attempt {attempt}/{retries}): Connection closed unexpectedly")
+            else:
+                print(f"⚠️ Connection error (attempt {attempt}/{retries}): {type(e).__name__}")
             if attempt < retries:
                 _sleep(attempt, backoff)
             else:
@@ -153,6 +172,17 @@ def post_json(url, payload, headers=None, timeout=DEFAULT_TIMEOUT, retries=DEFAU
             else:
                 _record_failure()
         except requests.exceptions.RequestException as e:
+            last_err = e
+            if attempt < retries:
+                _sleep(attempt, backoff)
+            else:
+                _record_failure()
+        except OSError as e:
+            # Handle broken pipe and other OS-level network errors
+            if e.errno == 32:  # Broken pipe
+                print(f"⚠️ Broken pipe error (attempt {attempt}/{retries}): {e}")
+            else:
+                print(f"⚠️ OS error (attempt {attempt}/{retries}): {e}")
             last_err = e
             if attempt < retries:
                 _sleep(attempt, backoff)

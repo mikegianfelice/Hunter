@@ -8,6 +8,50 @@ import time
 from typing import Dict, List, Tuple, Optional
 from http_utils import get_json
 
+# Circuit breaker for Raydium API failures
+_raydium_circuit_breaker = {
+    "failures": 0,
+    "last_failure": 0,
+    "is_open": False,
+    "failure_threshold": 5,  # Open circuit after 5 consecutive failures
+    "recovery_timeout": 300  # 5 minutes before trying again
+}
+
+def _check_circuit_breaker() -> bool:
+    """Check if Raydium circuit breaker is open"""
+    global _raydium_circuit_breaker
+    
+    if not _raydium_circuit_breaker["is_open"]:
+        return False
+    
+    current_time = time.time()
+    if current_time - _raydium_circuit_breaker["last_failure"] > _raydium_circuit_breaker["recovery_timeout"]:
+        # Reset circuit breaker
+        _raydium_circuit_breaker["is_open"] = False
+        _raydium_circuit_breaker["failures"] = 0
+        print("🔄 Raydium circuit breaker reset - trying API again")
+        return False
+    
+    return True
+
+def _record_circuit_breaker_failure():
+    """Record a failure in the circuit breaker"""
+    global _raydium_circuit_breaker
+    
+    _raydium_circuit_breaker["failures"] += 1
+    _raydium_circuit_breaker["last_failure"] = time.time()
+    
+    if _raydium_circuit_breaker["failures"] >= _raydium_circuit_breaker["failure_threshold"]:
+        _raydium_circuit_breaker["is_open"] = True
+        print(f"⚠️ Raydium circuit breaker opened after {_raydium_circuit_breaker['failures']} failures")
+
+def _record_circuit_breaker_success():
+    """Record a success in the circuit breaker"""
+    global _raydium_circuit_breaker
+    
+    _raydium_circuit_breaker["failures"] = 0
+    _raydium_circuit_breaker["is_open"] = False
+
 def check_jupiter_tradeability(token_address: str, chain_id: str = "solana") -> bool:
     """
     Check if a token is tradeable on Jupiter
@@ -31,57 +75,131 @@ def check_jupiter_tradeability(token_address: str, chain_id: str = "solana") -> 
 
 def check_raydium_tradeability(token_address: str, chain_id: str = "solana") -> bool:
     """
-    Check if a token is tradeable on Raydium
+    Check if a token is tradeable on Raydium with enhanced error handling and circuit breaker
     Returns True if tradeable, False otherwise
     """
     if chain_id.lower() != "solana":
         return True  # Skip check for non-Solana chains
+    
+    # Check circuit breaker first
+    if _check_circuit_breaker():
+        print(f"⚠️ Raydium circuit breaker is open - skipping API calls for {token_address[:8]}...{token_address[-8:]}")
+        return True  # Assume tradeable when circuit breaker is open
     
     try:
         # Try to get token info from Raydium API with retry logic
         url = "https://api.raydium.io/v2/sdk/token/raydium.mainnet.json"
         
         try:
-            data = get_json(url, timeout=10, retries=3, backoff=1.0)
+            data = get_json(url, timeout=10, retries=2, backoff=1.5)
             official_tokens = data.get("official", [])
             
             # Check if token is in official Raydium tokens
             for token_info in official_tokens:
                 if token_info.get("mint", "").lower() == token_address.lower():
+                    print(f"✅ Token {token_address[:8]}... found in official Raydium list")
+                    _record_circuit_breaker_success()  # Record success
                     return True
+        except requests.exceptions.HTTPError as e:
+            if e.response and e.response.status_code == 500:
+                print(f"⚠️ Raydium token list API server error (500) for {token_address[:8]}...{token_address[-8:]}")
+                _record_circuit_breaker_failure()  # Record failure
+                # Continue to quote test despite 500 error
+            else:
+                print(f"⚠️ Raydium token list HTTP error for {token_address[:8]}...{token_address[-8:]}: {e.response.status_code if e.response else 'Unknown'}")
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
             print(f"⚠️ Network error checking Raydium token list for {token_address[:8]}...{token_address[-8:]}: {type(e).__name__}")
         except Exception as e:
             print(f"⚠️ Error checking Raydium token list for {token_address[:8]}...{token_address[-8:]}: {e}")
         
         # If not in official list, try a quote test
-        return _test_raydium_quote(token_address)
+        result = _test_raydium_quote(token_address)
+        if result:
+            _record_circuit_breaker_success()  # Record success
+        else:
+            _record_circuit_breaker_failure()  # Record failure
+        return result
         
     except Exception as e:
         print(f"⚠️ Raydium tradeability check failed for {token_address[:8]}...{token_address[-8:]}: {e}")
+        _record_circuit_breaker_failure()  # Record failure
         return True  # Assume tradeable if check fails
 
 def _test_raydium_quote(token_address: str) -> bool:
-    """Test if we can get a quote from Raydium for this token"""
+    """Test if we can get a quote from Raydium for this token with enhanced error handling"""
     try:
-        # Try to get pool info for the token with retry logic
+        # Try to get pool info for the token with retry logic and better error handling
         base_url = "https://api.raydium.io/v2/main/price"
         url = f"{base_url}?ids={token_address}"
         
         try:
-            data = get_json(url, timeout=10, retries=3, backoff=1.0)
+            # Use http_utils with enhanced retry logic for 500 errors
+            data = get_json(url, timeout=15, retries=2, backoff=2.0)
             if data.get("data") and token_address in data["data"]:
+                _record_circuit_breaker_success()  # Record success
                 return True
             return False
+        except requests.exceptions.HTTPError as e:
+            if e.response and e.response.status_code == 500:
+                print(f"⚠️ Raydium API server error (500) for {token_address[:8]}...{token_address[-8:]}, trying alternative endpoint...")
+                _record_circuit_breaker_failure()  # Record failure
+                # Try alternative Raydium endpoint
+                return _test_raydium_alternative(token_address)
+            else:
+                print(f"⚠️ Raydium HTTP error for {token_address[:8]}...{token_address[-8:]}: {e.response.status_code if e.response else 'Unknown'}")
+                _record_circuit_breaker_failure()  # Record failure
+                return False
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
             print(f"⚠️ Network error checking Raydium price for {token_address[:8]}...{token_address[-8:]}: {type(e).__name__}")
+            _record_circuit_breaker_failure()  # Record failure
             return False
         except Exception as e:
             print(f"⚠️ Raydium quote test failed for {token_address[:8]}...{token_address[-8:]}: {e}")
+            _record_circuit_breaker_failure()  # Record failure
             return False
         
     except Exception as e:
         print(f"⚠️ Raydium quote test failed for {token_address[:8]}...{token_address[-8:]}: {e}")
+        _record_circuit_breaker_failure()  # Record failure
+        return False
+
+def _test_raydium_alternative(token_address: str) -> bool:
+    """Try alternative Raydium endpoints when main price API fails"""
+    try:
+        # Try Raydium SDK quote endpoint as alternative
+        url = "https://api.raydium.io/v2/sdk/quote"
+        params = {
+            "inputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
+            "outputMint": token_address,
+            "amount": "1000000",  # 1 USDC
+            "slippage": "0.02",
+            "version": "4"
+        }
+        
+        try:
+            response = requests.get(url, params=params, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("success") and data.get("outAmount"):
+                    print(f"✅ Raydium alternative quote successful for {token_address[:8]}...{token_address[-8:]}")
+                    _record_circuit_breaker_success()  # Record success
+                    return True
+            elif response.status_code == 500:
+                print(f"⚠️ Raydium SDK also returning 500 for {token_address[:8]}...{token_address[-8:]}")
+                _record_circuit_breaker_failure()  # Record failure
+                return False
+            else:
+                print(f"⚠️ Raydium SDK returned {response.status_code} for {token_address[:8]}...{token_address[-8:]}")
+                _record_circuit_breaker_failure()  # Record failure
+                return False
+        except Exception as e:
+            print(f"⚠️ Raydium SDK alternative failed for {token_address[:8]}...{token_address[-8:]}: {e}")
+            _record_circuit_breaker_failure()  # Record failure
+            return False
+            
+    except Exception as e:
+        print(f"⚠️ Raydium alternative test failed for {token_address[:8]}...{token_address[-8:]}: {e}")
+        _record_circuit_breaker_failure()  # Record failure
         return False
 
 def check_ethereum_tradeability(token_address: str, chain_id: str = "ethereum") -> bool:
