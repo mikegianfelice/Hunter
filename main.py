@@ -499,11 +499,11 @@ def check_practical_buy_signal(token: Dict) -> bool:
     
     # AI liquidity flow analysis
     liquidity_analysis = ai_liquidity_flow_analyzer.analyze_liquidity_flow(token, 5.0)
-    liquidity_score = liquidity_analysis['liquidity_score']
-    flow_recommendation = liquidity_analysis['flow_recommendations']['flow_recommendation']
+    liquidity_score = liquidity_analysis['liquidity_flow_score']
+    liquidity_recommendations = liquidity_analysis['liquidity_recommendations']
     
     # Check liquidity flow recommendation
-    if flow_recommendation == 'avoid_trading':
+    if any('avoid trading' in rec.lower() for rec in liquidity_recommendations):
         print(f"❌ {symbol}: Liquidity flow analysis recommends avoiding trading")
         return False
     
