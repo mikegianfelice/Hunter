@@ -129,6 +129,9 @@ class AIMarketRegimeTransitionDetector:
             correlation_break_analysis = self._analyze_correlation_breaks(market_data)
             news_impact_analysis = self._analyze_news_impact(market_data)
             
+            # Determine current regime from market data
+            current_regime = self._determine_current_regime(market_data)
+            
             # Calculate transition probability
             transition_probability = self._calculate_transition_probability(
                 price_momentum_analysis, volume_pattern_analysis, sentiment_shift_analysis,
@@ -153,9 +156,6 @@ class AIMarketRegimeTransitionDetector:
                 price_momentum_analysis, volume_pattern_analysis, sentiment_shift_analysis,
                 volatility_change_analysis, correlation_break_analysis, news_impact_analysis
             )
-            
-            # Determine current regime from market data
-            current_regime = self._determine_current_regime(market_data)
             
             # Calculate regime stability
             regime_stability = self._calculate_regime_stability(
@@ -216,13 +216,13 @@ class AIMarketRegimeTransitionDetector:
             volume = market_data.get('volume', 0)
             
             if price > 0 and volume > 100000:  # High volume
-                return 'bull'
+                return 'bull_market'
             elif price > 0 and volume < 10000:  # Low volume
-                return 'bear'
+                return 'bear_market'
             else:
-                return 'sideways'
+                return 'sideways_market'
         except Exception:
-            return 'sideways'
+            return 'sideways_market'
     
     def _analyze_price_momentum(self, market_data: Dict) -> Dict:
         """Analyze price momentum for regime transition signals"""
