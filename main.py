@@ -236,6 +236,13 @@ def check_practical_buy_signal(token: Dict) -> bool:
     liquidity = float(token.get("liquidity", 0))
     symbol = token.get("symbol", "")
     
+    # Initialize market_data with default values
+    market_data = {
+        'timestamp': datetime.now().isoformat(),
+        'regime': 'normal',
+        'volatility': 0.2
+    }
+    
     print(f"🔍 Evaluating {symbol} for practical sustainable trading...")
     
     # === SAFETY SYSTEM CHECKS ===
@@ -338,6 +345,9 @@ def check_practical_buy_signal(token: Dict) -> bool:
     regime_data = ai_market_regime_detector.detect_market_regime()
     regime = regime_data['regime']
     quality_threshold_adjustment = regime_data['quality_threshold_adjustment']
+    
+    # Update market_data with detected regime
+    market_data['regime'] = regime
     
     # Dynamic volume requirement based on market regime
     base_volume_requirement = 25000
