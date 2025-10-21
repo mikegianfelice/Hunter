@@ -58,5 +58,17 @@ def send_telegram_message(message: str, markdown: bool = False, disable_preview:
         print("📨 Telegram alert sent!")
         return True
     except requests.RequestException as e:
-        print(f"❌ Telegram request error: {e}")
+        if hasattr(e, 'errno') and e.errno == 32:  # Broken pipe
+            print(f"⚠️ Telegram broken pipe error (connection closed): {e}")
+        else:
+            print(f"❌ Telegram request error: {e}")
+        return False
+    except OSError as e:
+        if e.errno == 32:  # Broken pipe
+            print(f"⚠️ Telegram broken pipe error (OS): {e}")
+        else:
+            print(f"❌ Telegram OS error: {e}")
+        return False
+    except Exception as e:
+        print(f"❌ Telegram unexpected error: {e}")
         return False

@@ -963,8 +963,10 @@ def practical_trade_loop():
             time.sleep(3)
             
         except Exception as e:
-            log_print(f"🔥 Error processing {token.get('symbol', 'UNKNOWN')}: {e}")
-            rejections["error"].append(token.get("symbol", "UNKNOWN"))
+            error_msg = str(e) if e else "Unknown error"
+            symbol = token.get('symbol', 'UNKNOWN') if token else 'UNKNOWN'
+            log_print(f"🔥 Error processing {symbol}: {error_msg}")
+            rejections["error"].append(symbol)
     
     # Print summary
     _print_practical_summary(rejections, successful_trades)
@@ -1722,11 +1724,12 @@ def main():
                 pass
             break
         except Exception as e:
-            log_print(f"🔥 Bot error: {e}")
+            error_msg = str(e) if e else "Unknown error"
+            log_print(f"🔥 Bot error: {error_msg}")
             try:
-                send_telegram_message(f"🔥 Bot error: {e}")
-            except:
-                pass
+                send_telegram_message(f"🔥 Bot error: {error_msg}")
+            except Exception as telegram_error:
+                log_print(f"⚠️ Failed to send telegram error message: {telegram_error}")
             time.sleep(60)  # Wait 1 minute before retry
 
 def _show_regime_transition_insights():
