@@ -5,10 +5,10 @@ import base58
 from typing import Tuple, Optional, Dict, Any, List
 from dataclasses import dataclass
 from solana.rpc.api import Client
-from solana.transaction import Transaction
-from solana.keypair import Keypair
-from solana.publickey import PublicKey
-from solana.system_program import TransferParams, transfer
+from solders.transaction import Transaction
+from solders.keypair import Keypair
+from solders.pubkey import Pubkey as PublicKey
+from solders.system_program import TransferParams, transfer
 from solana.rpc.commitment import Commitment
 import struct
 
@@ -226,7 +226,7 @@ class SimpleSolanaExecutor:
                     
                     # Try to deserialize and sign the transaction
                     try:
-                        from solana.transaction import Transaction
+                        from solders.transaction import Transaction
                         transaction = Transaction.deserialize(decoded_data)
                         print(f"✅ Transaction deserialized, {len(transaction.instructions)} instructions")
                         
