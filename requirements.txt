@@ -12,7 +12,7 @@ anchorpy>=0.18.0   # Anchor framework support (optional)
 
 # HTTP and networking
 requests>=2.31.0
-httpx>=0.23.3
+httpx>=0.28.0
 aiohttp>=3.12.14
 websockets>=11.0.3
 

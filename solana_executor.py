@@ -27,8 +27,8 @@ class SimpleSolanaExecutor:
         # Initialize wallet
         try:
             if self.private_key:
-                self.keypair = Keypair.from_secret_key(base58.b58decode(self.private_key))
-                print(f"✅ Solana wallet initialized: {self.keypair.public_key}...{str(self.keypair.public_key)[-8:]}")
+                self.keypair = Keypair.from_bytes(base58.b58decode(self.private_key))
+                print(f"✅ Solana wallet initialized: {self.keypair.pubkey()}...{str(self.keypair.pubkey())[-8:]}")
             else:
                 print("⚠️ No Solana private key provided")
                 self.keypair = None
@@ -403,7 +403,7 @@ class SimpleSolanaExecutor:
     def get_solana_balance(self) -> float:
         """Get SOL balance"""
         try:
-            balance = self.client.get_balance(PublicKey(self.wallet_address))
+            balance = self.client.get_balance(PublicKey.from_string(self.wallet_address))
             if balance.value:
                 return float(balance.value) / 1_000_000_000  # Convert lamports to SOL
             return 0.0
