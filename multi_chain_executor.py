@@ -133,19 +133,31 @@ def _log_position(token: dict):
     }
     
     Path(POSITIONS_FILE).write_text(json.dumps(data, indent=2))
-    print(f"📝 Logged position: {token.get('symbol','?')} ({addr}) on {chain_id.upper()} @ ${entry:.6f}")
+    try:
+        print(f"📝 Logged position: {token.get('symbol','?')} ({addr}) on {chain_id.upper()} @ ${entry:.6f}")
+    except BrokenPipeError:
+        pass
 
 def _launch_monitor_detached():
     script = Path(MONITOR_SCRIPT).resolve()
     if not script.exists():
-        print(f"⚠️ {MONITOR_SCRIPT} not found at {script}")
+        try:
+            print(f"⚠️ {MONITOR_SCRIPT} not found at {script}")
+        except BrokenPipeError:
+            pass
         return
     try:
         subprocess.Popen([sys.executable, str(script)],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        print(f"👁️ Started {MONITOR_SCRIPT} via {sys.executable}")
+        try:
+            print(f"👁️ Started {MONITOR_SCRIPT} via {sys.executable}")
+        except BrokenPipeError:
+            pass
     except Exception as e:
-        print(f"⚠️ Could not launch {MONITOR_SCRIPT}: {e}")
+        try:
+            print(f"⚠️ Could not launch {MONITOR_SCRIPT}: {e}")
+        except BrokenPipeError:
+            pass
 
 def execute_trade(token: dict, trade_amount_usd: float = None):
     """

@@ -31,6 +31,17 @@ def log_print(msg):
     """Print to console and log to file"""
     logger.info(msg)
 
+def safe_print(msg):
+    """Print with broken pipe error handling"""
+    try:
+        print(msg)
+    except BrokenPipeError:
+        # Handle broken pipe error gracefully
+        pass
+    except Exception as e:
+        # Handle any other print errors
+        logger.error(f"Print error: {e}")
+
 # Add live trading safety check
 def check_live_trading_ready():
     """Verify system is ready for live trading"""
@@ -243,7 +254,7 @@ def check_practical_buy_signal(token: Dict) -> bool:
         'volatility': 0.2
     }
     
-    print(f"🔍 Evaluating {symbol} for practical sustainable trading...")
+    safe_print(f"🔍 Evaluating {symbol} for practical sustainable trading...")
     
     # === SAFETY SYSTEM CHECKS ===
     
@@ -263,11 +274,11 @@ def check_practical_buy_signal(token: Dict) -> bool:
         )
         
         if emergency_analysis['emergency_level'] in ['emergency', 'critical']:
-            print(f"🚨 {symbol}: Emergency stop activated - {emergency_analysis['emergency_level']}")
+            safe_print(f"🚨 {symbol}: Emergency stop activated - {emergency_analysis['emergency_level']}")
             return False
             
     except Exception as e:
-        print(f"⚠️ Emergency stop check failed: {e}")
+        safe_print(f"⚠️ Emergency stop check failed: {e}")
     
     # 2. AI Market Condition Guardian Check
     try:
@@ -284,11 +295,11 @@ def check_practical_buy_signal(token: Dict) -> bool:
         )
         
         if not guardian_analysis['trading_safety'] in ['safe', 'cautious']:
-            print(f"🛡️ {symbol}: Market conditions unsafe - {guardian_analysis['condition_level']}")
+            safe_print(f"🛡️ {symbol}: Market conditions unsafe - {guardian_analysis['condition_level']}")
             return False
             
     except Exception as e:
-        print(f"⚠️ Market guardian check failed: {e}")
+        safe_print(f"⚠️ Market guardian check failed: {e}")
     
     # 3. AI Position Size Validator Check
     try:
@@ -338,7 +349,7 @@ def check_practical_buy_signal(token: Dict) -> bool:
     
     # Basic requirements
     if not address or price <= 0.00001:  # $0.00001 minimum price
-        print(f"❌ {symbol}: Missing address or price too low (${price:.6f})")
+        safe_print(f"❌ {symbol}: Missing address or price too low (${price:.6f})")
         return False
     
     # Get market regime for dynamic thresholds
@@ -346,8 +357,12 @@ def check_practical_buy_signal(token: Dict) -> bool:
     regime = regime_data['regime']
     quality_threshold_adjustment = regime_data['quality_threshold_adjustment']
     
-    # Update market_data with detected regime
-    market_data['regime'] = regime
+    # Initialize market_data with detected regime
+    market_data = {
+        'timestamp': datetime.now().isoformat(),
+        'regime': regime,
+        'volatility': random.uniform(0.1, 0.4)
+    }
     
     # Dynamic volume requirement based on market regime
     base_volume_requirement = 25000

@@ -319,41 +319,65 @@ class JupiterCustomLib:
                 result = response.json()
                 if "result" in result:
                     tx_hash = result["result"]
-                    print(f"✅ Transaction sent: {tx_hash}")
+                    try:
+                        print(f"✅ Transaction sent: {tx_hash}")
+                    except BrokenPipeError:
+                        pass
                     return tx_hash, True
                 elif "error" in result:
                     error_msg = result["error"]
-                    print(f"❌ RPC error: {error_msg}")
+                    try:
+                        print(f"❌ RPC error: {error_msg}")
+                    except BrokenPipeError:
+                        pass
                     return str(error_msg), False
             else:
-                print(f"❌ RPC request failed: {response.status_code}")
+                try:
+                    print(f"❌ RPC request failed: {response.status_code}")
+                except BrokenPipeError:
+                    pass
                 return "", False
                 
         except Exception as e:
-            print(f"❌ Send transaction error: {e}")
+            try:
+                print(f"❌ Send transaction error: {e}")
+            except BrokenPipeError:
+                pass
             return "", False
 
     def execute_swap(self, input_mint: str, output_mint: str, amount: int, slippage: float = 0.10) -> Tuple[str, bool]:
         """Execute complete swap process with enhanced error handling"""
         try:
-            print(f"🔄 Executing swap: {input_mint[:8]}... -> {output_mint[:8]}...")
+            try:
+                print(f"🔄 Executing swap: {input_mint[:8]}... -> {output_mint[:8]}...")
+            except BrokenPipeError:
+                pass
             
             # Step 1: Get quote
             quote = self.get_quote(input_mint, output_mint, amount, slippage)
             if not quote:
-                print(f"❌ Failed to get quote for swap")
+                try:
+                    print(f"❌ Failed to get quote for swap")
+                except BrokenPipeError:
+                    pass
                 return "", False
             
             # Step 2: Get swap transaction
             transaction_data = self.get_swap_transaction(quote)
             if not transaction_data:
-                print(f"❌ Failed to get swap transaction")
+                try:
+                    print(f"❌ Failed to get swap transaction")
+                except BrokenPipeError:
+                    pass
                 return "", False
             
             # Step 3: Sign transaction
             signed_transaction = self.sign_transaction(transaction_data)
             if not signed_transaction:
-                print(f"❌ Failed to sign transaction")
+                try:
+                    print(f"❌ Failed to sign transaction")
+                except BrokenPipeError:
+                    pass
                 return "", False
             
             # Step 4: Send transaction
