@@ -1930,7 +1930,7 @@ def _show_drawdown_protection_insights():
         market_data = {'timestamp': datetime.now().isoformat()}
         
         # Get drawdown protection summary
-        drawdown_summary = ai_drawdown_protection_system.get_drawdown_summary(portfolio_data, trade_history, market_data)
+        drawdown_summary = ai_drawdown_protection_system.get_drawdown_summary([portfolio_data], [trade_history], [market_data])
         
         log_print("\n🛡️ AI Drawdown Protection Insights")
         log_print(f"• Total Value: ${portfolio_data['total_value']:,.0f}")
