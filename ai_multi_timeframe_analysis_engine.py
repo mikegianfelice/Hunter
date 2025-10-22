@@ -102,11 +102,15 @@ class AIMultiTimeframeAnalysisEngine:
         self.good_alignment_threshold = 0.7  # 70% good alignment
         self.poor_alignment_threshold = 0.4  # 40% poor alignment
     
-    def analyze_multi_timeframe(self, token: Dict, trade_amount: float) -> Dict:
+    def analyze_multi_timeframe(self, token: Dict, trade_amount: float, market_data: Dict = None) -> Dict:
         """
         Analyze multiple timeframes for comprehensive market view
         Returns multi-timeframe analysis with signal confirmation
         """
+        # Provide default market_data if not provided
+        if market_data is None:
+            market_data = {'timestamp': datetime.now().isoformat()}
+            
         try:
             symbol = token.get("symbol", "UNKNOWN")
             cache_key = f"multi_timeframe_{symbol}_{market_data.get('timestamp', 'current')}"
@@ -1067,7 +1071,7 @@ class AIMultiTimeframeAnalysisEngine:
             
             for i, token in enumerate(tokens):
                 market_data = market_data_list[i] if i < len(market_data_list) else {}
-                analysis = self.analyze_multi_timeframe(token, market_data)
+                analysis = self.analyze_multi_timeframe(token, 5.0, market_data)
                 
                 analysis_summaries.append({
                     'symbol': token.get('symbol', 'UNKNOWN'),
