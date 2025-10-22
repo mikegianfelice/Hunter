@@ -223,6 +223,12 @@ class PerformanceTracker:
         """Get currently open trades"""
         return [t for t in self.trades if t['status'] == 'open']
     
+    def get_trade_history(self, limit: int = None) -> List[Dict]:
+        """Get trade history (all trades or limited by count)"""
+        if limit is None:
+            return self.trades
+        return sorted(self.trades, key=lambda x: x['entry_time'], reverse=True)[:limit]
+    
     def generate_performance_report(self) -> str:
         """Generate a comprehensive performance report"""
         summary = self.get_performance_summary(30)
