@@ -253,11 +253,36 @@ def check_practical_buy_signal(token: Dict) -> bool:
     liquidity = float(token.get("liquidity", 0))
     symbol = token.get("symbol", "")
     
-    # Initialize market_data with default values
+    # Initialize market_data with comprehensive default values - DO NOT REDEFINE
     market_data = {
         'timestamp': datetime.now().isoformat(),
         'regime': 'normal',
-        'volatility': 0.2
+        'volatility': 0.2,
+        'price': price,
+        'volume': volume_24h,
+        'liquidity': liquidity,
+        'current_price': price,
+        'volume_24h': volume_24h,
+        'avg_volume_24h': volume_24h,
+        'avg_volume_7d': volume_24h,
+        'avg_volume_30d': volume_24h,
+        'current_sentiment': 0.5,
+        'sentiment_24h_ago': 0.5,
+        'sentiment_7d_ago': 0.5,
+        'sentiment_30d_ago': 0.5,
+        'current_volatility': 0.2,
+        'volatility_24h_ago': 0.2,
+        'volatility_7d_ago': 0.2,
+        'volatility_30d_ago': 0.2,
+        'btc_correlation': 0.5,
+        'eth_correlation': 0.5,
+        'market_correlation': 0.5,
+        'news_sentiment': 0.5,
+        'news_impact_score': 0.5,
+        'breaking_news_count': 0,
+        'major_news_count': 0,
+        'market_trend': 'neutral',
+        'market_sentiment': 0.5
     }
     
     safe_print(f"🔍 Evaluating {symbol} for practical sustainable trading...")
@@ -273,7 +298,7 @@ def check_practical_buy_signal(token: Dict) -> bool:
         }
         trade_history = performance_tracker.get_trade_history() if hasattr(performance_tracker, 'get_trade_history') else []
         system_errors = []  # Mock system errors
-        market_data = {'timestamp': datetime.now().isoformat()}
+        # Use existing market_data - do not redefine
         
         emergency_analysis = ai_emergency_stop_system.check_emergency_conditions(
             portfolio_data, trade_history, market_data, system_errors
@@ -288,11 +313,11 @@ def check_practical_buy_signal(token: Dict) -> bool:
     
     # 2. AI Market Condition Guardian Check
     try:
-        market_data = {
-            'timestamp': datetime.now().isoformat(),
+        # Update market_data with current values - do not redefine
+        market_data.update({
             'volatility': random.uniform(0.1, 0.4),
-            'regime': 'normal'
-        }
+            'timestamp': datetime.now().isoformat()
+        })
         news_data = {'sentiment': 'neutral', 'impact': 0.3}
         historical_data = {'price': price, 'volume': volume_24h}
         
@@ -363,12 +388,12 @@ def check_practical_buy_signal(token: Dict) -> bool:
     regime = regime_data['regime']
     quality_threshold_adjustment = regime_data['quality_threshold_adjustment']
     
-    # Initialize market_data with detected regime
-    market_data = {
+    # Update market_data with detected regime - do not redefine
+    market_data.update({
         'timestamp': datetime.now().isoformat(),
         'regime': regime,
         'volatility': random.uniform(0.1, 0.4)
-    }
+    })
     
     # Dynamic volume requirement based on market regime
     base_volume_requirement = 25000
@@ -565,7 +590,8 @@ def check_practical_buy_signal(token: Dict) -> bool:
         'timestamp': datetime.now().isoformat()
     }
     trade_history = performance_tracker.get_trade_history()
-    market_data = {'timestamp': datetime.now().isoformat(), 'regime': regime}
+    # Update market_data with regime info - do not redefine
+    market_data.update({'timestamp': datetime.now().isoformat(), 'regime': regime})
     
     drawdown_analysis = ai_drawdown_protection_system.analyze_drawdown_protection(portfolio_data, trade_history, market_data)
     drawdown_severity = drawdown_analysis['drawdown_severity']
@@ -1930,6 +1956,7 @@ def _show_drawdown_protection_insights():
             'position_count': len(open_positions),
             'timestamp': datetime.now().isoformat()
         }
+        # Initialize market_data for this function scope
         market_data = {'timestamp': datetime.now().isoformat()}
         
         # Get drawdown protection summary
@@ -2070,6 +2097,7 @@ def _show_portfolio_rebalancing_insights():
                 'chainId': pos.get('chain_id', 'ethereum')
             })
         
+        # Initialize market_data for this function scope
         market_data = {'timestamp': datetime.now().isoformat()}
         
         # Get rebalancing analysis summary
