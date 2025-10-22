@@ -564,17 +564,17 @@ def check_practical_buy_signal(token: Dict) -> bool:
         return False
     
     # AI multi-timeframe analysis
-    timeframe_analysis = ai_multi_timeframe_analysis_engine.analyze_multi_timeframe(token, 5.0)
-    timeframe_score = timeframe_analysis['timeframe_score']
-    timeframe_signal = timeframe_analysis['timeframe_signals']['overall_signal']
+    timeframe_analysis = ai_multi_timeframe_analysis_engine.analyze_multi_timeframe(token, 5.0, market_data)
+    timeframe_score = timeframe_analysis['overall_score']
+    timeframe_confirmation = timeframe_analysis['signal_confirmation']['confirmation_direction']
     
     # Check multi-timeframe signal
-    if timeframe_signal in ['sell', 'strong_sell']:
-        print(f"❌ {symbol}: Multi-timeframe analysis recommends {timeframe_signal}")
+    if timeframe_confirmation in ['sell', 'strong_sell']:
+        print(f"❌ {symbol}: Multi-timeframe analysis recommends {timeframe_confirmation}")
         return False
     
     # AI market cycle prediction
-    cycle_analysis = ai_market_cycle_predictor.predict_market_cycle(token, 5.0)
+    cycle_analysis = ai_market_cycle_predictor.predict_market_cycle(token, 5.0, market_data)
     cycle_phase = cycle_analysis['cycle_phase']
     cycle_confidence = cycle_analysis['cycle_confidence']
     
@@ -830,6 +830,38 @@ def practical_trade_loop():
     confidence = regime_data['confidence']
     strategy = regime_data['strategy']
     
+    # Initialize market_data for AI modules that require it
+    market_data = {
+        'timestamp': datetime.now().isoformat(),
+        'regime': regime,
+        'volatility': 0.2,
+        'price': 0,  # Will be updated per token
+        'volume': 0,  # Will be updated per token
+        'liquidity': 0,  # Will be updated per token
+        'current_price': 0,
+        'volume_24h': 0,
+        'avg_volume_24h': 0,
+        'avg_volume_7d': 0,
+        'avg_volume_30d': 0,
+        'current_sentiment': 0.5,
+        'sentiment_24h_ago': 0.5,
+        'sentiment_7d_ago': 0.5,
+        'sentiment_30d_ago': 0.5,
+        'current_volatility': 0.2,
+        'volatility_24h_ago': 0.2,
+        'volatility_7d_ago': 0.2,
+        'volatility_30d_ago': 0.2,
+        'btc_correlation': 0.5,
+        'eth_correlation': 0.5,
+        'market_correlation': 0.5,
+        'news_sentiment': 0.5,
+        'news_impact_score': 0.5,
+        'breaking_news_count': 0,
+        'major_news_count': 0,
+        'market_trend': 'neutral',
+        'market_sentiment': 0.5
+    }
+    
     log_print(f"🎯 Market Regime: {regime} (confidence: {confidence:.2f}, strategy: {strategy})")
     
     # Check if trading should proceed in current regime
@@ -908,6 +940,22 @@ def practical_trade_loop():
             tp = token.get("practical_tp", 0.12)
             sentiment = token.get("ai_sentiment", {})
             sentiment_category = sentiment.get("category", "unknown")
+            
+            # Update market_data with current token data for AI modules
+            price = float(token.get("priceUsd", 0))
+            volume_24h = float(token.get("volume24h", 0))
+            liquidity = float(token.get("liquidity", 0))
+            market_data.update({
+                'timestamp': datetime.now().isoformat(),
+                'price': price,
+                'volume': volume_24h,
+                'liquidity': liquidity,
+                'current_price': price,
+                'volume_24h': volume_24h,
+                'avg_volume_24h': volume_24h,
+                'avg_volume_7d': volume_24h,
+                'avg_volume_30d': volume_24h
+            })
             
             # Get current regime for notifications
             current_regime_data = ai_market_regime_detector.detect_market_regime()

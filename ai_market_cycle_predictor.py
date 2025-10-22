@@ -136,11 +136,20 @@ class AIMarketCyclePredictor:
         self.long_cycle_threshold = 180  # 180 days long cycle
         self.extended_cycle_threshold = 365  # 365 days extended cycle
     
-    def predict_market_cycle(self, token: Dict, trade_amount: float) -> Dict:
+    def predict_market_cycle(self, token: Dict, trade_amount: float, market_data: Dict = None) -> Dict:
         """
         Predict current market cycle phase and upcoming transitions
         Returns comprehensive cycle analysis with trading recommendations
         """
+        # Provide default market_data if not provided
+        if market_data is None:
+            market_data = {
+                'timestamp': datetime.now().isoformat(),
+                'price': float(token.get('priceUsd', 0)),
+                'volume': float(token.get('volume24h', 0)),
+                'liquidity': float(token.get('liquidity', 0))
+            }
+            
         try:
             cache_key = f"cycle_{market_data.get('timestamp', 'current')}"
             
@@ -1014,7 +1023,14 @@ class AIMarketCyclePredictor:
             markdown_count = 0
             
             for market_data in market_data_list:
-                cycle_analysis = self.predict_market_cycle(market_data, {})
+                # Create a token-like dict from market_data for the prediction
+                token_data = {
+                    'priceUsd': market_data.get('price', 0),
+                    'volume24h': market_data.get('volume', 0),
+                    'liquidity': market_data.get('liquidity', 0),
+                    'symbol': 'UNKNOWN'
+                }
+                cycle_analysis = self.predict_market_cycle(token_data, 5.0, market_data)
                 
                 cycle_summaries.append({
                     'current_cycle_phase': cycle_analysis['current_cycle_phase'],

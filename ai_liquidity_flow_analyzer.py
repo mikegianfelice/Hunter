@@ -146,6 +146,18 @@ class AILiquidityFlowAnalyzer:
                 liquidity_flow_score, liquidity_trap_analysis, market_data
             )
             
+            # Create a dict with all liquidity flow analysis results
+            liquidity_flow_analysis = {
+                'liquidity_flow_score': liquidity_flow_score,
+                'liquidity_flow_type': liquidity_flow_type,
+                'volume_flow_analysis': volume_flow_analysis,
+                'price_stability_analysis': price_stability_analysis,
+                'depth_analysis': depth_analysis,
+                'spread_analysis': spread_analysis,
+                'order_book_health_analysis': order_book_health_analysis,
+                'market_maker_analysis': market_maker_analysis
+            }
+            
             # Generate optimal execution windows
             execution_windows = self._generate_execution_windows(
                 liquidity_flow_analysis, market_data
