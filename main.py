@@ -1780,7 +1780,21 @@ def _show_regime_transition_insights():
             })
         
         # Get transition summary
-        transition_summary = ai_market_regime_transition_detector.get_transition_summary(current_positions)
+        # Create market_data_list and current_regimes for each position
+        market_data_list = []
+        current_regimes = []
+        for pos in current_positions:
+            market_data_list.append({
+                'timestamp': datetime.now().isoformat(),
+                'price': float(pos.get('priceUsd', 0)),
+                'volume': float(pos.get('volume24h', 0)),
+                'liquidity': float(pos.get('liquidity', 0)),
+                'volatility': 0.2,
+                'regime': 'normal'
+            })
+            current_regimes.append('normal')  # Default regime
+        
+        transition_summary = ai_market_regime_transition_detector.get_transition_summary(market_data_list, current_regimes)
         
         log_print("\n🔄 AI Market Regime Transition Insights")
         log_print(f"• Total Positions: {transition_summary['total_tokens']}")
@@ -1826,7 +1840,19 @@ def _show_liquidity_flow_insights():
             })
         
         # Get liquidity flow summary
-        liquidity_summary = ai_liquidity_flow_analyzer.get_liquidity_flow_summary(current_positions)
+        # Create market_data_list for each position
+        market_data_list = []
+        for pos in current_positions:
+            market_data_list.append({
+                'timestamp': datetime.now().isoformat(),
+                'price': float(pos.get('priceUsd', 0)),
+                'volume': float(pos.get('volume24h', 0)),
+                'liquidity': float(pos.get('liquidity', 0)),
+                'volatility': 0.2,
+                'regime': 'normal'
+            })
+        
+        liquidity_summary = ai_liquidity_flow_analyzer.get_liquidity_summary(current_positions, market_data_list)
         
         log_print("\n💧 AI Liquidity Flow Insights")
         log_print(f"• Total Positions: {liquidity_summary['total_tokens']}")
@@ -1871,7 +1897,19 @@ def _show_multi_timeframe_insights():
             })
         
         # Get timeframe analysis summary
-        timeframe_summary = ai_multi_timeframe_analysis_engine.get_timeframe_summary(current_positions)
+        # Create market_data_list for each position
+        market_data_list = []
+        for pos in current_positions:
+            market_data_list.append({
+                'timestamp': datetime.now().isoformat(),
+                'price': float(pos.get('priceUsd', 0)),
+                'volume': float(pos.get('volume24h', 0)),
+                'liquidity': float(pos.get('liquidity', 0)),
+                'volatility': 0.2,
+                'regime': 'normal'
+            })
+        
+        timeframe_summary = ai_multi_timeframe_analysis_engine.get_multi_timeframe_summary(current_positions, market_data_list)
         
         log_print("\n⏰ AI Multi-Timeframe Analysis Insights")
         log_print(f"• Total Positions: {timeframe_summary['total_tokens']}")
@@ -1916,7 +1954,19 @@ def _show_market_cycle_insights():
             })
         
         # Get cycle analysis summary
-        cycle_summary = ai_market_cycle_predictor.get_cycle_summary(current_positions)
+        # Create market_data_list for each position
+        market_data_list = []
+        for pos in current_positions:
+            market_data_list.append({
+                'timestamp': datetime.now().isoformat(),
+                'price': float(pos.get('priceUsd', 0)),
+                'volume': float(pos.get('volume24h', 0)),
+                'liquidity': float(pos.get('liquidity', 0)),
+                'volatility': 0.2,
+                'regime': 'normal'
+            })
+        
+        cycle_summary = ai_market_cycle_predictor.get_cycle_summary(market_data_list)
         
         log_print("\n🔄 AI Market Cycle Prediction Insights")
         log_print(f"• Total Positions: {cycle_summary['total_tokens']}")
@@ -2006,7 +2056,37 @@ def _show_performance_attribution_insights():
             })
         
         # Get attribution analysis summary
-        attribution_summary = ai_performance_attribution_analyzer.get_attribution_summary(current_positions)
+        # Create required data structures
+        portfolio_data_list = []
+        trade_history_list = []
+        market_data_list = []
+        performance_metrics_list = []
+        
+        for pos in current_positions:
+            portfolio_data_list.append({
+                'total_value': pos.get('position_size_usd', 0),
+                'position_count': 1,
+                'timestamp': datetime.now().isoformat()
+            })
+            trade_history_list.append([])  # Empty trade history for now
+            market_data_list.append({
+                'timestamp': datetime.now().isoformat(),
+                'price': float(pos.get('priceUsd', 0)),
+                'volume': float(pos.get('volume24h', 0)),
+                'liquidity': float(pos.get('liquidity', 0)),
+                'volatility': 0.2,
+                'regime': 'normal'
+            })
+            performance_metrics_list.append({
+                'total_return': 0.0,
+                'volatility': 0.2,
+                'sharpe_ratio': 0.0,
+                'max_drawdown': 0.0
+            })
+        
+        attribution_summary = ai_performance_attribution_analyzer.get_attribution_summary(
+            portfolio_data_list, trade_history_list, market_data_list, performance_metrics_list
+        )
         
         log_print("\n📊 AI Performance Attribution Insights")
         log_print(f"• Total Positions: {attribution_summary['total_tokens']}")

@@ -1015,8 +1015,19 @@ class AIMarketAnomalyDetector:
             no_anomalies = 0
             
             for i, token in enumerate(tokens):
-                market_data = market_data_list[i] if i < len(market_data_list) else {}
-                historical_data = historical_data_list[i] if i < len(historical_data_list) else {}
+                # Create default market_data and historical_data for each token
+                market_data = {
+                    'timestamp': datetime.now().isoformat(),
+                    'price': float(token.get('priceUsd', 0)),
+                    'volume': float(token.get('volume24h', 0)),
+                    'liquidity': float(token.get('liquidity', 0)),
+                    'volatility': 0.2,
+                    'regime': 'normal'
+                }
+                historical_data = {
+                    'price': float(token.get('priceUsd', 0)),
+                    'volume': float(token.get('volume24h', 0))
+                }
                 
                 analysis = self.detect_market_anomalies(token, market_data, historical_data)
                 
