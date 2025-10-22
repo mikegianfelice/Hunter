@@ -575,8 +575,8 @@ def check_practical_buy_signal(token: Dict) -> bool:
     
     # AI market cycle prediction
     cycle_analysis = ai_market_cycle_predictor.predict_market_cycle(token, 5.0, market_data)
-    cycle_phase = cycle_analysis['cycle_phase']
-    cycle_confidence = cycle_analysis['cycle_confidence']
+    cycle_phase = cycle_analysis['current_cycle_phase']
+    cycle_confidence = cycle_analysis.get('cycle_confidence', 'medium')  # Default to medium if not available
     
     # Check market cycle phase
     if cycle_phase in ['decline', 'trough'] and cycle_confidence == 'high':
@@ -2017,13 +2017,13 @@ def _show_market_cycle_insights():
         cycle_summary = ai_market_cycle_predictor.get_cycle_summary(market_data_list)
         
         log_print("\n🔄 AI Market Cycle Prediction Insights")
-        log_print(f"• Total Positions: {cycle_summary['total_tokens']}")
-        log_print(f"• Current Cycle Phase: {cycle_summary['current_cycle_phase']}")
-        log_print(f"• Cycle Confidence: {cycle_summary['cycle_confidence']}")
-        log_print(f"• Predicted Phase: {cycle_summary['predicted_phase']}")
+        log_print(f"• Total Markets: {cycle_summary.get('total_markets', 0)}")
+        log_print(f"• Overall Cycle Phase: {cycle_summary.get('overall_cycle_phase', 'unknown')}")
+        log_print(f"• Cycle Confidence: {cycle_summary.get('cycle_confidence', 'medium')}")
+        log_print(f"• Accumulation: {cycle_summary.get('accumulation_count', 0)}, Markup: {cycle_summary.get('markup_count', 0)}, Distribution: {cycle_summary.get('distribution_count', 0)}, Markdown: {cycle_summary.get('markdown_count', 0)}")
         
         # Show cycle recommendations
-        if cycle_summary['current_cycle_phase'] in ['decline', 'trough']:
+        if cycle_summary.get('overall_cycle_phase', 'unknown') in ['decline', 'trough']:
             log_print("\n⚠️ UNFAVORABLE CYCLE PHASE:")
             log_print("  • Reduce position sizes")
             log_print("  • Monitor for cycle change")
