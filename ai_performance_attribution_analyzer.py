@@ -135,6 +135,28 @@ class AIPerformanceAttributionAnalyzer:
         Returns comprehensive attribution analysis with optimization recommendations
         """
         try:
+            # Create mock data structures from token and trade_amount
+            portfolio_data = {
+                'total_value': trade_amount,
+                'position_count': 1,
+                'timestamp': datetime.now().isoformat()
+            }
+            trade_history = []  # Empty trade history for single token analysis
+            market_data = {
+                'timestamp': datetime.now().isoformat(),
+                'price': float(token.get('priceUsd', 0)),
+                'volume': float(token.get('volume24h', 0)),
+                'liquidity': float(token.get('liquidity', 0)),
+                'volatility': 0.2,
+                'regime': 'normal'
+            }
+            performance_metrics = {
+                'total_return': 0.0,
+                'volatility': 0.2,
+                'sharpe_ratio': 0.0,
+                'max_drawdown': 0.0
+            }
+            
             cache_key = f"attribution_{portfolio_data.get('timestamp', 'current')}"
             
             # Check cache
@@ -180,7 +202,19 @@ class AIPerformanceAttributionAnalyzer:
                 attribution_scores, key_drivers, factor_correlations, optimization_recommendations
             )
             
+            # Calculate overall attribution score
+            total_attribution_score = attribution_scores.get('total_attribution_score', 0.5)
+            
+            # Generate performance recommendations
+            performance_recommendations = {
+                'performance_recommendation': 'proceed_with_caution' if total_attribution_score > 0.5 else 'avoid_trading',
+                'confidence': 'medium',
+                'recommendations': optimization_recommendations
+            }
+            
             result = {
+                'attribution_score': total_attribution_score,
+                'performance_recommendations': performance_recommendations,
                 'attribution_scores': attribution_scores,
                 'key_drivers': key_drivers,
                 'factor_correlations': factor_correlations,
@@ -204,6 +238,27 @@ class AIPerformanceAttributionAnalyzer:
             
         except Exception as e:
             logger.error(f"❌ Performance attribution analysis failed: {e}")
+            # Create default data structures for error fallback
+            portfolio_data = {
+                'total_value': trade_amount,
+                'position_count': 1,
+                'timestamp': datetime.now().isoformat()
+            }
+            trade_history = []
+            market_data = {
+                'timestamp': datetime.now().isoformat(),
+                'price': float(token.get('priceUsd', 0)),
+                'volume': float(token.get('volume24h', 0)),
+                'liquidity': float(token.get('liquidity', 0)),
+                'volatility': 0.2,
+                'regime': 'normal'
+            }
+            performance_metrics = {
+                'total_return': 0.0,
+                'volatility': 0.2,
+                'sharpe_ratio': 0.0,
+                'max_drawdown': 0.0
+            }
             return self._get_default_attribution_analysis(portfolio_data, trade_history, market_data, performance_metrics)
     
     def _analyze_market_conditions_attribution(self, market_data: Dict, trade_history: List[Dict]) -> Dict:
