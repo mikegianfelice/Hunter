@@ -15,6 +15,7 @@ from utils import get_eth_price_usd
 from telegram_bot import send_telegram_message
 from config_loader import get_config, get_config_bool, get_config_float
 from logger import log_event
+from advanced_trading import advanced_trading
 
 # Dynamic config loading
 def get_multi_chain_config():
@@ -198,9 +199,6 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
     amount_usd = float(trade_amount_usd or config['TRADE_AMOUNT_USD_DEFAULT'])
     
     log_event("trade.start", symbol=symbol, token_address=token_address, chain=chain_id, amount_usd=amount_usd)
-    
-    # Import advanced trading engine
-    from advanced_trading import advanced_trading
     
     # Enhanced preflight check
     try:
