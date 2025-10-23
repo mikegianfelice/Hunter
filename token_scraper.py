@@ -3,6 +3,7 @@ import csv
 import yaml
 import time
 import random
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from http_utils import get_json
 from collections import defaultdict
@@ -279,19 +280,26 @@ def fetch_trending_tokens(limit=200):  # INCREASED for more opportunities
     # Try multiple primary sources with randomization
     primary_urls = PRIMARY_URLS.copy()
     random.shuffle(primary_urls)  # Randomize order to avoid bias
-    
-    for u in primary_urls[:15]:  # INCREASED to 15 sources for more opportunities
+
+    def _fetch(u: str):
         try:
             data = get_json(u, headers=headers, timeout=10, retries=3, backoff=0.7)
+            return u, data
+        except Exception as e:
+            return u, None
+
+    # Fetch up to 15 sources concurrently with a bounded pool
+    urls_to_fetch = primary_urls[:15]
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        futures = {executor.submit(_fetch, u): u for u in urls_to_fetch}
+        for fut in as_completed(futures):
+            u, data = fut.result()
             if data and data.get("pairs"):
                 pairs = data.get("pairs", [])
                 all_pairs.extend(pairs)
                 print(f"✅ Fetched {len(pairs)} tokens from {u}")
-                
-                # Add small delay between requests
-                time.sleep(0.5)
-        except Exception as e:
-            print(f"⚠️ Primary fetch failed ({u}): {e}")
+            else:
+                print(f"⚠️ Primary fetch failed ({u})")
 
     # If no primary sources worked, try fallbacks
     if not all_pairs:

@@ -1,8 +1,11 @@
 import json
 import requests
+import os
+import time
 from web3 import Web3
 from pathlib import Path
 from secrets import INFURA_URL
+from http_utils import get_json
 
 # Public constants
 UNISWAP_V2_ROUTER = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"
@@ -108,8 +111,6 @@ def get_sol_price_usd() -> float:
     
     Returns a reasonable price even if all APIs fail to prevent trading halt.
     """
-    import time
-    
     # Check for cached price (valid for 5 minutes to reduce API calls)
     cache_file = "sol_price_cache.json"
     try:
@@ -131,27 +132,20 @@ def get_sol_price_usd() -> float:
     for attempt in range(3):
         try:
             url = "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd"
-            response = requests.get(url, timeout=15)
-            if response.status_code == 200:
-                data = response.json()
+            data = get_json(url, timeout=15, retries=1)
+            if data:
                 # Check for rate limit error in response
                 if "status" in data and data["status"].get("error_code") == 429:
                     print(f"⚠️ CoinGecko rate limited (attempt {attempt + 1}/3), trying fallback...")
                     if attempt < 2:
-                        time.sleep(2)  # Wait before retry
+                        time.sleep(2)
                         continue
                 else:
                     price = float(data.get("solana", {}).get("usd", 0))
                     if price > 0:
                         print(f"✅ SOL price from CoinGecko: ${price}")
-                        # Cache the successful price
                         _cache_sol_price(price)
                         return price
-            elif response.status_code == 429:
-                print(f"⚠️ CoinGecko rate limited (429) (attempt {attempt + 1}/3), trying fallback...")
-                if attempt < 2:
-                    time.sleep(2)
-                    continue
         except Exception as e:
             print(f"⚠️ CoinGecko SOL price error (attempt {attempt + 1}/3): {e}")
             if attempt < 2:
@@ -162,12 +156,10 @@ def get_sol_price_usd() -> float:
     for attempt in range(3):
         try:
             url = "https://api.dexscreener.com/latest/dex/tokens/So11111111111111111111111111111111111111112"
-            response = requests.get(url, timeout=15)
-            if response.status_code == 200:
-                data = response.json()
+            data = get_json(url, timeout=15, retries=1)
+            if data:
                 pairs = data.get("pairs", [])
                 if pairs:
-                    # Get the first pair with USDC
                     for pair in pairs:
                         if pair.get("quoteToken", {}).get("symbol") == "USDC":
                             price = float(pair.get("priceUsd", 0))
@@ -175,7 +167,6 @@ def get_sol_price_usd() -> float:
                                 print(f"✅ SOL price from DexScreener: ${price}")
                                 _cache_sol_price(price)
                                 return price
-                    # If no USDC pair, use any pair with price
                     for pair in pairs:
                         price = float(pair.get("priceUsd", 0))
                         if price > 0:
@@ -184,7 +175,6 @@ def get_sol_price_usd() -> float:
                             return price
         except Exception as e:
             print(f"⚠️ DexScreener SOL price error (attempt {attempt + 1}/3): {e}")
-        
         if attempt < 2:
             time.sleep(2)
     
@@ -192,14 +182,12 @@ def get_sol_price_usd() -> float:
     for attempt in range(2):
         try:
             url = "https://public-api.birdeye.so/public/price?address=So11111111111111111111111111111111111111112"
-            response = requests.get(url, timeout=15)
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("success") and data.get("data", {}).get("value"):
-                    price = float(data["data"]["value"])
-                    print(f"✅ SOL price from Birdeye: ${price}")
-                    _cache_sol_price(price)
-                    return price
+            data = get_json(url, timeout=15, retries=1)
+            if data and data.get("success") and data.get("data", {}).get("value"):
+                price = float(data["data"]["value"])
+                print(f"✅ SOL price from Birdeye: ${price}")
+                _cache_sol_price(price)
+                return price
         except Exception as e:
             print(f"⚠️ Birdeye SOL price error (attempt {attempt + 1}/2): {e}")
             if attempt < 1:
@@ -208,22 +196,13 @@ def get_sol_price_usd() -> float:
     # Fallback to Jupiter quote API (simplified)
     # NOTE: Jupiter API endpoint has changed to api.jup.ag
     try:
-        url = "https://api.jup.ag/v6/quote"
-        params = {
-            "inputMint": "So11111111111111111111111111111111111111112",
-            "outputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-            "amount": "1000000000",  # 1 SOL in lamports
-            "slippageBps": 50
-        }
-        
-        response = requests.get(url, params=params, timeout=8)
-        if response.status_code == 200:
-            data = response.json()
-            if data.get("swapUsdValue"):
-                price = float(data["swapUsdValue"])
-                print(f"✅ SOL price from Jupiter quote: ${price}")
-                _cache_sol_price(price)
-                return price
+        url = "https://api.jup.ag/v6/quote?inputMint=So11111111111111111111111111111111111111112&outputMint=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&amount=1000000000&slippageBps=50"
+        data = get_json(url, timeout=8, retries=1)
+        if data and data.get("swapUsdValue"):
+            price = float(data["swapUsdValue"])
+            print(f"✅ SOL price from Jupiter quote: ${price}")
+            _cache_sol_price(price)
+            return price
     except Exception as e:
         print(f"⚠️ Jupiter quote SOL price error: {e}")
     

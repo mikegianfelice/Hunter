@@ -397,13 +397,48 @@ def sell_token(token_address: str, token_amount: float, symbol: str = "?") -> tu
     except Exception:
         tx["gas"] = 300000
 
+    # Re-quote protection similar to buy path
+    t_quote = time.time()
+    def _maybe_requote_and_adjust(tx_dict):
+        elapsed = time.time() - t_quote
+        if elapsed <= config['REQUOTE_DELAY_SECONDS']:
+            return tx_dict
+        print(f"⏱️ Sell quote stale ({elapsed:.1f}s). Re-quoting before send…")
+        try:
+            re_quoted_out = router.functions.exactInputSingle(params).call()
+        except Exception as e:
+            print(f"⚠️ Sell re-quote failed ({e}); sending with original minOut.")
+            return tx_dict
+        if re_quoted_out <= 0:
+            print("⚠️ Sell re-quote returned 0; sending with original minOut.")
+            return tx_dict
+        total_slip = config['SLIPPAGE'] + max(0.0, config['REQUOTE_SLIPPAGE_BUFFER'])
+        new_min_out = int(re_quoted_out * (1.0 - total_slip))
+        if new_min_out <= 0:
+            print("⚠️ Sell re-quote minOut <= 0; keeping original minOut.")
+            return tx_dict
+        params['amountOutMinimum'] = new_min_out
+        if config['USE_SUPPORTING_FEE']:
+            fn2 = router.functions.exactInputSingleSupportingFeeOnTransferTokens(params)
+        else:
+            fn2 = router.functions.exactInputSingle(params)
+        tx2 = fn2.build_transaction({
+            "from": WALLET,
+            "nonce": tx_dict.get("nonce", _next_nonce()),
+            "chainId": BASE_CHAIN_ID,
+        })
+        tx2 = _apply_eip1559(tx2)
+        tx2["gas"] = tx_dict.get("gas", 300000)
+        return tx2
+
     # Send transaction
     if config['TEST_MODE']:
         print(f"🧪 TEST MODE: Would send {symbol} sell tx")
         return "0xSIMULATED_TX", True
 
     try:
-        signed = w3.eth.account.sign_transaction(tx, PRIVATE_KEY)
+        final_tx = _maybe_requote_and_adjust(tx)
+        signed = w3.eth.account.sign_transaction(final_tx, PRIVATE_KEY)
         tx_hash = w3.eth.send_raw_transaction(signed.rawTransaction)
         print(f"✅ {symbol} sell tx sent: {tx_hash.hex()}")
         return tx_hash.hex(), True

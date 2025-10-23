@@ -2,11 +2,27 @@
 import json
 import os
 import time
+from pathlib import Path
+from contextlib import contextmanager
 import yaml
 import requests
 from config_loader import get_config, get_config_bool, get_config_float, get_config_int, get_config_values
 
 PRICE_MEM_FILE = "price_memory.json"
+
+@contextmanager
+def _atomic_write_json(path: Path):
+    tmp_path = Path(str(path) + ".tmp")
+    try:
+        with open(tmp_path, "w") as f:
+            yield f
+        os.replace(tmp_path, path)
+    finally:
+        try:
+            if tmp_path.exists():
+                tmp_path.unlink(missing_ok=True)
+        except Exception:
+            pass
 
 def _now() -> int:
     return int(time.time())
@@ -23,7 +39,8 @@ def _load_price_mem() -> dict:
 
 def _save_price_mem(mem: dict):
     try:
-        with open(PRICE_MEM_FILE, "w") as f:
+        target = Path(PRICE_MEM_FILE)
+        with _atomic_write_json(target) as f:
             json.dump(mem, f, indent=2)
     except Exception:
         pass

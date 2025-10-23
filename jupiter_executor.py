@@ -34,16 +34,14 @@ class JupiterCustomExecutor:
             return get_sol_price_usd()
         
         # Try DexScreener API for token price first (direct price, no SOL dependency)
+        from http_utils import get_json
         for attempt in range(2):
             try:
-                import requests
                 url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
-                response = requests.get(url, timeout=10)
-                if response.status_code == 200:
-                    data = response.json()
+                data = get_json(url, timeout=10, retries=1)
+                if data:
                     pairs = data.get("pairs", [])
                     if pairs:
-                        # Get the first pair with a valid price
                         for pair in pairs:
                             price = float(pair.get("priceUsd", 0))
                             if price > 0:
@@ -57,15 +55,12 @@ class JupiterCustomExecutor:
         
         # Try Birdeye API for Solana tokens (direct price, no SOL dependency)
         try:
-            import requests
             url = f"https://public-api.birdeye.so/public/price?address={token_address}"
-            response = requests.get(url, timeout=8)
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("success") and data.get("data", {}).get("value"):
-                    price = float(data["data"]["value"])
-                    print(f"✅ Token price from Birdeye: ${price}")
-                    return price
+            data = get_json(url, timeout=8, retries=1)
+            if data and data.get("success") and data.get("data", {}).get("value"):
+                price = float(data["data"]["value"])
+                print(f"✅ Token price from Birdeye: ${price}")
+                return price
         except Exception as e:
             print(f"⚠️ Birdeye price API error: {e}")
         
@@ -82,17 +77,13 @@ class JupiterCustomExecutor:
         
         if token_address in token_mapping:
             try:
-                import requests
                 coingecko_id = token_mapping[token_address]
                 url = f"https://api.coingecko.com/api/v3/simple/price?ids={coingecko_id}&vs_currencies=usd"
-                
-                response = requests.get(url, timeout=8)
-                if response.status_code == 200:
-                    data = response.json()
-                    if coingecko_id in data and "usd" in data[coingecko_id]:
-                        price = float(data[coingecko_id]["usd"])
-                        print(f"✅ CoinGecko price for {token_address[:8]}...{token_address[-8:]}: ${price}")
-                        return price
+                data = get_json(url, timeout=8, retries=1)
+                if data and coingecko_id in data and "usd" in data[coingecko_id]:
+                    price = float(data[coingecko_id]["usd"])
+                    print(f"✅ CoinGecko price for {token_address[:8]}...{token_address[-8:]}: ${price}")
+                    return price
             except Exception as e:
                 print(f"⚠️ CoinGecko price API error: {e}")
         

@@ -24,6 +24,7 @@ class RaydiumExecutor:
     def __init__(self):
         self.wallet_address = SOLANA_WALLET_ADDRESS
         self.private_key = SOLANA_PRIVATE_KEY
+        self.rpc_url = SOLANA_RPC_URL
         
         # Initialize custom Raydium library
         try:
@@ -34,6 +35,7 @@ class RaydiumExecutor:
                     self.private_key
                 )
                 print(f"✅ Raydium executor initialized with wallet: {self.wallet_address[:8]}...{self.wallet_address[-8:]}")
+                # keypair management is handled by RaydiumCustomLib; keep a flag only
                 self.keypair = True
             else:
                 print("⚠️ No Solana private key provided for Raydium")
@@ -223,38 +225,17 @@ class RaydiumExecutor:
             return None
 
     def sign_raydium_transaction(self, transaction_data: str) -> Optional[str]:
-        """Sign Raydium transaction with wallet"""
+        """Sign Raydium transaction with wallet via custom library"""
         try:
-            if not self.keypair:
-                print("❌ No keypair available for signing")
+            if not self.raydium_lib:
+                print("❌ No Raydium library available for signing")
                 return None
-            
-            # Decode transaction
-            import base64
-            decoded_bytes = base64.b64decode(transaction_data)
-            
-            # Parse transaction structure
-            num_signatures = decoded_bytes[0]
-            signature_length = 64
-            signatures_end = 1 + (num_signatures * signature_length)
-            message_bytes = decoded_bytes[signatures_end:]
-            
-            # Sign the message
-            signature = self.keypair.sign_message(message_bytes)
-            signature_bytes = bytes(signature)
-            
-            # Reconstruct transaction with signature
-            import struct
-            reconstructed = struct.pack('B', num_signatures)
-            reconstructed += signature_bytes
-            reconstructed += message_bytes
-            
-            # Encode back to base64
-            signed_transaction = base64.b64encode(reconstructed).decode('utf-8')
-            
-            print(f"✅ Raydium transaction signed successfully")
-            return signed_transaction
-            
+            signed_transaction = self.raydium_lib.sign_transaction(transaction_data)
+            if signed_transaction:
+                print(f"✅ Raydium transaction signed successfully")
+                return signed_transaction
+            print(f"❌ Raydium library failed to sign transaction")
+            return None
         except Exception as e:
             print(f"❌ Raydium transaction signing failed: {e}")
             return None
