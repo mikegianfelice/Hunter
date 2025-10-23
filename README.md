@@ -269,7 +269,7 @@ The bot now features **20 integrated AI systems** working together:
 - **🎯 Fixed No-Trades Issue**: Resolved the main blocking factor (delisted tokens list was too aggressive)
 - **📊 Enhanced Token Discovery**: 225% more unique symbols, 13,640% higher average volume
 - **🔄 Improved Token Quality**: Implemented 8-point scoring system with better filtering
-- **🌐 Better API Sources**: Added 4 additional DexScreener endpoints with randomized order
+- **🌐 Better API Usage**: Added 4 additional DexScreener endpoints with randomized order
 - **🛡️ Smart Filtering**: Enhanced promotional content detection and spam filtering
 - **⚖️ Symbol Diversity**: Limited duplicate symbols to prevent token list domination
 - **📈 Higher Thresholds**: Increased volume/liquidity requirements for better quality tokens
