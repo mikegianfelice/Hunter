@@ -135,6 +135,17 @@ The bot now features **20 integrated AI systems** working together:
 
 ## 🔧 Recent Updates & Fixes
 
+### Latest Improvements (v3.8) - Structured Logging, HTTP Pooling, Parallel Discovery
+- ⚙️ Structured JSON logging via `logger.py` with rotating file at `logs/hunter.log` (tail live: `tail -f logs/hunter.log`)
+- 🌐 Global HTTP connection pooling in `http_utils.py` (shared `requests.Session`) for lower latency and higher reliability
+- 🚀 Faster token discovery: parallelized primary DexScreener sources in `token_scraper.py`
+- 🧵 Safer state I/O: atomic writes for `open_positions.json` and `price_memory.json` to prevent corruption
+- 🧭 Correct chain scoping: Solana trade flow now gated strictly to Solana in `multi_chain_executor.py`
+- 🔁 BASE sells: re-quote protection added to minimize stale-quote failures
+- 🧪 Raydium reliability: executor uses library-based signing, proper RPC config; better error handling & telemetry
+- 📡 Jupiter/Raydium price/trade calls routed through resilient `http_utils` (retries, backoff, circuit breaker)
+- 📊 High-signal telemetry: executors and trade lifecycle instrumented with `log_event(...)` for easier debugging
+
 ### Latest Improvements (v3.7) - Critical Token Buying Fixes
 - **🔧 Fixed Duplicate Symbol Issue**: Increased max_same_symbol from 5 to 10, allowing more PUMP tokens and similar symbols
 - **📊 Smart Token Sorting**: Tokens now sorted by volume+liquidity before diversity filter, keeping highest quality instances

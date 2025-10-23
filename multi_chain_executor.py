@@ -14,6 +14,7 @@ from secrets import INFURA_URL, WALLET_ADDRESS, SOLANA_RPC_URL, SOLANA_WALLET_AD
 from utils import get_eth_price_usd
 from telegram_bot import send_telegram_message
 from config_loader import get_config, get_config_bool, get_config_float
+from logger import log_event
 
 # Dynamic config loading
 def get_multi_chain_config():
@@ -196,7 +197,7 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
     chain_id = token.get("chainId", "ethereum").lower()
     amount_usd = float(trade_amount_usd or config['TRADE_AMOUNT_USD_DEFAULT'])
     
-    print(f"🚀 Executing advanced trade on {chain_id.upper()}: {symbol} ({token_address})")
+    log_event("trade.start", symbol=symbol, token_address=token_address, chain=chain_id, amount_usd=amount_usd)
     
     # Import advanced trading engine
     from advanced_trading import advanced_trading
@@ -224,11 +225,14 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
     # Get route preferences
     route_preferences = advanced_trading.get_route_preferences(token)
     
-    print(f"📊 Trade configuration:")
-    print(f"   - Slices: {len(slices)} (${amount_usd:.2f} total)")
-    print(f"   - Slippage: {dynamic_slippage*100:.2f}% (dynamic)")
-    print(f"   - ExactOut: {'Yes' if use_exactout else 'No'}")
-    print(f"   - Route preferences: {route_preferences}")
+    log_event(
+        "trade.config",
+        slices=len(slices),
+        total_amount_usd=round(amount_usd, 2),
+        slippage=round(dynamic_slippage, 6),
+        exactout=bool(use_exactout),
+        route_preferences=route_preferences,
+    )
     
     try:
         # Get chain configuration
@@ -242,7 +246,7 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
             if slice_amount <= 0:
                 continue
                 
-            print(f"🔄 Executing slice {i+1}/{len(slices)}: ${slice_amount:.2f}")
+            log_event("trade.slice.start", index=i+1, slices=len(slices), amount_usd=round(slice_amount, 2))
             
             # Real trading mode (test_mode is false in config)
             if chain_id == "ethereum":
@@ -264,16 +268,16 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
                 ]
 
                 if token_address in volatile_tokens:
-                    print(f"🔥 Volatile token detected - using Raydium first")
+                    log_event("trade.raydium.preferred", index=i+1)
                     try:
                         raydium_ok, raydium_tx = execute_raydium_fallback_trade(token_address, symbol, slice_amount)
 
                         if raydium_ok:
-                            print(f"✅ Raydium slice {i+1} successful")
+                            log_event("trade.slice.success", index=i+1, tx_hash=raydium_tx)
                             tx_hash = raydium_tx
                             ok = True
                         else:
-                            print(f"🔄 Raydium failed, trying Jupiter...")
+                            log_event("trade.raydium.failed_try_jupiter", index=i+1)
                             tx_hash, ok = buy_token_solana(
                                 token_address,
                                 slice_amount,
@@ -284,7 +288,7 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
                                 use_exactout=use_exactout,
                             )
                     except Exception as e:
-                        print(f"⚠️ Raydium execution error: {e}, trying Jupiter...")
+                        log_event("trade.raydium.error_try_jupiter", level="WARNING", index=i+1, error=str(e))
                         tx_hash, ok = buy_token_solana(
                             token_address,
                             slice_amount,
@@ -295,7 +299,7 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
                             use_exactout=use_exactout,
                         )
                 else:
-                    print(f"🔄 Attempting Jupiter trade for slice {i+1}...")
+                    log_event("trade.jupiter.attempt", index=i+1)
                     try:
                         tx_hash, ok = buy_token_solana(
                             token_address,
@@ -308,20 +312,20 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
                         )
 
                         if not ok:
-                            print(f"🔄 Jupiter failed, trying Raydium...")
+                            log_event("trade.jupiter.failed_try_raydium", index=i+1)
                             try:
                                 raydium_ok, raydium_tx = execute_raydium_fallback_trade(
                                     token_address, symbol, slice_amount
                                 )
 
                                 if raydium_ok:
-                                    print(f"✅ Raydium fallback successful for slice {i+1}")
+                                    log_event("trade.slice.success", index=i+1, tx_hash=raydium_tx)
                                     tx_hash = raydium_tx
                                     ok = True
                             except Exception as e:
-                                print(f"⚠️ Raydium fallback error: {e}")
+                                log_event("trade.raydium.fallback_error", level="WARNING", index=i+1, error=str(e))
                     except Exception as e:
-                        print(f"⚠️ Jupiter execution error: {e}")
+                        log_event("trade.jupiter.error", level="WARNING", index=i+1, error=str(e))
                         ok = False
                         tx_hash = None
             
@@ -329,17 +333,17 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
             if ok and tx_hash:
                 successful_txs.append(tx_hash)
                 total_successful_amount += slice_amount
-                print(f"✅ Slice {i+1} executed successfully: {tx_hash}")
+                log_event("trade.slice.success", index=i+1, tx_hash=tx_hash)
             else:
-                print(f"❌ Slice {i+1} failed")
+                log_event("trade.slice.failure", level="WARNING", index=i+1)
                 
                 # For ExactOut trades, continue with remaining slices even if some fail
                 if use_exactout:
-                    print(f"🔄 Continuing with remaining slices (ExactOut mode)")
+                    log_event("trade.slice.continue_exactout", index=i+1)
                     continue
                 else:
                     # For regular trades, stop on first failure
-                    print(f"❌ Stopping execution due to slice failure")
+                    log_event("trade.slice.stop_on_failure", level="WARNING", index=i+1)
                     break
             
             # Add delay between slices to avoid overwhelming the network
@@ -348,10 +352,14 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
         
         # Execute trades for each slice
         if successful_txs:
-            print(f"✅ Trade execution completed:")
-            print(f"   - Successful slices: {len(successful_txs)}/{len(slices)}")
-            print(f"   - Total amount: ${total_successful_amount:.2f}/{amount_usd:.2f}")
-            print(f"   - Transactions: {successful_txs}")
+            log_event(
+                "trade.end",
+                successful_slices=len(successful_txs),
+                total_slices=len(slices),
+                total_filled_usd=round(total_successful_amount, 2),
+                requested_usd=round(amount_usd, 2),
+                transactions=successful_txs,
+            )
             
             # Log position for monitoring (use total successful amount)
             _log_position(token)
@@ -359,12 +367,11 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
             
             return successful_txs[0], True  # Return first transaction hash
         else:
-            print(f"❌ All slices failed")
+            log_event("trade.end", level="ERROR", successful_slices=0, total_slices=len(slices))
             return None, False
-        return tx_hash, True
         
     except Exception as e:
-        print(f"❌ Error executing trade on {chain_id}: {e}")
+        log_event("trade.error", level="ERROR", chain=chain_id, error=str(e))
         return None, False
 
 def get_supported_chains():

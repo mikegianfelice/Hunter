@@ -11,6 +11,7 @@ from secrets import INFURA_URL, WALLET_ADDRESS, PRIVATE_KEY
 from gas import suggest_fees
 from utils import get_eth_price_usd  # robust ETH/USD (Graph -> on-chain V2)
 from config_loader import get_config, get_config_bool, get_config_float, get_config_int
+from logger import log_event
 
 # Dynamic config loading
 def get_uniswap_config():
@@ -139,8 +140,7 @@ def buy_token(token_address: str, usd_amount: float, symbol: str = "?") -> tuple
         print(f"❌ Computed minOut <= 0 for {symbol}; aborting.")
         return None, False
 
-    print(f"🧮 Quote for {symbol}: in {eth_amount:.6f} ETH → out {quoted_out} raw")
-    print(f"🎯 Slippage {config['SLIPPAGE']*100:.2f}% → minOut {amount_out_min}")
+    log_event("eth.buy.quote", symbol=symbol, eth_in=round(eth_amount, 6), out_raw=int(quoted_out), slippage=round(config['SLIPPAGE'], 6), min_out=int(amount_out_min))
 
     # Build with initial minOut
     if config['USE_SUPPORTING_FEE']:
@@ -212,7 +212,7 @@ def buy_token(token_address: str, usd_amount: float, symbol: str = "?") -> tuple
     if config['TEST_MODE']:
         # Simulate re-quote branch in test mode too (for logging)
         tx = _maybe_requote_and_adjust(tx)
-        print(f"🚫 [TEST MODE] Simulated buy of {symbol} for {eth_amount:.6f} ETH")
+        log_event("eth.buy.simulated", symbol=symbol, eth_in=round(eth_amount, 6))
         return "0xSIMULATED_TX", True
 
     # LIVE send (with possible re-quote)
@@ -221,12 +221,12 @@ def buy_token(token_address: str, usd_amount: float, symbol: str = "?") -> tuple
         signed = w3.eth.account.sign_transaction(tx, private_key=PRIVATE_KEY)
         sent = w3.eth.send_raw_transaction(signed.rawTransaction)
         tx_hash_hex = sent.hex()
-        print(f"📥 Buy sent: {tx_hash_hex}")
+        log_event("eth.buy.sent", symbol=symbol, tx_hash=tx_hash_hex)
         # You can wait for receipt if desired:
         # w3.eth.wait_for_transaction_receipt(sent)
         return tx_hash_hex, True
     except Exception as e:
-        print(f"❌ Buy failed for {symbol}: {e}")
+        log_event("eth.buy.error", level="ERROR", symbol=symbol, error=str(e))
         return None, False
 
 # === SELL path (unchanged semantics) ===
@@ -314,16 +314,16 @@ def sell_token(token_address: str):
             tx["gas"] = 300000
 
         if config['TEST_MODE']:
-            print("🚫 [TEST MODE] Sell transaction built, not sent.")
+        log_event("eth.sell.simulated", symbol=symbol)
             return "0xSIMULATED_SELL"
 
         signed = w3.eth.account.sign_transaction(tx, private_key=PRIVATE_KEY)
         tx_hash = w3.eth.send_raw_transaction(signed.rawTransaction)
-        print(f"📤 Sell sent: {tx_hash.hex()}")
+        log_event("eth.sell.sent", symbol=symbol, tx_hash=tx_hash.hex())
         w3.eth.wait_for_transaction_receipt(tx_hash)
-        print("✅ Sell confirmed on-chain.")
+        log_event("eth.sell.confirmed", symbol=symbol, tx_hash=tx_hash.hex())
         return tx_hash.hex()
 
     except Exception as e:
-        print(f"❌ Sell failed: {e}")
+        log_event("eth.sell.error", level="ERROR", symbol=symbol, error=str(e))
         return None

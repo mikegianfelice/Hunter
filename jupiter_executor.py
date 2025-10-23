@@ -6,6 +6,7 @@ Jupiter Custom Executor - Using custom Jupiter library for real trades
 import time
 from typing import Tuple, Optional, Dict, Any
 from jupiter_lib import JupiterCustomLib
+from logger import log_event
 
 from secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
 
@@ -45,7 +46,7 @@ class JupiterCustomExecutor:
                         for pair in pairs:
                             price = float(pair.get("priceUsd", 0))
                             if price > 0:
-                                print(f"✅ Token price from DexScreener: ${price}")
+                    log_event("solana.price.dexscreener", token=token_address, price=price)
                                 return price
             except Exception as e:
                 print(f"⚠️ DexScreener price API error (attempt {attempt + 1}/2): {e}")
@@ -62,7 +63,7 @@ class JupiterCustomExecutor:
                 print(f"✅ Token price from Birdeye: ${price}")
                 return price
         except Exception as e:
-            print(f"⚠️ Birdeye price API error: {e}")
+            log_event("solana.price.birdeye_error", level="WARNING", token=token_address, error=str(e))
         
         # Fallback to CoinGecko for common tokens (direct price, no SOL dependency)
         token_mapping = {
@@ -82,20 +83,19 @@ class JupiterCustomExecutor:
                 data = get_json(url, timeout=8, retries=1)
                 if data and coingecko_id in data and "usd" in data[coingecko_id]:
                     price = float(data[coingecko_id]["usd"])
-                    print(f"✅ CoinGecko price for {token_address[:8]}...{token_address[-8:]}: ${price}")
+                    log_event("solana.price.coingecko", token=token_address, price=price)
                     return price
             except Exception as e:
-                print(f"⚠️ CoinGecko price API error: {e}")
+                log_event("solana.price.coingecko_error", level="WARNING", token=token_address, error=str(e))
         
         # If all APIs fail, return a small positive value to prevent false delisting
-        print(f"⚠️ Token not found in any price API: {token_address[:8]}...{token_address[-8:]}")
-        print(f"🔄 Using fallback price to prevent false delisting")
+        log_event("solana.price.fallback", level="WARNING", token=token_address)
         return 0.000001  # Small positive value instead of 0
 
     def execute_trade(self, token_address: str, amount_usd: float, is_buy: bool = True) -> Tuple[str, bool]:
         """Execute trade using custom Jupiter library"""
         try:
-            print(f"🚀 Executing {'buy' if is_buy else 'sell'} for {token_address[:8]}...{token_address[-8:]}")
+            log_event("solana.trade.start", token=token_address, side=("buy" if is_buy else "sell"), amount_usd=amount_usd)
             
             # Get token liquidity to adjust trade amount
             try:
@@ -103,7 +103,7 @@ class JupiterCustomExecutor:
                 liquidity = _get_token_liquidity(token_address)
                 if liquidity and liquidity < amount_usd * 2:  # If liquidity is less than 2x trade amount
                     adjusted_amount = min(amount_usd, liquidity * 0.1)  # Use 10% of liquidity or original amount
-                    print(f"🔄 Adjusting trade amount from ${amount_usd} to ${adjusted_amount} due to low liquidity (${liquidity})")
+                    log_event("solana.trade.adjust_amount", amount_usd_from=amount_usd, amount_usd_to=adjusted_amount, liquidity=liquidity)
                     amount_usd = adjusted_amount
             except Exception as e:
                 print(f"⚠️ Could not get liquidity info: {e}")
@@ -114,7 +114,7 @@ class JupiterCustomExecutor:
                 from utils import get_sol_price_usd
                 sol_price = get_sol_price_usd()
                 if sol_price <= 0:
-                    print("❌ Could not get SOL price for trade")
+                    log_event("solana.trade.error_no_sol_price", level="ERROR")
                     return "", False
                 
                 sol_amount = amount_usd / sol_price
@@ -132,10 +132,14 @@ class JupiterCustomExecutor:
             
             # Execute swap using custom Jupiter library
             tx_hash, success = self.jupiter_lib.execute_swap(input_mint, output_mint, amount)
+            if success:
+                log_event("solana.trade.sent", token=token_address, side=("buy" if is_buy else "sell"), tx_hash=tx_hash)
+            else:
+                log_event("solana.trade.error", level="ERROR", token=token_address, side=("buy" if is_buy else "sell"))
             return tx_hash, success
             
         except Exception as e:
-            print(f"❌ Trade execution error: {e}")
+            log_event("solana.trade.exception", level="ERROR", error=str(e))
             return "", False
 
     def get_solana_balance(self) -> float:

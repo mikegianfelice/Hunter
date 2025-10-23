@@ -11,6 +11,7 @@ from secrets import BASE_RPC_URL, WALLET_ADDRESS, PRIVATE_KEY
 from gas import suggest_fees
 from utils import get_eth_price_usd  # robust ETH/USD (Graph -> on-chain V2)
 from config_loader import get_config, get_config_bool, get_config_float, get_config_int
+from logger import log_event
 
 # Dynamic config loading
 def get_base_config():
@@ -213,8 +214,7 @@ def buy_token(token_address: str, usd_amount: float, symbol: str = "?") -> tuple
         print(f"❌ Computed minOut <= 0 for {symbol}; aborting.")
         return None, False
 
-    print(f"🧮 Quote for {symbol}: in {eth_amount:.6f} ETH → out {quoted_out} raw")
-    print(f"🎯 Slippage {config['SLIPPAGE']*100:.2f}% → minOut {amount_out_min}")
+    log_event("base.buy.quote", symbol=symbol, eth_in=round(eth_amount, 6), out_raw=int(quoted_out), slippage=round(config['SLIPPAGE'], 6), min_out=int(amount_out_min))
 
     # Build swap parameters
     params = {
@@ -288,16 +288,16 @@ def buy_token(token_address: str, usd_amount: float, symbol: str = "?") -> tuple
 
     # Send transaction
     if config['TEST_MODE']:
-        print(f"🧪 TEST MODE: Would send {symbol} buy tx")
+        log_event("base.buy.simulated", symbol=symbol)
         return "0xSIMULATED_TX", True
 
     try:
         signed = w3.eth.account.sign_transaction(final_tx, PRIVATE_KEY)
         tx_hash = w3.eth.send_raw_transaction(signed.rawTransaction)
-        print(f"✅ {symbol} buy tx sent: {tx_hash.hex()}")
+        log_event("base.buy.sent", symbol=symbol, tx_hash=tx_hash.hex())
         return tx_hash.hex(), True
     except Exception as e:
-        print(f"❌ {symbol} buy failed: {e}")
+        log_event("base.buy.error", level="ERROR", symbol=symbol, error=str(e))
         return None, False
 
 # === SELL functionality ===
@@ -433,17 +433,17 @@ def sell_token(token_address: str, token_amount: float, symbol: str = "?") -> tu
 
     # Send transaction
     if config['TEST_MODE']:
-        print(f"🧪 TEST MODE: Would send {symbol} sell tx")
+        log_event("base.sell.simulated", symbol=symbol)
         return "0xSIMULATED_TX", True
 
     try:
         final_tx = _maybe_requote_and_adjust(tx)
         signed = w3.eth.account.sign_transaction(final_tx, PRIVATE_KEY)
         tx_hash = w3.eth.send_raw_transaction(signed.rawTransaction)
-        print(f"✅ {symbol} sell tx sent: {tx_hash.hex()}")
+        log_event("base.sell.sent", symbol=symbol, tx_hash=tx_hash.hex())
         return tx_hash.hex(), True
     except Exception as e:
-        print(f"❌ {symbol} sell failed: {e}")
+        log_event("base.sell.error", level="ERROR", symbol=symbol, error=str(e))
         return None, False
 
 # === Utility functions ===

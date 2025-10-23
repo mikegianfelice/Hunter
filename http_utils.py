@@ -2,6 +2,8 @@
 import time, random
 import requests
 from typing import Optional, Dict, Any
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 DEFAULT_TIMEOUT = 15  # Increased from 10 to 15 seconds
 DEFAULT_RETRIES = 4  # Increased from 3 to 4 retries
@@ -16,6 +18,32 @@ _circuit_breaker = {
     "threshold": 10,  # Open circuit after 10 consecutive failures
     "reset_timeout": 60  # Reset circuit after 60 seconds
 }
+
+# Global HTTP session with connection pooling
+_session: Optional[requests.Session] = None
+
+def _get_session() -> requests.Session:
+    global _session
+    if _session is not None:
+        return _session
+    s = requests.Session()
+    # Keep automatic retries minimal here since we implement our own retry logic
+    # Configure pooling aggressively to reuse connections across frequent calls
+    adapter = HTTPAdapter(
+        pool_connections=32,
+        pool_maxsize=64,
+        max_retries=Retry(  # only idempotent safety; we still use our manual retry
+            total=0,
+            backoff_factor=0,
+            allowed_methods=False,
+            raise_on_redirect=False,
+            raise_on_status=False,
+        ),
+    )
+    s.mount("http://", adapter)
+    s.mount("https://", adapter)
+    _session = s
+    return s
 
 def _sleep(i, backoff):
     # exponential backoff with jitter
@@ -70,7 +98,7 @@ def get_json(url, headers=None, timeout=DEFAULT_TIMEOUT, retries=DEFAULT_RETRIES
     last_err = None
     for attempt in range(1, retries + 1):
         try:
-            resp = requests.get(url, headers=h, timeout=timeout)
+            resp = _get_session().get(url, headers=h, timeout=timeout)
             resp.raise_for_status()
             _record_success()
             return resp.json()
@@ -139,7 +167,7 @@ def post_json(url, payload, headers=None, timeout=DEFAULT_TIMEOUT, retries=DEFAU
     last_err = None
     for attempt in range(1, retries + 1):
         try:
-            resp = requests.post(url, json=payload, headers=h, timeout=timeout)
+            resp = _get_session().post(url, json=payload, headers=h, timeout=timeout)
             resp.raise_for_status()
             _record_success()
             return resp.json()
