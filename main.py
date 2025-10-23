@@ -1032,6 +1032,19 @@ def practical_trade_loop():
             else:
                 log_print(f"❌ Trade failed for {symbol}")
                 rejections["execution_failed"].append(symbol)
+                
+                # Send Telegram alert for execution failures
+                try:
+                    send_telegram_message(
+                        f"❌ Trade Execution Failed\n"
+                        f"Token: {symbol}\n"
+                        f"AI Quality Score: {quality_score:.1f}\n"
+                        f"Position Size: ${position_size:.1f}\n"
+                        f"Status: Execution returned False\n"
+                        f"⚠️ Reason unknown - check logs for details"
+                    )
+                except Exception as telegram_err:
+                    log_print(f"⚠️ Failed to send failure notification: {telegram_err}")
             
             # Small delay between trades
             time.sleep(3)
@@ -1041,6 +1054,17 @@ def practical_trade_loop():
             symbol = token.get('symbol', 'UNKNOWN') if token else 'UNKNOWN'
             log_print(f"🔥 Error processing {symbol}: {error_msg}")
             rejections["error"].append(symbol)
+            
+            # Send Telegram alert for execution errors
+            try:
+                send_telegram_message(
+                    f"🔥 Trade Execution Error\n"
+                    f"Token: {symbol}\n"
+                    f"Error: {error_msg}\n"
+                    f"⚠️ Manual intervention may be required"
+                )
+            except Exception as telegram_err:
+                log_print(f"⚠️ Failed to send error notification: {telegram_err}")
     
     # Print summary
     _print_practical_summary(rejections, successful_trades)
@@ -1882,7 +1906,7 @@ def _show_liquidity_flow_insights():
             current_positions.append({
                 'symbol': pos.get('symbol', 'UNKNOWN'),
                 'priceUsd': pos.get('entry_price', 0),
-                'volume24h': pos.get('volume_24h', 0),
+                'volume24h': pos.get('volume24h', 0),
                 'liquidity': pos.get('liquidity', 0),
                 'chainId': pos.get('chain_id', 'ethereum')
             })
@@ -1939,7 +1963,7 @@ def _show_multi_timeframe_insights():
             current_positions.append({
                 'symbol': pos.get('symbol', 'UNKNOWN'),
                 'priceUsd': pos.get('entry_price', 0),
-                'volume24h': pos.get('volume_24h', 0),
+                'volume24h': pos.get('volume24h', 0),
                 'liquidity': pos.get('liquidity', 0),
                 'chainId': pos.get('chain_id', 'ethereum')
             })
@@ -1996,7 +2020,7 @@ def _show_market_cycle_insights():
             current_positions.append({
                 'symbol': pos.get('symbol', 'UNKNOWN'),
                 'priceUsd': pos.get('entry_price', 0),
-                'volume24h': pos.get('volume_24h', 0),
+                'volume24h': pos.get('volume24h', 0),
                 'liquidity': pos.get('liquidity', 0),
                 'chainId': pos.get('chain_id', 'ethereum')
             })
@@ -2098,7 +2122,7 @@ def _show_performance_attribution_insights():
             current_positions.append({
                 'symbol': pos.get('symbol', 'UNKNOWN'),
                 'priceUsd': pos.get('entry_price', 0),
-                'volume24h': pos.get('volume_24h', 0),
+                'volume24h': pos.get('volume24h', 0),
                 'liquidity': pos.get('liquidity', 0),
                 'chainId': pos.get('chain_id', 'ethereum')
             })
@@ -2173,7 +2197,7 @@ def _show_market_anomaly_insights():
             current_positions.append({
                 'symbol': pos.get('symbol', 'UNKNOWN'),
                 'priceUsd': pos.get('entry_price', 0),
-                'volume24h': pos.get('volume_24h', 0),
+                'volume24h': pos.get('volume24h', 0),
                 'liquidity': pos.get('liquidity', 0),
                 'chainId': pos.get('chain_id', 'ethereum')
             })
