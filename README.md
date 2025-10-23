@@ -324,6 +324,22 @@ git clone https://github.com/mikegianfelice/Hunter.git
 cd Hunter
 ```
 
+### 1.5. GitHub Authentication (Optional)
+If you plan to contribute or push changes, you can set up GitHub token authentication:
+
+**Option A: Using the included git wrapper script**
+1. Add your GitHub Personal Access Token to `.env`:
+   ```bash
+   GITHUB_SSH_KEY=your_github_token_here
+   ```
+2. Use the wrapper script for git operations:
+   ```bash
+   python3 git_with_ssh.py push
+   ```
+
+**Option B: Manual SSH setup**
+Set up SSH keys in your `~/.ssh/` directory and use standard git commands.
+
 ### 2. Install Dependencies
 ```bash
 # Create virtual environment
