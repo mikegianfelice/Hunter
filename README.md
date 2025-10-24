@@ -597,6 +597,19 @@ screen -X -S trading_bot quit
 screen -list
 ```
 
+**Or use the convenience scripts:**
+
+```bash
+# Start the bot in background
+./launch_bot.sh
+
+# Stop the bot
+./stop_bot.sh
+
+# Check bot status
+./status_bot.sh
+```
+
 #### **Option B: Foreground Execution**
 Run the bot directly in your terminal (closes when you close the terminal):
 
