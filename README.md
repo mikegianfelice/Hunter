@@ -563,9 +563,49 @@ test_mode: true               # Set to true for simulation only
 
 
 ### 6. Run the Bot
+
+#### **Option A: Background Execution (Recommended) 🚀**
+Use the provided launcher script to run the bot in the background with `screen`:
+
+```bash
+# Make sure you're in the Hunter directory
+cd /Users/gianf/Desktop/Cursor/Hunter
+
+# Run the launcher script
+./launch_bot.sh
+```
+
+The script will:
+- ✅ Create a detached `screen` session called `trading_bot`
+- ✅ Start your bot in the background
+- ✅ Keep it running even if you close your laptop screen
+- ✅ Survive terminal/connection interruptions
+
+**Managing the Background Bot:**
+
+```bash
+# View what your bot is doing
+screen -r trading_bot
+
+# Detach from screen (leave it running)
+# While viewing: Press Ctrl+A then D
+
+# Stop the bot
+screen -X -S trading_bot quit
+
+# Check if it's running
+screen -list
+```
+
+#### **Option B: Foreground Execution**
+Run the bot directly in your terminal (closes when you close the terminal):
+
 ```bash
 python main.py
 ```
+
+**Note**: This method will stop the bot when you close your laptop screen or terminal window. Use Option A for continuous 24/7 trading.
+
 
 ## 📊 Configuration Options
 
