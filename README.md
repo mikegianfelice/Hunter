@@ -4,7 +4,7 @@ A sophisticated AI-powered cryptocurrency trading bot designed for **consistent 
 
 ## ⚠️ **IMPORTANT DISCLAIMER**
 
-**This bot is for educational and research purposes only. Cryptocurrency trading involves significant risk of loss. Never invest more than you can afford to lose. The developers are not responsible for any financial losses incurred from using this bot.**
+**Cryptocurrency trading involves significant risk of loss. Never invest more than you can afford to lose. The developers are not responsible for any financial losses incurred from using this bot.**
 
 ## 🎯 AI-Enhanced Features
 
