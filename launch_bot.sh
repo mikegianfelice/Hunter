@@ -32,10 +32,18 @@ cd "$SCRIPT_DIR"
 
 # Create and run bot in a detached screen session
 echo -e "${BLUE}🚀 Launching trading bot in screen session...${NC}"
-screen -S trading_bot -d -m python3 main.py
+
+# Build launch command: activate venv if present, then run the bot unbuffered and log output
+LAUNCH_CMD='cd "'"$SCRIPT_DIR"'"; \
+  if [ -f .venv/bin/activate ]; then source .venv/bin/activate; fi; \
+  export PYTHONUNBUFFERED=1; \
+  python3 main.py >> practical_sustainable.log 2>&1'
+
+# Start within a login shell so venv activation works reliably
+screen -S trading_bot -d -m bash -lc "$LAUNCH_CMD"
 
 # Give it a moment to start
-sleep 1
+sleep 2
 
 # Verify the session was created
 if screen -list | grep -q "trading_bot"; then
@@ -50,5 +58,10 @@ if screen -list | grep -q "trading_bot"; then
     echo -e "${GREEN}🎯 Bot is now running in the background!${NC}"
 else
     echo -e "${RED}❌ Failed to launch trading bot${NC}"
+    # Show recent log output to help diagnose fast-exit failures (e.g., missing venv deps)
+    if [ -f practical_sustainable.log ]; then
+        echo -e "${YELLOW}Last 40 log lines:${NC}"
+        tail -n 40 practical_sustainable.log || true
+    fi
     exit 1
 fi
