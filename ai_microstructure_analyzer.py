@@ -17,7 +17,6 @@ import random
 # import numpy as np  # Not needed for this implementation
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class AIMarketMicrostructureAnalyzer:

@@ -13,7 +13,6 @@ from datetime import datetime, timedelta
 import statistics
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 

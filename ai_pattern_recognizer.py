@@ -15,7 +15,6 @@ from collections import defaultdict
 import statistics
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class AIPatternRecognizer:

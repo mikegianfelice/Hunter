@@ -14,7 +14,6 @@ import requests
 from collections import defaultdict
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class AISentimentAnalyzer:

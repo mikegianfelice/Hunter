@@ -306,9 +306,9 @@ class AIMarketConditionGuardian:
         """Analyze news impact on market conditions"""
         try:
             # Approximate news impact deterministically from price and volume changes
-            price_change = abs(float(token_data.get('price_change_24h', 0)))
-            vol = float(token_data.get('volume24h', 0))
-            liq = float(token_data.get('liquidity', max(vol, 1)))
+            price_change = abs(float(market_data.get('price_change_24h', 0)))
+            vol = float(market_data.get('volume24h', 0))
+            liq = float(market_data.get('liquidity', max(vol, 1)))
             news_impact = max(0.0, min(1.0, (price_change / 20.0) + min(0.5, vol / max(liq, 1_000_000))))
             news_sentiment = news_data.get('sentiment', 'neutral')
             

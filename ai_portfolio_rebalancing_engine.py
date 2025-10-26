@@ -369,18 +369,18 @@ class AIPortfolioRebalancingEngine:
             risk_score = 1.0 - max(0.1, min(0.9, quality))
             return_score = max(0.1, min(0.9, vol24 / 1_000_000))
             liquidity_score = max(0.3, min(0.9, liq / 2_000_000))
-                
-                # Calculate optimal weight
-                optimal_weight = (return_score * (1 - risk_score) * liquidity_score) / 3
-                optimal_weight = max(0.05, min(0.4, optimal_weight))  # 5-40% range
-                
-                optimal_value = total_value * optimal_weight
-                allocations[symbol] = {
-                    'current_value': current_value,
-                    'optimal_value': optimal_value,
-                    'optimal_weight': optimal_weight,
-                    'rebalancing_needed': abs(optimal_value - current_value) / current_value if current_value > 0 else 1.0
-                }
+            
+            # Calculate optimal weight
+            optimal_weight = (return_score * (1 - risk_score) * liquidity_score) / 3
+            optimal_weight = max(0.05, min(0.4, optimal_weight))  # 5-40% range
+            
+            optimal_value = total_value * optimal_weight
+            allocations[symbol] = {
+                'current_value': current_value,
+                'optimal_value': optimal_value,
+                'optimal_weight': optimal_weight,
+                'rebalancing_needed': abs(optimal_value - current_value) / current_value if current_value > 0 else 1.0
+            }
             
             # Calculate total allocation
             total_allocation = sum(alloc['optimal_weight'] for alloc in allocations.values())
