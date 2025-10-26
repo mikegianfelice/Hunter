@@ -9,7 +9,6 @@ import sys
 import time
 import json
 import logging
-import random
 from datetime import datetime
 from collections import defaultdict
 from typing import Dict, List
@@ -113,6 +112,7 @@ from ai_emergency_stop_system import ai_emergency_stop_system
 from ai_position_size_validator import ai_position_size_validator
 from ai_trade_execution_monitor import ai_trade_execution_monitor
 from ai_market_condition_guardian import ai_market_condition_guardian
+from market_data_fetcher import market_data_fetcher
 
 def calculate_ai_enhanced_quality_score(token: Dict) -> float:
     """
@@ -314,8 +314,13 @@ def check_practical_buy_signal(token: Dict) -> bool:
     # 2. AI Market Condition Guardian Check
     try:
         # Update market_data with current values - do not redefine
+        # Use real market volatility
+        try:
+            real_vol = market_data_fetcher.get_market_volatility(hours=24)
+        except Exception:
+            real_vol = 0.3
         market_data.update({
-            'volatility': random.uniform(0.1, 0.4),
+            'volatility': real_vol,
             'timestamp': datetime.now().isoformat()
         })
         news_data = {'sentiment': 'neutral', 'impact': 0.3}
@@ -389,10 +394,15 @@ def check_practical_buy_signal(token: Dict) -> bool:
     quality_threshold_adjustment = regime_data['quality_threshold_adjustment']
     
     # Update market_data with detected regime - do not redefine
+    # Refresh with real volatility
+    try:
+        real_vol = market_data_fetcher.get_market_volatility(hours=24)
+    except Exception:
+        real_vol = 0.3
     market_data.update({
         'timestamp': datetime.now().isoformat(),
         'regime': regime,
-        'volatility': random.uniform(0.1, 0.4)
+        'volatility': real_vol
     })
     
     # Dynamic volume requirement based on market regime

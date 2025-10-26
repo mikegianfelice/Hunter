@@ -200,49 +200,44 @@ class AISentimentAnalyzer:
             return {'score': 0.5, 'confidence': 0.5, 'price_stability': 'unknown', 'volume_health': 'unknown'}
     
     def _simulate_social_sentiment(self, symbol: str) -> Dict:
-        """Simulate social media sentiment analysis"""
-        # In production, this would use real social media APIs
-        import random
-        
-        # Simulate sentiment based on symbol characteristics
-        if 'DOGE' in symbol.upper() or 'SHIB' in symbol.upper():
-            # Meme coins tend to have volatile sentiment
-            score = random.uniform(0.3, 0.8)
-            confidence = random.uniform(0.6, 0.9)
-        elif len(symbol) <= 4:
-            # Short symbols often have higher sentiment
-            score = random.uniform(0.5, 0.8)
-            confidence = random.uniform(0.7, 0.9)
-        else:
-            # Regular tokens
-            score = random.uniform(0.4, 0.7)
-            confidence = random.uniform(0.6, 0.8)
-        
-        return {
-            'score': score,
-            'confidence': confidence,
-            'mentions': random.randint(50, 500)
-        }
+        """Heuristic social sentiment proxy using free scraper outputs when available."""
+        try:
+            from sentiment_scraper import get_sentiment_score
+            result = get_sentiment_score(symbol)
+            score_norm = max(0.0, min(1.0, result.get('score', 50) / 100.0))
+            mentions = int(result.get('mentions', 0))
+            confidence = 0.6 + min(0.3, mentions / 100.0)
+            return {
+                'score': score_norm,
+                'confidence': max(0.0, min(1.0, confidence)),
+                'mentions': mentions
+            }
+        except Exception:
+            # Deterministic fallback based on symbol length
+            base = 0.6 if len(symbol) <= 4 else 0.5
+            return {'score': base, 'confidence': 0.6, 'mentions': 0}
     
     def _simulate_news_sentiment(self, symbol: str) -> Dict:
-        """Simulate news sentiment analysis"""
-        import random
-        
-        # Simulate news sentiment
-        score = random.uniform(0.4, 0.8)
-        confidence = random.uniform(0.7, 0.9)
-        
-        return {
-            'score': score,
-            'confidence': confidence,
-            'articles': random.randint(5, 25)
-        }
+        """Heuristic news sentiment proxy without randomness."""
+        try:
+            # Use keyword-based scoring from symbol only (deterministic)
+            symbol_lower = symbol.lower()
+            positive_words = ["ai", "eth", "btc", "sol", "defi", "l2"]
+            negative_words = ["hack", "rug", "scam", "ban"]
+            score = 0.6
+            if any(w in symbol_lower for w in positive_words):
+                score += 0.1
+            if any(w in symbol_lower for w in negative_words):
+                score -= 0.2
+            score = max(0.0, min(1.0, score))
+            return {'score': score, 'confidence': 0.7, 'articles': 0}
+        except Exception:
+            return {'score': 0.5, 'confidence': 0.6, 'articles': 0}
     
     def _calculate_price_change(self, token: Dict) -> float:
         """Calculate price change percentage"""
         try:
-            # This would use historical price data
-            # For now, simulate based on volume and liquidity
+            # Deterministic proxy using volume and liquidity
             volume_24h = float(token.get('volume24h', 0))
             liquidity = float(token.get('liquidity', 0))
             
@@ -250,11 +245,11 @@ class AISentimentAnalyzer:
             if liquidity > 0:
                 ratio = volume_24h / liquidity
                 if ratio > 0.5:  # High volume relative to liquidity
-                    return random.uniform(0.05, 0.15)  # Positive change
+                    return 0.10
                 elif ratio < 0.1:  # Low volume relative to liquidity
-                    return random.uniform(-0.05, 0.05)  # Neutral to negative
+                    return 0.00
                 else:
-                    return random.uniform(-0.02, 0.08)  # Moderate change
+                    return 0.03
             else:
                 return 0.0
                 

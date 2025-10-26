@@ -2,7 +2,6 @@
 import csv
 import yaml
 import time
-import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from http_utils import get_json
@@ -277,9 +276,14 @@ def fetch_trending_tokens(limit=200):  # INCREASED for more opportunities
     headers = {"User-Agent": "Mozilla/5.0 (bot)"}
     all_pairs = []
 
-    # Try multiple primary sources with randomization
+    # Try multiple primary sources in a rotating deterministic order
     primary_urls = PRIMARY_URLS.copy()
-    random.shuffle(primary_urls)  # Randomize order to avoid bias
+    # Rotate list based on minute to avoid bias without randomness
+    try:
+        shift = int(time.time() // 60) % len(primary_urls)
+        primary_urls = primary_urls[shift:] + primary_urls[:shift]
+    except Exception:
+        pass
 
     def _fetch(u: str):
         try:

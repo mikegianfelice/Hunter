@@ -1,7 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
 import time
-import random
 
 # Weighted bullish keywords (enhanced)
 BULLISH_KEYWORDS = {
@@ -158,8 +157,8 @@ def get_sentiment_score(token):
     else:
         symbol = str(token)
     
-    # Add small delay to avoid rate limiting
-    time.sleep(random.uniform(0.5, 1.5))
+    # Add small deterministic delay to avoid rate limiting without randomness
+    time.sleep(1.0)
     
     try:
         twitter = scrape_twitter_alternative(symbol)

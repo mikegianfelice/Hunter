@@ -1,5 +1,5 @@
 # http_utils.py
-import time, random
+import time
 import requests
 from typing import Optional, Dict, Any
 from requests.adapters import HTTPAdapter
@@ -46,8 +46,9 @@ def _get_session() -> requests.Session:
     return s
 
 def _sleep(i, backoff):
-    # exponential backoff with jitter
-    delay = (backoff * (2 ** (i - 1))) + random.uniform(0, backoff / 3)
+    # exponential backoff with deterministic fractional jitter based on attempt
+    fractional = (i % 3) / 6  # 0.0, 0.166..., 0.333..., cycles deterministically
+    delay = (backoff * (2 ** (i - 1))) + (backoff * fractional)
     time.sleep(delay)
 
 def _check_circuit_breaker(url: str) -> bool:

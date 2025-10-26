@@ -6,7 +6,7 @@ Blocks trading during unfavorable market conditions, crashes, manipulation, and 
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional
-import random
+from market_data_fetcher import market_data_fetcher
 import math
 
 # Configure logging
@@ -139,8 +139,8 @@ class AIMarketConditionGuardian:
     def _analyze_market_volatility(self, market_data: Dict, token_data: Dict) -> Dict:
         """Analyze market volatility conditions"""
         try:
-            # Calculate volatility (mock)
-            volatility = random.uniform(0.1, 0.6)
+            # Calculate volatility using real market data
+            volatility = market_data_fetcher.get_market_volatility(hours=24)
             
             if volatility >= self.extreme_volatility_threshold:
                 volatility_severity = 'extreme'
@@ -305,8 +305,11 @@ class AIMarketConditionGuardian:
     def _analyze_news_impact(self, market_data: Dict, news_data: Dict) -> Dict:
         """Analyze news impact on market conditions"""
         try:
-            # Calculate news impact (mock)
-            news_impact = random.uniform(0.1, 1.0)
+            # Approximate news impact deterministically from price and volume changes
+            price_change = abs(float(token_data.get('price_change_24h', 0)))
+            vol = float(token_data.get('volume24h', 0))
+            liq = float(token_data.get('liquidity', max(vol, 1)))
+            news_impact = max(0.0, min(1.0, (price_change / 20.0) + min(0.5, vol / max(liq, 1_000_000))))
             news_sentiment = news_data.get('sentiment', 'neutral')
             
             if news_impact >= self.critical_news_impact_threshold and news_sentiment == 'negative':
@@ -338,8 +341,10 @@ class AIMarketConditionGuardian:
     def _analyze_market_correlation(self, market_data: Dict, historical_data: Dict) -> Dict:
         """Analyze market correlation breakdown"""
         try:
-            # Calculate correlation breakdown (mock)
-            correlation_breakdown = random.uniform(0.0, 0.5)
+            # Estimate correlation breakdown using BTC/ETH trend divergence
+            btc_trend = market_data_fetcher.get_btc_trend(hours=24)
+            eth_trend = market_data_fetcher.get_eth_trend(hours=24)
+            correlation_breakdown = min(0.5, abs(btc_trend - eth_trend))
             
             if correlation_breakdown >= 0.4:
                 correlation_severity = 'high'

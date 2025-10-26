@@ -361,12 +361,13 @@ class AIExecutionOptimizer:
                 timing = "avoid"
                 timing_confidence = 0.3
             
-            # Calculate timing factors
-            market_volatility = random.uniform(0.3, 0.8)  # Simulate market volatility
-            volume_patterns = random.uniform(0.4, 0.9)  # Simulate volume patterns
-            liquidity_cycles = random.uniform(0.5, 0.8)  # Simulate liquidity cycles
-            gas_price_trends = random.uniform(0.3, 0.7)  # Simulate gas price trends
-            network_congestion = random.uniform(0.2, 0.6)  # Simulate network congestion
+            # Calculate timing factors deterministically
+            from market_data_fetcher import market_data_fetcher
+            market_volatility = market_data_fetcher.get_market_volatility(hours=24)
+            volume_patterns = execution_analysis.get('volume_analysis', 0.5)
+            liquidity_cycles = execution_analysis.get('liquidity_analysis', 0.5)
+            gas_price_trends = execution_analysis.get('gas_price_trend', 0.5)
+            network_congestion = execution_analysis.get('network_congestion', 0.5)
             
             return {
                 'timing': timing,
@@ -459,8 +460,8 @@ class AIExecutionOptimizer:
             
             # Calculate slippage factors
             liquidity_factor = execution_analysis.get('liquidity_analysis', 0.5)
-            volume_factor = random.uniform(0.4, 0.8)  # Simulate volume factor
-            market_impact = trade_amount / 1000  # Simulate market impact
+            volume_factor = max(0.3, min(0.9, execution_analysis.get('volume_analysis', 0.5)))
+            market_impact = min(1.0, max(0.0, trade_amount / 10000))
             
             return {
                 'target_slippage': target_slippage,

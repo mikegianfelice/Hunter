@@ -181,8 +181,9 @@ class AIEmergencyStopSystem:
     def _analyze_volatility_emergency(self, market_data: Dict) -> Dict:
         """Analyze market volatility for emergency conditions"""
         try:
-            # Calculate market volatility (mock)
-            volatility = random.uniform(0.1, 0.6)
+            # Calculate market volatility using real data
+            from market_data_fetcher import market_data_fetcher
+            volatility = market_data_fetcher.get_market_volatility(hours=24)
             
             # Determine volatility severity
             if volatility >= self.extreme_volatility_threshold:
@@ -278,8 +279,10 @@ class AIEmergencyStopSystem:
     def _analyze_news_impact_emergency(self, market_data: Dict) -> Dict:
         """Analyze news impact for emergency conditions"""
         try:
-            # Calculate news impact (mock)
-            news_impact = random.uniform(0.1, 1.0)
+            # Deterministic proxy for news impact from price and volume changes
+            price_change = abs(float(market_data.get('price_change_24h', 0)))
+            volume_change = float(market_data.get('volume_change_ratio', 1.0))
+            news_impact = max(0.0, min(1.0, (price_change / 20.0) + max(0.0, volume_change - 1.0) / 3))
             
             # Determine news impact severity
             if news_impact >= self.critical_news_impact:
@@ -306,8 +309,11 @@ class AIEmergencyStopSystem:
     def _analyze_market_crash_emergency(self, market_data: Dict) -> Dict:
         """Analyze market crash conditions"""
         try:
-            # Calculate market crash probability (mock)
-            crash_probability = random.uniform(0.0, 0.3)
+            # Estimate crash probability deterministically from drawdown and volatility
+            current_drawdown = float(market_data.get('current_drawdown', 0))
+            from market_data_fetcher import market_data_fetcher
+            vol = market_data_fetcher.get_market_volatility(hours=24)
+            crash_probability = max(0.0, min(0.9, 0.2 * current_drawdown + 0.5 * vol))
             
             # Determine crash severity
             if crash_probability >= 0.8:
