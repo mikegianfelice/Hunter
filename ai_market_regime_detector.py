@@ -103,7 +103,7 @@ class AIMarketRegimeDetector:
                 'recommendations': self._get_regime_recommendations(regime_analysis['regime'])
             }
             
-            logger.info(f"🎯 Market Regime Detected: {regime_analysis['regime']} (confidence: {regime_analysis['confidence']:.2f})")
+            # Removed duplicate logging - regime detection is logged in main loop
             return result
             
         except Exception as e:

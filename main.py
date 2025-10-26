@@ -242,7 +242,7 @@ def calculate_practical_quality_score(token: Dict) -> float:
     
     return max(0, min(100, score))
 
-def check_practical_buy_signal(token: Dict) -> bool:
+def check_practical_buy_signal(token: Dict, regime_data: Dict = None) -> bool:
     """
     Check if token meets practical sustainable trading criteria with market regime awareness.
     Focus on quality over quantity, but be realistic and market-aware.
@@ -388,8 +388,9 @@ def check_practical_buy_signal(token: Dict) -> bool:
         safe_print(f"❌ {symbol}: Missing address or price too low (${price:.6f})")
         return False
     
-    # Get market regime for dynamic thresholds
-    regime_data = ai_market_regime_detector.detect_market_regime()
+    # Use provided regime data or get it if not provided
+    if regime_data is None:
+        regime_data = ai_market_regime_detector.detect_market_regime()
     regime = regime_data['regime']
     quality_threshold_adjustment = regime_data['quality_threshold_adjustment']
     
@@ -656,7 +657,7 @@ def check_practical_buy_signal(token: Dict) -> bool:
     print(f"✅ {symbol}: Quality score {quality_score:.1f}, Volume ${volume_24h:,.0f}, Liquidity ${liquidity:,.0f}, Risk: {risk_category} ({risk_score:.2f}), Pattern: {overall_signal} ({pattern_strength:.2f}), Microstructure: {microstructure_score:.2f}, Intelligence: {intelligence_score:.2f}, Sentiment: {market_sentiment}, Prediction: {prediction_score:.2f} ({trading_signal}), Strategy: {selected_strategy} ({strategy_confidence}), Risk: {risk_level} ({risk_score:.2f}), Transition: {transition_probability:.2f}, Liquidity: {liquidity_score:.2f}, Timeframe: {timeframe_score:.2f}, Cycle: {cycle_phase}, Drawdown: {drawdown_severity}, Attribution: {attribution_score:.2f}, Anomaly: {anomaly_severity}, Rebalancing: {rebalancing_urgency} (Regime: {regime})")
     return True
 
-def get_dynamic_position_size(token: Dict) -> float:
+def get_dynamic_position_size(token: Dict, regime_data: Dict = None) -> float:
     """
     Calculate dynamic position size based on AI-enhanced token quality, risk factors, market regime, and portfolio optimization.
     Higher quality tokens get larger positions, but with safety limits, market awareness, and portfolio optimization.
@@ -666,8 +667,9 @@ def get_dynamic_position_size(token: Dict) -> float:
     volume_24h = float(token.get("volume24h", 0))
     liquidity = float(token.get("liquidity", 0))
     
-    # Get market regime for position sizing adjustments
-    regime_data = ai_market_regime_detector.detect_market_regime()
+    # Use provided regime data or get it if not provided
+    if regime_data is None:
+        regime_data = ai_market_regime_detector.detect_market_regime()
     regime = regime_data['regime']
     position_multiplier = regime_data['position_multiplier']
     
@@ -905,10 +907,10 @@ def practical_trade_loop():
     practical_tokens = []
     
     for token in tokens:
-        if check_practical_buy_signal(token):
+        if check_practical_buy_signal(token, regime_data):
             # Add AI-enhanced quality score, position size, and take profit to token data
             token["ai_enhanced_quality_score"] = calculate_ai_enhanced_quality_score(token)
-            token["practical_position_size"] = get_dynamic_position_size(token)
+            token["practical_position_size"] = get_dynamic_position_size(token, regime_data)
             token["practical_tp"] = get_practical_take_profit(token)
             practical_tokens.append(token)
     
@@ -967,9 +969,8 @@ def practical_trade_loop():
                 'avg_volume_30d': volume_24h
             })
             
-            # Get current regime for notifications
-            current_regime_data = ai_market_regime_detector.detect_market_regime()
-            regime = current_regime_data['regime']
+            # Use cached regime data to avoid duplicate calls
+            # regime is already available from the initial detection above
             
             # Get prediction data for display
             prediction = token.get("ai_prediction", {})

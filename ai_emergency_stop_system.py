@@ -135,7 +135,7 @@ class AIEmergencyStopSystem:
             # Cache the result
             self.emergency_cache[cache_key] = {'timestamp': datetime.now(), 'emergency_data': result}
             
-            logger.info(f"🚨 Emergency analysis: {emergency_level} (score: {emergency_score:.2f})")
+            # Removed duplicate logging - emergency analysis is logged in main loop
             return result
             
         except Exception as e:
