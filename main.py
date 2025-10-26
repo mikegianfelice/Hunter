@@ -85,7 +85,7 @@ def check_live_trading_ready():
 # Import modules
 from token_scraper import fetch_trending_tokens
 from multi_chain_executor import execute_trade
-from telegram_bot import send_telegram_message
+from telegram_bot import send_telegram_message, send_periodic_status_report
 from risk_manager import allow_new_trade, register_buy, status_summary
 from config_loader import get_config, get_config_float, get_config_int
 from performance_tracker import performance_tracker
@@ -1807,6 +1807,12 @@ def main():
     # Main trading loop
     while True:
         try:
+            # Check if it's time to send periodic status report (every 6 hours)
+            try:
+                send_periodic_status_report()
+            except Exception as e:
+                log_print(f"⚠️ Could not send periodic status: {e}")
+            
             practical_trade_loop()
             
             # Wait before next cycle (longer for sustainable trading)

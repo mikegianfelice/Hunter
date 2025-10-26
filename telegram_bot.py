@@ -2,10 +2,16 @@
 import requests
 import time
 from secrets import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+import threading
+from datetime import datetime
 
 # Message deduplication cache
 _sent_messages = {}
 _message_cache_ttl = 300  # 5 minutes
+
+# Periodic status tracking
+_last_status_time = 0
+_status_interval = 6 * 60 * 60  # 6 hours in seconds
 
 def _cleanup_old_messages():
     """Remove old messages from the cache"""
@@ -72,3 +78,97 @@ def send_telegram_message(message: str, markdown: bool = False, disable_preview:
     except Exception as e:
         print(f"❌ Telegram unexpected error: {e}")
         return False
+
+def send_periodic_status_report():
+    """
+    Send a comprehensive status report to Telegram every 6 hours.
+    Includes bot status, buy/sell summary, and market conditions.
+    """
+    global _last_status_time
+    current_time = time.time()
+    
+    # Check if it's time to send a status report (every 6 hours)
+    if current_time - _last_status_time < _status_interval:
+        return False
+    
+    # Update last status time before sending to prevent duplicate sends
+    _last_status_time = current_time
+    
+    try:
+        # Import here to avoid circular imports
+        from performance_tracker import performance_tracker
+        from risk_manager import status_summary
+        
+        # Get bot status
+        risk_summary = status_summary()
+        
+        # Get recent performance data
+        recent_summary = performance_tracker.get_performance_summary(7)  # Last 7 days
+        open_trades = performance_tracker.get_open_trades()
+        
+        # Format the status message
+        status_msg = format_status_message(risk_summary, recent_summary, open_trades)
+        
+        # Send the message
+        return send_telegram_message(status_msg, markdown=True, deduplicate=False)
+    except Exception as e:
+        print(f"⚠️ Could not send periodic status report: {e}")
+        return False
+
+def format_status_message(risk_summary, recent_summary, open_trades):
+    """Format a comprehensive status message"""
+    from datetime import datetime
+    
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    msg = f"""🤖 *Bot Status Report* - {current_time}
+━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ *Bot Status:* Online & Operational
+
+📊 *Recent Activity (Last 7 Days):*
+• Total Trades: {recent_summary.get('total_trades', 0)}
+• Win Rate: {recent_summary.get('win_rate', 0):.1f}%
+• Total PnL: ${recent_summary.get('total_pnl', 0):.2f}
+• Avg PnL: ${recent_summary.get('avg_pnl', 0):.2f}
+
+💼 *Current Positions:*
+• Open Trades: {len(open_trades)}
+"""
+    
+    # Add details of open trades
+    if open_trades:
+        for i, trade in enumerate(open_trades[:5], 1):  # Show up to 5 open trades
+            symbol = trade.get('symbol', 'UNKNOWN')
+            size = trade.get('position_size_usd', 0)
+            msg += f"  {i}. {symbol}: ${size:.2f}\n"
+    else:
+        msg += "  No open positions\n"
+    
+    # Add risk management info
+    msg += f"""
+🛡️ *Risk Management:*
+• Daily Buys: {risk_summary.get('buys_today', 0)}
+• Daily Sells: {risk_summary.get('sells_today', 0)}
+• Realized PnL: ${risk_summary.get('realized_pnl_usd', 0):.2f}
+• Losing Streak: {risk_summary.get('losing_streak', 0)}
+• Open Positions: {risk_summary.get('open_positions', len(open_trades))}
+"""
+    
+    # Check if paused
+    paused_until = risk_summary.get('paused_until', 0)
+    if paused_until > time.time():
+        pause_mins = int((paused_until - time.time()) / 60)
+        msg += f"⏸️ *Status:* Paused for {pause_mins} more minutes\n"
+    else:
+        msg += "▶️ *Status:* Active Trading\n"
+    
+    # Add market conditions summary
+    msg += """
+📈 *Market Conditions:*
+• Bot is monitoring opportunities
+• Following sustainable trading strategy
+• Target: 10-20% consistent gains
+"""
+    
+    return msg
