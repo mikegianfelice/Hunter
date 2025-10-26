@@ -12,7 +12,6 @@ from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
 from collections import defaultdict
 import statistics
-import random
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -149,63 +148,67 @@ class AIPricePredictor:
             return self._get_default_features()
     
     def _calculate_price_momentum(self, token: Dict) -> float:
-        """Calculate price momentum (0-1 scale)"""
+        """Calculate price momentum (0-1 scale) based on real price data"""
         try:
-            # Simulate price momentum based on token characteristics
+            # Use real price and volume data from token
             price = float(token.get('priceUsd', 0))
             volume_24h = float(token.get('volume24h', 0))
             
+            # Calculate momentum based on actual metrics
             # Higher price and volume suggest better momentum
             if price > 0.01 and volume_24h > 500000:
-                momentum = random.uniform(0.6, 0.9)
+                momentum = 0.75  # High momentum
             elif price > 0.001 and volume_24h > 100000:
-                momentum = random.uniform(0.4, 0.7)
+                momentum = 0.55  # Medium momentum
             else:
-                momentum = random.uniform(0.2, 0.5)
+                momentum = 0.35  # Low momentum
             
             return max(0, min(1, momentum))
             
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error calculating price momentum: {e}")
             return 0.5
     
     def _calculate_volume_trend(self, token: Dict) -> float:
-        """Calculate volume trend (0-1 scale)"""
+        """Calculate volume trend (0-1 scale) based on real volume data"""
         try:
             volume_24h = float(token.get('volume24h', 0))
             
             # Higher volume suggests better trend
             if volume_24h > 1000000:
-                trend = random.uniform(0.7, 0.9)
+                trend = 0.8  # High volume
             elif volume_24h > 500000:
-                trend = random.uniform(0.5, 0.8)
+                trend = 0.65  # Medium volume
             elif volume_24h > 100000:
-                trend = random.uniform(0.3, 0.6)
+                trend = 0.45  # Low volume
             else:
-                trend = random.uniform(0.1, 0.4)
+                trend = 0.25  # Very low volume
             
             return max(0, min(1, trend))
             
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error calculating volume trend: {e}")
             return 0.5
     
     def _calculate_liquidity_stability(self, token: Dict) -> float:
-        """Calculate liquidity stability (0-1 scale)"""
+        """Calculate liquidity stability (0-1 scale) based on real liquidity data"""
         try:
             liquidity = float(token.get('liquidity', 0))
             
             # Higher liquidity suggests better stability
             if liquidity > 2000000:
-                stability = random.uniform(0.8, 0.95)
+                stability = 0.875  # High stability
             elif liquidity > 1000000:
-                stability = random.uniform(0.6, 0.8)
+                stability = 0.7  # Medium stability
             elif liquidity > 500000:
-                stability = random.uniform(0.4, 0.7)
+                stability = 0.55  # Low stability
             else:
-                stability = random.uniform(0.2, 0.5)
+                stability = 0.35  # Very low stability
             
             return max(0, min(1, stability))
             
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error calculating liquidity stability: {e}")
             return 0.5
     
     def _get_sentiment_score(self, token: Dict) -> float:
@@ -244,9 +247,9 @@ class AIPricePredictor:
             return 0.6
     
     def _calculate_technical_indicators(self, token: Dict) -> float:
-        """Calculate technical indicators score (0-1 scale)"""
+        """Calculate technical indicators score (0-1 scale) based on real data"""
         try:
-            # Simulate technical indicators
+            # Use real data for technical indicators
             price = float(token.get('priceUsd', 0))
             volume_24h = float(token.get('volume24h', 0))
             liquidity = float(token.get('liquidity', 0))
@@ -260,22 +263,30 @@ class AIPricePredictor:
             
             return max(0, min(1, technical_score))
             
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error calculating technical indicators: {e}")
             return 0.5
     
     def _calculate_volatility_pattern(self, token: Dict) -> float:
-        """Calculate volatility pattern (0-1 scale)"""
+        """Calculate volatility pattern (0-1 scale) based on price and volume stability"""
         try:
-            # Simulate volatility pattern
-            # Lower volatility is generally better for predictions
-            volatility = random.uniform(0.2, 0.8)
+            # Estimate volatility from liquidity (lower liquidity = higher volatility)
+            liquidity = float(token.get('liquidity', 0))
             
-            # Convert to stability score (inverse of volatility)
-            stability = 1.0 - volatility
+            # Higher liquidity typically means lower volatility
+            if liquidity > 2000000:
+                stability = 0.8  # High stability
+            elif liquidity > 1000000:
+                stability = 0.65  # Medium stability
+            elif liquidity > 500000:
+                stability = 0.5  # Average stability
+            else:
+                stability = 0.35  # Low stability
             
             return max(0, min(1, stability))
             
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error calculating volatility pattern: {e}")
             return 0.5
     
     def _calculate_target_probability(self, features: Dict, target_gain: float) -> float:
@@ -302,9 +313,7 @@ class AIPricePredictor:
             
             probability = base_probability * target_multiplier
             
-            # Add some randomness for realistic simulation
-            probability += random.uniform(-0.1, 0.1)
-            
+            # Return deterministic probability (removed randomness for consistency)
             return max(0, min(1, probability))
             
         except Exception:

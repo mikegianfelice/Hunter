@@ -13,7 +13,6 @@ from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
 from collections import defaultdict
 import statistics
-import random
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -156,107 +155,85 @@ class AIMarketRegimeDetector:
     def _analyze_btc_trend(self) -> float:
         """Analyze Bitcoin trend (0-1 scale)"""
         try:
-            # Simulate BTC trend analysis
-            # In production, this would use real BTC price data
-            btc_trend = random.uniform(0.2, 0.8)
+            # Use real BTC price data
+            from market_data_fetcher import market_data_fetcher
+            btc_trend = market_data_fetcher.get_btc_trend(hours=24)
+            return btc_trend
             
-            # Add some logic based on time of day (simulate market hours)
-            hour = datetime.now().hour
-            if 9 <= hour <= 16:  # US market hours
-                btc_trend += 0.1
-            elif 21 <= hour <= 23:  # Asian market hours
-                btc_trend += 0.05
-            
-            return max(0, min(1, btc_trend))
-            
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error analyzing BTC trend: {e}")
             return 0.5
     
     def _analyze_eth_trend(self) -> float:
         """Analyze Ethereum trend (0-1 scale)"""
         try:
-            # Simulate ETH trend analysis
-            eth_trend = random.uniform(0.2, 0.8)
+            # Use real ETH price data
+            from market_data_fetcher import market_data_fetcher
+            eth_trend = market_data_fetcher.get_eth_trend(hours=24)
+            return eth_trend
             
-            # ETH often follows BTC but with some variation
-            hour = datetime.now().hour
-            if 9 <= hour <= 16:
-                eth_trend += 0.08
-            elif 21 <= hour <= 23:
-                eth_trend += 0.03
-            
-            return max(0, min(1, eth_trend))
-            
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error analyzing ETH trend: {e}")
             return 0.5
     
     def _analyze_market_correlation(self) -> float:
         """Analyze market correlation (0-1 scale)"""
         try:
-            # High correlation (0.8+) suggests strong trend
-            # Low correlation (0.3-) suggests uncertainty
-            correlation = random.uniform(0.3, 0.9)
-            
+            # Use real market data
+            from market_data_fetcher import market_data_fetcher
+            correlation = market_data_fetcher.get_market_correlation()
             return correlation
             
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error analyzing market correlation: {e}")
             return 0.5
     
     def _calculate_volatility_index(self) -> float:
         """Calculate market volatility index (0-1 scale)"""
         try:
-            # Higher volatility suggests uncertain market
-            volatility = random.uniform(0.1, 0.9)
+            # Use real market volatility data
+            from market_data_fetcher import market_data_fetcher
+            volatility = market_data_fetcher.get_market_volatility(hours=24)
+            return volatility
             
-            # Add some time-based variation
-            hour = datetime.now().hour
-            if hour in [0, 1, 2, 3]:  # Low activity hours
-                volatility *= 0.8
-            elif hour in [14, 15, 16]:  # High activity hours
-                volatility *= 1.2
-            
-            return max(0, min(1, volatility))
-            
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error calculating volatility index: {e}")
             return 0.5
     
     def _analyze_volume_trends(self) -> float:
         """Analyze volume trends (0-1 scale)"""
         try:
-            # High volume suggests strong conviction
-            volume_trend = random.uniform(0.2, 0.8)
+            # Use real volume data
+            from market_data_fetcher import market_data_fetcher
+            volume_trend = market_data_fetcher.get_volume_trends()
+            return volume_trend
             
-            # Volume typically higher during market hours
-            hour = datetime.now().hour
-            if 9 <= hour <= 16:
-                volume_trend += 0.1
-            
-            return max(0, min(1, volume_trend))
-            
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error analyzing volume trends: {e}")
             return 0.5
     
     def _get_fear_greed_index(self) -> float:
         """Get Fear & Greed Index (0-1 scale)"""
         try:
-            # Simulate Fear & Greed Index
-            # 0 = Extreme Fear, 1 = Extreme Greed
-            fear_greed = random.uniform(0.1, 0.9)
-            
+            # Use real Fear & Greed Index data
+            from market_data_fetcher import market_data_fetcher
+            fear_greed = market_data_fetcher.get_fear_greed_index()
             return fear_greed
             
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error getting Fear & Greed Index: {e}")
             return 0.5
     
     def _analyze_market_cap_trend(self) -> float:
         """Analyze total market cap trend (0-1 scale)"""
         try:
-            # Market cap trend indicates overall market health
-            market_cap_trend = random.uniform(0.2, 0.8)
-            
+            # Use real market cap data
+            from market_data_fetcher import market_data_fetcher
+            market_cap_trend = market_data_fetcher.get_market_cap_trend()
             return market_cap_trend
             
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error analyzing market cap trend: {e}")
             return 0.5
     
     def _analyze_market_regime(self, indicators: Dict) -> Dict:

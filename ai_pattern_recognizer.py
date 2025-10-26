@@ -13,7 +13,6 @@ from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
 from collections import defaultdict
 import statistics
-import random
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -160,24 +159,48 @@ class AIPatternRecognizer:
             return {pattern: 0.0 for pattern in self.pattern_types.keys()}
     
     def _detect_bullish_engulfing(self, token: Dict) -> float:
-        """Detect bullish engulfing pattern"""
+        """Detect bullish engulfing pattern using real candlestick data"""
         try:
-            # Simulate bullish engulfing detection
-            price_change = float(token.get("priceChange24h", 0))
-            volume_24h = float(token.get("volume24h", 0))
+            # Get real candlestick data
+            from market_data_fetcher import market_data_fetcher
             
-            # Bullish engulfing characteristics
-            if price_change > 5 and volume_24h > 100000:  # Strong positive price change with volume
-                confidence = min(0.9, 0.6 + (price_change / 50))  # Higher confidence for stronger moves
-            elif price_change > 2 and volume_24h > 50000:  # Moderate positive change
-                confidence = 0.5 + (price_change / 100)
-            else:
-                confidence = 0.2  # Low confidence for weak signals
+            address = token.get("address", "")
+            chain_id = token.get("chainId", "ethereum").lower()
+            candles = market_data_fetcher.get_candlestick_data(address, chain_id, hours=24)
             
-            return max(0.0, min(1.0, confidence))
+            if not candles or len(candles) < 2:
+                # Fallback to price change analysis
+                price_change = float(token.get("priceChange24h", 0))
+                volume_24h = float(token.get("volume24h", 0))
+                
+                if price_change > 5 and volume_24h > 100000:
+                    return 0.7
+                elif price_change > 2 and volume_24h > 50000:
+                    return 0.5
+                return 0.3
             
-        except Exception:
-            return 0.3  # Default confidence
+            # Check last 2 candles for bullish engulfing
+            prev_candle = candles[-2]
+            curr_candle = candles[-1]
+            
+            # Bullish engulfing: current body engulfs previous body
+            prev_body = abs(prev_candle['close'] - prev_candle['open'])
+            curr_body = abs(curr_candle['close'] - curr_candle['open'])
+            
+            # Previous candle should be bearish (close < open), current bullish (close > open)
+            is_bullish_engulfing = (prev_candle['close'] < prev_candle['open'] and 
+                                   curr_candle['close'] > curr_candle['open'] and
+                                   curr_body > prev_body * 1.2)  # 20% larger body
+            
+            if is_bullish_engulfing:
+                confidence = min(0.9, 0.7 + (curr_body / curr_candle['close']) * 2)
+                return max(0.0, min(1.0, confidence))
+            
+            return 0.3
+            
+        except Exception as e:
+            logger.error(f"Error detecting bullish engulfing: {e}")
+            return 0.3
     
     def _detect_bearish_engulfing(self, token: Dict) -> float:
         """Detect bearish engulfing pattern"""
@@ -403,10 +426,19 @@ class AIPatternRecognizer:
             return 0.5
     
     def _assess_timeframe_consistency(self, token: Dict) -> float:
-        """Assess timeframe consistency"""
+        """Assess timeframe consistency based on token data"""
         try:
-            # Simulate timeframe consistency
-            return random.uniform(0.6, 0.9)  # Generally good consistency
+            # Assess consistency based on real data
+            volume_24h = float(token.get('volume24h', 0))
+            liquidity = float(token.get('liquidity', 0))
+            
+            # Higher volume and liquidity = better consistency
+            if volume_24h > 500000 and liquidity > 1000000:
+                return 0.85  # High consistency
+            elif volume_24h > 100000 and liquidity > 200000:
+                return 0.7  # Medium consistency
+            else:
+                return 0.55  # Lower consistency
             
         except Exception:
             return 0.7
@@ -429,10 +461,21 @@ class AIPatternRecognizer:
             return 0.5
     
     def _assess_market_context(self, token: Dict) -> float:
-        """Assess market context for patterns"""
+        """Assess market context for patterns based on real data"""
         try:
-            # Simulate market context assessment
-            return random.uniform(0.5, 0.8)  # Generally positive context
+            # Assess market context based on token metrics
+            price_change = float(token.get('priceChange24h', 0))
+            volume_24h = float(token.get('volume24h', 0))
+            
+            # Positive price change with volume = positive context
+            if price_change > 5 and volume_24h > 100000:
+                return 0.85  # Very positive context
+            elif price_change > 2 and volume_24h > 50000:
+                return 0.7  # Positive context
+            elif price_change < -5:
+                return 0.3  # Negative context
+            else:
+                return 0.6  # Neutral context
             
         except Exception:
             return 0.6
@@ -489,30 +532,68 @@ class AIPatternRecognizer:
             }
     
     def _detect_support_resistance(self, token: Dict) -> Dict:
-        """Detect support and resistance levels"""
+        """Detect support and resistance levels using real candlestick data"""
         try:
+            # Get real support/resistance levels
+            from market_data_fetcher import market_data_fetcher
+            
+            address = token.get("address", "")
+            chain_id = token.get("chainId", "ethereum").lower()
+            levels = market_data_fetcher.get_support_resistance_levels(address, chain_id)
+            
+            if levels and levels.get('support') and levels.get('resistance'):
+                price = float(token.get("priceUsd", 0))
+                volume_24h = float(token.get("volume24h", 0))
+                
+                support = levels['support']
+                resistance = levels['resistance']
+                
+                # Calculate additional levels
+                support_levels = [
+                    support * 0.98,  # Just below support
+                    support,         # Main support
+                    support * 1.02   # Just above support
+                ]
+                
+                resistance_levels = [
+                    resistance * 0.98,  # Just below resistance
+                    resistance,         # Main resistance
+                    resistance * 1.02   # Just above resistance
+                ]
+                
+                return {
+                    'support_levels': support_levels,
+                    'resistance_levels': resistance_levels,
+                    'current_price': price,
+                    'strength': 'strong' if volume_24h > 500000 else 'medium' if volume_24h > 100000 else 'weak',
+                    'distance_to_support': ((price - support) / support * 100) if support > 0 else None,
+                    'distance_to_resistance': ((resistance - price) / price * 100) if price > 0 else None
+                }
+            
+            # Fallback to price-based levels
             price = float(token.get("priceUsd", 0))
             volume_24h = float(token.get("volume24h", 0))
             
-            # Simulate support/resistance detection
-            support_levels = []
-            resistance_levels = []
-            
-            # Calculate potential levels
             if price > 0:
-                # Support levels (below current price)
                 support_levels = [price * 0.95, price * 0.90, price * 0.85]
-                # Resistance levels (above current price)
                 resistance_levels = [price * 1.05, price * 1.10, price * 1.15]
+                
+                return {
+                    'support_levels': support_levels,
+                    'resistance_levels': resistance_levels,
+                    'current_price': price,
+                    'strength': 'strong' if volume_24h > 500000 else 'medium' if volume_24h > 100000 else 'weak'
+                }
             
             return {
-                'support_levels': support_levels,
-                'resistance_levels': resistance_levels,
+                'support_levels': [],
+                'resistance_levels': [],
                 'current_price': price,
-                'strength': 'strong' if volume_24h > 500000 else 'medium' if volume_24h > 100000 else 'weak'
+                'strength': 'weak'
             }
             
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error detecting support/resistance: {e}")
             return {
                 'support_levels': [],
                 'resistance_levels': [],
