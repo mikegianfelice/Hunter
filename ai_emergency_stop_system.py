@@ -3,14 +3,11 @@ AI Emergency Stop System
 Automatically halts all trading during extreme market conditions, system errors, or excessive losses
 """
 
-import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional
 import random
 import math
-
-# Configure logging
-logger = logging.getLogger(__name__)
+from logger import log_event
 
 def get_config():
     """Get configuration from config.yaml"""
@@ -19,7 +16,7 @@ def get_config():
         with open('config.yaml', 'r') as file:
             return yaml.safe_load(file)
     except Exception as e:
-        logger.error(f"Failed to load config: {e}")
+        log_event("emergency.config_error", level="ERROR", error=str(e))
         return {}
 
 class AIEmergencyStopSystem:
@@ -60,7 +57,7 @@ class AIEmergencyStopSystem:
         }
         
         if not self.enable_analysis:
-            logger.warning("⚠️ AI Emergency Stop System is disabled in config.yaml.")
+            log_event("emergency.disabled", level="WARNING", message="AI Emergency Stop System is disabled in config.yaml")
 
     def check_emergency_conditions(self, portfolio_data: Dict, trade_history: List[Dict], 
                                  market_data: Dict, system_errors: List[Dict]) -> Dict:
@@ -75,7 +72,7 @@ class AIEmergencyStopSystem:
             if cache_key in self.emergency_cache:
                 cached_data = self.emergency_cache[cache_key]
                 if (datetime.now() - cached_data['timestamp']).total_seconds() < self.cache_duration:
-                    logger.debug("Using cached emergency analysis")
+                    log_event("emergency.cache_hit", message="Using cached emergency analysis")
                     return cached_data['emergency_data']
             
             # Analyze emergency components
@@ -139,7 +136,7 @@ class AIEmergencyStopSystem:
             return result
             
         except Exception as e:
-            logger.error(f"❌ Emergency condition analysis failed: {e}")
+            log_event("emergency.analysis_error", level="ERROR", error=str(e))
             return self._get_default_emergency_analysis()
 
     def _analyze_drawdown_emergency(self, portfolio_data: Dict, trade_history: List[Dict]) -> Dict:
@@ -175,7 +172,7 @@ class AIEmergencyStopSystem:
             }
             
         except Exception as e:
-            logger.error(f"❌ Drawdown emergency analysis failed: {e}")
+            log_event("emergency.drawdown_analysis_error", level="ERROR", error=str(e))
             return {'current_drawdown': 0, 'drawdown_severity': 'normal', 'drawdown_urgency': 'normal', 'requires_emergency_stop': False}
 
     def _analyze_volatility_emergency(self, market_data: Dict) -> Dict:
@@ -204,7 +201,7 @@ class AIEmergencyStopSystem:
             }
             
         except Exception as e:
-            logger.error(f"❌ Volatility emergency analysis failed: {e}")
+            log_event("emergency.volatility_analysis_error", level="ERROR", error=str(e))
             return {'volatility': 0, 'volatility_severity': 'normal', 'volatility_urgency': 'normal', 'requires_emergency_stop': False}
 
     def _analyze_loss_streak_emergency(self, trade_history: List[Dict]) -> Dict:
@@ -241,7 +238,7 @@ class AIEmergencyStopSystem:
             }
             
         except Exception as e:
-            logger.error(f"❌ Loss streak emergency analysis failed: {e}")
+            log_event("emergency.loss_streak_analysis_error", level="ERROR", error=str(e))
             return {'loss_streak': 0, 'loss_severity': 'normal', 'loss_urgency': 'normal', 'requires_emergency_stop': False}
 
     def _analyze_system_error_emergency(self, system_errors: List[Dict]) -> Dict:
@@ -273,7 +270,7 @@ class AIEmergencyStopSystem:
             }
             
         except Exception as e:
-            logger.error(f"❌ System error emergency analysis failed: {e}")
+            log_event("emergency.system_error_analysis_error", level="ERROR", error=str(e))
             return {'error_count': 0, 'error_severity': 'normal', 'error_urgency': 'normal', 'requires_emergency_stop': False}
 
     def _analyze_news_impact_emergency(self, market_data: Dict) -> Dict:
@@ -303,7 +300,7 @@ class AIEmergencyStopSystem:
             }
             
         except Exception as e:
-            logger.error(f"❌ News impact emergency analysis failed: {e}")
+            log_event("emergency.news_impact_analysis_error", level="ERROR", error=str(e))
             return {'news_impact': 0, 'news_severity': 'normal', 'news_urgency': 'normal', 'requires_emergency_stop': False}
 
     def _analyze_market_crash_emergency(self, market_data: Dict) -> Dict:
@@ -334,7 +331,7 @@ class AIEmergencyStopSystem:
             }
             
         except Exception as e:
-            logger.error(f"❌ Market crash emergency analysis failed: {e}")
+            log_event("emergency.market_crash_analysis_error", level="ERROR", error=str(e))
             return {'crash_probability': 0, 'crash_severity': 'normal', 'crash_urgency': 'normal', 'requires_emergency_stop': False}
 
     def _calculate_emergency_score(self, drawdown_analysis: Dict, volatility_analysis: Dict, 
@@ -373,7 +370,7 @@ class AIEmergencyStopSystem:
             return min(1.0, emergency_score)
             
         except Exception as e:
-            logger.error(f"❌ Emergency score calculation failed: {e}")
+            log_event("emergency.score_calculation_error", level="ERROR", error=str(e))
             return 0.0
 
     def _determine_emergency_level(self, emergency_score: float) -> str:
@@ -391,7 +388,7 @@ class AIEmergencyStopSystem:
                 return 'normal'
                 
         except Exception as e:
-            logger.error(f"❌ Emergency level determination failed: {e}")
+            log_event("emergency.level_determination_error", level="ERROR", error=str(e))
             return 'normal'
 
     def _generate_emergency_actions(self, emergency_level: str, drawdown_analysis: Dict, 
@@ -448,7 +445,7 @@ class AIEmergencyStopSystem:
             }
             
         except Exception as e:
-            logger.error(f"❌ Emergency actions generation failed: {e}")
+            log_event("emergency.actions_generation_error", level="ERROR", error=str(e))
             return {'actions': ['Error generating actions'], 'emergency_level': 'normal', 'requires_immediate_action': False}
 
     def _calculate_emergency_urgency(self, emergency_score: float, emergency_level: str, 
@@ -465,7 +462,7 @@ class AIEmergencyStopSystem:
                 return 'normal'
                 
         except Exception as e:
-            logger.error(f"❌ Emergency urgency calculation failed: {e}")
+            log_event("emergency.urgency_calculation_error", level="ERROR", error=str(e))
             return 'normal'
 
     def _generate_emergency_recommendations(self, emergency_level: str, emergency_urgency: str, 
@@ -509,7 +506,7 @@ class AIEmergencyStopSystem:
             return recommendations
             
         except Exception as e:
-            logger.error(f"❌ Emergency recommendations generation failed: {e}")
+            log_event("emergency.recommendations_generation_error", level="ERROR", error=str(e))
             return ["Error generating recommendations"]
 
     def _generate_emergency_insights(self, emergency_level: str, emergency_score: float, 
@@ -538,7 +535,7 @@ class AIEmergencyStopSystem:
             return insights
             
         except Exception as e:
-            logger.error(f"❌ Emergency insights generation failed: {e}")
+            log_event("emergency.insights_generation_error", level="ERROR", error=str(e))
             return ["Error generating insights"]
 
     def _get_default_emergency_analysis(self) -> Dict:
@@ -574,7 +571,7 @@ class AIEmergencyStopSystem:
             }
             
         except Exception as e:
-            logger.error(f"❌ Emergency summary generation failed: {e}")
+            log_event("emergency.summary_generation_error", level="ERROR", error=str(e))
             return {
                 'emergency_level': 'normal',
                 'emergency_score': 0.0,

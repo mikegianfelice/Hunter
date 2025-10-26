@@ -98,6 +98,7 @@ def send_periodic_status_report():
         # Import here to avoid circular imports
         from performance_tracker import performance_tracker
         from risk_manager import status_summary
+        from ai_market_regime_detector import ai_market_regime_detector
         
         # Get bot status
         risk_summary = status_summary()
@@ -106,8 +107,11 @@ def send_periodic_status_report():
         recent_summary = performance_tracker.get_performance_summary(7)  # Last 7 days
         open_trades = performance_tracker.get_open_trades()
         
+        # Get current market regime
+        market_regime = ai_market_regime_detector.detect_market_regime()
+        
         # Format the status message
-        status_msg = format_status_message(risk_summary, recent_summary, open_trades)
+        status_msg = format_status_message(risk_summary, recent_summary, open_trades, market_regime)
         
         # Send the message
         return send_telegram_message(status_msg, markdown=True, deduplicate=False)
@@ -115,7 +119,7 @@ def send_periodic_status_report():
         print(f"⚠️ Could not send periodic status report: {e}")
         return False
 
-def format_status_message(risk_summary, recent_summary, open_trades):
+def format_status_message(risk_summary, recent_summary, open_trades, market_regime=None):
     """Format a comprehensive status message"""
     from datetime import datetime
     
@@ -163,8 +167,31 @@ def format_status_message(risk_summary, recent_summary, open_trades):
     else:
         msg += "▶️ *Status:* Active Trading\n"
     
-    # Add market conditions summary
-    msg += """
+    # Add market conditions with regime information
+    if market_regime:
+        regime = market_regime.get('regime', 'unknown')
+        confidence = market_regime.get('confidence', 0)
+        description = market_regime.get('description', 'Unknown market condition')
+        strategy = market_regime.get('strategy', 'neutral')
+        
+        # Format regime display with emoji
+        regime_emoji = {
+            'bull_market': '🐂',
+            'bear_market': '🐻', 
+            'sideways_market': '↔️',
+            'high_volatility': '⚡',
+            'recovery_market': '🔄'
+        }.get(regime, '📊')
+        
+        msg += f"""
+📈 *Market Conditions:*
+{regime_emoji} *Regime:* {regime.replace('_', ' ').title()}
+📊 *Confidence:* {confidence:.1f}%
+💡 *Strategy:* {strategy.title()}
+📝 *Description:* {description}
+"""
+    else:
+        msg += """
 📈 *Market Conditions:*
 • Bot is monitoring opportunities
 • Following sustainable trading strategy

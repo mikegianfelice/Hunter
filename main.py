@@ -8,27 +8,15 @@ import os
 import sys
 import time
 import json
-import logging
 from datetime import datetime
 from collections import defaultdict
 from typing import Dict, List
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s | %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-    handlers=[
-        logging.FileHandler('practical_sustainable.log', mode='a', encoding='utf-8'),
-        logging.StreamHandler()
-    ]
-)
-
-logger = logging.getLogger(__name__)
+from logger import log_event
 
 def log_print(msg):
     """Print to console and log to file"""
-    logger.info(msg)
+    print(msg)  # Print to console
+    log_event("main.info", message=msg)  # Log to centralized logger
 
 def safe_print(msg):
     """Print with broken pipe error handling"""
@@ -36,16 +24,16 @@ def safe_print(msg):
         print(msg)
     except BrokenPipeError:
         # Handle broken pipe error gracefully
-        logger.warning("Broken pipe error in print - connection may have been closed")
+        log_event("main.warning", message="Broken pipe error in print - connection may have been closed", level="WARNING")
         pass
     except OSError as e:
         if e.errno == 32:  # Broken pipe
-            logger.warning(f"Broken pipe error (errno 32): {e}")
+            log_event("main.warning", message=f"Broken pipe error (errno 32): {e}", level="WARNING")
         else:
-            logger.error(f"OS error in print: {e}")
+            log_event("main.error", message=f"OS error in print: {e}", level="ERROR")
     except Exception as e:
         # Handle any other print errors
-        logger.error(f"Print error: {e}")
+        log_event("main.error", message=f"Print error: {e}", level="ERROR")
 
 # Add live trading safety check
 def check_live_trading_ready():
