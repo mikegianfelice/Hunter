@@ -200,35 +200,70 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
     chain_id = token.get("chainId", "ethereum").lower()
 
     # Guard: chain/address consistency before any executor is selected
-    detected = detect_chain_from_address(token_address)
-    if detected == "evm":
-        token_address = normalize_evm_address(token_address)
-        if chain_id not in ("ethereum", "base"):
-            print(f"❌ Chain/address mismatch for {symbol}: {chain_id} vs EVM address")
-            log_event("trade.invalid_chain_address", level="ERROR", log_type="chain_validation", symbol=symbol, token_address=token_address, chain=chain_id, detected=detected)
+    try:
+        detected = detect_chain_from_address(token_address)
+        if detected == "evm":
+            token_address = normalize_evm_address(token_address)
+            if chain_id not in ("ethereum", "base"):
+                error_msg = f"Chain/address mismatch for {symbol}: {chain_id} vs EVM address"
+                print(f"❌ {error_msg}")
+                log_event("trade.invalid_chain_address", level="ERROR", log_type="chain_validation", symbol=symbol, token_address=token_address, chain=chain_id, detected=detected, error=error_msg)
+                return None, False
+        elif detected == "solana":
+            if chain_id != "solana":
+                print(f"🔧 Correcting chain for {symbol}: {chain_id} → solana (by address)")
+                log_event("trade.chain_corrected", log_type="chain_validation", symbol=symbol, token_address=token_address, from_chain=chain_id, to_chain="solana")
+                chain_id = "solana"
+        else:
+            error_msg = f"Unknown address format for {symbol}: {token_address[:12]}…"
+            print(f"❌ {error_msg}")
+            log_event("trade.unknown_address_format", level="ERROR", log_type="chain_validation", symbol=symbol, token_address=token_address, error=error_msg)
             return None, False
-    elif detected == "solana":
-        if chain_id != "solana":
-            print(f"🔧 Correcting chain for {symbol}: {chain_id} → solana (by address)")
-            log_event("trade.chain_corrected", log_type="chain_validation", symbol=symbol, token_address=token_address, from_chain=chain_id, to_chain="solana")
-            chain_id = "solana"
-    else:
-        print(f"❌ Unknown address format for {symbol}: {token_address[:12]}…")
-        log_event("trade.unknown_address_format", level="ERROR", log_type="chain_validation", symbol=symbol, token_address=token_address)
+    except Exception as e:
+        error_msg = f"Address validation failed for {symbol}: {str(e)}"
+        print(f"❌ {error_msg}")
+        log_event("trade.address_validation_error", level="ERROR", symbol=symbol, token_address=token_address, error=str(e))
         return None, False
     amount_usd = float(trade_amount_usd or config['TRADE_AMOUNT_USD_DEFAULT'])
     
     log_event("trade.start", symbol=symbol, token_address=token_address, chain=chain_id, amount_usd=amount_usd)
     
-    # Enhanced preflight check
+    # Enhanced preflight check with timeout
     try:
-        preflight_passed, reason = advanced_trading.enhanced_preflight_check(token, amount_usd)
-        if not preflight_passed:
-            print(f"❌ Preflight check failed: {reason}")
-            return None, False
+        import signal
+        
+        def timeout_handler(signum, frame):
+            raise TimeoutError("Preflight check timed out")
+        
+        # Set 30 second timeout for preflight check
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(30)
+        
+        try:
+            preflight_passed, reason = advanced_trading.enhanced_preflight_check(token, amount_usd)
+            signal.alarm(0)  # Cancel the alarm
+            if not preflight_passed:
+                error_msg = f"Preflight check failed: {reason}"
+                print(f"❌ {error_msg}")
+                log_event("trade.preflight_failed", level="WARNING", symbol=symbol, reason=reason)
+                return None, False
+        except TimeoutError:
+            signal.alarm(0)  # Cancel the alarm
+            error_msg = "Preflight check timed out after 30 seconds"
+            print(f"⚠️ {error_msg}")
+            log_event("trade.preflight_timeout", level="WARNING", symbol=symbol, timeout=30)
+            # Continue with trade if preflight times out
+        except Exception as e:
+            signal.alarm(0)  # Cancel the alarm
+            error_msg = f"Preflight check error: {str(e)}"
+            print(f"⚠️ {error_msg}")
+            log_event("trade.preflight_error", level="WARNING", symbol=symbol, error=str(e))
+            # Continue with trade if preflight fails
     except Exception as e:
-        print(f"⚠️ Preflight check error: {e}")
-        # Continue with trade if preflight fails
+        error_msg = f"Preflight setup error: {str(e)}"
+        print(f"⚠️ {error_msg}")
+        log_event("trade.preflight_setup_error", level="WARNING", symbol=symbol, error=str(e))
+        # Continue with trade if preflight setup fails
     
     # Calculate order slices
     slices = advanced_trading.calculate_order_slices(amount_usd, token)
@@ -253,8 +288,19 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
     )
     
     try:
-        # Get chain configuration
-        chain_config = get_chain_config(chain_id)
+        # Get chain configuration with error handling
+        try:
+            chain_config = get_chain_config(chain_id)
+            if not chain_config:
+                error_msg = f"No configuration found for chain: {chain_id}"
+                print(f"❌ {error_msg}")
+                log_event("trade.chain_config_error", level="ERROR", symbol=symbol, chain=chain_id, error=error_msg)
+                return None, False
+        except Exception as e:
+            error_msg = f"Failed to get chain configuration for {chain_id}: {str(e)}"
+            print(f"❌ {error_msg}")
+            log_event("trade.chain_config_exception", level="ERROR", symbol=symbol, chain=chain_id, error=str(e))
+            return None, False
         
         # Execute trades for each slice
         successful_txs = []

@@ -13,6 +13,45 @@ from collections import defaultdict
 from typing import Dict, List
 from logger import log_event
 
+def _get_recent_trade_error(symbol: str) -> str:
+    """Get the most recent error details for a token from logs"""
+    try:
+        import json
+        import os
+        from datetime import datetime, timedelta
+        
+        log_file = "logs/hunter.log"
+        if not os.path.exists(log_file):
+            return "No error details available"
+        
+        # Look for recent trade errors in the last 5 minutes
+        cutoff_time = datetime.now() - timedelta(minutes=5)
+        recent_errors = []
+        
+        with open(log_file, 'r') as f:
+            for line in f:
+                try:
+                    log_entry = json.loads(line.strip())
+                    if (log_entry.get('event') in ['trade.error', 'trade.slice.failure', 'trade.end'] and 
+                        log_entry.get('level') in ['ERROR', 'WARNING'] and
+                        symbol.lower() in str(log_entry.get('context', {})).lower()):
+                        
+                        # Parse timestamp
+                        log_time = datetime.fromisoformat(log_entry['timestamp'].replace('Z', '+00:00'))
+                        if log_time.replace(tzinfo=None) > cutoff_time:
+                            error_msg = log_entry.get('context', {}).get('error', 'Unknown error')
+                            recent_errors.append(error_msg)
+                except (json.JSONDecodeError, KeyError, ValueError):
+                    continue
+        
+        if recent_errors:
+            return recent_errors[-1]  # Return the most recent error
+        else:
+            return "No recent error details found in logs"
+            
+    except Exception as e:
+        return f"Error retrieving details: {str(e)}"
+
 def log_print(msg):
     """Print to console and log to file"""
     print(msg)  # Print to console
@@ -1035,13 +1074,17 @@ def practical_trade_loop():
                 
                 # Send Telegram alert for execution failures
                 try:
+                    # Get more detailed error information from recent logs
+                    error_details = _get_recent_trade_error(symbol)
+                    
                     send_telegram_message(
                         f"❌ Trade Execution Failed\n"
                         f"Token: {symbol}\n"
                         f"AI Quality Score: {quality_score:.1f}\n"
                         f"Position Size: ${position_size:.1f}\n"
                         f"Status: Execution returned False\n"
-                        f"⚠️ Reason unknown - check logs for details",
+                        f"Error: {error_details}\n"
+                        f"Time: {datetime.now().strftime('%H:%M:%S')}",
                         message_type="trade_failure"
                     )
                 except Exception as telegram_err:
