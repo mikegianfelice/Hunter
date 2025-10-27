@@ -3,7 +3,7 @@ test_mode: false  # LIVE TRADING ENABLED - Realistic Scaling
 
 # === Trading Parameters ===
 trade_amount_usd: 5.0  # REALISTIC SCALING - $10 trades for meaningful returns
-slippage: 0.05  # Reduced from 10% to 5% for better execution
+slippage: 0.1  # 10% slippage 
 take_profit: 0.15  # Reduced from 50% to 15% for realistic targets
 stop_loss: 0.08  # Reduced from 25% to 8% for tighter risk control
 use_dynamic_tp: true  # Enable dynamic take profit
@@ -18,8 +18,8 @@ max_slices_per_trade: 5  # Maximum number of slices per trade
 
 # Dynamic slippage based on price impact
 enable_dynamic_slippage: true
-dynamic_slippage_multiplier: 1.5  # Multiply predicted impact by this factor
-max_dynamic_slippage: 0.15  # Maximum 15% slippage
+dynamic_slippage_multiplier: 2.0  # Multiply predicted impact by this factor
+max_dynamic_slippage: 0.2  # Maximum 20% slippage
 min_dynamic_slippage: 0.02  # Minimum 2% slippage
 
 # ExactOut trades for sketchy tokens

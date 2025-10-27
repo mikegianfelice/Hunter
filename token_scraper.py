@@ -5,6 +5,12 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from http_utils import get_json
+from address_utils import (
+    is_evm_address,
+    is_solana_address,
+    detect_chain_from_address,
+    normalize_evm_address,
+)
 from collections import defaultdict
 from config_loader import get_config, get_config_bool
 
@@ -345,8 +351,10 @@ def fetch_trending_tokens(limit=200):  # INCREASED for more opportunities
     unsupported_chain_count = 0
     
     for pair in unique_pairs:
-        symbol = (pair.get("baseToken", {}) or {}).get("symbol") or ""
-        addr = pair.get("pairAddress")
+        base_token = (pair.get("baseToken", {}) or {})
+        symbol = base_token.get("symbol") or ""
+        # Use the actual token mint/contract address, not the pair/pool address
+        addr = base_token.get("address") or ""
         dex = pair.get("dexId")
         chain = pair.get("chainId") or ""
         price = float(pair.get("priceUsd") or 0)
@@ -378,6 +386,24 @@ def fetch_trending_tokens(limit=200):  # INCREASED for more opportunities
         # Enhanced token data validation
         if not is_valid_token_data(symbol, addr, vol24, liq):
             print(f"🚫 Skipping invalid token data: {symbol} (vol: ${vol24}, liq: ${liq})")
+            continue
+
+        # Chain/address consistency validation and normalization
+        detected = detect_chain_from_address(addr)
+        if detected == "evm":
+            addr = normalize_evm_address(addr)
+            if chain.lower() not in ("ethereum", "base"):
+                # Declared as non-EVM but address is EVM → skip to avoid misrouting
+                print(f"🚫 Skipping chain/address mismatch: {symbol} ({chain} vs EVM address)")
+                continue
+        elif detected == "solana":
+            if chain.lower() != "solana":
+                # Declared as EVM but address is Solana → correct the chain
+                print(f"🔧 Correcting chain for {symbol}: {chain} → solana (by address)")
+                chain = "solana"
+        else:
+            # Unknown format (e.g., pair address or tx hash) → skip
+            print(f"🚫 Skipping unknown address format for {symbol}: {addr[:12]}…")
             continue
         
         valid_tokens_count += 1
