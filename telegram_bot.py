@@ -1,6 +1,7 @@
 # telegram_bot.py
 import requests
 import time
+import hashlib
 from secrets import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 import threading
 from datetime import datetime
@@ -8,6 +9,11 @@ from datetime import datetime
 # Message deduplication cache
 _sent_messages = {}
 _message_cache_ttl = 300  # 5 minutes
+
+# Rate limiting for frequent messages
+_rate_limits = {}
+_rate_limit_window = 60  # 1 minute
+_max_messages_per_window = 5  # Max 5 messages per minute per type
 
 # Periodic status tracking
 _last_status_time = 0
@@ -22,16 +28,59 @@ def _cleanup_old_messages():
         if current_time - timestamp < _message_cache_ttl
     }
 
-def send_telegram_message(message: str, markdown: bool = False, disable_preview: bool = True, deduplicate: bool = True):
+def _get_message_fingerprint(message: str) -> str:
+    """Create a fingerprint for message deduplication that ignores minor variations"""
+    # Normalize message by removing timestamps, addresses, and other variable data
+    normalized = message.lower()
+    # Remove common variable patterns
+    import re
+    normalized = re.sub(r'0x[a-fA-F0-9]{8,}', 'ADDRESS', normalized)
+    normalized = re.sub(r'\$[\d,]+\.?\d*', 'AMOUNT', normalized)
+    normalized = re.sub(r'\d+\.\d+%', 'PERCENT', normalized)
+    normalized = re.sub(r'\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}', 'TIMESTAMP', normalized)
+    normalized = re.sub(r'\d+\.\d+', 'NUMBER', normalized)
+    return hashlib.md5(normalized.encode()).hexdigest()
+
+def _check_rate_limit(message_type: str) -> bool:
+    """Check if we're within rate limits for this message type"""
+    current_time = time.time()
+    global _rate_limits
+    
+    # Clean old entries
+    _rate_limits = {
+        msg_type: timestamps for msg_type, timestamps in _rate_limits.items()
+        if any(t > current_time - _rate_limit_window for t in timestamps)
+    }
+    
+    # Check current rate
+    if message_type not in _rate_limits:
+        _rate_limits[message_type] = []
+    
+    recent_messages = [t for t in _rate_limits[message_type] if t > current_time - _rate_limit_window]
+    
+    if len(recent_messages) >= _max_messages_per_window:
+        return False
+    
+    # Add current message
+    _rate_limits[message_type].append(current_time)
+    return True
+
+def send_telegram_message(message: str, markdown: bool = False, disable_preview: bool = True, deduplicate: bool = True, message_type: str = "general"):
     """
     Send a Telegram message using secrets loaded from .env (via secrets.py).
     - message: text to send
     - markdown: enable Telegram Markdown parsing
     - disable_preview: disable link previews
     - deduplicate: prevent sending the same message multiple times within 5 minutes
+    - message_type: category for rate limiting (e.g., "error", "trade", "status")
     """
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("⚠️ Telegram not configured (missing TELEGRAM_BOT_TOKEN/CHAT_ID).")
+        return False
+
+    # Check rate limiting
+    if not _check_rate_limit(message_type):
+        print(f"📨 Rate limited: {message_type} messages (max {_max_messages_per_window}/min)")
         return False
 
     # Deduplication logic
@@ -39,13 +88,14 @@ def send_telegram_message(message: str, markdown: bool = False, disable_preview:
         _cleanup_old_messages()
         current_time = time.time()
         
-        # Check if this exact message was sent recently
-        if message in _sent_messages:
-            print(f"📨 Skipping duplicate Telegram message: {message[:50]}...")
+        # Check if this message type was sent recently (using fingerprint)
+        fingerprint = _get_message_fingerprint(message)
+        if fingerprint in _sent_messages:
+            print(f"📨 Skipping duplicate Telegram message: {message_type}")
             return True  # Return True since we "handled" it
         
         # Add to cache
-        _sent_messages[message] = current_time
+        _sent_messages[fingerprint] = current_time
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {

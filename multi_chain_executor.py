@@ -205,16 +205,16 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
         token_address = normalize_evm_address(token_address)
         if chain_id not in ("ethereum", "base"):
             print(f"❌ Chain/address mismatch for {symbol}: {chain_id} vs EVM address")
-            log_event("trade.invalid_chain_address", level="ERROR", symbol=symbol, token_address=token_address, chain=chain_id, detected=detected)
+            log_event("trade.invalid_chain_address", level="ERROR", log_type="chain_validation", symbol=symbol, token_address=token_address, chain=chain_id, detected=detected)
             return None, False
     elif detected == "solana":
         if chain_id != "solana":
             print(f"🔧 Correcting chain for {symbol}: {chain_id} → solana (by address)")
-            log_event("trade.chain_corrected", symbol=symbol, token_address=token_address, from_chain=chain_id, to_chain="solana")
+            log_event("trade.chain_corrected", log_type="chain_validation", symbol=symbol, token_address=token_address, from_chain=chain_id, to_chain="solana")
             chain_id = "solana"
     else:
         print(f"❌ Unknown address format for {symbol}: {token_address[:12]}…")
-        log_event("trade.unknown_address_format", level="ERROR", symbol=symbol, token_address=token_address)
+        log_event("trade.unknown_address_format", level="ERROR", log_type="chain_validation", symbol=symbol, token_address=token_address)
         return None, False
     amount_usd = float(trade_amount_usd or config['TRADE_AMOUNT_USD_DEFAULT'])
     

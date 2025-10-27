@@ -1023,7 +1023,8 @@ def practical_trade_loop():
                     f"Market Regime: {regime}\n"
                     f"Position Size: ${position_size:.1f}\n"
                     f"Take Profit: {tp*100:.1f}%\n"
-                    f"TX: {tx_hash}"
+                    f"TX: {tx_hash}",
+                    message_type="trade_success"
                 )
                 
                 log_print(f"✅ Successfully traded {symbol} - AI Quality: {quality_score:.1f}, Sentiment: {sentiment_category}, Position: ${position_size:.1f}, TP: {tp*100:.1f}%")
@@ -1040,7 +1041,8 @@ def practical_trade_loop():
                         f"AI Quality Score: {quality_score:.1f}\n"
                         f"Position Size: ${position_size:.1f}\n"
                         f"Status: Execution returned False\n"
-                        f"⚠️ Reason unknown - check logs for details"
+                        f"⚠️ Reason unknown - check logs for details",
+                        message_type="trade_failure"
                     )
                 except Exception as telegram_err:
                     log_print(f"⚠️ Failed to send failure notification: {telegram_err}")
@@ -1060,7 +1062,8 @@ def practical_trade_loop():
                     f"🔥 Trade Execution Error\n"
                     f"Token: {symbol}\n"
                     f"Error: {error_msg}\n"
-                    f"⚠️ Manual intervention may be required"
+                    f"⚠️ Manual intervention may be required",
+                    message_type="trade_error"
                 )
             except Exception as telegram_err:
                 log_print(f"⚠️ Failed to send error notification: {telegram_err}")
@@ -1798,7 +1801,8 @@ def main():
             "🌱 Sustainable Trading Bot Started\n"
             "🎯 Strategy: 10-20% consistent gains\n"
             "📊 Quality over quantity approach\n"
-            "✅ Live trading enabled"
+            "✅ Live trading enabled",
+            message_type="status"
         )
     except Exception as e:
         log_print(f"⚠️ Could not send startup notification: {e}")

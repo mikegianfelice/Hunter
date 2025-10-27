@@ -3,6 +3,7 @@ import logging
 import os
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
+from log_deduplicator import should_log
 
 _LOGGER_NAME = "hunter"
 _LOG_DIR = "logs"
@@ -41,8 +42,15 @@ def set_log_level(level_name: str):
     level = getattr(logging, (level_name or "INFO").upper(), logging.INFO)
     _get_logger().setLevel(level)
 
-def log_event(event: str, level: str = "INFO", **context):
+def log_event(event: str, level: str = "INFO", log_type: str = "general", **context):
     try:
+        # Create log message for deduplication check
+        log_message = f"{event}: {json.dumps(context) if context else ''}"
+        
+        # Check if we should log this message
+        if not should_log(log_message, level, log_type):
+            return  # Skip duplicate or rate-limited log
+        
         record = {
             "timestamp": datetime.utcnow().isoformat(timespec="seconds") + "Z",
             "level": level.upper(),
