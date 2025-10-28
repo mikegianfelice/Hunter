@@ -388,23 +388,24 @@ def fetch_trending_tokens(limit=200):  # INCREASED for more opportunities
             print(f"🚫 Skipping invalid token data: {symbol} (vol: ${vol24}, liq: ${liq})")
             continue
 
-        # Chain/address consistency validation and normalization
-        detected = detect_chain_from_address(addr)
-        if detected == "evm":
-            addr = normalize_evm_address(addr)
-            if chain.lower() not in ("ethereum", "base"):
-                # Declared as non-EVM but address is EVM → skip to avoid misrouting
-                print(f"🚫 Skipping chain/address mismatch: {symbol} ({chain} vs EVM address)")
-                continue
-        elif detected == "solana":
-            if chain.lower() != "solana":
-                # Declared as EVM but address is Solana → correct the chain
-                print(f"🔧 Correcting chain for {symbol}: {chain} → solana (by address)")
-                chain = "solana"
-        else:
-            # Unknown format (e.g., pair address or tx hash) → skip
-            print(f"🚫 Skipping unknown address format for {symbol}: {addr[:12]}…")
+        # Enhanced chain/address consistency validation and normalization
+        from address_utils import validate_chain_address_match, normalize_evm_address
+        
+        is_valid, corrected_chain, error_message = validate_chain_address_match(addr, chain)
+        
+        if not is_valid:
+            # Skip tokens with invalid chain/address combinations
+            print(f"🚫 Skipping {symbol}: {error_message}")
             continue
+        
+        # Update chain if it was corrected
+        if corrected_chain != chain.lower():
+            print(f"🔧 Correcting chain for {symbol}: {chain} → {corrected_chain} (by address format)")
+            chain = corrected_chain
+        
+        # Normalize EVM addresses
+        if detect_chain_from_address(addr) == "evm":
+            addr = normalize_evm_address(addr)
         
         valid_tokens_count += 1
         all_rows.append({

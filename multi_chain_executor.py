@@ -199,26 +199,30 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
     token_address = token["address"]
     chain_id = token.get("chainId", "ethereum").lower()
 
-    # Guard: chain/address consistency before any executor is selected
+    # Enhanced chain/address validation before any executor is selected
     try:
-        detected = detect_chain_from_address(token_address)
-        if detected == "evm":
-            token_address = normalize_evm_address(token_address)
-            if chain_id not in ("ethereum", "base"):
-                error_msg = f"Chain/address mismatch for {symbol}: {chain_id} vs EVM address"
-                print(f"❌ {error_msg}")
-                log_event("trade.invalid_chain_address", level="ERROR", log_type="chain_validation", symbol=symbol, token_address=token_address, chain=chain_id, detected=detected, error=error_msg)
-                return None, False
-        elif detected == "solana":
-            if chain_id != "solana":
-                print(f"🔧 Correcting chain for {symbol}: {chain_id} → solana (by address)")
-                log_event("trade.chain_corrected", log_type="chain_validation", symbol=symbol, token_address=token_address, from_chain=chain_id, to_chain="solana")
-                chain_id = "solana"
-        else:
-            error_msg = f"Unknown address format for {symbol}: {token_address[:12]}…"
+        from address_utils import validate_chain_address_match, normalize_evm_address
+        
+        is_valid, corrected_chain, error_message = validate_chain_address_match(token_address, chain_id)
+        
+        if not is_valid:
+            error_msg = f"Chain/address validation failed for {symbol}: {error_message}"
             print(f"❌ {error_msg}")
-            log_event("trade.unknown_address_format", level="ERROR", log_type="chain_validation", symbol=symbol, token_address=token_address, error=error_msg)
+            log_event("trade.invalid_chain_address", level="ERROR", log_type="chain_validation", 
+                     symbol=symbol, token_address=token_address, chain=chain_id, error=error_message)
             return None, False
+        
+        # Update chain if it was corrected
+        if corrected_chain != chain_id:
+            print(f"🔧 Correcting chain for {symbol}: {chain_id} → {corrected_chain} (by address format)")
+            log_event("trade.chain_corrected", log_type="chain_validation", 
+                     symbol=symbol, token_address=token_address, from_chain=chain_id, to_chain=corrected_chain)
+            chain_id = corrected_chain
+        
+        # Normalize EVM addresses
+        if detect_chain_from_address(token_address) == "evm":
+            token_address = normalize_evm_address(token_address)
+            
     except Exception as e:
         error_msg = f"Address validation failed for {symbol}: {str(e)}"
         print(f"❌ {error_msg}")
