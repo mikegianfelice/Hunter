@@ -27,13 +27,42 @@ def get_token_scraper_config():
 EXCLUDED_KEYWORDS = ["INU", "DOGE", "SHIBA", "SAFE", "ELON"]  # Removed "PEPE" to allow PEPE tokens
 ENFORCE_KEYWORDS = True  # Re-enable keyword filtering for better quality
 
-# Known tradeable tokens (whitelist for testing)
-KNOWN_TRADEABLE_TOKENS = [
-    "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",  # BONK
-    "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So",   # mSOL
-    "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  # USDT
-    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
-]
+# Known established tokens (whitelist for priority)
+ESTABLISHED_TOKENS = {
+    # Major cryptocurrencies
+    "0xC02aaA39b223FE8D0A0E5C4F27eAD9083C756Cc2": "WETH",  # Wrapped Ethereum
+    "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599": "WBTC",  # Wrapped Bitcoin
+    "0xA0b86a33E6441b8C4C8C0C8C0C8C0C8C0C8C0C8C": "USDC",  # USD Coin
+    "0xdAC17F958D2ee523a2206206994597C13D831ec7": "USDT",  # Tether
+    "So11111111111111111111111111111111111111112": "SOL",   # Solana
+    "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263": "BONK", # BONK
+    "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So": "mSOL",  # Marinade Staked SOL
+    "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB": "USDT", # USDT Solana
+    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": "USDC", # USDC Solana
+    
+    # DeFi blue chips
+    "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984": "UNI",   # Uniswap
+    "0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9": "AAVE",  # Aave
+    "0xc00e94Cb662C3520282E6f5717214004A7f26888": "COMP",  # Compound
+    "0x9f8F72aA9304c8B593d555F12eF6589cC3A579A2": "MKR",   # Maker
+    "0x514910771AF9Ca656af840dff83E8264EcF986CA": "LINK",  # Chainlink
+    "0xD533a949740bb3306d119CC777fa900bA034cd52": "CRV",   # Curve
+    "0xba100000625a3754423978a60c9317c58a424e3D": "BAL",   # Balancer
+    "0x6B3595068778DD592e39A122f4f5a5cF09C90fE2": "SUSHI", # SushiSwap
+    "0x111111111117dC0aa78b770fA6A738034120C302": "1INCH", # 1inch
+    "0x0bc529c00C6401aEF6D220BE8c6Ea1667F6Ad93e": "YFI",   # Yearn
+    "0xC011a73ee8576Fb46F5E1c5751cA3B9Fe0af2a6F": "SNX",   # Synthetix
+    "0x408e41876cCCDC0F92210600ef50372656052a38": "REN",   # Ren
+    "0xdd974D5C2e2928deA5F71b9825b8b646686BD200": "KNC",   # Kyber
+    
+    # Layer 2 and scaling
+    "0x4200000000000000000000000000000000000006": "WETH",  # WETH on Base
+    "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1": "WETH",  # WETH on Arbitrum
+    "0x4200000000000000000000000000000000000006": "WETH",  # WETH on Optimism
+}
+
+# Known tradeable tokens (legacy whitelist for testing)
+KNOWN_TRADEABLE_TOKENS = list(ESTABLISHED_TOKENS.keys())
 
 # Enhanced promotional content filters
 PROMOTIONAL_KEYWORDS = [
@@ -44,53 +73,73 @@ PROMOTIONAL_KEYWORDS = [
     "presale", "airdrop", "whitelist", "ico", "ido", "fairlaunch", "stealth"
 ]
 
-# Enhanced API sources for better diversity - EXPANDED FOR MORE OPPORTUNITIES
+# Enhanced API sources for better diversity - INCLUDING ESTABLISHED COINS
 PRIMARY_URLS = [
+    # Established and quality tokens
+    "https://api.dexscreener.com/latest/dex/search/?q=ethereum",
+    "https://api.dexscreener.com/latest/dex/search/?q=bitcoin",
+    "https://api.dexscreener.com/latest/dex/search/?q=solana",
+    "https://api.dexscreener.com/latest/dex/search/?q=usdc",
+    "https://api.dexscreener.com/latest/dex/search/?q=usdt",
+    "https://api.dexscreener.com/latest/dex/search/?q=weth",
+    "https://api.dexscreener.com/latest/dex/search/?q=wbtc",
+    "https://api.dexscreener.com/latest/dex/search/?q=uniswap",
+    "https://api.dexscreener.com/latest/dex/search/?q=aave",
+    "https://api.dexscreener.com/latest/dex/search/?q=compound",
+    "https://api.dexscreener.com/latest/dex/search/?q=maker",
+    "https://api.dexscreener.com/latest/dex/search/?q=chainlink",
+    "https://api.dexscreener.com/latest/dex/search/?q=curve",
+    "https://api.dexscreener.com/latest/dex/search/?q=balancer",
+    "https://api.dexscreener.com/latest/dex/search/?q=sushiswap",
+    "https://api.dexscreener.com/latest/dex/search/?q=1inch",
+    "https://api.dexscreener.com/latest/dex/search/?q=yearn",
+    "https://api.dexscreener.com/latest/dex/search/?q=synthetix",
+    "https://api.dexscreener.com/latest/dex/search/?q=ren",
+    "https://api.dexscreener.com/latest/dex/search/?q=kyber",
+    
+    # Trending and momentum tokens
     "https://api.dexscreener.com/latest/dex/search/?q=trending",
     "https://api.dexscreener.com/latest/dex/search/?q=hot",
     "https://api.dexscreener.com/latest/dex/search/?q=gaining",
     "https://api.dexscreener.com/latest/dex/search/?q=volume",
     "https://api.dexscreener.com/latest/dex/search/?q=liquidity",
-    "https://api.dexscreener.com/latest/dex/search/?q=new",
     "https://api.dexscreener.com/latest/dex/search/?q=rising",
     "https://api.dexscreener.com/latest/dex/search/?q=popular",
     "https://api.dexscreener.com/latest/dex/search/?q=active",
     "https://api.dexscreener.com/latest/dex/search/?q=top",
-    # Additional sources for more opportunities
-    "https://api.dexscreener.com/latest/dex/search/?q=moon",
-    "https://api.dexscreener.com/latest/dex/search/?q=pump",
-    "https://api.dexscreener.com/latest/dex/search/?q=surge",
-    "https://api.dexscreener.com/latest/dex/search/?q=spike",
-    "https://api.dexscreener.com/latest/dex/search/?q=breakout",
-    "https://api.dexscreener.com/latest/dex/search/?q=momentum",
-    "https://api.dexscreener.com/latest/dex/search/?q=breakthrough",
-    "https://api.dexscreener.com/latest/dex/search/?q=explosive",
-    "https://api.dexscreener.com/latest/dex/search/?q=rocket",
-    "https://api.dexscreener.com/latest/dex/search/?q=blast",
-    "https://api.dexscreener.com/latest/dex/search/?q=gem",
-    "https://api.dexscreener.com/latest/dex/search/?q=alpha",
-    "https://api.dexscreener.com/latest/dex/search/?q=beta",
-    "https://api.dexscreener.com/latest/dex/search/?q=gamma",
-    "https://api.dexscreener.com/latest/dex/search/?q=delta",
-    "https://api.dexscreener.com/latest/dex/search/?q=omega",
-    "https://api.dexscreener.com/latest/dex/search/?q=sigma",
-    "https://api.dexscreener.com/latest/dex/search/?q=lambda",
-    "https://api.dexscreener.com/latest/dex/search/?q=theta",
-    "https://api.dexscreener.com/latest/dex/search/?q=phi",
-    # Time-based searches for more opportunities
-    "https://api.dexscreener.com/latest/dex/search/?q=1h",
-    "https://api.dexscreener.com/latest/dex/search/?q=4h", 
-    "https://api.dexscreener.com/latest/dex/search/?q=24h",
-    "https://api.dexscreener.com/latest/dex/search/?q=7d",
-    # Category-based searches
+    
+    # DeFi blue chips and established protocols
     "https://api.dexscreener.com/latest/dex/search/?q=defi",
-    "https://api.dexscreener.com/latest/dex/search/?q=memes",
+    "https://api.dexscreener.com/latest/dex/search/?q=dex",
+    "https://api.dexscreener.com/latest/dex/search/?q=lending",
+    "https://api.dexscreener.com/latest/dex/search/?q=staking",
+    "https://api.dexscreener.com/latest/dex/search/?q=yield",
+    "https://api.dexscreener.com/latest/dex/search/?q=governance",
+    "https://api.dexscreener.com/latest/dex/search/?q=dao",
+    "https://api.dexscreener.com/latest/dex/search/?q=oracle",
+    "https://api.dexscreener.com/latest/dex/search/?q=bridge",
+    "https://api.dexscreener.com/latest/dex/search/?q=layer2",
+    "https://api.dexscreener.com/latest/dex/search/?q=scaling",
+    
+    # Quality categories
     "https://api.dexscreener.com/latest/dex/search/?q=gaming",
     "https://api.dexscreener.com/latest/dex/search/?q=nft",
     "https://api.dexscreener.com/latest/dex/search/?q=ai",
-    "https://api.dexscreener.com/latest/dex/search/?q=layer2",
     "https://api.dexscreener.com/latest/dex/search/?q=privacy",
-    "https://api.dexscreener.com/latest/dex/search/?q=scaling",
+    "https://api.dexscreener.com/latest/dex/search/?q=infrastructure",
+    "https://api.dexscreener.com/latest/dex/search/?q=storage",
+    "https://api.dexscreener.com/latest/dex/search/?q=compute",
+    "https://api.dexscreener.com/latest/dex/search/?q=identity",
+    
+    # Time-based searches for established tokens
+    "https://api.dexscreener.com/latest/dex/search/?q=24h",
+    "https://api.dexscreener.com/latest/dex/search/?q=7d",
+    "https://api.dexscreener.com/latest/dex/search/?q=30d",
+    
+    # Meme tokens (reduced priority but still included)
+    "https://api.dexscreener.com/latest/dex/search/?q=memes",
+    "https://api.dexscreener.com/latest/dex/search/?q=moon",
+    "https://api.dexscreener.com/latest/dex/search/?q=pump",
 ]
 
 FALLBACK_URLS = [
@@ -174,33 +223,47 @@ def is_valid_token_data(symbol, address, volume24h, liquidity):
     
     return True
 
-def calculate_token_score(symbol, volume24h, liquidity, chain_id):
-    """Calculate a quality score for token filtering with updated thresholds"""
+def calculate_token_score(symbol, volume24h, liquidity, chain_id, address=None):
+    """Calculate a quality score for token filtering with established token prioritization"""
     score = 0
     
+    # ESTABLISHED TOKEN PRIORITY (0-5 points) - HIGHEST PRIORITY
+    if address and address in ESTABLISHED_TOKENS:
+        established_symbol = ESTABLISHED_TOKENS[address]
+        score += 5  # Maximum priority for established tokens
+        print(f"🏆 {symbol} - ESTABLISHED TOKEN BONUS (+5): {established_symbol}")
+    elif address and any(est_symbol.lower() in symbol.lower() for est_symbol in ESTABLISHED_TOKENS.values()):
+        score += 3  # High priority for tokens matching established symbols
+        print(f"⭐ {symbol} - ESTABLISHED SYMBOL MATCH (+3)")
+    
     # Volume scoring (0-3 points) - balanced thresholds
-    if volume24h >= 100000:  # $100k+ volume
+    if volume24h >= 1000000:  # $1M+ volume (high priority)
         score += 3
-    elif volume24h >= 50000:  # $50k+ volume
+    elif volume24h >= 100000:  # $100k+ volume
         score += 2
-    elif volume24h >= 25000:  # $25k+ volume
+    elif volume24h >= 50000:  # $50k+ volume
         score += 1
     
     # Liquidity scoring (0-3 points) - balanced thresholds
-    if liquidity >= 200000:  # $200k+ liquidity
+    if liquidity >= 1000000:  # $1M+ liquidity (high priority)
         score += 3
-    elif liquidity >= 100000:  # $100k+ liquidity
+    elif liquidity >= 200000:  # $200k+ liquidity
         score += 2
-    elif liquidity >= 50000:  # $50k+ liquidity
+    elif liquidity >= 100000:  # $100k+ liquidity
         score += 1
     
     # Symbol quality scoring (0-2 points)
     symbol_lower = symbol.lower()
     
     # Penalize common spam symbols
-    spam_indicators = ['hot', 'moon', 'safe', 'elon', 'inu', 'doge', 'shiba', 'pepe']
+    spam_indicators = ['hot', 'moon', 'safe', 'elon', 'inu', 'doge', 'shiba', 'pepe', 'pump', 'moon', 'rocket']
     if any(indicator in symbol_lower for indicator in spam_indicators):
-        score -= 1
+        score -= 2  # Increased penalty for spam
+    
+    # Bonus for DeFi/quality symbols
+    quality_indicators = ['uni', 'aave', 'comp', 'mkr', 'link', 'crv', 'bal', 'sushi', '1inch', 'yfi', 'snx', 'ren', 'knc']
+    if any(indicator in symbol_lower for indicator in quality_indicators):
+        score += 2  # Bonus for DeFi tokens
     
     # Bonus for unique/interesting symbols
     if len(symbol) >= 4 and len(symbol) <= 8:
@@ -439,8 +502,8 @@ def fetch_trending_tokens(limit=200):  # INCREASED for more opportunities
         volume24h = row["volume24h"]
         liquidity = row["liquidity"]
         
-        # Calculate quality score
-        score = calculate_token_score(symbol, volume24h, liquidity, chain)
+        # Calculate quality score with address for established token detection
+        score = calculate_token_score(symbol, volume24h, liquidity, chain, addr)
         
         # Keyword filtering
         blocked = any(k in symbol for k in EXCLUDED_KEYWORDS)
@@ -465,23 +528,28 @@ def fetch_trending_tokens(limit=200):  # INCREASED for more opportunities
         else:
             print(f"⛔ {symbol} rejected - score too low: {score}/8")
     
-    # Prioritize known tradeable tokens
+    # Prioritize established tokens and known tradeable tokens
+    established_tokens = []
     known_tradeable = []
     unknown_tokens = []
     
     for token in scored_tokens:
-        if token["address"] in KNOWN_TRADEABLE_TOKENS:
+        if token["address"] in ESTABLISHED_TOKENS:
+            established_tokens.append(token)
+            print(f"🏆 {token['symbol']} - ESTABLISHED TOKEN (whitelisted): {ESTABLISHED_TOKENS[token['address']]}")
+        elif token["address"] in KNOWN_TRADEABLE_TOKENS:
             known_tradeable.append(token)
             print(f"✅ {token['symbol']} - Known tradeable token (whitelisted)")
         else:
             unknown_tokens.append(token)
     
-    # Sort by score (highest first)
+    # Sort by score (highest first) within each category
+    established_tokens.sort(key=lambda x: x["score"], reverse=True)
     known_tradeable.sort(key=lambda x: x["score"], reverse=True)
     unknown_tokens.sort(key=lambda x: x["score"], reverse=True)
     
-    # Combine: known tradeable first, then unknown
-    all_tokens = known_tradeable + unknown_tokens
+    # Combine: established first, then known tradeable, then unknown
+    all_tokens = established_tokens + known_tradeable + unknown_tokens
     
     # Sort by volume and liquidity before applying diversity filter
     # This ensures we keep the highest quality tokens for each symbol
