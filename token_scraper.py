@@ -27,18 +27,14 @@ def get_token_scraper_config():
 EXCLUDED_KEYWORDS = ["INU", "DOGE", "SHIBA", "SAFE", "ELON"]  # Removed "PEPE" to allow PEPE tokens
 ENFORCE_KEYWORDS = True  # Re-enable keyword filtering for better quality
 
-# Known established tokens (whitelist for priority)
+# Known established tokens (whitelist for priority) - EXCLUDING STABLECOINS
 ESTABLISHED_TOKENS = {
-    # Major cryptocurrencies
+    # Major cryptocurrencies (volatile, tradeable)
     "0xC02aaA39b223FE8D0A0E5C4F27eAD9083C756Cc2": "WETH",  # Wrapped Ethereum
     "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599": "WBTC",  # Wrapped Bitcoin
-    "0xA0b86a33E6441b8C4C8C0C8C0C8C0C8C0C8C0C8C": "USDC",  # USD Coin
-    "0xdAC17F958D2ee523a2206206994597C13D831ec7": "USDT",  # Tether
     "So11111111111111111111111111111111111111112": "SOL",   # Solana
     "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263": "BONK", # BONK
     "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So": "mSOL",  # Marinade Staked SOL
-    "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB": "USDT", # USDT Solana
-    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": "USDC", # USDC Solana
     
     # DeFi blue chips
     "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984": "UNI",   # Uniswap
@@ -73,16 +69,14 @@ PROMOTIONAL_KEYWORDS = [
     "presale", "airdrop", "whitelist", "ico", "ido", "fairlaunch", "stealth"
 ]
 
-# Enhanced API sources for better diversity - INCLUDING ESTABLISHED COINS
+# Enhanced API sources for better diversity - EXCLUDING STABLECOINS
 PRIMARY_URLS = [
-    # Established and quality tokens
-    "https://api.dexscreener.com/latest/dex/search/?q=ethereum",
-    "https://api.dexscreener.com/latest/dex/search/?q=bitcoin",
-    "https://api.dexscreener.com/latest/dex/search/?q=solana",
-    "https://api.dexscreener.com/latest/dex/search/?q=usdc",
-    "https://api.dexscreener.com/latest/dex/search/?q=usdt",
-    "https://api.dexscreener.com/latest/dex/search/?q=weth",
-    "https://api.dexscreener.com/latest/dex/search/?q=wbtc",
+        # Established and quality tokens (volatile, tradeable)
+        "https://api.dexscreener.com/latest/dex/search/?q=ethereum",
+        "https://api.dexscreener.com/latest/dex/search/?q=bitcoin",
+        "https://api.dexscreener.com/latest/dex/search/?q=solana",
+        "https://api.dexscreener.com/latest/dex/search/?q=weth",
+        "https://api.dexscreener.com/latest/dex/search/?q=wbtc",
     "https://api.dexscreener.com/latest/dex/search/?q=uniswap",
     "https://api.dexscreener.com/latest/dex/search/?q=aave",
     "https://api.dexscreener.com/latest/dex/search/?q=compound",
@@ -211,6 +205,12 @@ def is_valid_token_data(symbol, address, volume24h, liquidity):
     
     # Address should be a valid format (not empty or obviously wrong)
     if len(address) < 10:
+        return False
+    
+    # EXCLUDE STABLECOINS - they don't have price volatility for trading
+    # Stablecoins maintain ~$1 value, so no profit opportunity from price movements
+    stablecoin_symbols = ['USDC', 'USDT', 'DAI', 'BUSD', 'TUSD', 'USDP', 'FRAX', 'LUSD', 'SUSD', 'GUSD']
+    if symbol.upper() in stablecoin_symbols:
         return False
     
     # REDUCED minimum requirements to allow more trading opportunities
