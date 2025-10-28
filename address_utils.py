@@ -1,5 +1,13 @@
 import re
+from typing import Tuple, List, Optional
 
+# Try to import base58 with fallback
+try:
+    import base58
+    BASE58_AVAILABLE = True
+except ImportError:
+    BASE58_AVAILABLE = False
+    print("⚠️ Warning: base58 package not installed. Solana address validation will use basic checks only.")
 
 EVM_ADDRESS_REGEX = re.compile(r"^0x[a-fA-F0-9]{40}$")
 
@@ -9,10 +17,14 @@ _BASE58_ALPHABET = set("123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwx
 
 def is_evm_address(address: str) -> bool:
     """
-    Return True if address looks like a valid EVM address (Ethereum/Base):
-    - Starts with 0x and has 40 hex chars after (total length 42)
+    Return True if address looks like a valid EVM address (Ethereum/Base/Arbitrum/etc.):
+    - Starts with 0x and has exactly 40 hex chars after (total length 42)
+    - Validates address format (case-insensitive hex)
     """
     if not isinstance(address, str):
+        return False
+    # Must be exactly 42 characters (0x + 40 hex chars)
+    if len(address) != 42:
         return False
     return bool(EVM_ADDRESS_REGEX.match(address))
 
@@ -34,11 +46,11 @@ def looks_like_evm_hex(address: str) -> bool:
 
 def is_solana_address(address: str) -> bool:
     """
-    Proper validation for Solana addresses:
+    Proper validation for Solana addresses with fallback logic:
     - Does not start with 0x
     - Only contains Base58 characters
     - Typical length between 32 and 44
-    - Can be properly decoded with base58
+    - Can be properly decoded with base58 (if available)
     """
     if not isinstance(address, str) or not address:
         return False
@@ -51,14 +63,19 @@ def is_solana_address(address: str) -> bool:
     if not all(ch in _BASE58_ALPHABET for ch in address):
         return False
     
-    # Try to decode with base58 to ensure it's valid
-    try:
-        import base58
-        decoded = base58.b58decode(address)
-        # Solana addresses should decode to 32 bytes
-        return len(decoded) == 32
-    except Exception:
-        return False
+    # If base58 is available, do proper decoding validation
+    if BASE58_AVAILABLE:
+        try:
+            decoded = base58.b58decode(address)
+            # Solana addresses should decode to 32 bytes
+            return len(decoded) == 32
+        except Exception:
+            return False
+    else:
+        # Fallback: if base58 is not available, use basic format validation
+        # This is less strict but prevents rejecting all Solana addresses
+        # Most Solana addresses are 43-44 characters long
+        return 43 <= len(address) <= 44
 
 
 def detect_chain_from_address(address: str) -> str:
@@ -88,47 +105,55 @@ def normalize_evm_address(address: str) -> str:
         return address
 
 
-def validate_chain_address_match(address: str, declared_chain: str) -> tuple[bool, str, str]:
+def validate_chain_address_match(address: str, declared_chain: str) -> Tuple[bool, str, str]:
     """
     Validate that the address format matches the declared chain.
+    Preserves the declared chain when possible for EVM addresses.
     
     Returns:
         (is_valid: bool, corrected_chain: str, error_message: str)
     """
-    if not address or not declared_chain:
-        return False, declared_chain, "Missing address or chain"
+    if not address:
+        return False, declared_chain or "", "Missing address"
+    if not declared_chain:
+        return False, "", "Missing chain"
     
     detected_chain = detect_chain_from_address(address)
     declared_chain_lower = declared_chain.lower()
     
+    # List of supported EVM chains
+    SUPPORTED_EVM_CHAINS = ["ethereum", "base", "arbitrum", "optimism", "polygon", "bsc", "avalanche"]
+    
     # Handle EVM chains (ethereum, base, etc.)
     if detected_chain == "evm":
-        if declared_chain_lower in ("ethereum", "base", "arbitrum", "optimism", "polygon", "bsc"):
+        # If declared chain is a supported EVM chain, preserve it
+        if declared_chain_lower in SUPPORTED_EVM_CHAINS:
             return True, declared_chain_lower, ""
         else:
-            # For EVM addresses, we can correct to a supported EVM chain
-            return True, "ethereum", f"Corrected chain from {declared_chain_lower} to ethereum (EVM address)"
+            # For unsupported chains with EVM addresses, default to ethereum
+            # but only if the chain is truly unknown
+            return True, "ethereum", f"Corrected chain from '{declared_chain_lower}' to ethereum (EVM address, unsupported chain)"
     
     # Handle Solana
     elif detected_chain == "solana":
         if declared_chain_lower == "solana":
             return True, "solana", ""
         else:
-            return True, "solana", f"Corrected chain from {declared_chain_lower} to solana based on address format"
+            return True, "solana", f"Corrected chain from '{declared_chain_lower}' to solana (Solana address format detected)"
     
     # Handle unknown address format
     else:
-        return False, declared_chain_lower, f"Unknown address format: {address[:12]}..."
+        return False, declared_chain_lower, f"Unknown address format: {address[:12]}... (not EVM or Solana)"
 
 
-def get_supported_chains_for_address(address: str) -> list[str]:
+def get_supported_chains_for_address(address: str) -> List[str]:
     """
     Get list of supported chains that this address format could work on.
     """
     detected_chain = detect_chain_from_address(address)
     
     if detected_chain == "evm":
-        return ["ethereum", "base", "arbitrum", "optimism", "polygon", "bsc"]
+        return ["ethereum", "base", "arbitrum", "optimism", "polygon", "bsc", "avalanche"]
     elif detected_chain == "solana":
         return ["solana"]
     else:

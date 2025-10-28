@@ -7,7 +7,7 @@ import requests
 import time
 from typing import Dict, List, Tuple, Optional
 from http_utils import get_json
-from address_utils import detect_chain_from_address, normalize_evm_address
+from address_utils import detect_chain_from_address, normalize_evm_address, validate_chain_address_match
 
 # Circuit breaker for Raydium API failures
 _raydium_circuit_breaker = {
@@ -240,18 +240,20 @@ def is_token_tradeable(token_data: Dict) -> Tuple[bool, str]:
     if not token_address:
         return False, "no_address"
     
-    # Enforce chain/address consistency and normalize when possible
+    # Use standardized chain/address validation
+    is_valid, corrected_chain, error_message = validate_chain_address_match(token_address, chain_id)
+    
+    if not is_valid:
+        return False, f"invalid_chain_address: {error_message}"
+    
+    # Update chain if it was corrected
+    if corrected_chain != chain_id:
+        chain_id = corrected_chain
+    
+    # Normalize EVM addresses
     detected = detect_chain_from_address(token_address)
     if detected == "evm":
         token_address = normalize_evm_address(token_address)
-        if chain_id not in ("ethereum", "base"):
-            return False, "chain_address_mismatch_evm"
-    elif detected == "solana":
-        if chain_id != "solana":
-            # Correct chain to solana
-            chain_id = "solana"
-    else:
-        return False, "unknown_address_format"
 
     # Check tradeability based on chain
     if chain_id == "solana":

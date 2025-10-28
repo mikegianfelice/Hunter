@@ -10,6 +10,7 @@ from address_utils import (
     is_solana_address,
     detect_chain_from_address,
     normalize_evm_address,
+    validate_chain_address_match,
 )
 from collections import defaultdict
 from config_loader import get_config, get_config_bool
@@ -452,8 +453,6 @@ def fetch_trending_tokens(limit=200):  # INCREASED for more opportunities
             continue
 
         # Enhanced chain/address consistency validation and normalization
-        from address_utils import validate_chain_address_match, normalize_evm_address
-        
         is_valid, corrected_chain, error_message = validate_chain_address_match(addr, chain)
         
         if not is_valid:

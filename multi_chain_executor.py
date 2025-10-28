@@ -16,6 +16,7 @@ from telegram_bot import send_telegram_message
 from config_loader import get_config, get_config_bool, get_config_float
 from logger import log_event
 from advanced_trading import advanced_trading
+from address_utils import validate_chain_address_match, normalize_evm_address, detect_chain_from_address
 
 # Dynamic config loading
 def get_multi_chain_config():
@@ -193,7 +194,6 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
     Returns: (tx_hash_hex_or_sim, success_bool)
     """
     config = get_multi_chain_config()
-    from address_utils import detect_chain_from_address, normalize_evm_address
 
     symbol = token.get("symbol", "?")
     token_address = token["address"]
@@ -201,8 +201,6 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
 
     # Enhanced chain/address validation before any executor is selected
     try:
-        from address_utils import validate_chain_address_match, normalize_evm_address
-        
         is_valid, corrected_chain, error_message = validate_chain_address_match(token_address, chain_id)
         
         if not is_valid:
