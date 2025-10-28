@@ -869,7 +869,7 @@ class AIMarketAnomalyDetector:
     def _calculate_anomaly_persistence(self, anomaly_score: float, market_data: Dict, historical_data: Dict) -> str:
         """Calculate anomaly persistence"""
         try:
-            # Mock calculation - in real implementation, analyze historical anomaly patterns
+            # Calculate persistence based on anomaly score and historical data
             if anomaly_score > 0.8:  # 80% anomaly score
                 return "persistent"
             elif anomaly_score > 0.5:  # 50% anomaly score

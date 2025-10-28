@@ -325,17 +325,33 @@ class AIRiskAssessor:
             return 0.5  # Default medium risk
     
     def _assess_regime_risk(self, token: Dict) -> float:
-        """Assess market regime risk"""
+        """Assess market regime risk based on real market data"""
         try:
-            # Simulate regime risk based on market conditions
-            # In practice, this would analyze current market regime
+            # Get real market regime data
+            from ai_market_regime_detector import ai_market_regime_detector
+            regime_data = ai_market_regime_detector.detect_market_regime()
+            regime = regime_data.get('regime', 'normal')
+            confidence = regime_data.get('confidence', 0.5)
             
-            # Simulate regime risk
-            regime_risk = random.uniform(0.2, 0.6)  # Varies with market conditions
+            # Map regime to risk level
+            regime_risk_mapping = {
+                'bull_market': 0.2,      # Low risk in bull market
+                'normal': 0.4,           # Medium risk in normal market
+                'sideways_market': 0.5,  # Medium-high risk in sideways market
+                'bear_market': 0.7,      # High risk in bear market
+                'high_volatility': 0.8   # Very high risk in high volatility
+            }
+            
+            base_risk = regime_risk_mapping.get(regime, 0.4)
+            
+            # Adjust risk based on confidence (lower confidence = higher risk)
+            confidence_adjustment = (1.0 - confidence) * 0.2  # Up to 20% adjustment
+            regime_risk = min(1.0, base_risk + confidence_adjustment)
             
             return regime_risk
             
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error assessing regime risk: {e}")
             return 0.4  # Default medium regime risk
     
     def _calculate_overall_risk_score(self, risk_analysis: Dict) -> float:

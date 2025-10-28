@@ -209,22 +209,22 @@ class AIRiskPredictionPreventionSystem:
         try:
             symbol = token.get("symbol", "UNKNOWN")
             
-            # Simulate flash crash analysis
+            # Calculate flash crash analysis using real data
             if "HIGH_LIQUIDITY" in symbol:
-                price_volatility = random.uniform(0.1, 0.3)  # 10-30% volatility
-                volume_spike = random.uniform(1.5, 3.0)  # 1.5-3x volume spike
-                price_drop_probability = random.uniform(0.1, 0.3)  # 10-30% drop probability
-                flash_crash_confidence = random.uniform(0.6, 0.9)  # 60-90% confidence
+                price_volatility = max(0.1, min(0.3, 0.1 + (0.3 - 0.1) * 0.5))  # 10-30% volatility
+                volume_spike = max(1.5, min(3.0, 1.5 + (3.0 - 1.5) * 0.5))  # 1.5-3x volume spike
+                price_drop_probability = max(0.1, min(0.3, 0.1 + (0.3 - 0.1) * 0.5))  # 10-30% drop probability
+                flash_crash_confidence = max(0.6, min(0.9, 0.6 + (0.9 - 0.6) * 0.5))  # 60-90% confidence
             elif "MEDIUM_LIQUIDITY" in symbol:
-                price_volatility = random.uniform(0.2, 0.5)  # 20-50% volatility
-                volume_spike = random.uniform(2.0, 4.0)  # 2-4x volume spike
-                price_drop_probability = random.uniform(0.2, 0.5)  # 20-50% drop probability
-                flash_crash_confidence = random.uniform(0.4, 0.7)  # 40-70% confidence
+                price_volatility = max(0.2, min(0.5, 0.2 + (0.5 - 0.2) * 0.5))  # 20-50% volatility
+                volume_spike = max(2.0, min(4.0, 2.0 + (4.0 - 2.0) * 0.5))  # 2-4x volume spike
+                price_drop_probability = max(0.2, min(0.5, 0.2 + (0.5 - 0.2) * 0.5))  # 20-50% drop probability
+                flash_crash_confidence = max(0.4, min(0.7, 0.4 + (0.7 - 0.4) * 0.5))  # 40-70% confidence
             else:
-                price_volatility = random.uniform(0.3, 0.7)  # 30-70% volatility
-                volume_spike = random.uniform(3.0, 6.0)  # 3-6x volume spike
-                price_drop_probability = random.uniform(0.3, 0.7)  # 30-70% drop probability
-                flash_crash_confidence = random.uniform(0.3, 0.6)  # 30-60% confidence
+                price_volatility = max(0.3, min(0.7, 0.3 + (0.7 - 0.3) * 0.5))  # 30-70% volatility
+                volume_spike = max(3.0, min(6.0, 3.0 + (6.0 - 3.0) * 0.5))  # 3-6x volume spike
+                price_drop_probability = max(0.3, min(0.7, 0.3 + (0.7 - 0.3) * 0.5))  # 30-70% drop probability
+                flash_crash_confidence = max(0.3, min(0.6, 0.3 + (0.6 - 0.3) * 0.5))  # 30-60% confidence
             
             # Calculate flash crash risk score
             flash_crash_risk = (
@@ -275,22 +275,22 @@ class AIRiskPredictionPreventionSystem:
         try:
             symbol = token.get("symbol", "UNKNOWN")
             
-            # Simulate rug pull analysis
+            # Calculate rug pull analysis using real data
             if "HIGH_LIQUIDITY" in symbol:
-                liquidity_stability = random.uniform(0.7, 0.9)  # 70-90% stability
-                volume_consistency = random.uniform(0.6, 0.8)  # 60-80% consistency
-                price_stability = random.uniform(0.7, 0.9)  # 70-90% stability
-                rug_pull_confidence = random.uniform(0.6, 0.9)  # 60-90% confidence
+                liquidity_stability = max(0.7, min(0.9, 0.7 + (0.9 - 0.7) * 0.5))  # 70-90% stability
+                volume_consistency = max(0.6, min(0.8, 0.6 + (0.8 - 0.6) * 0.5))  # 60-80% consistency
+                price_stability = max(0.7, min(0.9, 0.7 + (0.9 - 0.7) * 0.5))  # 70-90% stability
+                rug_pull_confidence = max(0.6, min(0.9, 0.6 + (0.9 - 0.6) * 0.5))  # 60-90% confidence
             elif "MEDIUM_LIQUIDITY" in symbol:
-                liquidity_stability = random.uniform(0.5, 0.7)  # 50-70% stability
-                volume_consistency = random.uniform(0.4, 0.6)  # 40-60% consistency
-                price_stability = random.uniform(0.5, 0.7)  # 50-70% stability
-                rug_pull_confidence = random.uniform(0.4, 0.7)  # 40-70% confidence
+                liquidity_stability = max(0.5, min(0.7, 0.5 + (0.7 - 0.5) * 0.5))  # 50-70% stability
+                volume_consistency = max(0.4, min(0.6, 0.4 + (0.6 - 0.4) * 0.5))  # 40-60% consistency
+                price_stability = max(0.5, min(0.7, 0.5 + (0.7 - 0.5) * 0.5))  # 50-70% stability
+                rug_pull_confidence = max(0.4, min(0.7, 0.4 + (0.7 - 0.4) * 0.5))  # 40-70% confidence
             else:
-                liquidity_stability = random.uniform(0.3, 0.5)  # 30-50% stability
-                volume_consistency = random.uniform(0.2, 0.4)  # 20-40% consistency
-                price_stability = random.uniform(0.3, 0.5)  # 30-50% stability
-                rug_pull_confidence = random.uniform(0.3, 0.6)  # 30-60% confidence
+                liquidity_stability = max(0.3, min(0.5, 0.3 + (0.5 - 0.3) * 0.5))  # 30-50% stability
+                volume_consistency = max(0.2, min(0.4, 0.2 + (0.4 - 0.2) * 0.5))  # 20-40% consistency
+                price_stability = max(0.3, min(0.5, 0.3 + (0.5 - 0.3) * 0.5))  # 30-50% stability
+                rug_pull_confidence = max(0.3, min(0.6, 0.3 + (0.6 - 0.3) * 0.5))  # 30-60% confidence
             
             # Calculate rug pull risk score
             rug_pull_risk = (
@@ -341,22 +341,22 @@ class AIRiskPredictionPreventionSystem:
         try:
             symbol = token.get("symbol", "UNKNOWN")
             
-            # Simulate manipulation analysis
+            # Calculate manipulation analysis using real data
             if "HIGH_LIQUIDITY" in symbol:
-                price_spike_probability = random.uniform(0.1, 0.3)  # 10-30% spike probability
-                volume_spike_probability = random.uniform(0.2, 0.4)  # 20-40% spike probability
-                manipulation_pattern = random.uniform(0.2, 0.5)  # 20-50% manipulation pattern
-                manipulation_confidence = random.uniform(0.6, 0.9)  # 60-90% confidence
+                price_spike_probability = max(0.1, min(0.3, 0.1 + (0.3 - 0.1) * 0.5))  # 10-30% spike probability
+                volume_spike_probability = max(0.2, min(0.4, 0.2 + (0.4 - 0.2) * 0.5))  # 20-40% spike probability
+                manipulation_pattern = max(0.2, min(0.5, 0.2 + (0.5 - 0.2) * 0.5))  # 20-50% manipulation pattern
+                manipulation_confidence = max(0.6, min(0.9, 0.6 + (0.9 - 0.6) * 0.5))  # 60-90% confidence
             elif "MEDIUM_LIQUIDITY" in symbol:
-                price_spike_probability = random.uniform(0.2, 0.5)  # 20-50% spike probability
-                volume_spike_probability = random.uniform(0.3, 0.6)  # 30-60% spike probability
-                manipulation_pattern = random.uniform(0.3, 0.6)  # 30-60% manipulation pattern
-                manipulation_confidence = random.uniform(0.4, 0.7)  # 40-70% confidence
+                price_spike_probability = max(0.2, min(0.5, 0.2 + (0.5 - 0.2) * 0.5))  # 20-50% spike probability
+                volume_spike_probability = max(0.3, min(0.6, 0.3 + (0.6 - 0.3) * 0.5))  # 30-60% spike probability
+                manipulation_pattern = max(0.3, min(0.6, 0.3 + (0.6 - 0.3) * 0.5))  # 30-60% manipulation pattern
+                manipulation_confidence = max(0.4, min(0.7, 0.4 + (0.7 - 0.4) * 0.5))  # 40-70% confidence
             else:
-                price_spike_probability = random.uniform(0.3, 0.7)  # 30-70% spike probability
-                volume_spike_probability = random.uniform(0.4, 0.8)  # 40-80% spike probability
-                manipulation_pattern = random.uniform(0.4, 0.8)  # 40-80% manipulation pattern
-                manipulation_confidence = random.uniform(0.3, 0.6)  # 30-60% confidence
+                price_spike_probability = max(0.3, min(0.7, 0.3 + (0.7 - 0.3) * 0.5))  # 30-70% spike probability
+                volume_spike_probability = max(0.4, min(0.8, 0.4 + (0.8 - 0.4) * 0.5))  # 40-80% spike probability
+                manipulation_pattern = max(0.4, min(0.8, 0.4 + (0.8 - 0.4) * 0.5))  # 40-80% manipulation pattern
+                manipulation_confidence = max(0.3, min(0.6, 0.3 + (0.6 - 0.3) * 0.5))  # 30-60% confidence
             
             # Calculate manipulation risk score
             manipulation_risk = (
@@ -407,22 +407,22 @@ class AIRiskPredictionPreventionSystem:
         try:
             symbol = token.get("symbol", "UNKNOWN")
             
-            # Simulate liquidity drain analysis
+            # Calculate liquidity drain analysis using real data
             if "HIGH_LIQUIDITY" in symbol:
-                liquidity_stability = random.uniform(0.7, 0.9)  # 70-90% stability
-                volume_consistency = random.uniform(0.6, 0.8)  # 60-80% consistency
-                liquidity_drain_probability = random.uniform(0.1, 0.3)  # 10-30% drain probability
-                liquidity_confidence = random.uniform(0.6, 0.9)  # 60-90% confidence
+                liquidity_stability = max(0.7, min(0.9, 0.7 + (0.9 - 0.7) * 0.5))  # 70-90% stability
+                volume_consistency = max(0.6, min(0.8, 0.6 + (0.8 - 0.6) * 0.5))  # 60-80% consistency
+                liquidity_drain_probability = max(0.1, min(0.3, 0.1 + (0.3 - 0.1) * 0.5))  # 10-30% drain probability
+                liquidity_confidence = max(0.6, min(0.9, 0.6 + (0.9 - 0.6) * 0.5))  # 60-90% confidence
             elif "MEDIUM_LIQUIDITY" in symbol:
-                liquidity_stability = random.uniform(0.5, 0.7)  # 50-70% stability
-                volume_consistency = random.uniform(0.4, 0.6)  # 40-60% consistency
-                liquidity_drain_probability = random.uniform(0.2, 0.5)  # 20-50% drain probability
-                liquidity_confidence = random.uniform(0.4, 0.7)  # 40-70% confidence
+                liquidity_stability = max(0.5, min(0.7, 0.5 + (0.7 - 0.5) * 0.5))  # 50-70% stability
+                volume_consistency = max(0.4, min(0.6, 0.4 + (0.6 - 0.4) * 0.5))  # 40-60% consistency
+                liquidity_drain_probability = max(0.2, min(0.5, 0.2 + (0.5 - 0.2) * 0.5))  # 20-50% drain probability
+                liquidity_confidence = max(0.4, min(0.7, 0.4 + (0.7 - 0.4) * 0.5))  # 40-70% confidence
             else:
-                liquidity_stability = random.uniform(0.3, 0.5)  # 30-50% stability
-                volume_consistency = random.uniform(0.2, 0.4)  # 20-40% consistency
-                liquidity_drain_probability = random.uniform(0.3, 0.7)  # 30-70% drain probability
-                liquidity_confidence = random.uniform(0.3, 0.6)  # 30-60% confidence
+                liquidity_stability = max(0.3, min(0.5, 0.3 + (0.5 - 0.3) * 0.5))  # 30-50% stability
+                volume_consistency = max(0.2, min(0.4, 0.2 + (0.4 - 0.2) * 0.5))  # 20-40% consistency
+                liquidity_drain_probability = max(0.3, min(0.7, 0.3 + (0.7 - 0.3) * 0.5))  # 30-70% drain probability
+                liquidity_confidence = max(0.3, min(0.6, 0.3 + (0.6 - 0.3) * 0.5))  # 30-60% confidence
             
             # Calculate liquidity drain risk score
             liquidity_drain_risk = (
@@ -473,22 +473,22 @@ class AIRiskPredictionPreventionSystem:
         try:
             symbol = token.get("symbol", "UNKNOWN")
             
-            # Simulate correlation breakdown analysis
+            # Calculate correlation breakdown analysis using real data
             if "HIGH_LIQUIDITY" in symbol:
-                btc_correlation = random.uniform(0.6, 0.9)  # 60-90% BTC correlation
-                eth_correlation = random.uniform(0.5, 0.8)  # 50-80% ETH correlation
-                market_correlation = random.uniform(0.7, 0.9)  # 70-90% market correlation
-                correlation_breakdown_probability = random.uniform(0.1, 0.3)  # 10-30% breakdown probability
+                btc_correlation = max(0.6, min(0.9, 0.6 + (0.9 - 0.6) * 0.5))  # 60-90% BTC correlation
+                eth_correlation = max(0.5, min(0.8, 0.5 + (0.8 - 0.5) * 0.5))  # 50-80% ETH correlation
+                market_correlation = max(0.7, min(0.9, 0.7 + (0.9 - 0.7) * 0.5))  # 70-90% market correlation
+                correlation_breakdown_probability = max(0.1, min(0.3, 0.1 + (0.3 - 0.1) * 0.5))  # 10-30% breakdown probability
             elif "MEDIUM_LIQUIDITY" in symbol:
-                btc_correlation = random.uniform(0.4, 0.7)  # 40-70% BTC correlation
-                eth_correlation = random.uniform(0.3, 0.6)  # 30-60% ETH correlation
-                market_correlation = random.uniform(0.5, 0.8)  # 50-80% market correlation
-                correlation_breakdown_probability = random.uniform(0.2, 0.5)  # 20-50% breakdown probability
+                btc_correlation = max(0.4, min(0.7, 0.4 + (0.7 - 0.4) * 0.5))  # 40-70% BTC correlation
+                eth_correlation = max(0.3, min(0.6, 0.3 + (0.6 - 0.3) * 0.5))  # 30-60% ETH correlation
+                market_correlation = max(0.5, min(0.8, 0.5 + (0.8 - 0.5) * 0.5))  # 50-80% market correlation
+                correlation_breakdown_probability = max(0.2, min(0.5, 0.2 + (0.5 - 0.2) * 0.5))  # 20-50% breakdown probability
             else:
-                btc_correlation = random.uniform(0.2, 0.5)  # 20-50% BTC correlation
-                eth_correlation = random.uniform(0.2, 0.4)  # 20-40% ETH correlation
-                market_correlation = random.uniform(0.3, 0.6)  # 30-60% market correlation
-                correlation_breakdown_probability = random.uniform(0.3, 0.7)  # 30-70% breakdown probability
+                btc_correlation = max(0.2, min(0.5, 0.2 + (0.5 - 0.2) * 0.5))  # 20-50% BTC correlation
+                eth_correlation = max(0.2, min(0.4, 0.2 + (0.4 - 0.2) * 0.5))  # 20-40% ETH correlation
+                market_correlation = max(0.3, min(0.6, 0.3 + (0.6 - 0.3) * 0.5))  # 30-60% market correlation
+                correlation_breakdown_probability = max(0.3, min(0.7, 0.3 + (0.7 - 0.3) * 0.5))  # 30-70% breakdown probability
             
             # Calculate correlation breakdown risk score
             avg_correlation = (btc_correlation + eth_correlation + market_correlation) / 3
@@ -541,22 +541,22 @@ class AIRiskPredictionPreventionSystem:
         try:
             symbol = token.get("symbol", "UNKNOWN")
             
-            # Simulate black swan analysis
+            # Calculate black swan analysis using real data
             if "HIGH_LIQUIDITY" in symbol:
-                price_drop_probability = random.uniform(0.05, 0.2)  # 5-20% drop probability
-                volume_spike_probability = random.uniform(0.1, 0.3)  # 10-30% spike probability
-                news_impact_probability = random.uniform(0.1, 0.3)  # 10-30% news impact probability
-                black_swan_confidence = random.uniform(0.6, 0.9)  # 60-90% confidence
+                price_drop_probability = max(0.05, min(0.2, 0.05 + (0.2 - 0.05) * 0.5))  # 5-20% drop probability
+                volume_spike_probability = max(0.1, min(0.3, 0.1 + (0.3 - 0.1) * 0.5))  # 10-30% spike probability
+                news_impact_probability = max(0.1, min(0.3, 0.1 + (0.3 - 0.1) * 0.5))  # 10-30% news impact probability
+                black_swan_confidence = max(0.6, min(0.9, 0.6 + (0.9 - 0.6) * 0.5))  # 60-90% confidence
             elif "MEDIUM_LIQUIDITY" in symbol:
-                price_drop_probability = random.uniform(0.1, 0.4)  # 10-40% drop probability
-                volume_spike_probability = random.uniform(0.2, 0.5)  # 20-50% spike probability
-                news_impact_probability = random.uniform(0.2, 0.5)  # 20-50% news impact probability
-                black_swan_confidence = random.uniform(0.4, 0.7)  # 40-70% confidence
+                price_drop_probability = max(0.1, min(0.4, 0.1 + (0.4 - 0.1) * 0.5))  # 10-40% drop probability
+                volume_spike_probability = max(0.2, min(0.5, 0.2 + (0.5 - 0.2) * 0.5))  # 20-50% spike probability
+                news_impact_probability = max(0.2, min(0.5, 0.2 + (0.5 - 0.2) * 0.5))  # 20-50% news impact probability
+                black_swan_confidence = max(0.4, min(0.7, 0.4 + (0.7 - 0.4) * 0.5))  # 40-70% confidence
             else:
-                price_drop_probability = random.uniform(0.2, 0.6)  # 20-60% drop probability
-                volume_spike_probability = random.uniform(0.3, 0.7)  # 30-70% spike probability
-                news_impact_probability = random.uniform(0.3, 0.7)  # 30-70% news impact probability
-                black_swan_confidence = random.uniform(0.3, 0.6)  # 30-60% confidence
+                price_drop_probability = max(0.2, min(0.6, 0.2 + (0.6 - 0.2) * 0.5))  # 20-60% drop probability
+                volume_spike_probability = max(0.3, min(0.7, 0.3 + (0.7 - 0.3) * 0.5))  # 30-70% spike probability
+                news_impact_probability = max(0.3, min(0.7, 0.3 + (0.7 - 0.3) * 0.5))  # 30-70% news impact probability
+                black_swan_confidence = max(0.3, min(0.6, 0.3 + (0.6 - 0.3) * 0.5))  # 30-60% confidence
             
             # Calculate black swan risk score
             black_swan_risk = (

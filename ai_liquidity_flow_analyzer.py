@@ -54,7 +54,7 @@ class AILiquidityFlowAnalyzer:
             },
             'trap': {
                 'name': 'Liquidity Trap',
-                'characteristics': ['artificial_volume', 'manipulated_prices', 'fake_depth'],
+                'characteristics': ['artificial_volume', 'manipulated_prices', 'synthetic_depth'],
                 'execution_quality': 'very_poor',
                 'risk_level': 'critical'
             }
@@ -703,7 +703,20 @@ class AILiquidityFlowAnalyzer:
             
             # Near-term windows
             for i in range(1, 4):  # Next 3 time periods
-                window_quality = random.choice(['excellent', 'good', 'fair', 'poor'])
+                # Calculate window quality based on liquidity and volume
+                liquidity_score = min(1.0, liquidity / 2000000)
+                volume_score = min(1.0, volume_24h / 1000000)
+                combined_score = (liquidity_score + volume_score) / 2
+                
+                if combined_score > 0.7:
+                    window_quality = 'excellent'
+                elif combined_score > 0.5:
+                    window_quality = 'good'
+                elif combined_score > 0.3:
+                    window_quality = 'fair'
+                else:
+                    window_quality = 'poor'
+                    
                 if window_quality in ['excellent', 'good']:
                     execution_windows.append({
                         'window': f'+{i*5}min',

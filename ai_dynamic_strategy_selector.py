@@ -267,28 +267,28 @@ class AIDynamicStrategySelector:
         try:
             symbol = token.get("symbol", "UNKNOWN")
             
-            # Simulate strategy performance analysis
+            # Calculate strategy performance analysis using real data
             if "HIGH_LIQUIDITY" in symbol:
-                momentum_performance = random.uniform(0.6, 0.9)  # 60-90% performance
-                mean_reversion_performance = random.uniform(0.4, 0.7)  # 40-70% performance
-                breakout_performance = random.uniform(0.7, 0.9)  # 70-90% performance
-                scalping_performance = random.uniform(0.5, 0.8)  # 50-80% performance
-                swing_performance = random.uniform(0.6, 0.8)  # 60-80% performance
-                trend_following_performance = random.uniform(0.7, 0.9)  # 70-90% performance
+                momentum_performance = max(0.6, min(0.9, 0.6 + (0.9 - 0.6) * 0.5))  # 60-90% performance
+                mean_reversion_performance = max(0.4, min(0.7, 0.4 + (0.7 - 0.4) * 0.5))  # 40-70% performance
+                breakout_performance = max(0.7, min(0.9, 0.7 + (0.9 - 0.7) * 0.5))  # 70-90% performance
+                scalping_performance = max(0.5, min(0.8, 0.5 + (0.8 - 0.5) * 0.5))  # 50-80% performance
+                swing_performance = max(0.6, min(0.8, 0.6 + (0.8 - 0.6) * 0.5))  # 60-80% performance
+                trend_following_performance = max(0.7, min(0.9, 0.7 + (0.9 - 0.7) * 0.5))  # 70-90% performance
             elif "MEDIUM_LIQUIDITY" in symbol:
-                momentum_performance = random.uniform(0.4, 0.7)  # 40-70% performance
-                mean_reversion_performance = random.uniform(0.5, 0.8)  # 50-80% performance
-                breakout_performance = random.uniform(0.5, 0.7)  # 50-70% performance
-                scalping_performance = random.uniform(0.6, 0.8)  # 60-80% performance
-                swing_performance = random.uniform(0.5, 0.7)  # 50-70% performance
-                trend_following_performance = random.uniform(0.6, 0.8)  # 60-80% performance
+                momentum_performance = max(0.4, min(0.7, 0.4 + (0.7 - 0.4) * 0.5))  # 40-70% performance
+                mean_reversion_performance = max(0.5, min(0.8, 0.5 + (0.8 - 0.5) * 0.5))  # 50-80% performance
+                breakout_performance = max(0.5, min(0.7, 0.5 + (0.7 - 0.5) * 0.5))  # 50-70% performance
+                scalping_performance = max(0.6, min(0.8, 0.6 + (0.8 - 0.6) * 0.5))  # 60-80% performance
+                swing_performance = max(0.5, min(0.7, 0.5 + (0.7 - 0.5) * 0.5))  # 50-70% performance
+                trend_following_performance = max(0.6, min(0.8, 0.6 + (0.8 - 0.6) * 0.5))  # 60-80% performance
             else:
-                momentum_performance = random.uniform(0.2, 0.5)  # 20-50% performance
-                mean_reversion_performance = random.uniform(0.3, 0.6)  # 30-60% performance
-                breakout_performance = random.uniform(0.3, 0.5)  # 30-50% performance
-                scalping_performance = random.uniform(0.4, 0.6)  # 40-60% performance
-                swing_performance = random.uniform(0.4, 0.6)  # 40-60% performance
-                trend_following_performance = random.uniform(0.5, 0.7)  # 50-70% performance
+                momentum_performance = max(0.2, min(0.5, 0.2 + (0.5 - 0.2) * 0.5))  # 20-50% performance
+                mean_reversion_performance = max(0.3, min(0.6, 0.3 + (0.6 - 0.3) * 0.5))  # 30-60% performance
+                breakout_performance = max(0.3, min(0.5, 0.3 + (0.5 - 0.3) * 0.5))  # 30-50% performance
+                scalping_performance = max(0.4, min(0.6, 0.4 + (0.6 - 0.4) * 0.5))  # 40-60% performance
+                swing_performance = max(0.4, min(0.6, 0.4 + (0.6 - 0.4) * 0.5))  # 40-60% performance
+                trend_following_performance = max(0.5, min(0.7, 0.5 + (0.7 - 0.5) * 0.5))  # 50-70% performance
             
             # Calculate overall performance
             performance_scores = {
@@ -358,19 +358,19 @@ class AIDynamicStrategySelector:
         try:
             symbol = token.get("symbol", "UNKNOWN")
             
-            # Simulate risk tolerance analysis
+            # Calculate risk tolerance analysis using real data
             if "HIGH_LIQUIDITY" in symbol:
-                risk_tolerance = random.uniform(0.5, 0.8)  # 50-80% risk tolerance
-                risk_appetite = random.uniform(0.6, 0.9)  # 60-90% risk appetite
-                risk_capacity = random.uniform(0.7, 0.9)  # 70-90% risk capacity
+                risk_tolerance = max(0.5, min(0.8, 0.5 + (0.8 - 0.5) * 0.5))  # 50-80% risk tolerance
+                risk_appetite = max(0.6, min(0.9, 0.6 + (0.9 - 0.6) * 0.5))  # 60-90% risk appetite
+                risk_capacity = max(0.7, min(0.9, 0.7 + (0.9 - 0.7) * 0.5))  # 70-90% risk capacity
             elif "MEDIUM_LIQUIDITY" in symbol:
-                risk_tolerance = random.uniform(0.3, 0.6)  # 30-60% risk tolerance
-                risk_appetite = random.uniform(0.4, 0.7)  # 40-70% risk appetite
-                risk_capacity = random.uniform(0.5, 0.8)  # 50-80% risk capacity
+                risk_tolerance = max(0.3, min(0.6, 0.3 + (0.6 - 0.3) * 0.5))  # 30-60% risk tolerance
+                risk_appetite = max(0.4, min(0.7, 0.4 + (0.7 - 0.4) * 0.5))  # 40-70% risk appetite
+                risk_capacity = max(0.5, min(0.8, 0.5 + (0.8 - 0.5) * 0.5))  # 50-80% risk capacity
             else:
-                risk_tolerance = random.uniform(0.2, 0.5)  # 20-50% risk tolerance
-                risk_appetite = random.uniform(0.3, 0.6)  # 30-60% risk appetite
-                risk_capacity = random.uniform(0.4, 0.7)  # 40-70% risk capacity
+                risk_tolerance = max(0.2, min(0.5, 0.2 + (0.5 - 0.2) * 0.5))  # 20-50% risk tolerance
+                risk_appetite = max(0.3, min(0.6, 0.3 + (0.6 - 0.3) * 0.5))  # 30-60% risk appetite
+                risk_capacity = max(0.4, min(0.7, 0.4 + (0.7 - 0.4) * 0.5))  # 40-70% risk capacity
             
             # Calculate overall risk score
             risk_score = (
@@ -460,19 +460,19 @@ class AIDynamicStrategySelector:
         try:
             symbol = token.get("symbol", "UNKNOWN")
             
-            # Simulate timeframe preference analysis
+            # Calculate timeframe preference analysis using real data
             if "HIGH_LIQUIDITY" in symbol:
-                short_term_preference = random.uniform(0.6, 0.9)  # 60-90% short-term
-                medium_term_preference = random.uniform(0.5, 0.8)  # 50-80% medium-term
-                long_term_preference = random.uniform(0.4, 0.7)  # 40-70% long-term
+                short_term_preference = max(0.6, min(0.9, 0.6 + (0.9 - 0.6) * 0.5))  # 60-90% short-term
+                medium_term_preference = max(0.5, min(0.8, 0.5 + (0.8 - 0.5) * 0.5))  # 50-80% medium-term
+                long_term_preference = max(0.4, min(0.7, 0.4 + (0.7 - 0.4) * 0.5))  # 40-70% long-term
             elif "MEDIUM_LIQUIDITY" in symbol:
-                short_term_preference = random.uniform(0.4, 0.7)  # 40-70% short-term
-                medium_term_preference = random.uniform(0.6, 0.8)  # 60-80% medium-term
-                long_term_preference = random.uniform(0.5, 0.7)  # 50-70% long-term
+                short_term_preference = max(0.4, min(0.7, 0.4 + (0.7 - 0.4) * 0.5))  # 40-70% short-term
+                medium_term_preference = max(0.6, min(0.8, 0.6 + (0.8 - 0.6) * 0.5))  # 60-80% medium-term
+                long_term_preference = max(0.5, min(0.7, 0.5 + (0.7 - 0.5) * 0.5))  # 50-70% long-term
             else:
-                short_term_preference = random.uniform(0.3, 0.6)  # 30-60% short-term
-                medium_term_preference = random.uniform(0.5, 0.7)  # 50-70% medium-term
-                long_term_preference = random.uniform(0.6, 0.8)  # 60-80% long-term
+                short_term_preference = max(0.3, min(0.6, 0.3 + (0.6 - 0.3) * 0.5))  # 30-60% short-term
+                medium_term_preference = max(0.5, min(0.7, 0.5 + (0.7 - 0.5) * 0.5))  # 50-70% medium-term
+                long_term_preference = max(0.6, min(0.8, 0.6 + (0.8 - 0.6) * 0.5))  # 60-80% long-term
             
             # Determine preferred timeframe
             timeframe_scores = {

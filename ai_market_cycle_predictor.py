@@ -695,8 +695,11 @@ class AIMarketCyclePredictor:
             current_phase_info = self.cycle_phases.get(current_cycle_phase, {})
             expected_duration = current_phase_info.get('duration_days', 30)
             
-            # Simulate current phase duration (in real implementation, this would be tracked)
-            current_duration = random.randint(1, expected_duration * 2)
+            # Calculate current phase duration based on market data
+            # Use price change and volume to estimate phase duration
+            price_volatility = abs(price_change_24h) / 100
+            volume_factor = min(1.0, volume_24h / 1000000)
+            current_duration = int(expected_duration * (0.5 + price_volatility + volume_factor))
             
             # Calculate duration-based probability
             if current_duration > expected_duration:

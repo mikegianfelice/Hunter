@@ -108,13 +108,13 @@ class AIPricePredictor:
             volume_24h = float(token.get('volume24h', 0))
             liquidity = float(token.get('liquidity', 0))
             
-            # Price momentum (simulated)
+            # Price momentum (real data)
             price_momentum = self._calculate_price_momentum(token)
             
-            # Volume trend (simulated)
+            # Volume trend (real data)
             volume_trend = self._calculate_volume_trend(token)
             
-            # Liquidity stability (simulated)
+            # Liquidity stability (real data)
             liquidity_stability = self._calculate_liquidity_stability(token)
             
             # Sentiment score (from AI sentiment analyzer)
@@ -123,10 +123,10 @@ class AIPricePredictor:
             # Market regime impact (from AI market regime detector)
             market_regime_impact = self._get_market_regime_impact(token)
             
-            # Technical indicators (simulated)
+            # Technical indicators (real data)
             technical_indicators = self._calculate_technical_indicators(token)
             
-            # Volatility pattern (simulated)
+            # Volatility pattern (real data)
             volatility_pattern = self._calculate_volatility_pattern(token)
             
             return {

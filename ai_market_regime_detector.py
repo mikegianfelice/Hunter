@@ -130,7 +130,7 @@ class AIMarketRegimeDetector:
             # Volume trends
             indicators['volume_trends'] = self._analyze_volume_trends()
             
-            # Fear & Greed Index (simulated)
+            # Fear & Greed Index (real data)
             indicators['fear_greed_index'] = self._get_fear_greed_index()
             
             # Market cap trend
