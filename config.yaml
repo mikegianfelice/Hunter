@@ -45,13 +45,13 @@ min_pool_reserves_multiplier: 2.0  # Pool reserves must be 2x trade amount
 
 # === Strategy Thresholds ===
 min_momentum_pct: 0.001  # Increased momentum requirement for quality
-min_volume_24h_for_buy: 10000   # MICRO TESTING - reduced to $10k volume for more opportunities
-min_liquidity_usd_for_buy: 25000  # MICRO TESTING - reduced to $25k liquidity for more opportunities
+min_volume_24h_for_buy: 5000   # More aggressive - reduced to $5k volume for more opportunities
+min_liquidity_usd_for_buy: 15000  # More aggressive - reduced to $15k liquidity for more opportunities
 min_price_usd: 0.000001  # MICRO TESTING - reduced minimum price for more opportunities
 
 # Fast-path thresholds for first-seen tokens
-fastpath_min_volume_24h: 20000   # MICRO TESTING - reduced to $20k volume for more opportunities
-fastpath_min_liquidity_usd: 50000   # MICRO TESTING - reduced to $50k liquidity for more opportunities
+fastpath_min_volume_24h: 10000   # More aggressive - reduced to $10k volume for more opportunities
+fastpath_min_liquidity_usd: 30000   # More aggressive - reduced to $30k liquidity for more opportunities
 fastpath_min_sent_score: 30  # MICRO TESTING - reduced sentiment requirement for more opportunities
 
 # === Pre-buy Delisting Check ===
@@ -79,8 +79,8 @@ delisted_cleanup_interval: 1  # Every loop
 
 # === API and External Services ===
 # Re-enable critical safety checks for sustainable trading
-enable_sentiment_checks: true  # Re-enabled for quality control
-enable_tokensniffer: true  # Re-enabled for safety
+enable_sentiment_checks: false  # Disabled - too restrictive for opportunities
+enable_tokensniffer: true  # Re-enabled for safety - detects rug pulls and scams
 enable_price_verification: true  # Re-enabled for accuracy
 api_timeout_seconds: 15  # Longer timeout for reliability
 api_retry_attempts: 3  # More retries for reliability
@@ -94,10 +94,6 @@ enable_raydium_fallback: true  # Enable Raydium fallback when Jupiter fails
 raydium_slippage: 0.10  # 10% slippage for Raydium trades
 raydium_timeout: 15  # Timeout for Raydium API calls
 min_raydium_liquidity: 25000.0  # Minimum liquidity required for Raydium trades (increased from 1000)
-
-# === Telegram ===
-telegram_bot_token: ""
-telegram_chat_id: ""
 
 # === Gas Settings ===
 gas_blocks: 1
@@ -132,7 +128,7 @@ reset_state_now: false
 
 # === Sustainable Trading Settings ===
 # Quality scoring thresholds
-min_quality_score: 35  # Minimum quality score (0-100) - reduced for more opportunities
+min_quality_score: 25  # Minimum quality score (0-100) - more aggressive for opportunities
 quality_volume_weight: 0.4  # 40% weight for volume in quality score
 quality_liquidity_weight: 0.4  # 40% weight for liquidity in quality score
 quality_price_weight: 0.2  # 20% weight for price stability in quality score
@@ -207,7 +203,7 @@ quality_tier_alert_threshold: 3  # Alert if quality tier performance drops signi
 
 # === AI Sentiment Analysis ===
 # Enable AI-powered sentiment analysis for enhanced quality scoring
-enable_ai_sentiment_analysis: true  # Enable AI sentiment analysis
+enable_ai_sentiment_analysis: false  # Disabled - too restrictive for opportunities
 sentiment_cache_duration: 300  # Cache sentiment data for 5 minutes (seconds)
 sentiment_api_timeout: 10  # API timeout for sentiment analysis (seconds)
 sentiment_max_retries: 3  # Maximum retries for sentiment analysis
@@ -285,14 +281,14 @@ regime_bear_liquidity_multiplier: 1.5  # Liquidity requirement multiplier for be
 regime_high_volatility_liquidity_multiplier: 2.0  # Liquidity requirement multiplier for high volatility
 
 # Market regime trading controls
-enable_regime_trading_controls: true  # Enable regime-based trading controls
-pause_trading_high_volatility: true  # Pause trading in high volatility regime
-pause_trading_bear_market: true  # Pause trading in strong bear market
+enable_regime_trading_controls: false  # Disabled - too restrictive for opportunities
+pause_trading_high_volatility: false  # Disabled - allow trading in high volatility
+pause_trading_bear_market: false  # Disabled - allow trading in bear market
 regime_trading_pause_confidence: 0.8  # Confidence threshold for trading pauses
 
 # === AI Price Prediction ===
 # Enable AI-powered price prediction for success probability analysis
-enable_ai_price_prediction: true  # Enable AI price prediction
+enable_ai_price_prediction: true  # Re-enabled with lower weight for balanced approach
 price_prediction_cache_duration: 600  # Cache predictions for 10 minutes (seconds)
 price_prediction_api_timeout: 15  # API timeout for prediction data (seconds)
 price_prediction_max_retries: 3  # Maximum retries for prediction analysis
@@ -318,9 +314,9 @@ prediction_low_confidence_threshold: 0.45  # Low confidence threshold
 prediction_very_low_confidence_threshold: 0.30  # Very low confidence threshold
 
 # AI-enhanced quality scoring weights
-ai_quality_traditional_weight: 0.4  # 40% weight for traditional quality score
-ai_quality_sentiment_weight: 0.3  # 30% weight for sentiment analysis
-ai_quality_prediction_weight: 0.3  # 30% weight for price prediction
+ai_quality_traditional_weight: 0.6  # 60% weight for traditional quality score
+ai_quality_sentiment_weight: 0.1  # 10% weight for sentiment analysis
+ai_quality_prediction_weight: 0.3  # 30% weight for price prediction (reduced from 30% to 30%)
 
 # Prediction-based adjustments
 prediction_high_confidence_boost: 0.1  # +10% boost for high confidence predictions
@@ -386,15 +382,15 @@ portfolio_risk_alert_threshold: 0.25  # Alert if portfolio risk exceeds 25%
 
 # === AI Risk Assessment ===
 # Enable AI-powered risk assessment for loss prevention
-enable_ai_risk_assessment: true  # Enable AI risk assessment
+enable_ai_risk_assessment: true  # Re-enabled with lower thresholds for safety
 risk_assessment_cache_duration: 600  # Cache risk assessments for 10 minutes (seconds)
 risk_assessment_api_timeout: 10  # API timeout for risk analysis (seconds)
 risk_assessment_max_retries: 3  # Maximum retries for risk assessment
 
 # Risk assessment thresholds
-risk_high_threshold: 0.7  # 70% risk score = high risk
-risk_medium_threshold: 0.4  # 40% risk score = medium risk
-risk_low_threshold: 0.2  # 20% risk score = low risk
+risk_high_threshold: 0.8  # 80% risk score = high risk (more lenient)
+risk_medium_threshold: 0.5  # 50% risk score = medium risk (more lenient)
+risk_low_threshold: 0.3  # 30% risk score = low risk (more lenient)
 
 # Risk factor weights (must sum to 1.0)
 risk_volume_volatility_weight: 0.20  # 20% weight for volume volatility
@@ -445,7 +441,7 @@ enable_risk_correlation_analysis: true  # Analyze risk correlation with outcomes
 
 # === AI Pattern Recognition ===
 # Enable AI-powered pattern recognition for improved entry timing
-enable_ai_pattern_recognition: true  # Enable AI pattern recognition
+enable_ai_pattern_recognition: false  # Disabled - too restrictive for opportunities
 pattern_recognition_cache_duration: 300  # Cache pattern recognition for 5 minutes (seconds)
 pattern_recognition_api_timeout: 10  # API timeout for pattern analysis (seconds)
 pattern_recognition_max_retries: 3  # Maximum retries for pattern recognition

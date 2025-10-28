@@ -115,6 +115,27 @@ remaining_processes=$(ps aux | grep -E "(python.*main\.py|.*hunter.*|.*trading.*
 
 if [ "$remaining_processes" -eq 0 ]; then
     echo -e "${GREEN}✅ All trading bot processes stopped successfully!${NC}"
+    
+    # Send Telegram notification
+    echo -e "${BLUE}📨 Sending Telegram notification...${NC}"
+    if command -v python3 &> /dev/null; then
+        python3 -c "
+from telegram_bot import send_telegram_message
+import sys
+try:
+    result = send_telegram_message('🛑 Sustainable Trading Bot Stopped\\n\\nBot has been manually stopped via stop_bot.sh\\n\\nStatus: All processes terminated successfully')
+    if result:
+        print('✅ Telegram notification sent successfully')
+    else:
+        print('⚠️  Failed to send Telegram notification')
+except Exception as e:
+    print(f'❌ Error sending Telegram notification: {e}')
+    sys.exit(0)  # Don't fail the script if Telegram fails
+" 2>/dev/null || echo -e "${YELLOW}⚠️  Could not send Telegram notification (Python/telegram_bot not available)${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Python3 not available, skipping Telegram notification${NC}"
+    fi
+    
     echo ""
     echo -e "${BLUE}📍 Commands:${NC}"
     echo -e "  Restart bot: ${YELLOW}./launch_bot.sh${NC}"
