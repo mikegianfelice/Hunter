@@ -113,6 +113,50 @@ The bot now features **20 integrated AI systems** working together:
 - **Execution Optimization**: AI-optimized execution for maximum profitability
 - **Performance Tracking**: Comprehensive analytics with quality tier analysis
 
+### **🎯 Multi-Chain Tier System**
+The bot now features a sophisticated **tiered position sizing system** that scales with your total portfolio value across all chains:
+
+#### **💰 Unified Portfolio Management**
+- **Combined Balance Calculation**: Sums balances from Ethereum (MetaMask) + Solana (Phantom) wallets
+- **Unified Tier Detection**: Uses total portfolio value to determine appropriate trading tier
+- **Consistent Position Sizing**: Same tier-based position sizes across all supported chains
+- **Accelerated Growth**: Larger positions on all chains as your portfolio grows
+
+#### **📈 Tier Structure**
+| Tier | Balance Range | Base Position | Max Position | Max Exposure | Description |
+|------|---------------|---------------|--------------|--------------|-------------|
+| **Tier 1** | $100 - $999 | $5 - $10 | $10 | $100 | Learning Phase - Conservative |
+| **Tier 2** | $1,000 - $4,999 | $25 - $50 | $50 | $500 | Scaling Phase - Moderate |
+| **Tier 3** | $5,000 - $19,999 | $50 - $100 | $100 | $1,000 | Acceleration Phase - Aggressive |
+| **Tier 4** | $20,000 - $99,999 | $100 - $200 | $200 | $2,000 | Professional Phase - Maximum |
+| **Tier 5** | $100,000+ | $200 - $500 | $500 | $5,000 | Institutional Phase - Elite |
+
+#### **🚀 Key Benefits**
+- **Unified Risk Management**: Total portfolio value determines your tier, not individual chain balances
+- **Consistent Trading**: Same position sizes across Ethereum, Solana, and Base
+- **Faster Growth**: Combined balance reaches higher tiers sooner than individual chains
+- **Better Portfolio Utilization**: Maximum capital efficiency across all chains
+- **Dynamic Scaling**: Automatically adjusts as your portfolio grows
+
+#### **⚙️ Configuration**
+```yaml
+# Enable tiered position sizing
+enable_tiered_position_sizing: true
+tiered_position_scaling: true
+
+# Wallet tiers configuration
+wallet_tiers:
+  tier_1:
+    min_balance: 100
+    max_balance: 999
+    base_position_size_usd: 5.0
+    max_position_size_usd: 10.0
+    max_total_exposure_usd: 100.0
+    max_wallet_usage_percent: 0.10
+    description: "Learning Phase - Conservative"
+  # ... additional tiers
+```
+
 ### ⚠️ Current Solana/Jupiter API Status (Updated October 2025)
 - **Jupiter API Endpoint Changed**: The old `quote-api.jup.ag` endpoint no longer exists (DNS resolution fails)
 - **New Endpoint Requires Authentication**: Jupiter moved to `api.jup.ag` which returns 401 Unauthorized without API keys
