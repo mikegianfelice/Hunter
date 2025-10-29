@@ -20,6 +20,51 @@ def get_risk_manager_config():
         'MIN_WALLET_BALANCE_BUFFER': get_config_float("min_wallet_balance_buffer", 0.01)
     }
 
+def get_tier_based_risk_limits(wallet_balance_usd: float = None):
+    """Get risk limits based on wallet tier using combined balance from all chains"""
+    try:
+        # If no balance provided, get combined balance from all chains
+        if wallet_balance_usd is None:
+            wallet_balance_usd = _get_combined_wallet_balance_usd()
+        
+        from main import get_wallet_tier
+        tier_info = get_wallet_tier(wallet_balance_usd)
+        tier_config = tier_info['tier_config']
+        tier_name = tier_info['tier_name']
+        
+        # Calculate tier-based limits
+        max_total_exposure = tier_config.get('max_total_exposure_usd', 100.0)
+        max_position_size = tier_config.get('max_position_size_usd', 10.0)
+        
+        # Scale daily loss limit based on wallet size (5% of wallet)
+        daily_loss_limit = wallet_balance_usd * 0.05
+        
+        # Scale concurrent positions based on wallet size
+        if wallet_balance_usd < 1000:
+            max_concurrent_pos = 3
+        elif wallet_balance_usd < 5000:
+            max_concurrent_pos = 5
+        elif wallet_balance_usd < 20000:
+            max_concurrent_pos = 8
+        else:
+            max_concurrent_pos = 10
+        
+        return {
+            'MAX_CONCURRENT_POS': max_concurrent_pos,
+            'DAILY_LOSS_LIMIT_USD': daily_loss_limit,
+            'MAX_LOSING_STREAK': 3,  # Keep consistent
+            'CIRCUIT_BREAK_MIN': 60,  # Keep consistent
+            'PER_TRADE_MAX_USD': max_position_size,
+            'MAX_TOTAL_EXPOSURE_USD': max_total_exposure,
+            'MIN_WALLET_BALANCE_BUFFER': 0.05,  # 5% buffer
+            'TIER_NAME': tier_name,
+            'TIER_DESCRIPTION': tier_info['description']
+        }
+        
+    except Exception as e:
+        print(f"⚠️ Tier-based risk limits failed: {e}, using defaults")
+        return get_risk_manager_config()
+
 # Web3 setup for balance checking
 w3 = Web3(Web3.HTTPProvider(INFURA_URL))
 
@@ -73,6 +118,35 @@ def _get_wallet_balance_usd(chain_id="ethereum"):
             
     except Exception as e:
         print(f"⚠️ Could not get wallet balance for {chain_id}: {e}")
+        return 0.0
+
+
+def _get_combined_wallet_balance_usd():
+    """Get combined wallet balance in USD from all supported chains (Ethereum + Solana)"""
+    try:
+        total_balance = 0.0
+        
+        # Get Ethereum balance
+        try:
+            eth_balance = _get_wallet_balance_usd("ethereum")
+            total_balance += eth_balance
+            print(f"💰 Ethereum balance: ${eth_balance:.2f}")
+        except Exception as e:
+            print(f"⚠️ Failed to get Ethereum balance: {e}")
+        
+        # Get Solana balance
+        try:
+            sol_balance = _get_wallet_balance_usd("solana")
+            total_balance += sol_balance
+            print(f"💰 Solana balance: ${sol_balance:.2f}")
+        except Exception as e:
+            print(f"⚠️ Failed to get Solana balance: {e}")
+        
+        print(f"💰 Combined wallet balance: ${total_balance:.2f}")
+        return total_balance
+        
+    except Exception as e:
+        print(f"⚠️ Error getting combined wallet balance: {e}")
         return 0.0
 
 def _today_utc():
@@ -138,18 +212,55 @@ def _is_token_already_held(token_address: str) -> bool:
     except Exception:
         return False
 
+def _get_current_exposure_usd() -> float:
+    """Calculate current total exposure in USD across all open positions"""
+    try:
+        if not os.path.exists(POSITIONS_FILE):
+            return 0.0
+        
+        with open(POSITIONS_FILE, 'r') as f:
+            data = json.load(f)
+            total_exposure = 0.0
+            
+            for token_address, position_data in data.items():
+                # Get position size from the position data
+                # This assumes position data includes the original trade amount
+                position_size = position_data.get('position_size_usd', 0.0)
+                if position_size > 0:
+                    total_exposure += position_size
+                else:
+                    # Fallback: estimate from entry price if position size not available
+                    entry_price = position_data.get('entry_price', 0.0)
+                    if entry_price > 0:
+                        # Estimate position size (this is approximate)
+                        estimated_size = entry_price * 1000  # Rough estimate
+                        total_exposure += estimated_size
+            
+            return total_exposure
+            
+    except Exception as e:
+        print(f"⚠️ Failed to calculate current exposure: {e}")
+        return 0.0
+
 def allow_new_trade(trade_amount_usd: float, token_address: str = None, chain_id: str = "ethereum"):
     """
     Gatekeeper before any new buy.
     Returns (allowed: bool, reason: str)
     """
-    config = get_risk_manager_config()
+    # Get combined wallet balance from all chains for tier-based limits
+    combined_wallet_balance = _get_combined_wallet_balance_usd()
+    config = get_tier_based_risk_limits(combined_wallet_balance)
     s = _load_state()
+    
+    # Log tier information
+    tier_name = config.get('TIER_NAME', 'unknown')
+    tier_description = config.get('TIER_DESCRIPTION', 'Unknown Tier')
+    print(f"🎯 Risk Manager - Tier: {tier_name} ({tier_description}), Combined Balance: ${combined_wallet_balance:.2f}")
 
     # paused by circuit breaker?
     if s.get("paused_until", 0) > _now_ts():
         return False, f"circuit_breaker_active_until_{s['paused_until']}"
-
+    
     # daily loss limit hit?
     if s.get("realized_pnl_usd", 0.0) <= -abs(config['DAILY_LOSS_LIMIT_USD']):
         # pause until UTC midnight
@@ -162,11 +273,11 @@ def allow_new_trade(trade_amount_usd: float, token_address: str = None, chain_id
     if trade_amount_usd > config['PER_TRADE_MAX_USD']:
         return False, f"trade_amount_exceeds_cap_{config['PER_TRADE_MAX_USD']}"
 
-    # Check wallet balance for specific chain
-    wallet_balance = _get_wallet_balance_usd(chain_id)
-    required_amount = trade_amount_usd + (wallet_balance * config['MIN_WALLET_BALANCE_BUFFER'])  # Include buffer for gas
-    if wallet_balance < required_amount:
-        return False, f"insufficient_balance_{wallet_balance:.2f}_usd_needs_{required_amount:.2f}_usd"
+    # Check wallet balance for specific chain (still need chain-specific balance for gas)
+    chain_wallet_balance = _get_wallet_balance_usd(chain_id)
+    required_amount = trade_amount_usd + (chain_wallet_balance * config['MIN_WALLET_BALANCE_BUFFER'])  # Include buffer for gas
+    if chain_wallet_balance < required_amount:
+        return False, f"insufficient_balance_{chain_wallet_balance:.2f}_usd_needs_{required_amount:.2f}_usd"
 
     # Check if token is already held (prevent duplicate buys)
     if token_address and _is_token_already_held(token_address):
@@ -175,6 +286,12 @@ def allow_new_trade(trade_amount_usd: float, token_address: str = None, chain_id
     # concurrent positions guard
     if _open_positions_count() >= config['MAX_CONCURRENT_POS']:
         return False, "max_concurrent_positions_reached"
+    
+    # total exposure guard (tier-based) - uses combined balance for tier calculation
+    max_total_exposure = config.get('MAX_TOTAL_EXPOSURE_USD', 100.0)
+    current_exposure = _get_current_exposure_usd()
+    if current_exposure + trade_amount_usd > max_total_exposure:
+        return False, f"total_exposure_limit_exceeded_{current_exposure:.2f}_{max_total_exposure:.2f}"
 
     return True, "ok"
 

@@ -684,12 +684,78 @@ def check_practical_buy_signal(token: Dict, regime_data: Dict = None) -> bool:
     print(f"✅ {symbol}: Quality score {quality_score:.1f}, Volume ${volume_24h:,.0f}, Liquidity ${liquidity:,.0f}, Risk: {risk_category} ({risk_score:.2f}), Pattern: {overall_signal} ({pattern_strength:.2f}), Microstructure: {microstructure_score:.2f}, Intelligence: {intelligence_score:.2f}, Sentiment: {market_sentiment}, Prediction: {prediction_score:.2f} ({trading_signal}), Strategy: {selected_strategy} ({strategy_confidence}), Risk: {risk_level} ({risk_score:.2f}), Transition: {transition_probability:.2f}, Liquidity: {liquidity_score:.2f}, Timeframe: {timeframe_score:.2f}, Cycle: {cycle_phase}, Drawdown: {drawdown_severity}, Attribution: {attribution_score:.2f}, Anomaly: {anomaly_severity}, Rebalancing: {rebalancing_urgency} (Regime: {regime})")
     return True
 
+def get_wallet_tier(wallet_balance_usd: float) -> Dict:
+    """
+    Determine the appropriate wallet tier based on current balance.
+    Returns tier configuration for position sizing.
+    """
+    try:
+        from config_loader import get_config
+        config = get_config('wallet_tiers')
+        wallet_tiers = config if config else {}
+        
+        # Find the appropriate tier based on wallet balance
+        for tier_name, tier_config in wallet_tiers.items():
+            min_balance = tier_config.get('min_balance', 0)
+            max_balance = tier_config.get('max_balance', float('inf'))
+            
+            if min_balance <= wallet_balance_usd <= max_balance:
+                return {
+                    'tier_name': tier_name,
+                    'tier_config': tier_config,
+                    'wallet_balance': wallet_balance_usd,
+                    'description': tier_config.get('description', 'Unknown Tier')
+                }
+        
+        # Fallback to tier 1 if no match found
+        return {
+            'tier_name': 'tier_1',
+            'tier_config': wallet_tiers.get('tier_1', {}),
+            'wallet_balance': wallet_balance_usd,
+            'description': 'Fallback Tier'
+        }
+        
+    except Exception as e:
+        print(f"⚠️ Wallet tier detection failed: {e}")
+        # Return default tier 1 configuration
+        return {
+            'tier_name': 'tier_1',
+            'tier_config': {
+                'base_position_size_usd': 5.0,
+                'max_position_size_usd': 10.0,
+                'max_total_exposure_usd': 100.0,
+                'max_wallet_usage_percent': 0.10
+            },
+            'wallet_balance': wallet_balance_usd,
+            'description': 'Default Tier'
+        }
+
 def get_dynamic_position_size(token: Dict, regime_data: Dict = None) -> float:
     """
-    Calculate dynamic position size based on AI-enhanced token quality, risk factors, market regime, and portfolio optimization.
-    Higher quality tokens get larger positions, but with safety limits, market awareness, and portfolio optimization.
+    Calculate dynamic position size based on AI-enhanced token quality, risk factors, market regime, portfolio optimization, and wallet tier.
+    Higher quality tokens get larger positions, but with safety limits, market awareness, portfolio optimization, and tier-based scaling.
     """
-    base_amount = 5.0  # $5 base position
+    try:
+        # Get combined wallet balance from all chains for tier detection
+        from risk_manager import _get_combined_wallet_balance_usd
+        combined_wallet_balance = _get_combined_wallet_balance_usd()
+        
+        # Determine wallet tier based on combined balance
+        tier_info = get_wallet_tier(combined_wallet_balance)
+        tier_config = tier_info['tier_config']
+        tier_name = tier_info['tier_name']
+        tier_description = tier_info['description']
+        
+        # Use tier-based base amount instead of fixed $5
+        base_amount = tier_config.get('base_position_size_usd', 5.0)
+        max_position_size = tier_config.get('max_position_size_usd', 10.0)
+        
+        print(f"🎯 Wallet Tier: {tier_name} ({tier_description}) - Combined Balance: ${combined_wallet_balance:.2f}, Base: ${base_amount:.2f}, Max: ${max_position_size:.2f}")
+        
+    except Exception as e:
+        print(f"⚠️ Tier detection failed, using default: {e}")
+        base_amount = 5.0  # Fallback to $5 base position
+        max_position_size = 10.0
     quality_score = calculate_ai_enhanced_quality_score(token)
     volume_24h = float(token.get("volume24h", 0))
     liquidity = float(token.get("liquidity", 0))
@@ -804,7 +870,7 @@ def get_dynamic_position_size(token: Dict, regime_data: Dict = None) -> float:
     
     # Apply safety limits
     min_position = 2.0  # $2 minimum
-    max_position = 10.0  # $10 maximum (respects per_trade_max_usd limit)
+    max_position = max_position_size  # Tier-based maximum (respects per_trade_max_usd limit)
     
     position_size = max(min_position, min(max_position, position_size))
     
@@ -812,7 +878,7 @@ def get_dynamic_position_size(token: Dict, regime_data: Dict = None) -> float:
     position_size = round(position_size * 2) / 2
     
     symbol = token.get('symbol', 'UNKNOWN')
-    print(f"💰 {symbol}: Position ${position_size:.1f} (quality: {quality_score:.1f}, regime: {regime}, multiplier: {position_multiplier:.1f}x)")
+    print(f"💰 {symbol}: Position ${position_size:.1f} (quality: {quality_score:.1f}, regime: {regime}, multiplier: {position_multiplier:.1f}x, tier: {tier_name})")
     return position_size
 
 def get_practical_take_profit(token: Dict) -> float:
