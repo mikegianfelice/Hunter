@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 def git_push():
     """Push changes to GitHub using token from .env"""
     # Load environment variables
-    load_dotenv()
+    load_dotenv("system/.env")
     
     github_token = os.getenv('GITHUB_SSH_KEY')  # Using the same env var name
     if not github_token:

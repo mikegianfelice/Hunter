@@ -14,13 +14,13 @@ def migrate_from_env():
     print("=" * 50)
     
     # Check if .env exists
-    if not os.path.exists(".env"):
-        print("❌ No .env file found")
+    if not os.path.exists("system/.env"):
+        print("❌ No .env file found in system/ folder")
         return False
     
     # Load .env file
     from dotenv import load_dotenv
-    load_dotenv()
+    load_dotenv("system/.env")
     
     # Collect secrets from environment
     secrets = {}
@@ -78,7 +78,7 @@ def migrate_from_env():
             remove_env = input("\n🗑️ Remove .env file? (y/N): ").strip().lower()
             if remove_env == 'y':
                 try:
-                    os.remove(".env")
+                    os.remove("system/.env")
                     print("✅ .env file removed")
                 except Exception as e:
                     print(f"⚠️ Could not remove .env file: {e}")

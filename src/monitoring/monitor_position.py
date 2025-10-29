@@ -25,7 +25,7 @@ def get_monitor_config():
 POSITIONS_FILE = "open_positions.json"
 LOG_FILE = "trade_log.csv"
 MONITOR_LOCK = ".monitor_lock"
-HEARTBEAT_FILE = ".monitor_heartbeat"
+HEARTBEAT_FILE = "system/.monitor_heartbeat"
 DELISTED_TOKENS_FILE = "delisted_tokens.json"
 
 # === Global for cleanup ===

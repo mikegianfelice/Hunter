@@ -14,7 +14,7 @@ STATE_JSONS: List[str] = [
 ]
 STATE_MISC: List[str] = [
     ".monitor_lock",
-    ".monitor_heartbeat",
+    "system/.monitor_heartbeat",
     "entry_price.txt",
     "blacklist.json",          # optional: comment this out if you want to keep blacklist
 ]
@@ -23,7 +23,7 @@ LOGS_SAFE_TO_ARCHIVE: List[str] = [
     "trade_log.csv",
 ]
 
-RUN_STATE = ".run_state.json"  # remembers last known mode so we clear only on changes
+RUN_STATE = "system/.run_state.json"  # remembers last known mode so we clear only on changes
 
 def _write_json(path: str, data):
     Path(path).write_text(json.dumps(data, indent=2))
