@@ -46,6 +46,18 @@ cryptography>=41.0.0
 
 # Performance monitoring and system metrics
 psutil>=5.9.0  # For system monitoring
+
+# Phase 3 & 4 Dependencies - Advanced Features
+websockets>=11.0.3  # For real-time dashboard
+aiofiles>=23.0.0  # For async file operations
+matplotlib>=3.8.2  # For backtesting charts
+seaborn>=0.12.0  # For advanced plotting
+numpy>=1.24.0  # For numerical computations
+pandas>=2.0.0  # For data analysis
+scikit-learn>=1.3.0  # For ML algorithms
+docker>=6.1.0  # For container management
+pytest>=7.4.0  # For testing
+pytest-asyncio>=0.21.0  # For async testing
 structlog>=23.0.0  # For structured logging
 
 # Async and concurrency
