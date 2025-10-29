@@ -229,13 +229,12 @@ def calculate_token_score(symbol, volume24h, liquidity, chain_id, address=None):
     score = 0
     
     # ESTABLISHED TOKEN PRIORITY (0-5 points) - HIGHEST PRIORITY
+    # Only give bonus for exact address matches to prevent copycat tokens from getting false positives
     if address and address in ESTABLISHED_TOKENS:
         established_symbol = ESTABLISHED_TOKENS[address]
         score += 5  # Maximum priority for established tokens
         print(f"🏆 {symbol} - ESTABLISHED TOKEN BONUS (+5): {established_symbol}")
-    elif address and any(est_symbol.lower() in symbol.lower() for est_symbol in ESTABLISHED_TOKENS.values()):
-        score += 3  # High priority for tokens matching established symbols
-        print(f"⭐ {symbol} - ESTABLISHED SYMBOL MATCH (+3)")
+    # Removed symbol matching logic to prevent copycat tokens from getting false bonuses
     
     # Volume scoring (0-3 points) - balanced thresholds
     if volume24h >= 1000000:  # $1M+ volume (high priority)
@@ -261,10 +260,8 @@ def calculate_token_score(symbol, volume24h, liquidity, chain_id, address=None):
     if any(indicator in symbol_lower for indicator in spam_indicators):
         score -= 2  # Increased penalty for spam
     
-    # Bonus for DeFi/quality symbols
-    quality_indicators = ['uni', 'aave', 'comp', 'mkr', 'link', 'crv', 'bal', 'sushi', '1inch', 'yfi', 'snx', 'ren', 'knc']
-    if any(indicator in symbol_lower for indicator in quality_indicators):
-        score += 2  # Bonus for DeFi tokens
+    # Removed DeFi symbol matching to prevent copycat tokens from getting false bonuses
+    # Only established tokens with exact address matches should get quality bonuses
     
     # Bonus for unique/interesting symbols
     if len(symbol) >= 4 and len(symbol) <= 8:
