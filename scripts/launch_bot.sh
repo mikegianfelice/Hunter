@@ -28,16 +28,17 @@ fi
 
 # Get the directory where this script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-cd "$SCRIPT_DIR"
+# Change to the parent directory where main.py is located
+cd "$SCRIPT_DIR/.."
 
 # Create and run bot in a detached screen session
 echo -e "${BLUE}🚀 Launching trading bot in screen session...${NC}"
 
 # Build launch command: activate venv if present, then run the bot unbuffered and log output
-LAUNCH_CMD='cd "'"$SCRIPT_DIR"'"; \
+LAUNCH_CMD='cd "'"$SCRIPT_DIR/.."'"; \
   if [ -f .venv/bin/activate ]; then source .venv/bin/activate; fi; \
   export PYTHONUNBUFFERED=1; \
-  python3 main.py production >> practical_sustainable.log 2>&1'
+  python3 main.py production >> scripts/practical_sustainable.log 2>&1'
 
 # Start within a login shell so venv activation works reliably
 screen -S trading_bot -d -m bash -lc "$LAUNCH_CMD"
@@ -59,9 +60,9 @@ if screen -list | grep -q "trading_bot"; then
 else
     echo -e "${RED}❌ Failed to launch trading bot${NC}"
     # Show recent log output to help diagnose fast-exit failures (e.g., missing venv deps)
-    if [ -f practical_sustainable.log ]; then
+    if [ -f scripts/practical_sustainable.log ]; then
         echo -e "${YELLOW}Last 40 log lines:${NC}"
-        tail -n 40 practical_sustainable.log || true
+        tail -n 40 scripts/practical_sustainable.log || true
     fi
     exit 1
 fi
