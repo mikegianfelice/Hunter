@@ -15,20 +15,20 @@ logger = logging.getLogger(__name__)
 
 class TradingConfig(BaseModel):
     """Core trading configuration validation"""
-    trade_amount_usd: float = Field(ge=1.0, le=1000.0, description="Trade amount in USD")
-    max_concurrent_positions: int = Field(ge=1, le=20, description="Maximum concurrent positions")
-    daily_loss_limit_usd: float = Field(ge=10.0, le=10000.0, description="Daily loss limit in USD")
-    per_trade_max_usd: float = Field(ge=1.0, le=1000.0, description="Maximum per trade amount")
-    min_wallet_balance_buffer: float = Field(ge=0.01, le=0.5, description="Wallet balance buffer")
+    trade_amount_usd: float = Field(default=5.0, ge=1.0, le=1000.0, description="Trade amount in USD")
+    max_concurrent_positions: int = Field(default=3, ge=1, le=20, description="Maximum concurrent positions")
+    daily_loss_limit_usd: float = Field(default=50.0, ge=10.0, le=10000.0, description="Daily loss limit in USD")
+    per_trade_max_usd: float = Field(default=25.0, ge=1.0, le=1000.0, description="Maximum per trade amount")
+    min_wallet_balance_buffer: float = Field(default=0.05, ge=0.01, le=0.5, description="Wallet balance buffer")
     
     # Take profit and stop loss
-    take_profit: float = Field(ge=0.05, le=2.0, description="Take profit percentage")
-    stop_loss: float = Field(ge=0.05, le=1.0, description="Stop loss percentage")
-    trailing_stop_percent: float = Field(ge=0.01, le=0.5, description="Trailing stop percentage")
+    take_profit: float = Field(default=0.15, ge=0.05, le=2.0, description="Take profit percentage")
+    stop_loss: float = Field(default=0.08, ge=0.05, le=1.0, description="Stop loss percentage")
+    trailing_stop_percent: float = Field(default=0.1, ge=0.01, le=0.5, description="Trailing stop percentage")
     
     # Risk management
-    max_losing_streak: int = Field(ge=1, le=10, description="Maximum losing streak")
-    circuit_breaker_minutes: int = Field(ge=5, le=1440, description="Circuit breaker duration")
+    max_losing_streak: int = Field(default=2, ge=1, le=10, description="Maximum losing streak")
+    circuit_breaker_minutes: int = Field(default=120, ge=5, le=1440, description="Circuit breaker duration")
     
     @model_validator(mode='after')
     def stop_loss_less_than_take_profit(self):
@@ -39,18 +39,19 @@ class TradingConfig(BaseModel):
 class ChainConfig(BaseModel):
     """Blockchain configuration validation"""
     supported_chains: List[Literal["ethereum", "solana", "base"]] = Field(
+        default=["ethereum", "solana", "base"],
         min_items=1, 
         description="Supported blockchain networks"
     )
     
     # Gas settings
-    gas_blocks: int = Field(ge=1, le=10, description="Gas blocks")
-    gas_reward_percentile: int = Field(ge=1, le=100, description="Gas reward percentile")
-    gas_basefee_headroom: float = Field(ge=0.0, le=1.0, description="Gas basefee headroom")
-    gas_priority_min_gwei: int = Field(ge=1, le=1000, description="Minimum gas priority")
-    gas_priority_max_gwei: int = Field(ge=1, le=10000, description="Maximum gas priority")
-    gas_ceiling_gwei: int = Field(ge=100, le=100000, description="Gas ceiling")
-    gas_multiplier: float = Field(ge=0.1, le=10.0, description="Gas multiplier")
+    gas_blocks: int = Field(default=1, ge=1, le=10, description="Gas blocks")
+    gas_reward_percentile: int = Field(default=50, ge=1, le=100, description="Gas reward percentile")
+    gas_basefee_headroom: float = Field(default=0.1, ge=0.0, le=1.0, description="Gas basefee headroom")
+    gas_priority_min_gwei: int = Field(default=1, ge=1, le=1000, description="Minimum gas priority")
+    gas_priority_max_gwei: int = Field(default=100, ge=1, le=10000, description="Maximum gas priority")
+    gas_ceiling_gwei: int = Field(default=200, ge=100, le=100000, description="Gas ceiling")
+    gas_multiplier: float = Field(default=1.2, ge=0.1, le=10.0, description="Gas multiplier")
     
     @model_validator(mode='after')
     def max_gas_greater_than_min(self):
@@ -68,25 +69,25 @@ class AIConfig(BaseModel):
     enable_ai_portfolio_optimization: bool = Field(default=True, description="Enable AI portfolio optimization")
     
     # Cache durations (in seconds)
-    sentiment_cache_duration: int = Field(ge=60, le=3600, description="Sentiment cache duration")
-    prediction_cache_duration: int = Field(ge=60, le=3600, description="Prediction cache duration")
-    risk_cache_duration: int = Field(ge=60, le=3600, description="Risk cache duration")
+    sentiment_cache_duration: int = Field(default=300, ge=60, le=3600, description="Sentiment cache duration")
+    prediction_cache_duration: int = Field(default=600, ge=60, le=3600, description="Prediction cache duration")
+    risk_cache_duration: int = Field(default=600, ge=60, le=3600, description="Risk cache duration")
     
     # API timeouts (in seconds)
-    api_timeout_seconds: int = Field(ge=5, le=60, description="API timeout")
-    api_retry_attempts: int = Field(ge=1, le=10, description="API retry attempts")
+    api_timeout_seconds: int = Field(default=15, ge=5, le=60, description="API timeout")
+    api_retry_attempts: int = Field(default=3, ge=1, le=10, description="API retry attempts")
 
 class QualityConfig(BaseModel):
     """Token quality scoring configuration validation"""
-    min_quality_score: int = Field(ge=0, le=100, description="Minimum quality score")
-    min_volume_24h_for_buy: float = Field(ge=1000, le=1000000, description="Minimum 24h volume")
-    min_liquidity_usd_for_buy: float = Field(ge=1000, le=1000000, description="Minimum liquidity")
-    min_price_usd: float = Field(ge=0.000001, le=1.0, description="Minimum token price")
+    min_quality_score: int = Field(default=25, ge=0, le=100, description="Minimum quality score")
+    min_volume_24h_for_buy: float = Field(default=5000, ge=1000, le=1000000, description="Minimum 24h volume")
+    min_liquidity_usd_for_buy: float = Field(default=15000, ge=1000, le=1000000, description="Minimum liquidity")
+    min_price_usd: float = Field(default=0.000001, ge=0.000001, le=1.0, description="Minimum token price")
     
     # Quality scoring weights (must sum to 1.0)
-    quality_volume_weight: float = Field(ge=0.0, le=1.0, description="Volume weight in quality score")
-    quality_liquidity_weight: float = Field(ge=0.0, le=1.0, description="Liquidity weight in quality score")
-    quality_price_weight: float = Field(ge=0.0, le=1.0, description="Price weight in quality score")
+    quality_volume_weight: float = Field(default=0.4, ge=0.0, le=1.0, description="Volume weight in quality score")
+    quality_liquidity_weight: float = Field(default=0.4, ge=0.0, le=1.0, description="Liquidity weight in quality score")
+    quality_price_weight: float = Field(default=0.2, ge=0.0, le=1.0, description="Price weight in quality score")
     
     @model_validator(mode='after')
     def weights_sum_to_one(self):
@@ -99,7 +100,7 @@ class MonitoringConfig(BaseModel):
     """Monitoring and logging configuration validation"""
     enable_performance_tracking: bool = Field(default=True, description="Enable performance tracking")
     performance_data_file: str = Field(default="performance_data.json", description="Performance data file")
-    performance_report_days: int = Field(ge=1, le=365, description="Performance report days")
+    performance_report_days: int = Field(default=30, ge=1, le=365, description="Performance report days")
     
     # Logging
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
@@ -116,17 +117,17 @@ class BotConfig(BaseModel):
     test_mode: bool = Field(default=False, description="Test mode flag")
     async_trading_enabled: bool = Field(default=False, description="Enable async trading mode")
     
-    # Sub-configurations
-    trading: TradingConfig = Field(default_factory=TradingConfig)
-    chains: ChainConfig = Field(default_factory=ChainConfig)
-    ai: AIConfig = Field(default_factory=AIConfig)
-    quality: QualityConfig = Field(default_factory=QualityConfig)
-    monitoring: MonitoringConfig = Field(default_factory=MonitoringConfig)
+    # Sub-configurations - these will be populated from the main config
+    trading: Optional[TradingConfig] = Field(default=None, description="Trading configuration")
+    chains: Optional[ChainConfig] = Field(default=None, description="Chain configuration")
+    ai: Optional[AIConfig] = Field(default=None, description="AI configuration")
+    quality: Optional[QualityConfig] = Field(default=None, description="Quality configuration")
+    monitoring: Optional[MonitoringConfig] = Field(default=None, description="Monitoring configuration")
     
     # Additional validation
     @model_validator(mode='after')
     def validate_test_mode(self):
-        if self.test_mode and self.trading.trade_amount_usd > 10:
+        if self.test_mode and self.trading and self.trading.trade_amount_usd > 10:
             logger.warning("Test mode: Reducing trade amount to $10 for safety")
             self.trading.trade_amount_usd = 10.0
         return self
@@ -137,6 +138,12 @@ class ConfigValidator:
     """
     
     def __init__(self, config_path: str = "config.yaml"):
+        # Use absolute path to ensure config file is found regardless of working directory
+        if not Path(config_path).is_absolute():
+            # Get the directory where this file is located and go up to project root
+            current_dir = Path(__file__).parent
+            project_root = current_dir.parent.parent
+            config_path = project_root / config_path
         self.config_path = Path(config_path)
         self.validated_config: Optional[BotConfig] = None
         self.raw_config: Optional[Dict[str, Any]] = None
@@ -150,8 +157,26 @@ class ConfigValidator:
             with open(self.config_path, 'r') as f:
                 self.raw_config = yaml.safe_load(f)
             
+            # Create sub-configurations from the main config
+            trading_config = TradingConfig(**self.raw_config)
+            chains_config = ChainConfig(**self.raw_config)
+            ai_config = AIConfig(**self.raw_config)
+            quality_config = QualityConfig(**self.raw_config)
+            monitoring_config = MonitoringConfig(**self.raw_config)
+            
+            # Create main config with sub-configurations
+            main_config = {
+                'test_mode': self.raw_config.get('test_mode', False),
+                'async_trading_enabled': self.raw_config.get('async_trading_enabled', False),
+                'trading': trading_config,
+                'chains': chains_config,
+                'ai': ai_config,
+                'quality': quality_config,
+                'monitoring': monitoring_config
+            }
+            
             # Validate against schema
-            self.validated_config = BotConfig(**self.raw_config)
+            self.validated_config = BotConfig(**main_config)
             
             logger.info("Configuration validation successful")
             return self.validated_config

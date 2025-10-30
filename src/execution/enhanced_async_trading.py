@@ -104,9 +104,9 @@ class EnhancedAsyncTradingEngine:
             }
         )
         
-        log_info("Enhanced async trading engine initialized", 
-                max_connections=self.connection_pool.max_connections,
-                batch_size=self.batch_size)
+        log_info("trading.engine_init", "Enhanced async trading engine initialized", 
+                {"max_connections": self.connection_pool.max_connections,
+                "batch_size": self.batch_size})
         
         return self
     
@@ -114,7 +114,7 @@ class EnhancedAsyncTradingEngine:
         """Async context manager exit"""
         if self.session:
             await self.session.close()
-            log_info("Async trading engine session closed")
+            log_info("trading.engine_close", "Async trading engine session closed")
     
     async def _rate_limit(self):
         """Implement rate limiting"""
@@ -131,14 +131,14 @@ class EnhancedAsyncTradingEngine:
         if cache_key in self.token_cache:
             cached_data, timestamp = self.token_cache[cache_key]
             if time.time() - timestamp < self.cache_ttl:
-                log_info(f"Using cached tokens for {chain}", count=len(cached_data))
+                log_info("trading.cache", f"Using cached tokens for {chain}", {"count": len(cached_data)})
                 return cached_data
         return None
     
     async def _cache_tokens(self, chain: str, cache_key: str, tokens: List[Dict]):
         """Cache tokens with timestamp"""
         self.token_cache[cache_key] = (tokens, time.time())
-        log_info(f"Cached {len(tokens)} tokens for {chain}")
+        log_info("trading.cache", f"Cached {len(tokens)} tokens for {chain}")
     
     async def fetch_trending_tokens_async(self, chain: str, limit: int = 20) -> List[Dict]:
         """Enhanced token fetching with caching and error handling"""
@@ -152,7 +152,7 @@ class EnhancedAsyncTradingEngine:
         await self._rate_limit()
         
         try:
-            log_info(f"Fetching trending tokens for {chain} (limit: {limit})")
+            log_info("trading.fetch", f"Fetching trending tokens for {chain} (limit: {limit})")
             
             # Simulate API call with realistic delay
             await asyncio.sleep(random.uniform(0.5, 1.5))
@@ -192,11 +192,11 @@ class EnhancedAsyncTradingEngine:
             # Cache the results
             await self._cache_tokens(chain, cache_key, tokens)
             
-            log_info(f"Fetched {len(tokens)} trending tokens for {chain}")
+            log_info("trading.fetch", f"Fetched {len(tokens)} trending tokens for {chain}")
             return tokens
             
         except Exception as e:
-            log_error(f"Error fetching tokens for {chain}: {e}")
+            log_error("trading.fetch_error", f"Error fetching tokens for {chain}: {e}")
             return []
     
     async def _check_ai_module_health(self) -> Dict[str, Any]:
@@ -215,7 +215,7 @@ class EnhancedAsyncTradingEngine:
             self.ai_health_cache['ai_health'] = (health, current_time)
             return health
         except Exception as e:
-            log_error(f"Error checking AI health: {e}")
+            log_error("trading.ai_health_error", f"Error checking AI health: {e}")
             return {"overall_healthy": False, "unhealthy_modules": ["unknown"]}
     
     async def _analyze_token_ai(self, token: Dict) -> Dict:
@@ -260,7 +260,7 @@ class EnhancedAsyncTradingEngine:
             return analysis
             
         except Exception as e:
-            log_error(f"AI analysis failed for {symbol}: {e}")
+            log_error("trading.ai_analysis_error", f"AI analysis failed for {symbol}: {e}")
             return {
                 "quality_score": 0,
                 "trading_recommendation": {"action": "skip", "confidence": 0.0},
@@ -269,7 +269,7 @@ class EnhancedAsyncTradingEngine:
     
     async def _process_token_batch(self, batch: List[Dict]) -> List[Dict]:
         """Process a batch of tokens with parallel AI analysis"""
-        log_info(f"Processing batch of {len(batch)} tokens")
+        log_info("trading.batch", f"Processing batch of {len(batch)} tokens")
         
         # Create tasks for parallel AI analysis
         analysis_tasks = [self._analyze_token_ai(token) for token in batch]
@@ -278,7 +278,7 @@ class EnhancedAsyncTradingEngine:
         results = []
         for i, (token, analysis) in enumerate(zip(batch, analyses)):
             if isinstance(analysis, Exception):
-                log_error(f"Analysis failed for {token.get('symbol', 'UNKNOWN')}: {analysis}")
+                log_error("trading.analysis_failed", f"Analysis failed for {token.get('symbol', 'UNKNOWN')}: {analysis}")
                 continue
             
             # Combine token data with AI analysis
@@ -295,7 +295,7 @@ class EnhancedAsyncTradingEngine:
             
             results.append(enhanced_token)
         
-        log_info(f"Batch processing complete: {len(results)} tokens analyzed")
+        log_info("trading.batch", f"Batch processing complete: {len(results)} tokens analyzed")
         return results
     
     async def _execute_trade_async(self, token: Dict) -> Dict[str, Any]:
@@ -310,7 +310,7 @@ class EnhancedAsyncTradingEngine:
             start_time = time.time()
             
             try:
-                log_info(f"Executing trade for {symbol} on {chain}")
+                log_info("trading.execute", f"Executing trade for {symbol} on {chain}")
                 
                 # Risk assessment
                 risk_result = await assess_trade_risk(token, position_size)
@@ -335,7 +335,7 @@ class EnhancedAsyncTradingEngine:
                     execution_time = (time.time() - start_time) * 1000
                     
                     log_trade(symbol, address, chain, position_size, "buy", "success", take_profit)
-                    log_info(f"✅ Trade successful: {symbol} - PnL: ${profit_loss:.2f}")
+                    log_info("trading.success", f"✅ Trade successful: {symbol} - PnL: ${profit_loss:.2f}")
                     
                     # Record metrics
                     record_trade_metrics(True, execution_time, profit_loss)
@@ -355,7 +355,7 @@ class EnhancedAsyncTradingEngine:
                     execution_time = (time.time() - start_time) * 1000
                     
                     log_trade(symbol, address, chain, position_size, "buy", "failure", -0.08)
-                    log_error(f"❌ Trade failed: {symbol}")
+                    log_error("trading.trade_failed", f"❌ Trade failed: {symbol}")
                     
                     # Record metrics
                     record_trade_metrics(False, execution_time, -loss)
@@ -372,7 +372,7 @@ class EnhancedAsyncTradingEngine:
                     
             except Exception as e:
                 execution_time = (time.time() - start_time) * 1000
-                log_error(f"Trade execution error for {symbol}: {e}")
+                log_error("trading.execution_error", f"Trade execution error for {symbol}: {e}")
                 
                 # Record error metrics
                 record_trade_metrics(False, execution_time, 0)
@@ -425,17 +425,17 @@ class EnhancedAsyncTradingEngine:
     async def run_enhanced_trading_cycle(self) -> Dict[str, Any]:
         """Run a single enhanced trading cycle"""
         cycle_start = time.time()
-        log_info("🚀 Starting enhanced async trading cycle")
+        log_info("trading.cycle_start", "🚀 Starting enhanced async trading cycle")
         
         # Check AI module health
         ai_health = await self._check_ai_module_health()
         if not ai_health.get("overall_healthy", False):
-            log_error(f"AI modules unhealthy: {ai_health.get('unhealthy_modules', [])}")
+            log_error("trading.ai_unhealthy", f"AI modules unhealthy: {ai_health.get('unhealthy_modules', [])}")
             return {"success": False, "error": "AI modules unhealthy"}
         
         # Check circuit breaker
         if is_circuit_breaker_active():
-            log_info("⏸️ Circuit breaker active - skipping cycle")
+            log_info("trading.circuit_breaker", "⏸️ Circuit breaker active - skipping cycle")
             return {"success": False, "error": "Circuit breaker active"}
         
         # Fetch tokens from all supported chains
@@ -451,18 +451,18 @@ class EnhancedAsyncTradingEngine:
             
             for i, result in enumerate(chain_results):
                 if isinstance(result, Exception):
-                    log_error(f"Error fetching tokens for chain {i}: {result}")
+                    log_error("trading.chain_fetch_error", f"Error fetching tokens for chain {i}: {result}")
                     continue
                 all_tokens.extend(result)
             
-            log_info(f"📊 Fetched {len(all_tokens)} tokens across {len(self.config.chains.supported_chains)} chains")
+            log_info("trading.fetch", f"📊 Fetched {len(all_tokens)} tokens across {len(self.config.chains.supported_chains)} chains")
             
         except Exception as e:
-            log_error(f"Error in token fetching: {e}")
+            log_error("trading.token_fetch_error", f"Error in token fetching: {e}")
             return {"success": False, "error": f"Token fetching failed: {e}"}
         
         if not all_tokens:
-            log_info("😴 No tokens found this cycle")
+            log_info("trading.no_tokens", "😴 No tokens found this cycle")
             return {"success": True, "tokens_processed": 0}
         
         # Process tokens in batches
@@ -478,9 +478,9 @@ class EnhancedAsyncTradingEngine:
             approved = [token for token in batch_result if token.get("approved_for_trading", False)]
             approved_tokens.extend(approved)
             
-            log_info(f"Batch {i//self.batch_size + 1}: {len(approved)}/{len(batch)} tokens approved")
+            log_info("trading.batch", f"Batch {i//self.batch_size + 1}: {len(approved)}/{len(batch)} tokens approved")
         
-        log_info(f"✅ Total approved tokens: {len(approved_tokens)}/{len(all_tokens)}")
+        log_info("trading.approval", f"✅ Total approved tokens: {len(approved_tokens)}/{len(all_tokens)}")
         
         # Execute trades for approved tokens (limit concurrent trades)
         trade_results = []
@@ -494,7 +494,7 @@ class EnhancedAsyncTradingEngine:
             # Limit to max concurrent trades
             tokens_to_trade = approved_tokens[:self.max_concurrent_trades]
             
-            log_info(f"🎯 Executing trades for {len(tokens_to_trade)} tokens")
+            log_info("trading.execute", f"🎯 Executing trades for {len(tokens_to_trade)} tokens")
             
             # Execute trades in parallel
             trade_tasks = [self._execute_trade_async(token) for token in tokens_to_trade]
@@ -503,7 +503,7 @@ class EnhancedAsyncTradingEngine:
             # Update metrics for each trade
             for result in trade_results:
                 if isinstance(result, Exception):
-                    log_error(f"Trade execution error: {result}")
+                    log_error("trading.trade_execution_error", f"Trade execution error: {result}")
                     continue
                 await self._update_metrics(result)
         
@@ -530,12 +530,12 @@ class EnhancedAsyncTradingEngine:
             }
         }
         
-        log_info("📊 Trading cycle complete", **cycle_summary)
+        log_info("trading.cycle_complete", "📊 Trading cycle complete", cycle_summary)
         return cycle_summary
 
 async def run_enhanced_async_trading():
     """Main function to run enhanced async trading"""
-    log_info("🌱 Starting Enhanced Async Trading Bot - Phase 3")
+    log_info("trading.start", "🌱 Starting Enhanced Async Trading Bot - Phase 3")
     
     # Start trading session
     start_trading_session()
@@ -546,32 +546,32 @@ async def run_enhanced_async_trading():
             
             while True:
                 cycle_count += 1
-                log_info(f"🔄 Starting trading cycle #{cycle_count}")
+                log_info("trading.cycle", f"🔄 Starting trading cycle #{cycle_count}")
                 
                 try:
                     result = await engine.run_enhanced_trading_cycle()
                     
                     if not result.get("success", False):
-                        log_error(f"Cycle #{cycle_count} failed: {result.get('error', 'Unknown error')}")
+                        log_error("trading.cycle_failed", f"Cycle #{cycle_count} failed: {result.get('error', 'Unknown error')}")
                         await asyncio.sleep(30)  # Wait before retry
                         continue
                     
                     # Wait between cycles
                     wait_time = 300  # 5 minutes
-                    log_info(f"⏰ Waiting {wait_time} seconds before next cycle...")
+                    log_info("trading.wait", f"⏰ Waiting {wait_time} seconds before next cycle...")
                     await asyncio.sleep(wait_time)
                     
                 except Exception as e:
-                    log_error(f"Error in trading cycle #{cycle_count}: {e}")
+                    log_error("trading.cycle_error", f"Error in trading cycle #{cycle_count}: {e}")
                     await asyncio.sleep(60)  # Wait before retry
                     
     except KeyboardInterrupt:
-        log_info("🛑 Enhanced async trading stopped by user")
+        log_info("trading.stop", "🛑 Enhanced async trading stopped by user")
     except Exception as e:
-        log_error(f"Fatal error in enhanced async trading: {e}")
+        log_error("trading.fatal_error", f"Fatal error in enhanced async trading: {e}")
     finally:
         end_trading_session()
-        log_info("👋 Enhanced async trading shutdown complete")
+        log_info("trading.shutdown", "👋 Enhanced async trading shutdown complete")
 
 if __name__ == "__main__":
     asyncio.run(run_enhanced_async_trading())

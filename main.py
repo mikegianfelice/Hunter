@@ -29,7 +29,7 @@ production_manager = None
 
 def signal_handler(signum, frame):
     """Handle shutdown signals gracefully"""
-    log_info(f"Received signal {signum}, initiating graceful shutdown...")
+    log_info("system.shutdown", f"Received signal {signum}, initiating graceful shutdown...")
     shutdown_event.set()
 
 def setup_signal_handlers():
@@ -41,67 +41,67 @@ def setup_signal_handlers():
 
 async def run_backtest_mode(symbols: list, start_date: str, end_date: str):
     """Run backtesting mode"""
-    log_info("🔬 Starting Backtesting Mode")
-    log_info(f"Symbols: {', '.join(symbols)}")
-    log_info(f"Period: {start_date} to {end_date}")
+    log_info("backtest.start", "🔬 Starting Backtesting Mode")
+    log_info("backtest.config", f"Symbols: {', '.join(symbols)}")
+    log_info("backtest.config", f"Period: {start_date} to {end_date}")
     
     try:
         # Run comprehensive backtest
         result = await run_comprehensive_backtest(symbols, start_date, end_date)
         
         # Display results
-        log_info("📊 Backtest Results:")
-        log_info(f"  • Total Trades: {result.total_trades}")
-        log_info(f"  • Win Rate: {result.win_rate:.2%}")
-        log_info(f"  • Net PnL: ${result.net_pnl:.2f}")
-        log_info(f"  • Max Drawdown: {result.max_drawdown:.2%}")
-        log_info(f"  • Sharpe Ratio: {result.sharpe_ratio:.2f}")
-        log_info(f"  • Profit Factor: {result.profit_factor:.2f}")
+        log_info("backtest.results", "📊 Backtest Results:")
+        log_info("backtest.results", f"  • Total Trades: {result.total_trades}")
+        log_info("backtest.results", f"  • Win Rate: {result.win_rate:.2%}")
+        log_info("backtest.results", f"  • Net PnL: ${result.net_pnl:.2f}")
+        log_info("backtest.results", f"  • Max Drawdown: {result.max_drawdown:.2%}")
+        log_info("backtest.results", f"  • Sharpe Ratio: {result.sharpe_ratio:.2f}")
+        log_info("backtest.results", f"  • Profit Factor: {result.profit_factor:.2f}")
         
         # Optimize strategy
-        log_info("🔧 Optimizing Strategy...")
+        log_info("backtest.optimization", "🔧 Optimizing Strategy...")
         best_params = await optimize_strategy(symbols, start_date, end_date)
-        log_info(f"Best Parameters: {best_params}")
+        log_info("backtest.optimization", f"Best Parameters: {best_params}")
         
         return True
         
     except Exception as e:
-        log_error(f"Backtest failed: {e}")
+        log_error("main.backtest", f"Backtest failed: {e}")
         return False
 
 async def run_optimization_mode(symbols: list, start_date: str, end_date: str):
     """Run strategy optimization mode"""
-    log_info("⚡ Starting Strategy Optimization Mode")
+    log_info("optimization.start", "⚡ Starting Strategy Optimization Mode")
     
     try:
         # Run optimization
         best_params = await optimize_strategy(symbols, start_date, end_date)
         
-        log_info("🎯 Optimization Results:")
+        log_info("optimization.results", "🎯 Optimization Results:")
         for param, value in best_params.items():
-            log_info(f"  • {param}: {value}")
+            log_info("optimization.results", f"  • {param}: {value}")
         
         return best_params
         
     except Exception as e:
-        log_error(f"Optimization failed: {e}")
+        log_error("main.optimization", f"Optimization failed: {e}")
         return None
 
 async def run_dashboard_mode(host: str = "localhost", port: int = 8765):
     """Run dashboard-only mode"""
-    log_info("📊 Starting Dashboard Mode")
-    log_info(f"Dashboard URL: http://{host}:{port}")
+    log_info("dashboard.start", "📊 Starting Dashboard Mode")
+    log_info("dashboard.config", f"Dashboard URL: http://{host}:{port}")
     
     try:
         await start_realtime_dashboard(host, port)
         return True
     except Exception as e:
-        log_error(f"Dashboard failed: {e}")
+        log_error("main.dashboard", f"Dashboard failed: {e}")
         return False
 
 async def run_production_mode():
     """Run full production mode"""
-    log_info("🚀 Starting Production Mode")
+    log_info("production.start", "🚀 Starting Production Mode")
     
     global production_manager
     
@@ -115,18 +115,18 @@ async def run_production_mode():
         return True
         
     except Exception as e:
-        log_error(f"Production mode failed: {e}")
+        log_error("main.production", f"Production mode failed: {e}")
         return False
 
 async def run_enhanced_trading_mode():
     """Run enhanced async trading mode"""
-    log_info("⚡ Starting Enhanced Async Trading Mode")
+    log_info("async_trading.start", "⚡ Starting Enhanced Async Trading Mode")
     
     try:
         await run_enhanced_async_trading()
         return True
     except Exception as e:
-        log_error(f"Enhanced trading failed: {e}")
+        log_error("main.enhanced_trading", f"Enhanced trading failed: {e}")
         return False
 
 def print_banner():
@@ -175,22 +175,22 @@ Examples:
 
 async def check_system_health():
     """Check system health"""
-    log_info("🔍 Checking System Health")
+    log_info("system.health", "🔍 Checking System Health")
     
     try:
         # Validate configuration
         if not validate_config():
-            log_error("❌ Configuration validation failed")
+            log_error("main.config_validation", "❌ Configuration validation failed")
             return False
-        log_info("✅ Configuration valid")
+        log_info("system.health", "✅ Configuration valid")
         
         # Check AI modules
         from src.ai.ai_circuit_breaker import check_ai_module_health
         ai_health = check_ai_module_health()
         if ai_health['overall_healthy']:
-            log_info("✅ AI modules healthy")
+            log_info("system.health", "✅ AI modules healthy")
         else:
-            log_info(f"⚠️ AI modules unhealthy: {ai_health['unhealthy_modules']}")
+            log_info("system.health", f"⚠️ AI modules unhealthy: {ai_health['unhealthy_modules']}")
         
         # Check system resources
         import psutil
@@ -198,30 +198,30 @@ async def check_system_health():
         memory_percent = psutil.virtual_memory().percent
         disk_percent = psutil.disk_usage('/').percent
         
-        log_info(f"📊 System Resources:")
-        log_info(f"  • CPU: {cpu_percent:.1f}%")
-        log_info(f"  • Memory: {memory_percent:.1f}%")
-        log_info(f"  • Disk: {disk_percent:.1f}%")
+        log_info("system.health", f"📊 System Resources:")
+        log_info("system.health", f"  • CPU: {cpu_percent:.1f}%")
+        log_info("system.health", f"  • Memory: {memory_percent:.1f}%")
+        log_info("system.health", f"  • Disk: {disk_percent:.1f}%")
         
         if cpu_percent > 90 or memory_percent > 90 or disk_percent > 90:
-            log_info("⚠️ High resource usage detected")
+            log_info("system.health", "⚠️ High resource usage detected")
         else:
-            log_info("✅ System resources normal")
+            log_info("system.health", "✅ System resources normal")
         
         # Check required files
         required_files = ['config.yaml', 'requirements.txt']
         for file in required_files:
             if os.path.exists(file):
-                log_info(f"✅ {file} found")
+                log_info("system.health", f"✅ {file} found")
             else:
-                log_error(f"❌ {file} missing")
+                log_error("main.health_check", f"❌ {file} missing")
                 return False
         
-        log_info("🎉 System health check complete")
+        log_info("system.health", "🎉 System health check complete")
         return True
         
     except Exception as e:
-        log_error(f"Health check failed: {e}")
+        log_error("main.health_check", f"Health check failed: {e}")
         return False
 
 async def main():
@@ -275,20 +275,20 @@ async def main():
             print_usage()
             success = True
         else:
-            log_error(f"Unknown mode: {mode}")
+            log_error("main.unknown_mode", f"Unknown mode: {mode}")
             print_usage()
             success = False
         
         if success:
-            log_info("✅ Operation completed successfully")
+            log_info("main.success", "✅ Operation completed successfully")
         else:
-            log_error("❌ Operation failed")
+            log_error("main.operation_failed", "❌ Operation failed")
             sys.exit(1)
             
     except KeyboardInterrupt:
-        log_info("🛑 Operation interrupted by user")
+        log_info("main.interrupt", "🛑 Operation interrupted by user")
     except Exception as e:
-        log_error(f"❌ Fatal error: {e}")
+        log_error("main.fatal_error", f"❌ Fatal error: {e}")
         sys.exit(1)
     finally:
         # Cleanup
@@ -299,7 +299,7 @@ async def main():
                 pass
         
         end_logging_session()
-        log_info("👋 Hunter Trading Bot shutdown complete")
+        log_info("main.shutdown", "👋 Hunter Trading Bot shutdown complete")
 
 if __name__ == "__main__":
     try:

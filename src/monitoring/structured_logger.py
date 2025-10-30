@@ -387,6 +387,11 @@ def log_error(event: str, message: str, context: Dict[str, Any] = None,
     """Log error message"""
     structured_logger.error(event, message, context, performance_metrics)
 
+def log_warning(event: str, message: str, context: Dict[str, Any] = None, 
+                performance_metrics: Dict[str, Any] = None):
+    """Log warning message"""
+    structured_logger.warning(event, message, context, performance_metrics)
+
 def log_trade(trade_type: str, symbol: str, amount: float, 
               success: bool, profit_loss: float = 0.0, 
               execution_time: float = 0.0, error: str = None):

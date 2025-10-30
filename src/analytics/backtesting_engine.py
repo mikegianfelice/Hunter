@@ -89,7 +89,7 @@ class MarketDataSimulator:
         
     def generate_market_data(self) -> Dict[str, pd.DataFrame]:
         """Generate realistic market data for all symbols"""
-        log_info(f"Generating market data from {self.start_date} to {self.end_date} for {len(self.symbols)} symbols")
+        log_info("backtest.data_generation", f"Generating market data from {self.start_date} to {self.end_date} for {len(self.symbols)} symbols")
         
         for symbol in self.symbols:
             self.data[symbol] = self._generate_symbol_data(symbol)
@@ -162,7 +162,7 @@ class StrategyOptimizer:
     def optimize_strategy(self, backtest_engine: 'BacktestEngine', 
                          parameter_ranges: Dict[str, Tuple[float, float]]) -> Dict[str, Any]:
         """Optimize strategy parameters using genetic algorithm"""
-        log_info(f"Starting strategy optimization with {self.population_size} individuals over {self.generations} generations")
+        log_info("backtest.optimization", f"Starting strategy optimization with {self.population_size} individuals over {self.generations} generations")
         
         # Initialize population
         population = self._initialize_population(parameter_ranges)
@@ -213,9 +213,9 @@ class StrategyOptimizer:
             population = new_population[:self.population_size]
             
             if generation % 10 == 0:
-                log_info(f"Generation {generation}: Best fitness = {best_fitness:.4f}")
+                log_info("backtest.optimization", f"Generation {generation}: Best fitness = {best_fitness:.4f}")
         
-        log_info(f"Optimization complete. Best fitness: {best_fitness:.4f}")
+        log_info("backtest.optimization", f"Optimization complete. Best fitness: {best_fitness:.4f}")
         return best_individual if best_individual else {}
     
     def _initialize_population(self, parameter_ranges: Dict[str, Tuple[float, float]]) -> List[Dict[str, float]]:
@@ -322,7 +322,7 @@ class BacktestEngine:
         # Calculate results
         result = self._calculate_results(start_date, end_date)
         
-        log_info(f"Backtest complete: {result.total_trades} trades, {result.win_rate:.2%} win rate, ${result.net_pnl:.2f} PnL")
+        log_info("backtest.complete", f"Backtest complete: {result.total_trades} trades, {result.win_rate:.2%} win rate, ${result.net_pnl:.2f} PnL")
         return result
     
     def _process_symbol(self, symbol: str, df: pd.DataFrame, 
@@ -717,7 +717,7 @@ class BacktestEngine:
             with open(output_file, 'w') as f:
                 f.write(html_content)
             
-            log_info(f"Backtest report generated: {output_file}")
+            log_info("backtest.report", f"Backtest report generated: {output_file}")
             
         except Exception as e:
             log_error(f"Error generating report: {e}")
@@ -725,7 +725,7 @@ class BacktestEngine:
 async def run_comprehensive_backtest(symbols: List[str], start_date: str, end_date: str, 
                                    strategy_params: Dict[str, Any] = None) -> BacktestResult:
     """Run a comprehensive backtest"""
-    log_info(f"Starting comprehensive backtest for {len(symbols)} symbols from {start_date} to {end_date}")
+    log_info("backtest.start", f"Starting comprehensive backtest for {len(symbols)} symbols from {start_date} to {end_date}")
     
     # Generate market data
     simulator = MarketDataSimulator(start_date, end_date, symbols)
@@ -772,7 +772,7 @@ async def optimize_strategy(symbols: List[str], start_date: str, end_date: str) 
     # Run optimization
     best_params = optimizer.optimize_strategy(engine, parameter_ranges)
     
-    log_info(f"Strategy optimization complete. Best parameters: {best_params}")
+    log_info("backtest.optimization", f"Strategy optimization complete. Best parameters: {best_params}")
     return best_params
 
 if __name__ == "__main__":

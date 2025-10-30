@@ -125,7 +125,7 @@ class AIModuleConnector:
                 "market_regime_detector": AIMarketRegimeDetector()
             }
             
-            log_info(f"Initialized {len(self.modules)} AI modules")
+            log_info("ai.initialization", f"Initialized {len(self.modules)} AI modules")
             return True
             
         except Exception as e:
@@ -171,7 +171,7 @@ class AIModuleConnector:
         self.last_health_check = current_time
         
         healthy_count = sum(health_status.values())
-        log_info(f"AI module health check: {healthy_count}/{len(health_status)} modules healthy")
+        log_info("ai.health_check", f"AI module health check: {healthy_count}/{len(health_status)} modules healthy")
         
         return health_status
 
@@ -322,7 +322,7 @@ class AIIntegrationEngine:
         # Check module health
         health_status = await self.module_connector.check_module_health()
         healthy_modules = sum(health_status.values())
-        log_info(f"AI Integration Engine initialized with {healthy_modules}/{len(health_status)} healthy modules")
+        log_info("ai.engine_initialization", f"AI Integration Engine initialized with {healthy_modules}/{len(health_status)} healthy modules")
         
         return True
     
@@ -336,7 +336,7 @@ class AIIntegrationEngine:
             cache_key = f"ai_analysis_{symbol}_{hash(str(token_data))}"
             cached_result = await cache_get(cache_key)
             if cached_result:
-                log_info(f"Using cached AI analysis for {symbol}")
+                log_info("ai.cache", f"Using cached AI analysis for {symbol}")
                 return AIAnalysisResult(**cached_result)
             
             # Convert token data to MarketData
@@ -396,7 +396,7 @@ class AIIntegrationEngine:
             # Cache the result
             await cache_set(cache_key, asdict(result), self.cache_ttl)
             
-            log_info(f"AI analysis complete for {symbol}: score={overall_score:.2f}, confidence={result.confidence:.2f}")
+            log_info("ai.analysis_complete", f"AI analysis complete for {symbol}: score={overall_score:.2f}, confidence={result.confidence:.2f}")
             return result
             
         except Exception as e:

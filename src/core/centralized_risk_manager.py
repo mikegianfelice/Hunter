@@ -13,8 +13,8 @@ from enum import Enum
 import json
 import os
 
-from config_validator import get_validated_config
-from performance_monitor import performance_monitor
+from src.config.config_validator import get_validated_config
+from src.monitoring.performance_monitor import performance_monitor
 
 logger = logging.getLogger(__name__)
 

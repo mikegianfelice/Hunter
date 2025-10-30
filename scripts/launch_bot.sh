@@ -38,7 +38,7 @@ echo -e "${BLUE}🚀 Launching trading bot in screen session...${NC}"
 LAUNCH_CMD='cd "'"$SCRIPT_DIR/.."'"; \
   if [ -f .venv/bin/activate ]; then source .venv/bin/activate; fi; \
   export PYTHONUNBUFFERED=1; \
-  python3 main.py production >> scripts/practical_sustainable.log 2>&1'
+  python main.py trading >> scripts/practical_sustainable.log 2>&1'
 
 # Start within a login shell so venv activation works reliably
 screen -S trading_bot -d -m bash -lc "$LAUNCH_CMD"

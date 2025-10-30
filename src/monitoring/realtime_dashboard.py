@@ -120,7 +120,7 @@ class RealTimeDashboard:
             self.websocket_server = await websockets.serve(
                 self.handle_client, host, port
             )
-            log_info(f"Real-time dashboard WebSocket server started on {host}:{port}")
+            log_info("dashboard.start", f"Real-time dashboard WebSocket server started on {host}:{port}")
             return True
         except Exception as e:
             log_error(f"Failed to start WebSocket server: {e}")
@@ -130,7 +130,7 @@ class RealTimeDashboard:
         """Handle WebSocket client connections"""
         self.clients.add(websocket)
         client_ip = websocket.remote_address[0] if websocket.remote_address else "unknown"
-        log_info(f"Dashboard client connected from {client_ip}")
+        log_info("dashboard.client", f"Dashboard client connected from {client_ip}")
         
         try:
             # Send initial data
@@ -148,7 +148,7 @@ class RealTimeDashboard:
                     await self.send_error(websocket, f"Server error: {e}")
         
         except websockets.exceptions.ConnectionClosed:
-            log_info(f"Dashboard client disconnected from {client_ip}")
+            log_info("dashboard.client", f"Dashboard client disconnected from {client_ip}")
         except Exception as e:
             log_error(f"WebSocket error: {e}")
         finally:

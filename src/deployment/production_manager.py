@@ -67,7 +67,7 @@ class HealthChecker:
             'interval': interval,
             'last_run': 0
         }
-        log_info(f"Registered health check: {name}")
+        log_info("health_check.registered", f"Registered health check: {name}")
     
     async def run_all_checks(self) -> List[HealthCheck]:
         """Run all registered health checks"""
@@ -309,7 +309,7 @@ class AutoRecovery:
             'attempts': 0,
             'last_attempt': 0
         }
-        log_info(f"Registered recovery action for: {check_name}")
+        log_info("recovery.registered", f"Registered recovery action for: {check_name}")
     
     async def attempt_recovery(self, check_name: str, health_check: HealthCheck) -> bool:
         """Attempt to recover from a failed health check"""
@@ -329,7 +329,7 @@ class AutoRecovery:
             return False
         
         try:
-            log_info(f"Attempting recovery for {check_name} (attempt {recovery_info['attempts'] + 1})")
+            log_info("recovery.attempt", f"Attempting recovery for {check_name} (attempt {recovery_info['attempts'] + 1})")
             
             success = await recovery_info['function'](health_check)
             
@@ -337,7 +337,7 @@ class AutoRecovery:
             recovery_info['last_attempt'] = current_time
             
             if success:
-                log_info(f"Recovery successful for {check_name}")
+                log_info("recovery.success", f"Recovery successful for {check_name}")
                 recovery_info['attempts'] = 0  # Reset on success
             else:
                 log_warning(f"Recovery failed for {check_name}")
@@ -360,7 +360,7 @@ class AutoRecovery:
                 if not os.path.exists(db_file):
                     with open(db_file, 'w') as f:
                         json.dump({}, f)
-                    log_info(f"Created missing database file: {db_file}")
+                    log_info("recovery.database", f"Created missing database file: {db_file}")
             
             return True
             
@@ -378,7 +378,7 @@ class AutoRecovery:
                 if circuit_breaker.state == "OPEN":
                     circuit_breaker.state = "CLOSED"
                     circuit_breaker.failure_count = 0
-                    log_info(f"Reset circuit breaker for {module_name}")
+                    log_info("recovery.circuit_breaker", f"Reset circuit breaker for {module_name}")
             
             return True
             
@@ -418,32 +418,32 @@ class ProductionManager:
         self.max_status_history = 100
         
         # Initialize health checks
-        self._setup_health_checks()
+        # Note: This will be called asynchronously in the async context
         
         # Initialize recovery actions
         self._setup_recovery_actions()
     
-    def _setup_health_checks(self):
+    async def _setup_health_checks(self):
         """Setup all health checks"""
-        self.health_checker.register_check(
+        await self.health_checker.register_check(
             "database", 
             self.health_checker.check_database_health,
             interval=60
         )
         
-        self.health_checker.register_check(
+        await self.health_checker.register_check(
             "ai_modules",
             self.health_checker.check_ai_modules_health,
             interval=30
         )
         
-        self.health_checker.register_check(
+        await self.health_checker.register_check(
             "system_resources",
             self.health_checker.check_system_resources,
             interval=30
         )
         
-        self.health_checker.register_check(
+        await self.health_checker.register_check(
             "trading_system",
             self.health_checker.check_trading_system_health,
             interval=60
@@ -531,7 +531,7 @@ class ProductionManager:
                 elif status.overall_health == 'warning':
                     log_warning(f"System warning: {len(status.alerts)} alerts")
                 else:
-                    log_info(f"System healthy: {len(status.health_checks)} checks passed")
+                    log_info("health.monitoring", f"System healthy: {len(status.health_checks)} checks passed")
                 
                 # Attempt recovery for unhealthy checks
                 for health_check in status.health_checks:
@@ -547,9 +547,12 @@ class ProductionManager:
     
     async def start_production_system(self):
         """Start the complete production system"""
-        log_info("Starting production trading system")
+        log_info("production.start", "Starting production trading system")
         
         try:
+            # Setup health checks
+            await self._setup_health_checks()
+            
             # Start health monitoring
             health_task = asyncio.create_task(self.run_health_monitoring())
             
@@ -570,11 +573,11 @@ class ProductionManager:
             )
             
         except KeyboardInterrupt:
-            log_info("Production system stopped by user")
+            log_info("production.stop", "Production system stopped by user")
         except Exception as e:
             log_error(f"Production system error: {e}")
         finally:
-            log_info("Production system shutdown complete")
+            log_info("production.shutdown", "Production system shutdown complete")
     
     def generate_status_report(self) -> str:
         """Generate comprehensive status report"""
@@ -674,7 +677,7 @@ class DockerManager:
                 }
             )
             
-            log_info(f"Docker container started: {container.id}")
+            log_info("docker.container", f"Docker container started: {container.id}")
             return True
             
         except Exception as e:
