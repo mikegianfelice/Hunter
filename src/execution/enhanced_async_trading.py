@@ -140,6 +140,209 @@ class EnhancedAsyncTradingEngine:
         self.token_cache[cache_key] = (tokens, time.time())
         log_info("trading.cache", f"Cached {len(tokens)} tokens for {chain}")
     
+    async def _fetch_real_trending_tokens(self, chain: str, limit: int) -> List[Dict]:
+        """Fetch real trending tokens from DexScreener API"""
+        try:
+            import aiohttp
+            from datetime import datetime
+            
+            # Map chain names to DexScreener chain IDs
+            chain_mapping = {
+                "ethereum": "ethereum",
+                "solana": "solana", 
+                "base": "base",
+                "arbitrum": "arbitrum",
+                "polygon": "polygon",
+                "bsc": "bsc"
+            }
+            
+            dex_chain = chain_mapping.get(chain.lower(), chain.lower())
+            
+            # DexScreener trending API endpoints - use specific chain searches
+            if dex_chain == "ethereum":
+                trending_urls = [
+                    "https://api.dexscreener.com/latest/dex/search/?q=ethereum",
+                    "https://api.dexscreener.com/latest/dex/search/?q=eth",
+                    "https://api.dexscreener.com/latest/dex/search/?q=weth"
+                ]
+            elif dex_chain == "solana":
+                trending_urls = [
+                    "https://api.dexscreener.com/latest/dex/search/?q=bonk",
+                    "https://api.dexscreener.com/latest/dex/search/?q=raydium",
+                    "https://api.dexscreener.com/latest/dex/search/?q=jupiter",
+                    "https://api.dexscreener.com/latest/dex/search/?q=orca"
+                ]
+            else:
+                trending_urls = [
+                    f"https://api.dexscreener.com/latest/dex/search/?q={dex_chain}",
+                    f"https://api.dexscreener.com/latest/dex/search/?q=trending"
+                ]
+            
+            all_tokens = []
+            
+            async with aiohttp.ClientSession() as session:
+                for url in trending_urls:
+                    try:
+                        async with session.get(url, timeout=10) as response:
+                            if response.status == 200:
+                                data = await response.json()
+                                pairs = data.get("pairs", []) if data and data.get("pairs") else []
+                                log_info("trading.api_debug", f"Found {len(pairs)} pairs from {url}")
+                                
+                                for pair in pairs:
+                                    # Extract token information first
+                                    base_token = pair.get("baseToken", {})
+                                    quote_token = pair.get("quoteToken", {})
+                                    
+                                    # Filter by chain and ensure we have valid data
+                                    pair_chain = pair.get("chainId", "").lower()
+                                    symbol = base_token.get("symbol", "")
+                                    if (pair_chain == dex_chain or 
+                                        pair_chain == chain.lower() or
+                                        (dex_chain == "ethereum" and pair_chain in ["eth", "ethereum"]) or
+                                        (dex_chain == "solana" and pair_chain == "solana") or
+                                        (dex_chain == "base" and pair_chain == "base") or
+                                        (dex_chain == "arbitrum" and pair_chain == "arbitrum") or
+                                        (dex_chain == "polygon" and pair_chain == "polygon") or
+                                        (dex_chain == "bsc" and pair_chain in ["bsc", "bsc-bnb"])):
+                                        log_info("trading.filter", f"Processing {symbol} on {pair_chain} (target: {dex_chain})")
+                                        
+                                        # Skip if no valid token data
+                                        if not base_token.get("address") or not base_token.get("symbol"):
+                                            continue
+                                            
+                                        # Skip stablecoins and wrapped tokens
+                                        symbol = base_token.get("symbol", "").upper()
+                                        if any(stable in symbol for stable in ["USDT", "USDC", "DAI", "BUSD", "TUSD", "FRAX", "LUSD"]):
+                                            continue
+                                        if any(wrapped in symbol for wrapped in ["WETH", "WBTC", "WMATIC", "WBNB"]):
+                                            continue
+                                            
+                                        # Skip native tokens (ETH, SOL, etc.) as they're not tradeable tokens
+                                        if symbol in ["ETH", "SOL", "BTC", "BNB", "MATIC", "AVAX"]:
+                                            log_info("trading.filter", f"Skipping native token: {symbol}")
+                                            continue
+                                            
+                                        # Calculate metrics
+                                        price_usd = float(pair.get("priceUsd", 0))
+                                        volume_24h = float(pair.get("volume", {}).get("h24", 0))
+                                        liquidity_usd = float(pair.get("liquidity", {}).get("usd", 0))
+                                        price_change_24h = float(pair.get("priceChange", {}).get("h24", 0))
+                                        
+                                        # Skip tokens with poor metrics
+                                        if price_usd <= 0 or volume_24h < 1000 or liquidity_usd < 5000:
+                                            continue
+                                            
+                                        token = {
+                                            "symbol": base_token.get("symbol", ""),
+                                            "address": base_token.get("address", ""),
+                                            "chain": chain,
+                                            "priceUsd": price_usd,
+                                            "volume24h": volume_24h,
+                                            "liquidity": liquidity_usd,
+                                            "marketCap": float(pair.get("marketCap", 0)),
+                                            "priceChange24h": price_change_24h,
+                                            "holders": int(pair.get("holders", 0)),
+                                            "transactions24h": int(pair.get("txns", {}).get("h24", {}).get("buys", 0)) + 
+                                                             int(pair.get("txns", {}).get("h24", {}).get("sells", 0)),
+                                            "dex": pair.get("dexId", ""),
+                                            "pair_address": pair.get("pairAddress", ""),
+                                            "timestamp": datetime.now().isoformat()
+                                        }
+                                        
+                                        all_tokens.append(token)
+                                        
+                                        if len(all_tokens) >= limit * 2:  # Get more than needed for filtering
+                                            break
+                                            
+                    except Exception as e:
+                        log_error("trading.api_error", f"Error fetching from {url}: {e}")
+                        # Debug: print response for troubleshooting
+                        try:
+                            async with session.get(url, timeout=5) as debug_response:
+                                debug_data = await debug_response.text()
+                                log_error("trading.api_debug", f"API response: {debug_data[:200]}...")
+                        except:
+                            pass
+                        continue
+                        
+            # Sort by volume and take the top tokens
+            all_tokens.sort(key=lambda x: x["volume24h"], reverse=True)
+            return all_tokens[:limit]
+            
+        except Exception as e:
+            log_error("trading.fetch_error", f"Error fetching real tokens: {e}")
+            return []
+    
+    async def _execute_real_trade(self, token: Dict, position_size: float, chain: str) -> Dict[str, Any]:
+        """Execute real trade using DEX integrations"""
+        try:
+            symbol = token.get("symbol", "")
+            address = token.get("address", "")
+            
+            # Import the appropriate executor based on chain
+            if chain.lower() == "solana":
+                from src.execution.jupiter_executor import JupiterCustomExecutor
+                from src.execution.raydium_executor import get_raydium_executor
+                
+                # Try Jupiter first, then Raydium fallback
+                try:
+                    executor = JupiterCustomExecutor()
+                    result = await executor.execute_trade_async(address, position_size)
+                    if result.get("success", False):
+                        return {
+                            "success": True,
+                            "profit_loss": result.get("profit_loss", 0),
+                            "tx_hash": result.get("tx_hash", ""),
+                            "dex": "jupiter"
+                        }
+                except Exception as e:
+                    log_error("trading.jupiter_error", f"Jupiter execution failed: {e}")
+                
+                # Try Raydium fallback
+                try:
+                    raydium_executor = get_raydium_executor()
+                    result = await raydium_executor.execute_trade_async(address, position_size)
+                    if result.get("success", False):
+                        return {
+                            "success": True,
+                            "profit_loss": result.get("profit_loss", 0),
+                            "tx_hash": result.get("tx_hash", ""),
+                            "dex": "raydium"
+                        }
+                except Exception as e:
+                    log_error("trading.raydium_error", f"Raydium execution failed: {e}")
+                    
+            elif chain.lower() in ["ethereum", "base", "arbitrum", "polygon"]:
+                from src.execution.uniswap_executor import buy_token
+                
+                # Execute Uniswap trade
+                result = await buy_token(address, position_size, chain)
+                if result.get("success", False):
+                    return {
+                        "success": True,
+                        "profit_loss": result.get("profit_loss", 0),
+                        "tx_hash": result.get("tx_hash", ""),
+                        "dex": "uniswap"
+                    }
+            
+            # If all executors failed
+            return {
+                "success": False,
+                "error": f"No working DEX executor found for {chain}",
+                "profit_loss": 0,
+                "tx_hash": ""
+            }
+            
+        except Exception as e:
+            log_error("trading.real_execution_error", f"Real trade execution failed: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "profit_loss": 0,
+                "tx_hash": ""
+            }
+    
     async def fetch_trending_tokens_async(self, chain: str, limit: int = 20) -> List[Dict]:
         """Enhanced token fetching with caching and error handling"""
         cache_key = f"{chain}_trending_{limit}"
@@ -152,42 +355,10 @@ class EnhancedAsyncTradingEngine:
         await self._rate_limit()
         
         try:
-            log_info("trading.fetch", f"Fetching trending tokens for {chain} (limit: {limit})")
+            log_info("trading.fetch", f"Fetching real trending tokens for {chain} (limit: {limit})")
             
-            # Simulate API call with realistic delay
-            await asyncio.sleep(random.uniform(0.5, 1.5))
-            
-            # Generate realistic token data
-            tokens = []
-            for i in range(limit):
-                token = {
-                    "symbol": f"ENH{chain.upper()}{i:03d}",
-                    "address": f"0x{random.randbytes(20).hex()}",
-                    "chain": chain,
-                    "priceUsd": round(random.uniform(0.001, 100.0), 6),
-                    "volume24h": round(random.uniform(10000, 2000000), 2),
-                    "liquidity": round(random.uniform(50000, 10000000), 2),
-                    "marketCap": round(random.uniform(100000, 50000000), 2),
-                    "priceChange24h": round(random.uniform(-0.5, 0.5), 4),
-                    "holders": random.randint(100, 50000),
-                    "transactions24h": random.randint(100, 10000),
-                    "ai_enhanced_quality_score": round(random.uniform(60, 95), 1),
-                    "ai_sentiment": {
-                        "category": random.choice(["very_positive", "positive", "neutral", "negative"]),
-                        "score": round(random.uniform(0.2, 0.9), 3),
-                        "confidence": round(random.uniform(0.6, 0.95), 3)
-                    },
-                    "ai_prediction": {
-                        "overall_success_probability": round(random.uniform(0.6, 0.9), 3),
-                        "confidence_level": random.choice(["high", "medium", "low"]),
-                        "expected_return": round(random.uniform(0.1, 0.3), 3),
-                        "risk_score": round(random.uniform(0.1, 0.4), 3)
-                    },
-                    "practical_position_size": round(random.uniform(5, 25), 2),
-                    "practical_tp": round(random.uniform(0.1, 0.2), 3),
-                    "timestamp": datetime.now().isoformat()
-                }
-                tokens.append(token)
+            # Fetch real data from DexScreener API
+            tokens = await self._fetch_real_trending_tokens(chain, limit)
             
             # Cache the results
             await self._cache_tokens(chain, cache_key, tokens)
@@ -223,38 +394,55 @@ class EnhancedAsyncTradingEngine:
         symbol = token.get("symbol", "UNKNOWN")
         
         try:
-            # Simulate AI analysis with realistic processing time
-            analysis_time = random.uniform(0.1, 0.3)
-            await asyncio.sleep(analysis_time)
+            # Use real AI integration engine for analysis
+            from src.ai.ai_integration_engine import AIIntegrationEngine
             
-            # Enhanced AI analysis results
+            # Initialize AI engine
+            ai_engine = AIIntegrationEngine()
+            await ai_engine.initialize()
+            
+            # Perform real AI analysis
+            ai_result = await ai_engine.analyze_token(token)
+            
+            # Extract results from AI analysis
             analysis = {
-                "quality_score": token.get("ai_enhanced_quality_score", 0),
+                "quality_score": ai_result.quality_score,
                 "sentiment_analysis": {
-                    "category": token.get("ai_sentiment", {}).get("category", "neutral"),
-                    "score": token.get("ai_sentiment", {}).get("score", 0.5),
-                    "confidence": token.get("ai_sentiment", {}).get("confidence", 0.5)
+                    "category": ai_result.sentiment_analysis.get("category", "neutral"),
+                    "score": ai_result.sentiment_analysis.get("score", 0.5),
+                    "confidence": ai_result.sentiment_analysis.get("confidence", 0.5)
                 },
                 "price_prediction": {
-                    "success_probability": token.get("ai_prediction", {}).get("overall_success_probability", 0.5),
-                    "confidence_level": token.get("ai_prediction", {}).get("confidence_level", "medium"),
-                    "expected_return": token.get("ai_prediction", {}).get("expected_return", 0.1),
-                    "risk_score": token.get("ai_prediction", {}).get("risk_score", 0.3)
+                    "success_probability": ai_result.price_prediction.get("price_movement_probability", 0.5),
+                    "confidence_level": ai_result.price_prediction.get("confidence", 0.5),
+                    "expected_return": ai_result.price_prediction.get("expected_return", 0.1),
+                    "risk_score": ai_result.risk_analysis.get("risk_score", 0.3)
                 },
                 "market_analysis": {
-                    "volume_trend": "increasing" if random.random() > 0.5 else "decreasing",
-                    "liquidity_health": "good" if token.get("liquidity", 0) > 100000 else "poor",
-                    "holder_distribution": "concentrated" if random.random() > 0.7 else "distributed"
+                    "trend": ai_result.market_analysis.get("market_trend", "neutral"),
+                    "volatility": "high" if abs(token.get("priceChange24h", 0)) > 0.1 else "low",
+                    "liquidity_score": ai_result.market_analysis.get("liquidity_score", 0.5),
+                    "volume_score": ai_result.market_analysis.get("volume_score", 0.5)
                 },
                 "trading_recommendation": {
-                    "action": "buy" if token.get("ai_enhanced_quality_score", 0) > 70 else "hold",
-                    "position_size": token.get("practical_position_size", 5),
-                    "take_profit": token.get("practical_tp", 0.15),
-                    "stop_loss": 0.08,
-                    "confidence": random.uniform(0.6, 0.95)
+                    "action": ai_result.trading_recommendation.get("action", "hold"),
+                    "confidence": ai_result.confidence,
+                    "position_size": ai_result.trading_recommendation.get("position_size", 10),
+                    "take_profit": ai_result.trading_recommendation.get("take_profit", 0.15),
+                    "stop_loss": 0.08
                 },
-                "analysis_timestamp": datetime.now().isoformat(),
-                "processing_time": analysis_time
+                "risk_factors": ai_result.risk_analysis.get("risk_factors", []),
+                "technical_analysis": {
+                    "technical_score": ai_result.technical_analysis.get("technical_score", 0.5),
+                    "trend": ai_result.technical_analysis.get("trend", "neutral"),
+                    "signals": ai_result.technical_analysis.get("signals", [])
+                },
+                "execution_analysis": {
+                    "execution_score": ai_result.execution_analysis.get("execution_score", 0.5),
+                    "recommended_slippage": ai_result.execution_analysis.get("recommended_slippage", 0.05),
+                    "optimal_timing": ai_result.execution_analysis.get("optimal_timing", "wait")
+                },
+                "analysis_timestamp": datetime.now().isoformat()
             }
             
             return analysis
@@ -321,21 +509,17 @@ class EnhancedAsyncTradingEngine:
                         "symbol": symbol
                     }
                 
-                # Simulate trade execution
-                execution_delay = random.uniform(0.5, 2.0)
-                await asyncio.sleep(execution_delay)
+                # Execute real trade using DEX integrations
+                trade_result = await self._execute_real_trade(token, position_size, chain)
                 
-                # Simulate success/failure based on AI confidence
-                ai_confidence = token.get("ai_analysis", {}).get("trading_recommendation", {}).get("confidence", 0.5)
-                success_probability = min(0.95, ai_confidence + 0.1)  # Boost success rate based on AI confidence
-                
-                if random.random() < success_probability:
-                    # Successful trade
-                    profit_loss = position_size * take_profit
+                if trade_result.get("success", False):
+                    # Successful real trade
+                    profit_loss = trade_result.get("profit_loss", 0)
+                    tx_hash = trade_result.get("tx_hash", "")
                     execution_time = (time.time() - start_time) * 1000
                     
-                    log_trade(symbol, address, chain, position_size, "buy", "success", take_profit)
-                    log_info("trading.success", f"✅ Trade successful: {symbol} - PnL: ${profit_loss:.2f}")
+                    log_trade(symbol, address, chain, position_size, "buy", "success", profit_loss/position_size if position_size > 0 else 0)
+                    log_info("trading.success", f"✅ Real trade successful: {symbol} - PnL: ${profit_loss:.2f} - TX: {tx_hash}")
                     
                     # Record metrics
                     record_trade_metrics(
@@ -356,15 +540,16 @@ class EnhancedAsyncTradingEngine:
                         "position_size": position_size,
                         "profit_loss": profit_loss,
                         "execution_time": execution_time,
+                        "tx_hash": tx_hash,
                         "chain": chain
                     }
                 else:
-                    # Failed trade
-                    loss = position_size * 0.08  # 8% stop loss
+                    # Failed real trade
+                    error_msg = trade_result.get("error", "Unknown error")
                     execution_time = (time.time() - start_time) * 1000
                     
-                    log_trade(symbol, address, chain, position_size, "buy", "failure", -0.08)
-                    log_error("trading.trade_failed", f"❌ Trade failed: {symbol}")
+                    log_trade(symbol, address, chain, position_size, "buy", "failure", 0)
+                    log_error("trading.trade_failed", f"❌ Real trade failed: {symbol} - {error_msg}")
                     
                     # Record metrics
                     record_trade_metrics(
@@ -373,17 +558,17 @@ class EnhancedAsyncTradingEngine:
                         amount_usd=position_size,
                         success=False,
                         execution_time_ms=execution_time,
-                        profit_loss_usd=-loss,
+                        profit_loss_usd=0,
                         quality_score=token.get('ai_analysis', {}).get('quality_score', 0.5),
-                        risk_score=risk_result.overall_risk_score
+                        risk_score=risk_result.overall_risk_score,
+                        error_message=error_msg
                     )
-                    update_trade_result(False, -loss)
+                    update_trade_result(False, 0)
                     
                     return {
                         "success": False,
                         "symbol": symbol,
-                        "error": "Trade execution failed",
-                        "loss": loss,
+                        "error": error_msg,
                         "execution_time": execution_time,
                         "chain": chain
                     }
