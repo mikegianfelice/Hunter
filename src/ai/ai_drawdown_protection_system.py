@@ -465,11 +465,43 @@ class AIDrawdownProtectionSystem:
                     'frequency_score': 0.5
                 }
             
-            # Calculate trading frequency
+            # Calculate trading frequency from actual trade history timestamps
             total_trades = len(trade_history)
-            days_trading = 30  # Assume 30 days of trading
-            weeks_trading = 4  # Assume 4 weeks of trading
-            months_trading = 1  # Assume 1 month of trading
+            
+            # Extract timestamps from trade history
+            timestamps = []
+            for trade in trade_history:
+                # Try entry_time first (always present), fallback to exit_time or current time
+                timestamp_str = trade.get('entry_time') or trade.get('exit_time') or trade.get('timestamp')
+                if timestamp_str:
+                    try:
+                        if isinstance(timestamp_str, str):
+                            timestamps.append(datetime.fromisoformat(timestamp_str.replace('Z', '+00:00')))
+                        else:
+                            timestamps.append(datetime.fromtimestamp(timestamp_str))
+                    except (ValueError, TypeError):
+                        continue
+            
+            # Calculate actual trading period from earliest to latest trade
+            if timestamps and len(timestamps) > 1:
+                earliest_trade = min(timestamps)
+                latest_trade = max(timestamps)
+                trading_delta = latest_trade - earliest_trade
+                
+                # Calculate periods (ensure minimum of 1 day to avoid division by zero)
+                days_trading = max(1, trading_delta.days) if trading_delta.days > 0 else 1
+                weeks_trading = max(1, days_trading / 7.0)
+                months_trading = max(1, days_trading / 30.0)
+            elif timestamps and len(timestamps) == 1:
+                # Single trade - assume 1 day minimum
+                days_trading = 1
+                weeks_trading = 1 / 7.0
+                months_trading = 1 / 30.0
+            else:
+                # No valid timestamps - use minimum periods
+                days_trading = 1
+                weeks_trading = 1 / 7.0
+                months_trading = 1 / 30.0
             
             trades_per_day = total_trades / days_trading if days_trading > 0 else 0
             trades_per_week = total_trades / weeks_trading if weeks_trading > 0 else 0

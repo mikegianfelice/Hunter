@@ -87,9 +87,9 @@ def scrape_twitter_alternative(symbol):
             print(f"⚠️ Twitter alternative {base_url} failed: {e}")
             continue
     
-    # If all Twitter alternatives fail, return default positive values
-    print(f"❌ All Twitter alternatives failed for {symbol} - using default positive sentiment")
-    return {"score": 50, "mentions": 5, "source": "twitter", "status": "fallback"}
+    # If all Twitter alternatives fail, return neutral sentiment marked as unavailable
+    print(f"❌ All Twitter alternatives failed for {symbol} - returning neutral sentiment (data unavailable)")
+    return {"score": 50, "mentions": 0, "source": "twitter", "status": "unavailable"}
 
 def scrape_reddit(symbol):
     """Scrape Reddit for sentiment data with better error handling"""

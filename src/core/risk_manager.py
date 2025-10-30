@@ -112,9 +112,10 @@ def _get_wallet_balance_usd(chain_id="ethereum"):
                 print(f"⚠️ Error getting Solana balance: {e}")
                 return 0.0
         else:
-            # For other chains, assume some balance for now
-            print(f"⚠️ Balance checking for {chain_id} not implemented yet")
-            return 50.0  # Assume $50 for testing
+            # For other chains, return 0.0 instead of assuming a test balance
+            # Balance checking should be implemented for each chain separately
+            print(f"⚠️ Balance checking for {chain_id} not implemented yet - returning 0.0")
+            return 0.0  # Return 0 instead of simulated test balance
             
     except Exception as e:
         print(f"⚠️ Could not get wallet balance for {chain_id}: {e}")

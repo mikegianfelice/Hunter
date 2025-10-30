@@ -290,8 +290,9 @@ class EnhancedAsyncTradingEngine:
                     log_info("trading.jupiter", f"Executing Jupiter trade for {symbol} on Solana")
                     tx_hash, success = buy_token_solana(address, position_size, symbol, test_mode=False)
                     if success and tx_hash:
-                        # Calculate profit based on token price change (simplified)
-                        profit_loss = position_size * 0.15  # Assume 15% profit for successful trades
+                        # At entry time, P&L is 0.0 - will be calculated when position is closed
+                        # Real P&L = (exit_price - entry_price) / entry_price * position_size
+                        profit_loss = 0.0  # No profit/loss until position is closed
                         return {
                             "success": True,
                             "profit_loss": profit_loss,
@@ -307,7 +308,8 @@ class EnhancedAsyncTradingEngine:
                     executor = RaydiumExecutor()
                     tx_hash, success = executor.execute_trade(address, position_size, is_buy=True)
                     if success and tx_hash:
-                        profit_loss = position_size * 0.15  # Assume 15% profit for successful trades
+                        # At entry time, P&L is 0.0 - will be calculated when position is closed
+                        profit_loss = 0.0  # No profit/loss until position is closed
                         return {
                             "success": True,
                             "profit_loss": profit_loss,
@@ -325,7 +327,8 @@ class EnhancedAsyncTradingEngine:
                     log_info("trading.uniswap", f"Executing Uniswap trade for {symbol} on {chain}")
                     tx_hash, success = buy_token(address, position_size, symbol)
                     if success and tx_hash:
-                        profit_loss = position_size * 0.15  # Assume 15% profit for successful trades
+                        # At entry time, P&L is 0.0 - will be calculated when position is closed
+                        profit_loss = 0.0  # No profit/loss until position is closed
                         return {
                             "success": True,
                             "profit_loss": profit_loss,

@@ -191,52 +191,240 @@ class MarketDataFetcher:
         
         return 0.5  # Neutral if unable to fetch
     
-    def get_market_correlation(self) -> float:
-        """Get market correlation (0-1 scale)"""
+    def get_market_correlation(self, hours: int = 24) -> float:
+        """Get market correlation between BTC and ETH (0-1 scale)"""
         try:
-            # Get BTC and ETH prices
-            btc_price = self.get_btc_price()
-            eth_price = self.get_eth_price()
+            # Get historical price data for both BTC and ETH
+            now = int(time.time())
+            from_timestamp = now - (hours * 3600)
             
-            if btc_price and eth_price:
-                # Simple correlation based on price movement
-                # In a real implementation, this would calculate correlation over time
-                # For now, use a simple heuristic
-                return 0.7  # Markets generally correlate
+            # Fetch BTC price history
+            btc_url = f"https://api.coingecko.com/api/v3/coins/bitcoin/market_chart/range?vs_currency=usd&from={from_timestamp}&to={now}"
+            btc_data = self._fetch_json(btc_url)
+            
+            # Fetch ETH price history
+            eth_url = f"https://api.coingecko.com/api/v3/coins/ethereum/market_chart/range?vs_currency=usd&from={from_timestamp}&to={now}"
+            eth_data = self._fetch_json(eth_url)
+            
+            if not btc_data or 'prices' not in btc_data or not eth_data or 'prices' not in eth_data:
+                logger.warning("Insufficient data for correlation calculation")
+                return 0.5
+            
+            btc_prices = {int(p[0] / 1000): float(p[1]) for p in btc_data['prices']}
+            eth_prices = {int(p[0] / 1000): float(p[1]) for p in eth_data['prices']}
+            
+            # Find common timestamps (within 1 hour window)
+            common_timestamps = []
+            for btc_ts in btc_prices.keys():
+                for eth_ts in eth_prices.keys():
+                    if abs(btc_ts - eth_ts) < 3600:  # Within 1 hour
+                        common_timestamps.append((btc_ts, eth_ts))
+                        break
+            
+            if len(common_timestamps) < 3:
+                logger.warning("Not enough common timestamps for correlation")
+                return 0.5
+            
+            # Calculate returns for both assets
+            btc_returns = []
+            eth_returns = []
+            
+            sorted_timestamps = sorted(common_timestamps, key=lambda x: x[0])
+            for i in range(1, len(sorted_timestamps)):
+                prev_btc_ts, prev_eth_ts = sorted_timestamps[i-1]
+                curr_btc_ts, curr_eth_ts = sorted_timestamps[i]
+                
+                prev_btc_price = btc_prices[prev_btc_ts]
+                curr_btc_price = btc_prices[curr_btc_ts]
+                prev_eth_price = eth_prices[prev_eth_ts]
+                curr_eth_price = eth_prices[curr_eth_ts]
+                
+                if prev_btc_price > 0 and prev_eth_price > 0:
+                    btc_return = (curr_btc_price - prev_btc_price) / prev_btc_price
+                    eth_return = (curr_eth_price - prev_eth_price) / prev_eth_price
+                    btc_returns.append(btc_return)
+                    eth_returns.append(eth_return)
+            
+            if len(btc_returns) < 2:
+                logger.warning("Not enough return data for correlation")
+                return 0.5
+            
+            # Calculate Pearson correlation coefficient
+            mean_btc = statistics.mean(btc_returns)
+            mean_eth = statistics.mean(eth_returns)
+            
+            numerator = sum((btc_returns[i] - mean_btc) * (eth_returns[i] - mean_eth) 
+                          for i in range(len(btc_returns)))
+            
+            btc_variance = sum((r - mean_btc) ** 2 for r in btc_returns)
+            eth_variance = sum((r - mean_eth) ** 2 for r in eth_returns)
+            
+            denominator = (btc_variance * eth_variance) ** 0.5
+            
+            if denominator == 0:
+                return 0.5
+            
+            correlation = numerator / denominator
+            
+            # Normalize correlation (-1 to 1) to (0 to 1) scale
+            # Where 0 = -1 correlation, 0.5 = 0 correlation, 1 = +1 correlation
+            normalized = (correlation + 1) / 2
+            
+            logger.info(f"✅ Market correlation (BTC/ETH): {correlation:.3f} (normalized: {normalized:.3f})")
+            return max(0.0, min(1.0, normalized))
                 
         except Exception as e:
             logger.error(f"❌ Failed to calculate market correlation: {e}")
         
         return 0.5
     
-    def get_volume_trends(self) -> float:
-        """Get volume trends (0-1 scale)"""
+    def get_volume_trends(self, hours: int = 24) -> float:
+        """Get volume trends (0-1 scale) based on historical comparison"""
         try:
-            # Get total crypto market volume
+            # Get current total market volume
             url = "https://api.coingecko.com/api/v3/global"
-            data = self._fetch_json(url)
+            current_data = self._fetch_json(url)
             
-            if data and 'data' in data:
-                total_volume = float(data['data']['total_24h']['usd'])
-                # Very rough heuristic - would need historical data for real trend
-                return 0.7  # Assume decent volume
+            if not current_data or 'data' not in current_data:
+                logger.warning("Failed to fetch current volume data")
+                return 0.5
+            
+            current_volume = float(current_data['data']['total_24h']['usd'])
+            
+            # Get historical volume data using BTC as proxy (most liquid asset)
+            # We'll use BTC's volume history to estimate overall market trend
+            now = int(time.time())
+            from_timestamp = now - (hours * 2 * 3600)  # Get 2x hours to compare
+            
+            btc_url = f"https://api.coingecko.com/api/v3/coins/bitcoin/market_chart/range?vs_currency=usd&from={from_timestamp}&to={now}"
+            btc_data = self._fetch_json(btc_url)
+            
+            if not btc_data or 'total_volumes' not in btc_data or len(btc_data['total_volumes']) < 2:
+                # Fallback: Use current volume relative to a reasonable baseline
+                # Typical crypto market volume ranges from $50B to $200B+
+                # Normalize assuming $50B = 0.0, $200B+ = 1.0
+                baseline_volume = 50000000000  # $50B
+                max_volume = 200000000000  # $200B
+                
+                if current_volume < baseline_volume:
+                    trend = 0.0 + (current_volume / baseline_volume) * 0.3
+                elif current_volume > max_volume:
+                    trend = 1.0
+                else:
+                    trend = 0.3 + ((current_volume - baseline_volume) / (max_volume - baseline_volume)) * 0.7
+                
+                logger.info(f"✅ Volume trend (estimated): {trend:.3f} (current: ${current_volume/1e9:.1f}B)")
+                return max(0.0, min(1.0, trend))
+            
+            # Calculate volume trend from historical data
+            volumes = [float(v[1]) for v in btc_data['total_volumes']]
+            
+            # Split into two periods: older half and recent half
+            mid_point = len(volumes) // 2
+            older_volumes = volumes[:mid_point] if mid_point > 0 else volumes[:len(volumes)//2]
+            recent_volumes = volumes[mid_point:] if mid_point > 0 else volumes[len(volumes)//2:]
+            
+            if len(older_volumes) == 0 or len(recent_volumes) == 0:
+                logger.warning("Insufficient volume history for trend calculation")
+                return 0.5
+            
+            older_avg = statistics.mean(older_volumes)
+            recent_avg = statistics.mean(recent_volumes)
+            
+            if older_avg == 0:
+                return 0.5
+            
+            # Calculate percentage change
+            volume_change_pct = (recent_avg - older_avg) / older_avg
+            
+            # Normalize to 0-1 scale
+            # Assuming -50% to +50% change range maps to 0.0 to 1.0
+            # More than +50% = 1.0, less than -50% = 0.0
+            trend = max(0.0, min(1.0, 0.5 + volume_change_pct))
+            
+            logger.info(f"✅ Volume trend: {trend:.3f} ({volume_change_pct*100:+.1f}% change, recent avg: ${recent_avg/1e9:.1f}B, older avg: ${older_avg/1e9:.1f}B)")
+            return trend
                 
         except Exception as e:
             logger.error(f"❌ Failed to fetch volume trends: {e}")
         
         return 0.5
     
-    def get_market_cap_trend(self) -> float:
-        """Get market cap trend (0-1 scale)"""
+    def get_market_cap_trend(self, hours: int = 24) -> float:
+        """Get market cap trend (0-1 scale) based on historical comparison"""
         try:
-            # Get total market cap
+            # Get current total market cap
             url = "https://api.coingecko.com/api/v3/global"
-            data = self._fetch_json(url)
+            current_data = self._fetch_json(url)
             
-            if data and 'data' in data:
-                market_cap = float(data['data']['total_market_cap']['usd'])
-                # Very rough heuristic - would need historical data for real trend
-                return 0.7  # Assume moderate trend
+            if not current_data or 'data' not in current_data:
+                logger.warning("Failed to fetch current market cap data")
+                return 0.5
+            
+            current_market_cap = float(current_data['data']['total_market_cap']['usd'])
+            
+            # Get historical market cap data using BTC as proxy
+            now = int(time.time())
+            from_timestamp = now - (hours * 2 * 3600)  # Get 2x hours to compare
+            
+            btc_url = f"https://api.coingecko.com/api/v3/coins/bitcoin/market_chart/range?vs_currency=usd&from={from_timestamp}&to={now}"
+            btc_data = self._fetch_json(btc_url)
+            
+            if not btc_data or 'market_caps' not in btc_data or len(btc_data['market_caps']) < 2:
+                # Fallback: Use current market cap relative to a reasonable baseline
+                # Typical crypto market cap ranges from $1T to $3T+
+                # Normalize assuming $1T = 0.0, $3T+ = 1.0
+                baseline_cap = 1000000000000  # $1T
+                max_cap = 3000000000000  # $3T
+                
+                if current_market_cap < baseline_cap:
+                    trend = 0.0 + (current_market_cap / baseline_cap) * 0.3
+                elif current_market_cap > max_cap:
+                    trend = 1.0
+                else:
+                    trend = 0.3 + ((current_market_cap - baseline_cap) / (max_cap - baseline_cap)) * 0.7
+                
+                logger.info(f"✅ Market cap trend (estimated): {trend:.3f} (current: ${current_market_cap/1e12:.2f}T)")
+                return max(0.0, min(1.0, trend))
+            
+            # Calculate market cap trend from historical data
+            # Use market_caps array if available, otherwise estimate from prices
+            if 'market_caps' in btc_data and len(btc_data['market_caps']) >= 2:
+                market_caps = [float(mc[1]) for mc in btc_data['market_caps']]
+            else:
+                # Estimate market cap from price data (assuming proportional relationship)
+                prices = [float(p[1]) for p in btc_data['prices']]
+                if len(prices) < 2:
+                    logger.warning("Insufficient price data for market cap trend")
+                    return 0.5
+                # Use price as proxy for market cap trend
+                market_caps = prices
+            
+            # Split into two periods: older half and recent half
+            mid_point = len(market_caps) // 2
+            older_caps = market_caps[:mid_point] if mid_point > 0 else market_caps[:len(market_caps)//2]
+            recent_caps = market_caps[mid_point:] if mid_point > 0 else market_caps[len(market_caps)//2:]
+            
+            if len(older_caps) == 0 or len(recent_caps) == 0:
+                logger.warning("Insufficient market cap history for trend calculation")
+                return 0.5
+            
+            older_avg = statistics.mean(older_caps)
+            recent_avg = statistics.mean(recent_caps)
+            
+            if older_avg == 0:
+                return 0.5
+            
+            # Calculate percentage change
+            cap_change_pct = (recent_avg - older_avg) / older_avg
+            
+            # Normalize to 0-1 scale
+            # Assuming -50% to +50% change range maps to 0.0 to 1.0
+            # More than +50% = 1.0, less than -50% = 0.0
+            trend = max(0.0, min(1.0, 0.5 + cap_change_pct))
+            
+            logger.info(f"✅ Market cap trend: {trend:.3f} ({cap_change_pct*100:+.1f}% change, recent avg: ${recent_avg/1e12:.2f}T, older avg: ${older_avg/1e12:.2f}T)")
+            return trend
                 
         except Exception as e:
             logger.error(f"❌ Failed to fetch market cap trend: {e}")
