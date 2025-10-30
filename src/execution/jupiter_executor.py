@@ -5,7 +5,7 @@ Jupiter Custom Executor - Using custom Jupiter library for real trades
 
 import time
 from typing import Tuple, Optional, Dict, Any
-from jupiter_lib import JupiterCustomLib
+# from jupiter_lib import JupiterCustomLib  # Commented out due to missing dependency
 from logger import log_event
 
 from secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
@@ -46,7 +46,7 @@ class JupiterCustomExecutor:
                         for pair in pairs:
                             price = float(pair.get("priceUsd", 0))
                             if price > 0:
-                    log_event("solana.price.dexscreener", token=token_address, price=price)
+                                log_event("solana.price.dexscreener", token=token_address, price=price)
                                 return price
             except Exception as e:
                 print(f"⚠️ DexScreener price API error (attempt {attempt + 1}/2): {e}")

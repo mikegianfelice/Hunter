@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 # Load environment variables first
 load_dotenv("system/.env")
 
-from secrets_manager import get_secret, get_secrets_manager
+from .secrets_manager import get_secret, get_secrets_manager
 
 # Try to get secrets from secure backend first
 secrets = get_secret("trading_bot_secrets")
