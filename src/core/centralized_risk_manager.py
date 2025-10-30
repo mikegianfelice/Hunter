@@ -93,8 +93,9 @@ class CentralizedRiskManager:
     def _load_risk_state(self):
         """Load risk state from file"""
         try:
-            if os.path.exists('risk_state.json'):
-                with open('risk_state.json', 'r') as f:
+            risk_state_path = os.path.join('data', 'risk_state.json')
+            if os.path.exists(risk_state_path):
+                with open(risk_state_path, 'r') as f:
                     saved_state = json.load(f)
                     # Only load if it's from today
                     if saved_state.get('last_reset_date') == datetime.now().date().isoformat():
@@ -105,7 +106,10 @@ class CentralizedRiskManager:
     def _save_risk_state(self):
         """Save risk state to file"""
         try:
-            with open('risk_state.json', 'w') as f:
+            # Ensure data directory exists
+            os.makedirs('data', exist_ok=True)
+            risk_state_path = os.path.join('data', 'risk_state.json')
+            with open(risk_state_path, 'w') as f:
                 json.dump(self.risk_state, f, indent=2)
         except Exception as e:
             logger.warning(f"Could not save risk state: {e}")

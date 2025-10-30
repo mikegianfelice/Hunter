@@ -231,20 +231,78 @@ class MLPipeline:
             return np.zeros(19, dtype=np.float32)  # Return zero features on error
     
     async def predict_price_movement(self, features: np.ndarray) -> Dict[str, float]:
-        """Predict price movement using ML models"""
+        """Predict price movement using market data analysis"""
         try:
-            # Simple linear regression model (in production, use trained models)
-            # This is a placeholder - in real implementation, load trained models
+            # Use feature-based prediction instead of random values
+            # Features are normalized market metrics
             
-            # Simulate ML prediction
-            prediction_score = np.random.uniform(0.3, 0.9)
-            confidence = np.random.uniform(0.6, 0.95)
+            if len(features) < 10:
+                # Insufficient data
+                return {
+                    "price_movement_probability": 0.5,
+                    "confidence": 0.3,
+                    "expected_return": 0.0,
+                    "risk_score": 0.5
+                }
+            
+            # Extract key features (first 10 are basic metrics)
+            price = features[0] if len(features) > 0 else 1.0
+            volume = features[1] if len(features) > 1 else 0.0
+            market_cap = features[2] if len(features) > 2 else 0.0
+            price_change = features[3] if len(features) > 3 else 0.0
+            liquidity = features[4] if len(features) > 4 else 0.0
+            
+            # Calculate prediction score based on real metrics
+            prediction_score = 0.5  # Neutral baseline
+            confidence = 0.5
+            
+            # Volume-based prediction
+            if volume > 500000:
+                prediction_score += 0.15
+                confidence += 0.1
+            elif volume > 100000:
+                prediction_score += 0.05
+                confidence += 0.05
+            
+            # Liquidity-based prediction
+            if liquidity > 1000000:
+                prediction_score += 0.1
+                confidence += 0.1
+            elif liquidity > 500000:
+                prediction_score += 0.05
+                confidence += 0.05
+            
+            # Price momentum
+            if price_change > 0.05:  # 5% positive movement
+                prediction_score += 0.1
+            elif price_change < -0.05:
+                prediction_score -= 0.1
+            
+            # Market cap consideration
+            if market_cap > 10000000:  # $10M+
+                confidence += 0.05
+            
+            # Clamp values
+            prediction_score = max(0.0, min(1.0, prediction_score))
+            confidence = max(0.3, min(0.95, confidence))
+            
+            # Calculate expected return based on volume and liquidity
+            vol_liq_ratio = volume / liquidity if liquidity > 0 else 0
+            expected_return = min(0.25, max(0.05, vol_liq_ratio * 0.5))
+            
+            # Risk score based on volatility indicators
+            risk_score = 0.3  # Base risk
+            if volume < 50000 or liquidity < 50000:
+                risk_score += 0.3
+            if abs(price_change) > 0.2:  # High volatility
+                risk_score += 0.2
+            risk_score = min(0.9, risk_score)
             
             return {
                 "price_movement_probability": prediction_score,
                 "confidence": confidence,
-                "expected_return": np.random.uniform(0.05, 0.25),
-                "risk_score": np.random.uniform(0.1, 0.4)
+                "expected_return": expected_return,
+                "risk_score": risk_score
             }
             
         except Exception as e:
@@ -257,15 +315,33 @@ class MLPipeline:
             }
     
     async def analyze_sentiment(self, market_data: MarketData) -> Dict[str, Any]:
-        """Analyze sentiment using ML models"""
+        """Analyze sentiment using real market data"""
         try:
-            # Simulate sentiment analysis
+            # Base sentiment from news (real data)
             base_sentiment = market_data.news_sentiment
+            
+            # Social mentions boost (real metric)
             social_boost = min(0.2, market_data.social_mentions / 1000)
             
-            sentiment_score = base_sentiment + social_boost
+            # Volume and transaction activity sentiment
+            tx_sentiment = 0.0
+            if market_data.transactions_24h > 1000:
+                tx_sentiment = 0.1
+            elif market_data.transactions_24h > 500:
+                tx_sentiment = 0.05
+            
+            # Holder growth sentiment
+            holder_sentiment = 0.0
+            if market_data.holders > 10000:
+                holder_sentiment = 0.1
+            elif market_data.holders > 5000:
+                holder_sentiment = 0.05
+            
+            # Combine sentiments
+            sentiment_score = base_sentiment + social_boost + tx_sentiment + holder_sentiment
             sentiment_score = max(0, min(1, sentiment_score))  # Clamp to [0, 1]
             
+            # Categorize sentiment
             if sentiment_score > 0.7:
                 category = "very_positive"
             elif sentiment_score > 0.6:
@@ -277,11 +353,26 @@ class MLPipeline:
             else:
                 category = "very_negative"
             
+            # Calculate confidence based on data quality
+            confidence = 0.6  # Base confidence
+            if market_data.social_mentions > 50:
+                confidence += 0.1
+            if market_data.transactions_24h > 500:
+                confidence += 0.1
+            if market_data.holders > 1000:
+                confidence += 0.1
+            confidence = min(0.95, confidence)
+            
+            # Determine trend based on activity
+            trend = "improving" if sentiment_score > 0.5 else "declining"
+            if abs(sentiment_score - 0.5) < 0.1:
+                trend = "stable"
+            
             return {
                 "category": category,
                 "score": sentiment_score,
-                "confidence": np.random.uniform(0.7, 0.95),
-                "trend": "improving" if sentiment_score > 0.5 else "declining"
+                "confidence": confidence,
+                "trend": trend
             }
             
         except Exception as e:

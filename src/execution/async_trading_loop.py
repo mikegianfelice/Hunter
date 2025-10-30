@@ -63,9 +63,23 @@ class AsyncTradingLoop:
     
     async def _fetch_tokens_internal(self, chain: str, limit: int) -> List[Dict[str, Any]]:
         """Internal token fetching with proper async handling"""
-        # This would integrate with your existing token_scraper
-        # For now, return empty list as placeholder
-        return []
+        try:
+            # Use real token scraper
+            from src.utils.token_scraper import fetch_trending_tokens
+            
+            # Fetch tokens (this is synchronous but we can make it work in async context)
+            import asyncio
+            loop = asyncio.get_event_loop()
+            tokens = await loop.run_in_executor(None, fetch_trending_tokens, limit)
+            
+            # Filter by chain
+            filtered_tokens = [t for t in tokens if t.get('chainId', '').lower() == chain.lower()]
+            
+            return filtered_tokens[:limit]
+            
+        except Exception as e:
+            logger.error(f"Error fetching tokens for {chain}: {e}")
+            return []
     
     async def process_token_async(self, token: Dict[str, Any], market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Process a single token asynchronously with circuit breaker protection"""
@@ -103,19 +117,44 @@ class AsyncTradingLoop:
                 return None
     
     async def _analyze_token_internal(self, token: Dict[str, Any], market_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Internal token analysis with AI modules"""
+        """Internal token analysis with real AI modules"""
         try:
-            # This would integrate with your existing AI analysis functions
-            # For now, return a basic analysis
+            # Use real AI integration engine
+            from src.ai.ai_integration_engine import analyze_token_ai
+            
+            # Prepare token data
+            token_data = {
+                "symbol": token.get('symbol', 'UNKNOWN'),
+                "address": token.get('address', ''),
+                "priceUsd": float(token.get('priceUsd', 0)),
+                "volume24h": float(token.get('volume24h', 0)),
+                "marketCap": float(token.get('marketCap', 0)),
+                "liquidity": float(token.get('liquidity', 0)),
+                "priceChange24h": float(token.get('priceChange24h', 0)),
+                "chainId": token.get('chainId', 'unknown')
+            }
+            
+            # Run AI analysis
+            ai_result = await analyze_token_ai(token_data)
+            
+            # Determine if we should trade
+            should_trade = (
+                ai_result.overall_score > 0.7 and
+                ai_result.confidence > 0.7 and
+                ai_result.risk_assessment.get('risk_level', 'high') != 'high'
+            )
+            
             return {
                 'success': True,
-                'quality_score': 50.0,
-                'risk_score': 0.5,
+                'quality_score': ai_result.overall_score * 100,
+                'risk_score': ai_result.risk_assessment.get('risk_score', 0.5),
                 'profit_loss': 0.0,
-                'should_trade': False,
+                'should_trade': should_trade,
                 'error': None
             }
+            
         except Exception as e:
+            logger.error(f"Error analyzing token: {e}")
             return {
                 'success': False,
                 'quality_score': 0.0,
@@ -164,17 +203,52 @@ class AsyncTradingLoop:
             }
     
     async def _execute_trade_internal(self, token: Dict[str, Any], trade_params: Dict[str, Any]) -> Dict[str, Any]:
-        """Internal trade execution"""
+        """Internal trade execution with real executors"""
         try:
-            # This would integrate with your existing trade execution
-            # For now, return a mock result
+            chain_id = token.get('chainId', '').lower()
+            
+            # Route to appropriate executor based on chain
+            if chain_id == 'solana':
+                from src.execution.solana_executor import execute_solana_trade
+                tx_hash, success = await execute_solana_trade(
+                    token.get('address'),
+                    trade_params.get('amount_usd', 10),
+                    trade_params.get('slippage', 0.1),
+                    is_buy=True
+                )
+            elif chain_id == 'ethereum':
+                from src.execution.uniswap_executor import execute_eth_trade
+                tx_hash, success = await execute_eth_trade(
+                    token.get('address'),
+                    trade_params.get('amount_usd', 10),
+                    trade_params.get('slippage', 0.1),
+                    is_buy=True
+                )
+            elif chain_id == 'base':
+                from src.execution.base_executor import execute_base_trade
+                tx_hash, success = await execute_base_trade(
+                    token.get('address'),
+                    trade_params.get('amount_usd', 10),
+                    trade_params.get('slippage', 0.1),
+                    is_buy=True
+                )
+            else:
+                return {
+                    'success': False,
+                    'transaction_hash': None,
+                    'profit_loss': 0.0,
+                    'error': f"Unsupported chain: {chain_id}"
+                }
+            
             return {
-                'success': True,
-                'transaction_hash': 'mock_hash',
-                'profit_loss': 0.0,
-                'error': None
+                'success': success,
+                'transaction_hash': tx_hash,
+                'profit_loss': 0.0,  # Will be calculated after sell
+                'error': None if success else "Trade execution failed"
             }
+            
         except Exception as e:
+            logger.error(f"Error executing trade: {e}")
             return {
                 'success': False,
                 'transaction_hash': None,

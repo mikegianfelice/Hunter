@@ -444,20 +444,45 @@ def execute_solana_trade(token_address: str, amount_usd: float, is_buy: bool = T
 # Additional functions for multi-chain compatibility
 def buy_token_solana(token_address: str, amount_usd: float, symbol: str = "", test_mode: bool = False) -> Tuple[str, bool]:
     """Buy token on Solana (for multi-chain compatibility)"""
-    if test_mode:
-        print(f"🔄 Simulating Solana buy for {symbol} ({token_address[:8]}...{token_address[-8:]})")
-        return f"simulated_solana_tx_{int(time.time())}", True
-    
     executor = SimpleSolanaExecutor()
+    
+    if test_mode:
+        # In test mode, still use real market data for quotes but don't execute
+        # Get quote to validate trade would work
+        try:
+            from utils import get_sol_price_usd
+            sol_price = get_sol_price_usd()
+            if sol_price <= 0:
+                return None, False
+            sol_amount = amount_usd / sol_price
+            sol_amount_lamports = int(sol_amount * 1_000_000_000)
+            quote = executor.get_jupiter_quote(WSOL_MINT, token_address, sol_amount_lamports)
+            if quote:
+                print(f"🔄 Test mode: Validated Solana buy for {symbol} ({token_address[:8]}...{token_address[-8:]}) - Transaction not sent")
+                return None, True
+        except Exception as e:
+            print(f"⚠️ Test mode validation failed: {e}")
+            return None, False
+    
     return executor.execute_trade(token_address, amount_usd, is_buy=True)
 
 def sell_token_solana(token_address: str, amount_usd: float, symbol: str = "", test_mode: bool = False) -> Tuple[str, bool]:
     """Sell token on Solana (for multi-chain compatibility)"""
-    if test_mode:
-        print(f"🔄 Simulating Solana sell for {symbol} ({token_address[:8]}...{token_address[-8:]})")
-        return f"simulated_solana_tx_{int(time.time())}", True
-    
     executor = SimpleSolanaExecutor()
+    
+    if test_mode:
+        # In test mode, still use real market data for quotes but don't execute
+        # Get quote to validate trade would work
+        try:
+            usdc_amount = int(amount_usd * 1_000_000)
+            quote = executor.get_jupiter_quote(token_address, USDC_MINT, usdc_amount)
+            if quote:
+                print(f"🔄 Test mode: Validated Solana sell for {symbol} ({token_address[:8]}...{token_address[-8:]}) - Transaction not sent")
+                return None, True
+        except Exception as e:
+            print(f"⚠️ Test mode validation failed: {e}")
+            return None, False
+    
     return executor.execute_trade(token_address, amount_usd, is_buy=False)
 
 def get_solana_executor():

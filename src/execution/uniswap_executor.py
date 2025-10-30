@@ -102,7 +102,7 @@ def buy_token(token_address: str, usd_amount: float, symbol: str = "?") -> tuple
     - If delay between quote and send > REQUOTE_DELAY_SECONDS, re-quotes and
       recomputes minOut with an extra REQUOTE_SLIPPAGE_BUFFER
     - Uses EIP-1559 fees
-    Returns: (tx_hash_hex or "0xSIMULATED_TX", success_bool)
+    Returns: (tx_hash_hex or None, success_bool)
     """
     config = get_uniswap_config()
     token_address = Web3.to_checksum_address(token_address)
@@ -209,15 +209,16 @@ def buy_token(token_address: str, usd_amount: float, symbol: str = "?") -> tuple
         new_tx["gas"] = tx_dict.get("gas", 300000)
         return new_tx
 
-    if config['TEST_MODE']:
-        # Simulate re-quote branch in test mode too (for logging)
-        tx = _maybe_requote_and_adjust(tx)
-        log_event("eth.buy.simulated", symbol=symbol, eth_in=round(eth_amount, 6))
-        return "0xSIMULATED_TX", True
-
     # LIVE send (with possible re-quote)
     tx = _maybe_requote_and_adjust(tx)
     try:
+        if config['TEST_MODE']:
+            # In test mode, still build and validate transaction but don't send
+            # This allows testing with real market data and quotes
+            log_event("eth.buy.test_mode", symbol=symbol, eth_in=round(eth_amount, 6), note="Transaction validated but not sent")
+            # Return None to indicate no actual transaction was sent
+            return None, True
+        
         signed = w3.eth.account.sign_transaction(tx, private_key=PRIVATE_KEY)
         sent = w3.eth.send_raw_transaction(signed.rawTransaction)
         tx_hash_hex = sent.hex()
@@ -314,8 +315,11 @@ def sell_token(token_address: str):
             tx["gas"] = 300000
 
         if config['TEST_MODE']:
-        log_event("eth.sell.simulated", symbol=symbol)
-            return "0xSIMULATED_SELL"
+            # In test mode, still build and validate transaction but don't send
+            # This allows testing with real market data and quotes
+            log_event("eth.sell.test_mode", symbol=symbol, note="Transaction validated but not sent")
+            # Return None to indicate no actual transaction was sent
+            return None
 
         signed = w3.eth.account.sign_transaction(tx, private_key=PRIVATE_KEY)
         tx_hash = w3.eth.send_raw_transaction(signed.rawTransaction)

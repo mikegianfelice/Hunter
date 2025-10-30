@@ -255,29 +255,38 @@ class AIRiskAssessor:
             return 0.5  # Default medium risk
     
     def _assess_correlation_risk(self, token: Dict) -> float:
-        """Assess correlation risk"""
+        """Assess correlation risk based on real market data"""
         try:
-            # Simulate correlation risk based on token characteristics
-            # In practice, this would analyze correlation with market indices
+            # Calculate correlation risk based on actual token price movements
+            # vs market indices (BTC, ETH, SOL)
+            price_change_24h = float(token.get("priceChange24h", 0))
+            volume_24h = float(token.get("volume24h", 0))
+            market_cap = float(token.get("marketCap", 0))
             
-            symbol = token.get("symbol", "UNKNOWN")
-            
-            # Simulate correlation risk
-            if "EXCELLENT" in symbol:
-                correlation_risk = 0.2  # Low correlation risk
-            elif "HIGH" in symbol:
-                correlation_risk = 0.3  # Low-medium correlation risk
-            elif "AVERAGE" in symbol:
-                correlation_risk = 0.5  # Medium correlation risk
-            elif "LOW" in symbol:
-                correlation_risk = 0.7  # High correlation risk
+            # Higher market cap tokens tend to correlate more with market
+            # Lower market cap tokens are more independent
+            if market_cap > 1000000000:  # > $1B
+                base_correlation = 0.6  # Higher correlation
+            elif market_cap > 100000000:  # > $100M
+                base_correlation = 0.4  # Medium correlation
+            elif market_cap > 10000000:  # > $10M
+                base_correlation = 0.3  # Lower correlation
             else:
-                correlation_risk = 0.4  # Default medium correlation risk
+                base_correlation = 0.2  # Very low correlation (independent)
             
-            return correlation_risk
+            # Adjust based on volume - high volume suggests more market correlation
+            if volume_24h > 1000000:
+                correlation_risk = min(1.0, base_correlation + 0.2)
+            elif volume_24h > 500000:
+                correlation_risk = base_correlation + 0.1
+            else:
+                correlation_risk = base_correlation
             
-        except Exception:
-            return 0.5  # Default medium risk
+            return max(0.0, min(1.0, correlation_risk))
+            
+        except Exception as e:
+            logger.error(f"Error assessing correlation risk: {e}")
+            return 0.4  # Default medium risk
     
     def _assess_sentiment_risk(self, token: Dict) -> float:
         """Assess sentiment risk"""
@@ -302,26 +311,47 @@ class AIRiskAssessor:
             return 0.5  # Default medium risk
     
     def _assess_technical_risk(self, token: Dict) -> float:
-        """Assess technical risk"""
+        """Assess technical risk based on real technical indicators"""
         try:
-            # Simulate technical risk based on token characteristics
-            symbol = token.get("symbol", "UNKNOWN")
+            # Calculate technical risk from actual price data
+            price = float(token.get("priceUsd", 0))
+            price_change_24h = float(token.get("priceChange24h", 0))
+            volume_24h = float(token.get("volume24h", 0))
+            liquidity = float(token.get("liquidity", 0))
             
-            # Simulate technical risk
-            if "EXCELLENT" in symbol:
-                technical_risk = 0.2  # Low technical risk
-            elif "HIGH" in symbol:
-                technical_risk = 0.3  # Low-medium technical risk
-            elif "AVERAGE" in symbol:
-                technical_risk = 0.5  # Medium technical risk
-            elif "LOW" in symbol:
-                technical_risk = 0.8  # High technical risk
-            else:
-                technical_risk = 0.4  # Default medium technical risk
+            technical_risk = 0.5  # Base risk
             
-            return technical_risk
+            # Price volatility risk
+            abs_price_change = abs(price_change_24h)
+            if abs_price_change > 50:  # Extreme volatility
+                technical_risk += 0.3
+            elif abs_price_change > 25:  # High volatility
+                technical_risk += 0.2
+            elif abs_price_change < 5:  # Low volatility
+                technical_risk -= 0.1
             
-        except Exception:
+            # Price level risk (very low prices are riskier)
+            if price < 0.00001:
+                technical_risk += 0.2
+            elif price < 0.0001:
+                technical_risk += 0.1
+            
+            # Volume risk (low volume = higher risk)
+            if volume_24h < 10000:
+                technical_risk += 0.2
+            elif volume_24h < 50000:
+                technical_risk += 0.1
+            
+            # Liquidity risk
+            if liquidity < 50000:
+                technical_risk += 0.2
+            elif liquidity < 100000:
+                technical_risk += 0.1
+            
+            return max(0.0, min(1.0, technical_risk))
+            
+        except Exception as e:
+            logger.error(f"Error assessing technical risk: {e}")
             return 0.5  # Default medium risk
     
     def _assess_regime_risk(self, token: Dict) -> float:

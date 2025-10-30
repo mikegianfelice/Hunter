@@ -10,7 +10,7 @@ STATE_JSONS: List[str] = [
     "open_positions.json",     # current positions
     "price_memory.json",       # last-seen prices for momentum
     "cooldown.json",           # token cooldowns
-    "risk_state.json",         # daily risk counters
+    "data/risk_state.json",         # daily risk counters
 ]
 STATE_MISC: List[str] = [
     ".monitor_lock",

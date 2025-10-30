@@ -164,7 +164,7 @@ class AIPortfolioOptimizer:
             position_volatilities = {}
             for pos in positions:
                 symbol = pos.get('symbol', 'UNKNOWN')
-                # Simulate volatility based on token characteristics
+                # Calculate volatility based on real token price data
                 volatility = self._calculate_position_volatility(pos)
                 position_volatilities[symbol] = volatility
             

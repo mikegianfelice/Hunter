@@ -341,7 +341,7 @@ def monitor_all_positions():
                 f"Chain: {chain_id.upper()}\n"
                 f"Entry: ${entry_price:.6f}\n"
                 f"Now: ${current_price:.6f} (+{gain * 100:.2f}%)\n"
-                f"TX: {tx or 'SIMULATED'}"
+                f"TX: {tx or 'N/A'}"
             )
             closed_positions.append(token_address)
             updated_positions.pop(token_address, None)
@@ -358,7 +358,7 @@ def monitor_all_positions():
                 f"Chain: {chain_id.upper()}\n"
                 f"Entry: ${entry_price:.6f}\n"
                 f"Now: ${current_price:.6f} ({gain * 100:.2f}%)\n"
-                f"TX: {tx or 'SIMULATED'}"
+                f"TX: {tx or 'N/A'}"
             )
             closed_positions.append(token_address)
             updated_positions.pop(token_address, None)
@@ -375,7 +375,7 @@ def monitor_all_positions():
                 f"Chain: {chain_id.upper()}\n"
                 f"Entry: ${entry_price:.6f}\n"
                 f"Now: ${current_price:.6f}\n"
-                f"TX: {tx or 'SIMULATED'}"
+                f"TX: {tx or 'N/A'}"
             )
             closed_positions.append(token_address)
             updated_positions.pop(token_address, None)

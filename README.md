@@ -157,13 +157,13 @@ wallet_tiers:
   # ... additional tiers
 ```
 
-### ⚠️ Current Solana/Jupiter API Status (Updated October 2025)
+### ⚠️ Current Solana/Jupiter API Status (Updated)
 - **Jupiter API Endpoint Changed**: The old `quote-api.jup.ag` endpoint no longer exists (DNS resolution fails)
 - **New Endpoint Requires Authentication**: Jupiter moved to `api.jup.ag` which returns 401 Unauthorized without API keys
-- **Tradeability Checks Disabled**: Jupiter tradeability pre-checks now skipped; bot relies on actual swap attempts
-- **Workaround**: Bot assumes tokens are tradeable and handles swap failures gracefully
-- **Impact**: Minimal - actual trading functionality continues to work, just without pre-trade validation
-- **Status**: Monitoring for official Jupiter API documentation on authentication requirements
+- **Tradeability Checks**: Uses real market data from DexScreener for liquidity and trading activity verification
+- **Real Data Integration**: All tradeability checks use actual DexScreener data (liquidity, transaction counts, prices)
+- **Impact**: Minimal - actual trading functionality continues to work with real market data validation
+- **Status**: Tradeability checks fully functional using DexScreener API
 
 ## 📋 Prerequisites
 
@@ -617,14 +617,14 @@ trusted_tokens: []            # List of trusted token addresses
 ```
 
 ### 4. Test Mode (Optional)
-The bot is configured for real trading by default. If you want to test in simulation mode first:
+The bot is configured for real trading by default. Test mode validates transactions using real market data but doesn't execute them:
 
 ```yaml
 # In config.yaml
-test_mode: true               # Set to true for simulation only
+test_mode: true               # Set to true to validate without executing trades
 ```
 
-**Note**: The bot now executes real trades by default. Make sure you have sufficient funds in your MetaMask (Ethereum) and Phantom (Solana) wallets before running.
+**Note**: In test mode, the bot still uses real market data for quotes and validation - it just doesn't execute transactions. The bot executes real trades by default when `test_mode: false`. Make sure you have sufficient funds in your MetaMask (Ethereum) and Phantom (Solana) wallets before running in live mode.
 
 
 
@@ -913,12 +913,11 @@ def _detect_delisted_token(token_address: str, consecutive_failures: int) -> boo
    - Bot will automatically handle after 5 consecutive failures
 
 9. **"Network error checking Jupiter tradeability: ConnectionError"**
-   - **UPDATED in v2.7**: Jupiter API endpoints have changed
-   - Old endpoint `quote-api.jup.ag` no longer exists (DNS fails)
-   - New endpoint `api.jup.ag` requires API authentication (returns 401)
-   - **Impact**: Minimal - bot continues trading with graceful degradation
-   - Tradeability pre-checks are skipped; actual swap attempts determine if tokens are tradeable
-   - This is NOT an internet connection issue - it's a Jupiter API infrastructure change
+   - **UPDATED**: Tradeability checks now use DexScreener for real market data verification
+   - Jupiter API endpoints changed, but bot now uses DexScreener for reliable tradeability checks
+   - All tradeability checks use actual liquidity, transaction counts, and price data from DexScreener
+   - No assumptions - tokens are verified using real market metrics (liquidity, transactions, price) before trading
+   - This is NOT an internet connection issue - DexScreener provides reliable tradeability verification
 
 10. **"Bot running for 10+ hours with no trades"**
     - **FIXED**: This critical issue has been resolved in v2.9

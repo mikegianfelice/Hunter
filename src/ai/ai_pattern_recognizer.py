@@ -128,7 +128,7 @@ class AIPatternRecognizer:
         try:
             pattern_analysis = {}
             
-            # Simulate pattern detection based on token characteristics
+            # Detect patterns based on real token price and volume data
             symbol = token.get("symbol", "UNKNOWN")
             price = float(token.get("priceUsd", 0))
             volume_24h = float(token.get("volume24h", 0))
