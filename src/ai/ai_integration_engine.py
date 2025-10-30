@@ -403,7 +403,7 @@ class AIIntegrationEngine:
         log_info("Initializing AI Integration Engine")
         
         # Initialize cache
-        self.cache = await get_cache()
+        self.cache = get_cache()
         
         # Initialize AI modules
         if not await self.module_connector.initialize_modules():
@@ -425,7 +425,7 @@ class AIIntegrationEngine:
         try:
             # Check cache first
             cache_key = f"ai_analysis_{symbol}_{hash(str(token_data))}"
-            cached_result = await cache_get(cache_key)
+            cached_result = cache_get(cache_key)
             if cached_result:
                 log_info("ai.cache", f"Using cached AI analysis for {symbol}")
                 return AIAnalysisResult(**cached_result)
@@ -485,7 +485,7 @@ class AIIntegrationEngine:
             )
             
             # Cache the result
-            await cache_set(cache_key, asdict(result), self.cache_ttl)
+            cache_set(cache_key, asdict(result), self.cache_ttl)
             
             log_info("ai.analysis_complete", f"AI analysis complete for {symbol}: score={overall_score:.2f}, confidence={result.confidence:.2f}")
             return result
