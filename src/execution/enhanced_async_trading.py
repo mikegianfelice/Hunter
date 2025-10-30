@@ -314,10 +314,10 @@ class EnhancedAsyncTradingEngine:
                 
                 # Risk assessment
                 risk_result = await assess_trade_risk(token, position_size)
-                if not risk_result.get('approved', False):
+                if not risk_result.approved:
                     return {
                         "success": False,
-                        "error": f"Risk assessment failed: {risk_result.get('reason', 'Unknown')}",
+                        "error": f"Risk assessment failed: {risk_result.reason}",
                         "symbol": symbol
                     }
                 
@@ -338,8 +338,17 @@ class EnhancedAsyncTradingEngine:
                     log_info("trading.success", f"✅ Trade successful: {symbol} - PnL: ${profit_loss:.2f}")
                     
                     # Record metrics
-                    record_trade_metrics(True, execution_time, profit_loss)
-                    update_trade_result(token, True, profit_loss)
+                    record_trade_metrics(
+                        symbol=symbol,
+                        chain=chain,
+                        amount_usd=position_size,
+                        success=True,
+                        execution_time_ms=execution_time,
+                        profit_loss_usd=profit_loss,
+                        quality_score=token.get('ai_analysis', {}).get('quality_score', 0.5),
+                        risk_score=risk_result.overall_risk_score
+                    )
+                    update_trade_result(True, profit_loss)
                     
                     return {
                         "success": True,
@@ -358,8 +367,17 @@ class EnhancedAsyncTradingEngine:
                     log_error("trading.trade_failed", f"❌ Trade failed: {symbol}")
                     
                     # Record metrics
-                    record_trade_metrics(False, execution_time, -loss)
-                    update_trade_result(token, False, -loss)
+                    record_trade_metrics(
+                        symbol=symbol,
+                        chain=chain,
+                        amount_usd=position_size,
+                        success=False,
+                        execution_time_ms=execution_time,
+                        profit_loss_usd=-loss,
+                        quality_score=token.get('ai_analysis', {}).get('quality_score', 0.5),
+                        risk_score=risk_result.overall_risk_score
+                    )
+                    update_trade_result(False, -loss)
                     
                     return {
                         "success": False,
@@ -375,8 +393,18 @@ class EnhancedAsyncTradingEngine:
                 log_error("trading.execution_error", f"Trade execution error for {symbol}: {e}")
                 
                 # Record error metrics
-                record_trade_metrics(False, execution_time, 0)
-                update_trade_result(token, False, 0)
+                record_trade_metrics(
+                    symbol=symbol,
+                    chain=chain,
+                    amount_usd=position_size,
+                    success=False,
+                    execution_time_ms=execution_time,
+                    profit_loss_usd=0,
+                    quality_score=0,
+                    risk_score=1.0,
+                    error_message=str(e)
+                )
+                update_trade_result(False, 0)
                 
                 return {
                     "success": False,
