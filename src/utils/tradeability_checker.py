@@ -53,26 +53,78 @@ def _record_circuit_breaker_success():
     _raydium_circuit_breaker["failures"] = 0
     _raydium_circuit_breaker["is_open"] = False
 
+def _check_dexscreener_tradeability(token_address: str) -> bool:
+    """Helper function to check tradeability via DexScreener"""
+    try:
+        url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
+        data = get_json(url, timeout=12, retries=2, backoff=1.5)
+        
+        if data and data.get("pairs"):
+            pairs = data["pairs"]
+            if pairs:
+                richest = max(pairs, key=lambda p: float((p.get("liquidity") or {}).get("usd") or 0))
+                liquidity_usd = float((richest.get("liquidity") or {}).get("usd") or 0)
+                txns = richest.get("txns", {}).get("h24", {})
+                tx_count = int(txns.get("buys") or 0) + int(txns.get("sells") or 0)
+                price_usd = float(richest.get("priceUsd") or 0)
+                
+                if liquidity_usd >= 15000 and tx_count >= 50 and price_usd > 0:
+                    return True
+        return False
+    except Exception:
+        return False
+
 def check_jupiter_tradeability(token_address: str, chain_id: str = "solana") -> bool:
     """
-    Check if a token is tradeable on Jupiter
-    Returns True if tradeable, False otherwise
-    
-    NOTE: Jupiter's quote-api.jup.ag endpoint no longer exists (DNS resolution fails).
-    The new api.jup.ag requires API keys (returns 401 Unauthorized).
-    This function now assumes tokens are tradeable and relies on actual swap attempts to determine tradeability.
+    Check if a token is tradeable on Solana using real market data from DexScreener and Jupiter price API.
+    Returns True if tradeable (has liquidity and trading activity), False otherwise.
     """
     if chain_id.lower() != "solana":
-        return True  # Skip check for non-Solana chains
+        return False  # Only check Solana tokens
     
-    # Jupiter API endpoint has changed and now requires authentication
-    # quote-api.jup.ag no longer resolves (DNS failure)
-    # api.jup.ag exists but returns 401 Unauthorized without API keys
-    # 
-    # Workaround: Assume all tokens are tradeable
-    # The actual swap will fail if the token is not tradeable, which is handled elsewhere
-    print(f"ℹ️  Jupiter API check skipped for {token_address[:8]}...{token_address[-8:]} (API requires auth)")
-    return True  # Assume tradeable - let the actual swap attempt handle failures
+    try:
+        # Method 1: Check DexScreener for real trading pairs and liquidity
+        url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
+        data = get_json(url, timeout=12, retries=2, backoff=1.5)
+        
+        if data and data.get("pairs"):
+            pairs = data["pairs"]
+            if pairs:
+                # Find the pair with highest liquidity
+                richest = max(pairs, key=lambda p: float((p.get("liquidity") or {}).get("usd") or 0))
+                
+                liquidity_usd = float((richest.get("liquidity") or {}).get("usd") or 0)
+                txns = richest.get("txns", {}).get("h24", {})
+                tx_count = int(txns.get("buys") or 0) + int(txns.get("sells") or 0)
+                price_usd = float(richest.get("priceUsd") or 0)
+                
+                # Real tradeability criteria: minimum liquidity and trading activity
+                if liquidity_usd >= 15000 and tx_count >= 50 and price_usd > 0:
+                    print(f"✅ Jupiter tradeability confirmed via DexScreener: ${liquidity_usd:,.0f} liquidity, {tx_count} txns/24h")
+                    return True
+        
+        # Method 2: Fallback to Jupiter price API (no auth required for price endpoint)
+        try:
+            price_url = f"https://price.jup.ag/v4/price?ids={token_address}"
+            price_data = get_json(price_url, timeout=10, retries=1, backoff=1.0)
+            
+            if price_data and price_data.get("data") and token_address in price_data["data"]:
+                price_info = price_data["data"][token_address]
+                price = float(price_info.get("price") or 0)
+                
+                if price > 0:
+                    print(f"✅ Jupiter price available for {token_address[:8]}...{token_address[-8:]}: ${price}")
+                    return True
+        except Exception as e:
+            print(f"⚠️ Jupiter price API check failed: {e}")
+        
+        # No valid trading data found
+        print(f"❌ No tradeable pairs found for {token_address[:8]}...{token_address[-8:]}")
+        return False
+        
+    except Exception as e:
+        print(f"⚠️ Jupiter tradeability check failed for {token_address[:8]}...{token_address[-8:]}: {e}")
+        return False  # Return False on error instead of assuming tradeable
 
 def check_raydium_tradeability(token_address: str, chain_id: str = "solana") -> bool:
     """
@@ -80,12 +132,13 @@ def check_raydium_tradeability(token_address: str, chain_id: str = "solana") -> 
     Returns True if tradeable, False otherwise
     """
     if chain_id.lower() != "solana":
-        return True  # Skip check for non-Solana chains
+        return False  # Only check Solana tokens
     
     # Check circuit breaker first
     if _check_circuit_breaker():
-        print(f"⚠️ Raydium circuit breaker is open - skipping API calls for {token_address[:8]}...{token_address[-8:]}")
-        return True  # Assume tradeable when circuit breaker is open
+        print(f"⚠️ Raydium circuit breaker is open - using DexScreener fallback for {token_address[:8]}...{token_address[-8:]}")
+        # Use DexScreener as fallback when circuit breaker is open
+        return _check_dexscreener_tradeability(token_address)
     
     try:
         # Try to get token info from Raydium API with retry logic
@@ -124,7 +177,8 @@ def check_raydium_tradeability(token_address: str, chain_id: str = "solana") -> 
     except Exception as e:
         print(f"⚠️ Raydium tradeability check failed for {token_address[:8]}...{token_address[-8:]}: {e}")
         _record_circuit_breaker_failure()  # Record failure
-        return True  # Assume tradeable if check fails
+        # Fallback to DexScreener instead of assuming tradeable
+        return _check_dexscreener_tradeability(token_address)
 
 def _test_raydium_quote(token_address: str) -> bool:
     """Test if we can get a quote from Raydium for this token with enhanced error handling"""
@@ -205,28 +259,48 @@ def _test_raydium_alternative(token_address: str) -> bool:
 
 def check_ethereum_tradeability(token_address: str, chain_id: str = "ethereum") -> bool:
     """
-    Check if a token is tradeable on Ethereum (Uniswap)
-    Returns True if tradeable, False otherwise
+    Check if a token is tradeable on EVM chains using real market data from DexScreener.
+    Returns True if tradeable (has liquidity and trading activity), False otherwise.
     """
-    if chain_id.lower() != "ethereum":
-        return True  # Skip check for non-Ethereum chains
+    if chain_id.lower() not in ["ethereum", "base", "arbitrum", "polygon", "bsc"]:
+        return False  # Only check supported EVM chains
     
     try:
-        # Test with a small quote from Uniswap
-        from utils import fetch_token_price_usd
-        price = fetch_token_price_usd(token_address)
+        # Use DexScreener to check real trading pairs and liquidity
+        url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
+        data = get_json(url, timeout=12, retries=2, backoff=1.5)
         
-        # If we can get a price, assume it's tradeable
-        if price is not None and price > 0:
+        if not data or not data.get("pairs"):
+            print(f"❌ No trading pairs found for {token_address[:8]}...{token_address[-8:]} on {chain_id}")
+            return False
+        
+        pairs = data["pairs"]
+        # Filter pairs for the specific chain
+        chain_pairs = [p for p in pairs if p.get("chainId", "").lower() == chain_id.lower()]
+        
+        if not chain_pairs:
+            print(f"❌ No pairs found on {chain_id} for {token_address[:8]}...{token_address[-8:]}")
+            return False
+        
+        # Find the pair with highest liquidity
+        richest = max(chain_pairs, key=lambda p: float((p.get("liquidity") or {}).get("usd") or 0))
+        
+        liquidity_usd = float((richest.get("liquidity") or {}).get("usd") or 0)
+        txns = richest.get("txns", {}).get("h24", {})
+        tx_count = int(txns.get("buys") or 0) + int(txns.get("sells") or 0)
+        price_usd = float(richest.get("priceUsd") or 0)
+        
+        # Real tradeability criteria: minimum liquidity and trading activity
+        if liquidity_usd >= 20000 and tx_count >= 75 and price_usd > 0:
+            print(f"✅ {chain_id} tradeability confirmed: ${liquidity_usd:,.0f} liquidity, {tx_count} txns/24h")
             return True
-        
-        # If price check fails, assume tradeable anyway (Graph API is unreliable)
-        print(f"⚠️ Ethereum price check failed for {token_address[:8]}...{token_address[-8:]}, assuming tradeable")
-        return True
+        else:
+            print(f"❌ {chain_id} token insufficient: ${liquidity_usd:,.0f} liquidity, {tx_count} txns/24h")
+            return False
         
     except Exception as e:
-        print(f"⚠️ Ethereum tradeability check failed for {token_address[:8]}...{token_address[-8:]}: {e}")
-        return True  # Assume tradeable if check fails
+        print(f"⚠️ {chain_id} tradeability check failed for {token_address[:8]}...{token_address[-8:]}: {e}")
+        return False  # Return False on error instead of assuming tradeable
 
 def is_token_tradeable(token_data: Dict) -> Tuple[bool, str]:
     """
@@ -255,7 +329,7 @@ def is_token_tradeable(token_data: Dict) -> Tuple[bool, str]:
     if detected == "evm":
         token_address = normalize_evm_address(token_address)
 
-    # Check tradeability based on chain
+    # Check tradeability based on chain using real market data
     if chain_id == "solana":
         # For Solana, check both Jupiter and Raydium
         jupiter_ok = check_jupiter_tradeability(token_address, chain_id)
@@ -264,24 +338,20 @@ def is_token_tradeable(token_data: Dict) -> Tuple[bool, str]:
         if jupiter_ok or raydium_ok:
             return True, "tradeable_on_solana"
         else:
-            # If both checks fail, assume tradeable anyway (APIs can be unreliable)
-            print(f"⚠️ Both Jupiter and Raydium checks failed for {symbol}, assuming tradeable")
-            return True, "assumed_tradeable_on_solana"
+            # Both checks failed - token is not tradeable
+            return False, "not_tradeable_on_solana"
     
-    elif chain_id == "ethereum":
-        ethereum_ok = check_ethereum_tradeability(token_address, chain_id)
-        if ethereum_ok:
-            return True, "tradeable_on_ethereum"
+    elif chain_id in ["ethereum", "base", "arbitrum", "polygon", "bsc"]:
+        # Use real DexScreener check for all EVM chains
+        is_tradeable = check_ethereum_tradeability(token_address, chain_id)
+        if is_tradeable:
+            return True, f"tradeable_on_{chain_id}"
         else:
-            return False, "not_tradeable_on_ethereum"
-    
-    elif chain_id == "base":
-        # For Base, assume tradeable for now (similar to Ethereum)
-        return True, "tradeable_on_base"
+            return False, f"not_tradeable_on_{chain_id}"
     
     else:
-        # For unknown chains, assume tradeable
-        return True, "unknown_chain_assume_tradeable"
+        # Unknown/unsupported chains - return False instead of assuming
+        return False, f"unsupported_chain_{chain_id}"
 
 def filter_tradeable_tokens(tokens: List[Dict], max_checks: int = 50) -> List[Dict]:
     """
@@ -318,12 +388,12 @@ def filter_tradeable_tokens(tokens: List[Dict], max_checks: int = 50) -> List[Di
 
 def quick_tradeability_check(token_address: str, chain_id: str = "solana") -> bool:
     """
-    Quick tradeability check for a single token
+    Quick tradeability check for a single token using real market data
     Returns True if tradeable, False otherwise
     """
     if chain_id.lower() == "solana":
         return check_jupiter_tradeability(token_address, chain_id)
-    elif chain_id.lower() == "ethereum":
+    elif chain_id.lower() in ["ethereum", "base", "arbitrum", "polygon", "bsc"]:
         return check_ethereum_tradeability(token_address, chain_id)
     else:
-        return True  # Assume tradeable for other chains
+        return False  # Return False for unsupported chains instead of assuming
