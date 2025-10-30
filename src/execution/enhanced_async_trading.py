@@ -789,7 +789,8 @@ async def run_enhanced_async_trading():
                     
                     # Wait between cycles
                     wait_time = 300  # 5 minutes
-                    log_info("trading.wait", f"⏰ Waiting {wait_time} seconds before next cycle...")
+                    wait_minutes = wait_time / 60
+                    log_info("trading.wait", f"⏰ Waiting {wait_minutes:.1f} minutes before next cycle...")
                     await asyncio.sleep(wait_time)
                     
                 except Exception as e:

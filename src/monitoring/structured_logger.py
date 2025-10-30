@@ -377,20 +377,26 @@ def get_structured_logger() -> StructuredLogger:
     return structured_logger
 
 # Convenience functions
-def log_info(event: str, message: str, context: Dict[str, Any] = None, 
-             performance_metrics: Dict[str, Any] = None):
-    """Log info message"""
-    structured_logger.info(event, message, context, performance_metrics)
+def log_info(event: str, message: Optional[str] = None, context: Dict[str, Any] = None, 
+             performance_metrics: Dict[str, Any] = None, **kwargs):
+    """Log info message (flexible: accepts event+message or event+kwargs as context)"""
+    if kwargs:
+        context = {**(context or {}), **kwargs}
+    structured_logger.info(event, message or "", context, performance_metrics)
 
-def log_error(event: str, message: str, context: Dict[str, Any] = None, 
-              performance_metrics: Dict[str, Any] = None):
-    """Log error message"""
-    structured_logger.error(event, message, context, performance_metrics)
+def log_error(event: str, message: Optional[str] = None, context: Dict[str, Any] = None, 
+              performance_metrics: Dict[str, Any] = None, **kwargs):
+    """Log error message (flexible: accepts event+message or event+kwargs as context)"""
+    if kwargs:
+        context = {**(context or {}), **kwargs}
+    structured_logger.error(event, message or "", context, performance_metrics)
 
-def log_warning(event: str, message: str, context: Dict[str, Any] = None, 
-                performance_metrics: Dict[str, Any] = None):
-    """Log warning message"""
-    structured_logger.warning(event, message, context, performance_metrics)
+def log_warning(event: str, message: Optional[str] = None, context: Dict[str, Any] = None, 
+                performance_metrics: Dict[str, Any] = None, **kwargs):
+    """Log warning message (flexible: accepts event+message or event+kwargs as context)"""
+    if kwargs:
+        context = {**(context or {}), **kwargs}
+    structured_logger.warning(event, message or "", context, performance_metrics)
 
 def log_trade(trade_type: str, symbol: str, amount: float, 
               success: bool, profit_loss: float = 0.0, 
