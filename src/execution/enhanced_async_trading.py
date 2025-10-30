@@ -282,8 +282,8 @@ class EnhancedAsyncTradingEngine:
             
             # Import the appropriate executor based on chain
             if chain.lower() == "solana":
-                from src.execution.jupiter_executor import buy_token_solana
-                from src.execution.raydium_executor import RaydiumExecutor
+                from .jupiter_executor import buy_token_solana
+                from .raydium_executor import RaydiumExecutor
                 
                 # Try Jupiter first
                 try:
@@ -318,7 +318,7 @@ class EnhancedAsyncTradingEngine:
                     log_error("trading.raydium_error", f"Raydium execution failed: {e}")
                     
             elif chain.lower() in ["ethereum", "base", "arbitrum", "polygon"]:
-                from src.execution.uniswap_executor import buy_token
+                from .uniswap_executor import buy_token
                 
                 # Execute Uniswap trade
                 try:
@@ -502,6 +502,9 @@ class EnhancedAsyncTradingEngine:
         chain = token.get("chain", "ethereum")
         position_size = token.get("recommended_position_size", 5)
         take_profit = token.get("recommended_tp", 0.15)
+        
+        # DEBUG: Log that we're entering the trade execution
+        log_info("trading.debug", f"🔍 DEBUG: Entering _execute_trade_async for {symbol} on {chain}")
         
         async with self.rate_limiter:
             start_time = time.time()

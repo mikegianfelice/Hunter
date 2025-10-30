@@ -11,7 +11,7 @@ import time
 from typing import Tuple, Optional, Dict, Any, List
 from solders.keypair import Keypair
 import base58
-from http_utils import get_json, post_json
+from ..utils.http_utils import get_json, post_json
 
 class JupiterCustomLib:
     def __init__(self, rpc_url: str, wallet_address: str, private_key: str):
