@@ -119,11 +119,26 @@ if [ "$remaining_processes" -eq 0 ]; then
     # Send Telegram notification
     echo -e "${BLUE}📨 Sending Telegram notification...${NC}"
     if command -v python3 &> /dev/null; then
-        python3 -c "
-from telegram_bot import send_telegram_message
+        # Get the directory where this script is located
+        SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+        # Change to the parent directory where main.py is located
+        cd "$SCRIPT_DIR/.."
+        
+        python3 << 'PYTHON_SCRIPT' 2>/dev/null || echo -e "${YELLOW}⚠️  Could not send Telegram notification (Python/telegram_bot not available)${NC}"
 import sys
+import os
+
+# We're already in the project root directory (cd'd there above)
+project_root = os.getcwd()
+sys.path.insert(0, project_root)
+
 try:
-    result = send_telegram_message('🛑 Sustainable Trading Bot Stopped\\n\\nBot has been manually stopped via stop_bot.sh\\n\\nStatus: All processes terminated successfully')
+    from src.monitoring.telegram_bot import send_telegram_message
+    result = send_telegram_message(
+        '🛑 Sustainable Trading Bot Stopped\n\nBot has been manually stopped via stop_bot.sh\n\nStatus: All processes terminated successfully',
+        deduplicate=False,
+        message_type="status"
+    )
     if result:
         print('✅ Telegram notification sent successfully')
     else:
@@ -131,7 +146,7 @@ try:
 except Exception as e:
     print(f'❌ Error sending Telegram notification: {e}')
     sys.exit(0)  # Don't fail the script if Telegram fails
-" 2>/dev/null || echo -e "${YELLOW}⚠️  Could not send Telegram notification (Python/telegram_bot not available)${NC}"
+PYTHON_SCRIPT
     else
         echo -e "${YELLOW}⚠️  Python3 not available, skipping Telegram notification${NC}"
     fi

@@ -22,6 +22,7 @@ from src.deployment.production_manager import ProductionManager
 from src.execution.enhanced_async_trading import run_enhanced_async_trading
 from src.monitoring.realtime_dashboard import start_realtime_dashboard
 from src.analytics.backtesting_engine import run_comprehensive_backtest, optimize_strategy
+from src.monitoring.telegram_bot import send_telegram_message
 
 # Global variables for graceful shutdown
 shutdown_event = asyncio.Event()
@@ -256,6 +257,12 @@ async def main():
     # Start logging session
     start_logging_session()
     
+    # Send Telegram notification on startup
+    try:
+        send_telegram_message("✅ Hunter Trading Bot Started\n\nBot is now running and monitoring markets.", deduplicate=False, message_type="status")
+    except Exception as e:
+        log_info("main.telegram", f"Could not send startup Telegram notification: {e}")
+    
     try:
         # Route to appropriate mode
         if mode == "production":
@@ -299,6 +306,13 @@ async def main():
                 pass
         
         end_logging_session()
+        
+        # Send Telegram notification on shutdown
+        try:
+            send_telegram_message("🛑 Hunter Trading Bot Stopped\n\nBot has been shut down.", deduplicate=False, message_type="status")
+        except Exception as e:
+            log_info("main.telegram", f"Could not send shutdown Telegram notification: {e}")
+        
         log_info("main.shutdown", "👋 Hunter Trading Bot shutdown complete")
 
 if __name__ == "__main__":

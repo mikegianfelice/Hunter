@@ -2,7 +2,11 @@
 import requests
 import time
 import hashlib
-from secrets import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+import sys
+import os
+# Add src to path for imports
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+from src.config.secrets import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 import threading
 from datetime import datetime
 
