@@ -6,7 +6,7 @@ Blocks trading during unfavorable market conditions, crashes, manipulation, and 
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional
-from market_data_fetcher import market_data_fetcher
+from src.utils.market_data_fetcher import market_data_fetcher
 import math
 
 # Configure logging

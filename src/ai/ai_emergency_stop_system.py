@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional
 import random
 import math
-from logger import log_event
+from src.monitoring.logger import log_event
 
 def get_config():
     """Get configuration from config.yaml"""
@@ -179,7 +179,7 @@ class AIEmergencyStopSystem:
         """Analyze market volatility for emergency conditions"""
         try:
             # Calculate market volatility using real data
-            from market_data_fetcher import market_data_fetcher
+            from src.utils.market_data_fetcher import market_data_fetcher
             volatility = market_data_fetcher.get_market_volatility(hours=24)
             
             # Determine volatility severity
@@ -308,7 +308,7 @@ class AIEmergencyStopSystem:
         try:
             # Estimate crash probability deterministically from drawdown and volatility
             current_drawdown = float(market_data.get('current_drawdown', 0))
-            from market_data_fetcher import market_data_fetcher
+            from src.utils.market_data_fetcher import market_data_fetcher
             vol = market_data_fetcher.get_market_volatility(hours=24)
             crash_probability = max(0.0, min(0.9, 0.2 * current_drawdown + 0.5 * vol))
             

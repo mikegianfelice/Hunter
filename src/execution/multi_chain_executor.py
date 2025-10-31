@@ -14,7 +14,7 @@ from src.config.secrets import INFURA_URL, WALLET_ADDRESS, SOLANA_RPC_URL, SOLAN
 from utils import get_eth_price_usd
 from telegram_bot import send_telegram_message
 from config_loader import get_config, get_config_bool, get_config_float
-from logger import log_event
+from src.monitoring.logger import log_event
 from advanced_trading import advanced_trading
 from address_utils import validate_chain_address_match, normalize_evm_address, detect_chain_from_address
 
