@@ -8,7 +8,7 @@ import yaml
 import requests
 from src.config.config_loader import get_config, get_config_bool, get_config_float, get_config_int, get_config_values
 
-PRICE_MEM_FILE = "price_memory.json"
+PRICE_MEM_FILE = "data/price_memory.json"
 
 @contextmanager
 def _atomic_write_json(path: Path):
@@ -40,6 +40,7 @@ def _load_price_mem() -> dict:
 def _save_price_mem(mem: dict):
     try:
         target = Path(PRICE_MEM_FILE)
+        target.parent.mkdir(parents=True, exist_ok=True)
         with _atomic_write_json(target) as f:
             json.dump(mem, f, indent=2)
     except Exception:
@@ -92,8 +93,8 @@ def _add_to_delisted_tokens(address: str, symbol: str, reason: str):
         # Fallback to old method if smart verification fails
         try:
             # Load existing delisted tokens
-            if os.path.exists("delisted_tokens.json"):
-                with open("delisted_tokens.json", "r") as f:
+            if os.path.exists("data/delisted_tokens.json"):
+                with open("data/delisted_tokens.json", "r") as f:
                     data = json.load(f) or {}
             else:
                 data = {"failure_counts": {}, "delisted_tokens": []}
@@ -107,7 +108,8 @@ def _add_to_delisted_tokens(address: str, symbol: str, reason: str):
                 data["delisted_tokens"] = delisted_tokens
                 
                 # Save updated data
-                with open("delisted_tokens.json", "w") as f:
+                os.makedirs('data', exist_ok=True)
+                with open("data/delisted_tokens.json", "w") as f:
                     json.dump(data, f, indent=2)
                 
                 print(f"🛑 Added {symbol} ({address}) to delisted tokens: {reason}")
@@ -139,7 +141,7 @@ def _check_token_delisted(token: dict) -> bool:
     
     # Check if token is already in our delisted tokens list
     try:
-        with open("delisted_tokens.json", "r") as f:
+        with open("data/delisted_tokens.json", "r") as f:
             data = json.load(f) or {}
             delisted_tokens = data.get("delisted_tokens", [])
             if address.lower() in [t.lower() for t in delisted_tokens]:

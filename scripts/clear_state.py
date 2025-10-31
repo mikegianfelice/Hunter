@@ -7,26 +7,28 @@ from typing import List
 
 # Files we can safely clear between modes
 STATE_JSONS: List[str] = [
-    "open_positions.json",     # current positions
-    "price_memory.json",       # last-seen prices for momentum
-    "cooldown.json",           # token cooldowns
+    "data/open_positions.json",     # current positions
+    "data/price_memory.json",       # last-seen prices for momentum
+    "data/cooldown.json",           # token cooldowns
     "data/risk_state.json",         # daily risk counters
 ]
 STATE_MISC: List[str] = [
-    ".monitor_lock",
-    "system/.monitor_heartbeat",
-    "entry_price.txt",
-    "blacklist.json",          # optional: comment this out if you want to keep blacklist
+    "data/.monitor_lock",
+    "data/.monitor_heartbeat",
+    "data/entry_price.txt",
+    "data/blacklist.json",          # optional: comment this out if you want to keep blacklist
 ]
 LOGS_SAFE_TO_ARCHIVE: List[str] = [
-    "trending_tokens.csv",
-    "trade_log.csv",
+    "data/trending_tokens.csv",
+    "data/trade_log.csv",
 ]
 
 RUN_STATE = "system/.run_state.json"  # remembers last known mode so we clear only on changes
 
 def _write_json(path: str, data):
-    Path(path).write_text(json.dumps(data, indent=2))
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data, indent=2))
 
 def _read_json(path: str):
     try:
@@ -50,6 +52,7 @@ def _archive_file(p: Path, tag: str):
 def _clear_json(path: str):
     p = Path(path)
     try:
+        p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text("{}")
         print(f"🧹 Cleared {p}")
     except Exception as e:

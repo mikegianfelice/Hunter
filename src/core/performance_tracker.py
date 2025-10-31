@@ -12,7 +12,7 @@ from collections import defaultdict
 import statistics
 
 class PerformanceTracker:
-    def __init__(self, data_file: str = "performance_data.json"):
+    def __init__(self, data_file: str = "data/performance_data.json"):
         self.data_file = data_file
         self.trades = []
         self.daily_stats = {}
@@ -46,6 +46,7 @@ class PerformanceTracker:
                 'daily_stats': self.daily_stats,
                 'last_updated': datetime.now().isoformat()
             }
+            os.makedirs('data', exist_ok=True)
             with open(self.data_file, 'w') as f:
                 json.dump(data, f, indent=2)
         except Exception as e:

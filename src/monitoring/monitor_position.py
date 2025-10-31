@@ -22,11 +22,11 @@ def get_monitor_config():
         'TRAILING_STOP': get_config_float("trailing_stop_percent", 0)
     }
 
-POSITIONS_FILE = "open_positions.json"
-LOG_FILE = "trade_log.csv"
-MONITOR_LOCK = ".monitor_lock"
-HEARTBEAT_FILE = "system/.monitor_heartbeat"
-DELISTED_TOKENS_FILE = "delisted_tokens.json"
+POSITIONS_FILE = "data/open_positions.json"
+LOG_FILE = "data/trade_log.csv"
+MONITOR_LOCK = "data/.monitor_lock"
+HEARTBEAT_FILE = "data/.monitor_heartbeat"
+DELISTED_TOKENS_FILE = "data/delisted_tokens.json"
 
 # === Global for cleanup ===
 _running = True
@@ -43,6 +43,7 @@ def _pid_is_alive(pid: int) -> bool:
 
 def _write_lock():
     data = {"pid": os.getpid(), "started_at": datetime.utcnow().isoformat()}
+    os.makedirs('data', exist_ok=True)
     with open(MONITOR_LOCK, "w") as f:
         json.dump(data, f)
     print(f"🔒 Monitor lock acquired with PID {data['pid']}")
@@ -83,6 +84,7 @@ def _ensure_singleton():
 
 def _heartbeat():
     try:
+        os.makedirs('data', exist_ok=True)
         with open(HEARTBEAT_FILE, "w") as f:
             f.write(datetime.utcnow().isoformat())
     except Exception:
@@ -108,6 +110,7 @@ def load_positions():
             return {}
 
 def save_positions(positions):
+    os.makedirs('data', exist_ok=True)
     with open(POSITIONS_FILE, "w") as f:
         json.dump(positions, f, indent=2)
 
@@ -121,6 +124,7 @@ def load_delisted_tokens():
             return {}
 
 def save_delisted_tokens(delisted):
+    os.makedirs('data', exist_ok=True)
     with open(DELISTED_TOKENS_FILE, "w") as f:
         json.dump(delisted, f, indent=2)
 
@@ -136,6 +140,7 @@ def log_trade(token, entry_price, exit_price, reason="normal"):
     }
     file_exists = os.path.isfile(LOG_FILE)
     try:
+        os.makedirs('data', exist_ok=True)
         with open(LOG_FILE, "a", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=row.keys())
             if not file_exists:

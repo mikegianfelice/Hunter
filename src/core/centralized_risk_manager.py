@@ -88,7 +88,7 @@ class CentralizedRiskManager:
         }
         
         # Initialize open positions tracking
-        self.positions_file = "open_positions.json"
+        self.positions_file = "data/open_positions.json"
         self.open_positions = self._load_open_positions()
         
         # Load existing risk state

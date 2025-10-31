@@ -102,9 +102,9 @@ CHAIN_CONFIGS = {
 }
 
 # Housekeeping
-POSITIONS_FILE = "open_positions.json"
+POSITIONS_FILE = "data/open_positions.json"
 MONITOR_SCRIPT = "monitor_position.py"
-PRICE_MEMORY_FILE = "price_memory.json"
+PRICE_MEMORY_FILE = "data/price_memory.json"
 
 def get_chain_config(chain_id: str) -> Dict[str, Any]:
     """Get configuration for a specific chain"""
@@ -116,6 +116,7 @@ def get_chain_config(chain_id: str) -> Dict[str, Any]:
 def _ensure_positions_file():
     p = Path(POSITIONS_FILE)
     if not p.exists():
+        p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text("{}")
 
 @contextmanager

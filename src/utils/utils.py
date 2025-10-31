@@ -114,7 +114,8 @@ def _cache_sol_price(price: float):
             'price': price,
             'timestamp': time.time()
         }
-        with open("sol_price_cache.json", 'w') as f:
+        os.makedirs('data', exist_ok=True)
+        with open("data/sol_price_cache.json", 'w') as f:
             json.dump(cache_data, f)
     except Exception:
         pass  # If caching fails, continue without it
@@ -132,7 +133,7 @@ def get_sol_price_usd() -> float:
     Returns a reasonable price even if all APIs fail to prevent trading halt.
     """
     # Check for cached price (valid for 5 minutes to reduce API calls)
-    cache_file = "sol_price_cache.json"
+    cache_file = "data/sol_price_cache.json"
     try:
         if os.path.exists(cache_file):
             with open(cache_file, 'r') as f:

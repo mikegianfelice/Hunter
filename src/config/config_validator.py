@@ -99,7 +99,7 @@ class QualityConfig(BaseModel):
 class MonitoringConfig(BaseModel):
     """Monitoring and logging configuration validation"""
     enable_performance_tracking: bool = Field(default=True, description="Enable performance tracking")
-    performance_data_file: str = Field(default="performance_data.json", description="Performance data file")
+    performance_data_file: str = Field(default="data/performance_data.json", description="Performance data file")
     performance_report_days: int = Field(default=30, ge=1, le=365, description="Performance report days")
     
     # Logging

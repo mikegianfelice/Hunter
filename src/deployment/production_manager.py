@@ -127,7 +127,7 @@ class HealthChecker:
         """Check database connectivity and performance"""
         try:
             # Check if database files exist and are accessible
-            db_files = ['data/risk_state.json', 'open_positions.json', 'performance_data.json']
+            db_files = ['data/risk_state.json', 'data/open_positions.json', 'data/performance_data.json']
             accessible_files = 0
             
             for db_file in db_files:
@@ -354,8 +354,9 @@ class AutoRecovery:
         """Recover database issues"""
         try:
             # Try to recreate missing database files
-            db_files = ['data/risk_state.json', 'open_positions.json', 'performance_data.json']
+            db_files = ['data/risk_state.json', 'data/open_positions.json', 'data/performance_data.json']
             
+            os.makedirs('data', exist_ok=True)
             for db_file in db_files:
                 if not os.path.exists(db_file):
                     with open(db_file, 'w') as f:

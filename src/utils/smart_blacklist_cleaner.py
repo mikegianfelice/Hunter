@@ -6,6 +6,7 @@ Smart Blacklist Cleaner - Verifies if tokens are actually delisted before keepin
 import json
 import time
 import requests
+import os
 from typing import List, Dict, Tuple
 
 def check_token_status(token_address: str, symbol: str = "UNKNOWN") -> Tuple[bool, str]:
@@ -59,7 +60,7 @@ def clean_delisted_tokens() -> Dict[str, any]:
     """
     try:
         # Load current delisted tokens
-        with open("delisted_tokens.json", "r") as f:
+        with open("data/delisted_tokens.json", "r") as f:
             data = json.load(f)
         
         delisted_tokens = data.get("delisted_tokens", [])
@@ -94,7 +95,8 @@ def clean_delisted_tokens() -> Dict[str, any]:
         data["reactivated_tokens"] = now_active
         
         # Save updated data
-        with open("delisted_tokens.json", "w") as f:
+        os.makedirs('data', exist_ok=True)
+        with open("data/delisted_tokens.json", "w") as f:
             json.dump(data, f, indent=2)
         
         print(f"\n📊 Cleanup Results:")
@@ -130,7 +132,7 @@ def add_to_delisted_tokens_smart(token_address: str, symbol: str, reason: str) -
             return False
         
         # Token is actually delisted, add it
-        with open("delisted_tokens.json", "r") as f:
+        with open("data/delisted_tokens.json", "r") as f:
             data = json.load(f)
         
         delisted_tokens = data.get("delisted_tokens", [])
@@ -147,7 +149,8 @@ def add_to_delisted_tokens_smart(token_address: str, symbol: str, reason: str) -
                 "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S")
             }
             
-            with open("delisted_tokens.json", "w") as f:
+            os.makedirs('data', exist_ok=True)
+            with open("data/delisted_tokens.json", "w") as f:
                 json.dump(data, f, indent=2)
             
             print(f"✅ Added {symbol} to delisted tokens (verified: {verification_reason})")

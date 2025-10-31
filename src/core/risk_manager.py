@@ -6,7 +6,7 @@ from src.config.secrets import INFURA_URL, WALLET_ADDRESS
 from src.config.config_loader import get_config, get_config_int, get_config_float
 
 STATE_FILE = "data/risk_state.json"
-POSITIONS_FILE = "open_positions.json"
+POSITIONS_FILE = "data/open_positions.json"
 
 # Dynamic config loading
 def get_risk_manager_config():
@@ -249,6 +249,7 @@ def _load_state():
     return s
 
 def _save_state(s):
+    os.makedirs('data', exist_ok=True)
     with open(STATE_FILE, "w") as f:
         json.dump(s, f, indent=2)
 

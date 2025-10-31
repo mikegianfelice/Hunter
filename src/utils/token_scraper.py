@@ -1,5 +1,6 @@
 # token_scraper_improved.py
 import csv
+import os
 import yaml
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -144,7 +145,7 @@ FALLBACK_URLS = [
     "https://api.dexscreener.com/latest/dex/search/?q=volume",
 ]
 
-CSV_PATH = "trending_tokens.csv"
+CSV_PATH = "data/trending_tokens.csv"
 CSV_FIELDS = [
     "fetched_at", "symbol", "address", "dex", "chainId",
     "priceUsd", "volume24h", "liquidity"
@@ -301,6 +302,7 @@ def _append_all_to_csv(rows):
         write_header = True
 
     try:
+        os.makedirs('data', exist_ok=True)
         with open(CSV_PATH, "a", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
             if write_header:

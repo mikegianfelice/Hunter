@@ -4,8 +4,8 @@ import os
 import time
 from typing import Dict, Set, Tuple
 
-BLACKLIST_FILE = "blacklist.json"
-FAILURE_LOG_FILE = "blacklist_failures.json"
+BLACKLIST_FILE = "data/blacklist.json"
+FAILURE_LOG_FILE = "data/blacklist_failures.json"
 
 # Configuration
 MAX_FAILURES_BEFORE_BLACKLIST = 3  # Number of failures before blacklisting
@@ -25,6 +25,7 @@ def _load() -> Set[str]:
 
 def _save(s: Set[str]):
     try:
+        os.makedirs('data', exist_ok=True)
         with open(BLACKLIST_FILE, "w") as f:
             json.dump(sorted(list(s)), f, indent=2)
     except Exception as e:
@@ -44,6 +45,7 @@ def _load_failures() -> Dict[str, Dict]:
 def _save_failures(failures: Dict[str, Dict]):
     """Save failure tracking data"""
     try:
+        os.makedirs('data', exist_ok=True)
         with open(FAILURE_LOG_FILE, "w") as f:
             json.dump(failures, f, indent=2)
     except Exception as e:
@@ -107,7 +109,7 @@ def is_blacklisted(address: str) -> bool:
     
     # Check delisted tokens
     try:
-        with open("delisted_tokens.json", "r") as f:
+        with open("data/delisted_tokens.json", "r") as f:
             data = json.load(f) or {}
             delisted_tokens = data.get("delisted_tokens", [])
             return (address or "").lower() in delisted_tokens
@@ -126,7 +128,8 @@ def add_to_blacklist(address: str, reason: str = "Unknown"):
     
     # Log the blacklist reason
     try:
-        blacklist_log_file = "blacklist_reasons.json"
+        blacklist_log_file = "data/blacklist_reasons.json"
+        os.makedirs('data', exist_ok=True)
         if os.path.exists(blacklist_log_file):
             with open(blacklist_log_file, "r") as f:
                 reasons = json.load(f) or {}
@@ -192,14 +195,14 @@ def review_blacklisted_tokens() -> int:
     current_time = time.time()
     cutoff_time = current_time - (BLACKLIST_REVIEW_HOURS * 3600)
     
-    # Check blacklist reasons
-    try:
-        blacklist_log_file = "blacklist_reasons.json"
-        if os.path.exists(blacklist_log_file):
-            with open(blacklist_log_file, "r") as f:
-                reasons = json.load(f) or {}
-        else:
-            reasons = {}
+        # Check blacklist reasons
+        try:
+            blacklist_log_file = "data/blacklist_reasons.json"
+            if os.path.exists(blacklist_log_file):
+                with open(blacklist_log_file, "r") as f:
+                    reasons = json.load(f) or {}
+            else:
+                reasons = {}
         
         removed_count = 0
         for addr_lower, reason_data in list(reasons.items()):
