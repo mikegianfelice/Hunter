@@ -3,7 +3,7 @@ import json, os, time, yaml
 from datetime import datetime, timezone
 from web3 import Web3
 from src.config.secrets import INFURA_URL, WALLET_ADDRESS
-from config_loader import get_config, get_config_int, get_config_float
+from src.config.config_loader import get_config, get_config_int, get_config_float
 
 STATE_FILE = "data/risk_state.json"
 POSITIONS_FILE = "open_positions.json"

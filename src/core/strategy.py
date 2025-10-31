@@ -6,7 +6,7 @@ from pathlib import Path
 from contextlib import contextmanager
 import yaml
 import requests
-from config_loader import get_config, get_config_bool, get_config_float, get_config_int, get_config_values
+from src.config.config_loader import get_config, get_config_bool, get_config_float, get_config_int, get_config_values
 
 PRICE_MEM_FILE = "price_memory.json"
 

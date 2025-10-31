@@ -13,7 +13,7 @@ from address_utils import (
     validate_chain_address_match,
 )
 from collections import defaultdict
-from config_loader import get_config, get_config_bool
+from src.config.config_loader import get_config, get_config_bool
 
 # Dynamic config loading
 def get_token_scraper_config():

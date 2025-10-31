@@ -13,7 +13,7 @@ from web3 import Web3
 from src.config.secrets import INFURA_URL, WALLET_ADDRESS, SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
 from utils import get_eth_price_usd
 from telegram_bot import send_telegram_message
-from config_loader import get_config, get_config_bool, get_config_float
+from src.config.config_loader import get_config, get_config_bool, get_config_float
 from src.monitoring.logger import log_event
 from advanced_trading import advanced_trading
 from address_utils import validate_chain_address_match, normalize_evm_address, detect_chain_from_address

@@ -6,7 +6,7 @@ Sophisticated execution logic for enhanced trading performance
 
 import logging
 from typing import Dict, List, Tuple, Any
-from config_loader import get_config_float, get_config_bool
+from src.config.config_loader import get_config_float, get_config_bool
 
 logger = logging.getLogger(__name__)
 

@@ -11,7 +11,7 @@ from base_executor import sell_token as sell_token_base
 from solana_executor import sell_token_solana
 from utils import fetch_token_price_usd
 from telegram_bot import send_telegram_message
-from config_loader import get_config, get_config_float
+from src.config.config_loader import get_config, get_config_float
 
 # Dynamic config loading
 def get_monitor_config():
