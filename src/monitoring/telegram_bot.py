@@ -149,10 +149,10 @@ def send_periodic_status_report():
     _last_status_time = current_time
     
     try:
-        # Import here to avoid circular imports
-        from performance_tracker import performance_tracker
-        from risk_manager import status_summary
-        from ai_market_regime_detector import ai_market_regime_detector
+        # Import here to avoid circular imports and use correct module paths
+        from src.core.performance_tracker import performance_tracker
+        from src.core.risk_manager import status_summary, get_tier_based_risk_limits
+        from src.ai.ai_market_regime_detector import ai_market_regime_detector
         
         # Get bot status
         risk_summary = status_summary()
@@ -179,6 +179,18 @@ def format_status_message(risk_summary, recent_summary, open_trades, market_regi
     
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
+    # Calculate total exposure from open trades
+    total_exposure = sum(t.get('position_size_usd', 0) for t in open_trades)
+    open_count = len(open_trades)
+    
+    # Get tier information
+    try:
+        from src.core.risk_manager import get_tier_based_risk_limits
+        tier_limits = get_tier_based_risk_limits()
+        tier_name = tier_limits.get('TIER_NAME', 'unknown')
+    except Exception:
+        tier_name = 'unknown'
+    
     msg = f"""🤖 *Bot Status Report* - {current_time}
 ━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -191,15 +203,18 @@ def format_status_message(risk_summary, recent_summary, open_trades, market_regi
 • Avg PnL: ${recent_summary.get('avg_pnl', 0):.2f}
 
 💼 *Current Positions:*
-• Open Trades: {len(open_trades)}
+• Open Trades: {open_count}
+• Approx. Exposure: ${total_exposure:.2f}
+• Tier: {tier_name}
 """
     
-    # Add details of open trades
+    # Add details of open trades (up to 5)
     if open_trades:
-        for i, trade in enumerate(open_trades[:5], 1):  # Show up to 5 open trades
+        for i, trade in enumerate(open_trades[:5], 1):
             symbol = trade.get('symbol', 'UNKNOWN')
             size = trade.get('position_size_usd', 0)
-            msg += f"  {i}. {symbol}: ${size:.2f}\n"
+            chain = trade.get('chain', trade.get('chainId', 'unknown'))
+            msg += f"  {i}. {symbol} [{chain}]: ${size:.2f}\n"
     else:
         msg += "  No open positions\n"
     
@@ -210,7 +225,7 @@ def format_status_message(risk_summary, recent_summary, open_trades, market_regi
 • Daily Sells: {risk_summary.get('sells_today', 0)}
 • Realized PnL: ${risk_summary.get('realized_pnl_usd', 0):.2f}
 • Losing Streak: {risk_summary.get('losing_streak', 0)}
-• Open Positions: {risk_summary.get('open_positions', len(open_trades))}
+• Open Positions: {risk_summary.get('open_positions', open_count)}
 """
     
     # Check if paused
@@ -224,9 +239,10 @@ def format_status_message(risk_summary, recent_summary, open_trades, market_regi
     # Add market conditions with regime information
     if market_regime:
         regime = market_regime.get('regime', 'unknown')
-        confidence = market_regime.get('confidence', 0)
+        confidence = market_regime.get('confidence', 0) * 100.0  # Convert to percentage
         description = market_regime.get('description', 'Unknown market condition')
         strategy = market_regime.get('strategy', 'neutral')
+        recommendations = market_regime.get('recommendations', [])[:3]  # Show top 3
         
         # Format regime display with emoji
         regime_emoji = {
@@ -244,6 +260,10 @@ def format_status_message(risk_summary, recent_summary, open_trades, market_regi
 💡 *Strategy:* {strategy.title()}
 📝 *Description:* {description}
 """
+        if recommendations:
+            msg += "✅ *Focus Now:*\n"
+            for r in recommendations:
+                msg += f"• {r}\n"
     else:
         msg += """
 📈 *Market Conditions:*

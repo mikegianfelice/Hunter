@@ -26,6 +26,7 @@ from src.config.config_validator import get_validated_config
 from src.monitoring.performance_monitor import record_trade_metrics, start_trading_session, end_trading_session
 from src.core.centralized_risk_manager import assess_trade_risk, update_trade_result, is_circuit_breaker_active
 from src.ai.ai_circuit_breaker import circuit_breaker_manager, check_ai_module_health
+from src.monitoring.telegram_bot import send_periodic_status_report
 
 logger = logging.getLogger(__name__)
 
@@ -786,6 +787,12 @@ async def run_enhanced_async_trading():
                         log_error("trading.cycle_failed", f"Cycle #{cycle_count} failed: {result.get('error', 'Unknown error')}")
                         await asyncio.sleep(30)  # Wait before retry
                         continue
+                    
+                    # Send periodic status report (throttled to every 6 hours)
+                    try:
+                        send_periodic_status_report()
+                    except Exception as e:
+                        log_error("trading.status_report", f"Periodic status report failed: {e}")
                     
                     # Wait between cycles
                     wait_time = 300  # 5 minutes
