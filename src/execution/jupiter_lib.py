@@ -32,22 +32,22 @@ class JupiterCustomLib:
             print(f"❌ Failed to initialize wallet: {e}")
             self.keypair = None
 
-    def get_quote(self, input_mint: str, output_mint: str, amount: int, slippage: float = 0.10, 
+    def get_quote(self, input_mint: str, output_mint: str, amount: int, slippage: float = 0.15, 
                   route_preferences: Dict[str, Any] = None, use_exactout: bool = False) -> Dict[str, Any]:
         """Get swap quote from Jupiter v6 with enhanced error handling and advanced features
         
-        NOTE: Jupiter API has changed. quote-api.jup.ag no longer exists (DNS fails).
-        Using api.jup.ag as fallback, though it may require authentication.
+        NOTE: Using current Jupiter API endpoint (api.jup.ag/v6/quote).
+        Allows multi-hop routes for better liquidity coverage.
         """
         try:
-            # Try old endpoint first (no auth required)
-            base_url = "https://quote-api.jup.ag/v6/quote"
+            # Use current Jupiter API endpoint
+            base_url = "https://api.jup.ag/v6/quote"
             params = {
                 "inputMint": input_mint,
                 "outputMint": output_mint,
                 "amount": str(amount),
                 "slippageBps": int(slippage * 10000),
-                "onlyDirectRoutes": "true",  # Use direct routes to reduce transaction size
+                "onlyDirectRoutes": "false",  # Allow multi-hop routes for better liquidity
                 "asLegacyTransaction": "true"  # Use legacy transactions to reduce size
             }
             

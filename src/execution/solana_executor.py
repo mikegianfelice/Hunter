@@ -122,7 +122,7 @@ class SimpleSolanaExecutor:
         print(f"🔄 Returning fallback price to prevent false delisting - actual price unknown")
         return 0.000001  # Small positive value instead of 0
 
-    def get_jupiter_quote(self, input_mint: str, output_mint: str, amount: int, slippage: float = 0.02) -> Dict[str, Any]:
+    def get_jupiter_quote(self, input_mint: str, output_mint: str, amount: int, slippage: float = 0.10) -> Dict[str, Any]:
         """Get swap quote from Jupiter with better error handling
         
         NOTE: Jupiter API has changed to api.jup.ag (may require authentication)
@@ -377,31 +377,59 @@ class SimpleSolanaExecutor:
         try:
             print(f"🚀 Executing {'buy' if is_buy else 'sell'} for {token_address[:8]}...{token_address[-8:]}")
             
+            # Validate minimum trade amount (Jupiter requires reasonable amounts)
+            min_trade_usd = 1.0  # Minimum $1 USD
+            if amount_usd < min_trade_usd:
+                print(f"❌ Trade amount ${amount_usd} too small (minimum ${min_trade_usd})")
+                return "", False
+            
             # Get token liquidity to adjust trade amount
             try:
-                from strategy import _get_token_liquidity
+                from src.core.strategy import _get_token_liquidity
                 liquidity = _get_token_liquidity(token_address)
                 if liquidity and liquidity < amount_usd * 2:  # If liquidity is less than 2x trade amount
                     adjusted_amount = min(amount_usd, liquidity * 0.1)  # Use 10% of liquidity or original amount
                     print(f"🔄 Adjusting trade amount from ${amount_usd} to ${adjusted_amount} due to low liquidity (${liquidity})")
                     amount_usd = adjusted_amount
+                    # Re-check minimum after adjustment
+                    if amount_usd < min_trade_usd:
+                        print(f"❌ Adjusted amount ${amount_usd} too small (minimum ${min_trade_usd})")
+                        return "", False
             except Exception as e:
                 print(f"⚠️ Could not get liquidity info: {e}")
             
-            # Convert USD amount to USDC (assuming 1 USDC = 1 USD)
-            usdc_amount = int(amount_usd * 1_000_000)  # USDC has 6 decimals
-            
             if is_buy:
-                # Buying token with USDC
-                input_mint = USDC_MINT
+                # Buying token with SOL (wrap/unwrap enabled in Jupiter)
+                from src.utils.utils import get_sol_price_usd
+                sol_price = get_sol_price_usd()
+                if sol_price <= 0:
+                    print("❌ Cannot get SOL price")
+                    return "", False
+                
+                sol_amount = amount_usd / sol_price
+                sol_amount_lamports = int(sol_amount * 1_000_000_000)  # SOL has 9 decimals
+                
+                # Ensure minimum SOL amount (0.01 SOL equivalent to ~$1-2)
+                min_sol_lamports = int(0.01 * 1_000_000_000)  # 0.01 SOL
+                if sol_amount_lamports < min_sol_lamports:
+                    print(f"❌ SOL amount too small: {sol_amount_lamports} lamports (minimum {min_sol_lamports})")
+                    return "", False
+                
+                input_mint = WSOL_MINT
                 output_mint = token_address
+                amount = sol_amount_lamports
             else:
                 # Selling token for USDC
                 input_mint = token_address
                 output_mint = USDC_MINT
+                amount = int(amount_usd * 1_000_000)  # USDC has 6 decimals
+            
+            # Use higher slippage for small trades (microcaps)
+            slippage = 0.15 if amount_usd < 50 else 0.10
+            print(f"🎯 Using slippage: {slippage*100:.1f}%")
             
             # Get quote
-            quote = self.get_jupiter_quote(input_mint, output_mint, usdc_amount)
+            quote = self.get_jupiter_quote(input_mint, output_mint, amount, slippage=slippage)
             if not quote:
                 print(f"❌ No quote available for {token_address[:8]}...{token_address[-8:]}")
                 return "", False
