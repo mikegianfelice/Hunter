@@ -418,42 +418,51 @@ class EnhancedAsyncTradingEngine:
             ai_result = await ai_engine.analyze_token(token)
             
             # Extract results from AI analysis
+            # AIAnalysisResult uses overall_score, not quality_score, and attributes are Dict objects
+            sentiment = ai_result.sentiment_analysis or {}
+            prediction = ai_result.prediction_analysis or {}
+            risk = ai_result.risk_assessment or {}
+            market = ai_result.market_analysis or {}
+            technical = ai_result.technical_analysis or {}
+            execution = ai_result.execution_analysis or {}
+            recommendations = ai_result.recommendations or {}
+            
             analysis = {
-                "quality_score": ai_result.quality_score,
+                "quality_score": ai_result.overall_score,  # Use overall_score instead of quality_score
                 "sentiment_analysis": {
-                    "category": ai_result.sentiment_analysis.get("category", "neutral"),
-                    "score": ai_result.sentiment_analysis.get("score", 0.5),
-                    "confidence": ai_result.sentiment_analysis.get("confidence", 0.5)
+                    "category": sentiment.get("category", "neutral"),
+                    "score": sentiment.get("score", 0.5),
+                    "confidence": sentiment.get("confidence", 0.5)
                 },
                 "price_prediction": {
-                    "success_probability": ai_result.price_prediction.get("price_movement_probability", 0.5),
-                    "confidence_level": ai_result.price_prediction.get("confidence", 0.5),
-                    "expected_return": ai_result.price_prediction.get("expected_return", 0.1),
-                    "risk_score": ai_result.risk_analysis.get("risk_score", 0.3)
+                    "success_probability": prediction.get("price_movement_probability", 0.5),
+                    "confidence_level": prediction.get("confidence", 0.5),
+                    "expected_return": prediction.get("expected_return", 0.1),
+                    "risk_score": risk.get("risk_score", 0.3)
                 },
                 "market_analysis": {
-                    "trend": ai_result.market_analysis.get("market_trend", "neutral"),
+                    "trend": market.get("market_trend", "neutral"),
                     "volatility": "high" if abs(token.get("priceChange24h", 0)) > 0.1 else "low",
-                    "liquidity_score": ai_result.market_analysis.get("liquidity_score", 0.5),
-                    "volume_score": ai_result.market_analysis.get("volume_score", 0.5)
+                    "liquidity_score": market.get("liquidity_score", 0.5),
+                    "volume_score": market.get("volume_score", 0.5)
                 },
                 "trading_recommendation": {
-                    "action": ai_result.trading_recommendation.get("action", "hold"),
-                    "confidence": ai_result.confidence,
-                    "position_size": ai_result.trading_recommendation.get("position_size", 10),
-                    "take_profit": ai_result.trading_recommendation.get("take_profit", 0.15),
-                    "stop_loss": 0.08
+                    "action": recommendations.get("action", "hold"),
+                    "confidence": recommendations.get("confidence", ai_result.confidence),
+                    "position_size": recommendations.get("position_size", 10),
+                    "take_profit": recommendations.get("take_profit", 0.15),
+                    "stop_loss": recommendations.get("stop_loss", 0.08)
                 },
-                "risk_factors": ai_result.risk_analysis.get("risk_factors", []),
+                "risk_factors": risk.get("risk_factors", []),
                 "technical_analysis": {
-                    "technical_score": ai_result.technical_analysis.get("technical_score", 0.5),
-                    "trend": ai_result.technical_analysis.get("trend", "neutral"),
-                    "signals": ai_result.technical_analysis.get("signals", [])
+                    "technical_score": technical.get("technical_score", 0.5),
+                    "trend": technical.get("trend", "neutral"),
+                    "signals": technical.get("signals", [])
                 },
                 "execution_analysis": {
-                    "execution_score": ai_result.execution_analysis.get("execution_score", 0.5),
-                    "recommended_slippage": ai_result.execution_analysis.get("recommended_slippage", 0.05),
-                    "optimal_timing": ai_result.execution_analysis.get("optimal_timing", "wait")
+                    "execution_score": execution.get("execution_score", 0.5),
+                    "recommended_slippage": execution.get("recommended_slippage", 0.05),
+                    "optimal_timing": execution.get("optimal_timing", "wait")
                 },
                 "analysis_timestamp": datetime.now().isoformat()
             }
