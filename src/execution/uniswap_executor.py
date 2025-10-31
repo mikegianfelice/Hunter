@@ -48,9 +48,15 @@ WALLET = Web3.to_checksum_address(WALLET_ADDRESS)
 
 # Uniswap V2 router (0x7a25...)
 ROUTER_ADDR = Web3.to_checksum_address("0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D")
-ABI_PATH = "uniswap_router_abi.json"
-if not os.path.exists(ABI_PATH):
-    raise FileNotFoundError("uniswap_router_abi.json not found. Add the V2 Router ABI JSON file.")
+ABI_PATHS = ["uniswap_router_abi.json", os.path.join("data", "uniswap_router_abi.json")]
+ABI_PATH = None
+for path in ABI_PATHS:
+    if os.path.exists(path):
+        ABI_PATH = path
+        break
+
+if not ABI_PATH:
+    raise FileNotFoundError("uniswap_router_abi.json not found. Put it in project root or data/.")
 with open(ABI_PATH, "r") as f:
     ROUTER_ABI = json.load(f)
 router = w3.eth.contract(address=ROUTER_ADDR, abi=ROUTER_ABI)

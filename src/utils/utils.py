@@ -17,10 +17,17 @@ _w3 = Web3(Web3.HTTPProvider(INFURA_URL))
 
 # Lazy-load router ABI
 def _load_router_abi():
-    path = Path("uniswap_router_abi.json")
-    if not path.exists():
-        raise FileNotFoundError("uniswap_router_abi.json not found in project root.")
-    return json.loads(path.read_text())
+    # Try multiple locations for the ABI file
+    candidates = [
+        Path("uniswap_router_abi.json"),
+        Path("data/uniswap_router_abi.json"),
+    ]
+    
+    for path in candidates:
+        if path.exists():
+            return json.loads(path.read_text())
+    
+    raise FileNotFoundError("uniswap_router_abi.json not found in project root or data/.")
 
 def _router():
     return _w3.eth.contract(address=Web3.to_checksum_address(UNISWAP_V2_ROUTER), abi=_load_router_abi())
@@ -65,6 +72,8 @@ def get_eth_price_usd() -> float:
     Robust ETH/USD:
     1) Try Uniswap v3 subgraph via WETH token (fast).
     2) Fallback: on-chain Uniswap V2 getAmountsOut(1 WETH -> USDC).
+    3) Fallback: CoinGecko ETH price.
+    4) Emergency fallback to avoid None.
     """
     # 1) Graph route via WETH
     px = fetch_token_price_usd(WETH_ADDRESS)
@@ -79,13 +88,24 @@ def get_eth_price_usd() -> float:
         amounts = router.functions.getAmountsOut(amount_in_wei, path).call()
         usdc_out = float(amounts[-1])  # USDC has 6 decimals
         eth_usd = usdc_out / 1_000_000.0
-        if eth_usd <= 0:
-            raise ValueError("Non-positive ETH/USD from router")
-        return eth_usd
+        if eth_usd > 0:
+            return eth_usd
     except Exception as e:
         print(f"❌ Uniswap V2 router quote failed: {e}")
-        # Last-ditch: return None; caller should handle
-        return None
+
+    # 3) CoinGecko fallback
+    try:
+        data = get_json("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd", timeout=10, retries=1)
+        if data:
+            price = float(data.get("ethereum", {}).get("usd", 0))
+            if price > 0:
+                return price
+    except Exception as e:
+        print(f"⚠️ CoinGecko ETH price error: {e}")
+
+    # 4) Emergency fallback
+    print(f"⚠️ All ETH price sources failed - using emergency fallback of $3000")
+    return 3000.0
 
 def _cache_sol_price(price: float):
     """Cache SOL price with timestamp"""

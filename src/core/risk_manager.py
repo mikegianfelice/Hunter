@@ -20,6 +20,61 @@ def get_risk_manager_config():
         'MIN_WALLET_BALANCE_BUFFER': get_config_float("min_wallet_balance_buffer", 0.01)
     }
 
+def get_wallet_tier(wallet_balance_usd: float) -> dict:
+    """Resolve wallet tier from config.yaml:wallet_tiers based on total USD balance."""
+    tiers = get_config('wallet_tiers', {}) or {}
+    if not isinstance(tiers, dict) or not tiers:
+        return {
+            'tier_name': 'unknown',
+            'description': 'No tiers configured',
+            'tier_config': {
+                'max_total_exposure_usd': 100.0,
+                'max_position_size_usd': 10.0
+            }
+        }
+
+    # Find matching tier
+    selected_name, selected_cfg = None, None
+    try:
+        wallet_balance_usd = float(wallet_balance_usd)
+        for name, cfg in tiers.items():
+            min_b = float(cfg.get('min_balance', 0))
+            max_b = float(cfg.get('max_balance', float('inf')))
+            if min_b <= wallet_balance_usd <= max_b:
+                selected_name, selected_cfg = name, cfg
+                break
+    except Exception as e:
+        print(f"⚠️ Error parsing wallet tiers: {e}")
+
+    # Fallback to closest boundary if not found
+    if not selected_cfg:
+        try:
+            items = sorted(tiers.items(), key=lambda kv: float(kv[1].get('min_balance', 0)))
+            if items:
+                if wallet_balance_usd < float(items[0][1].get('min_balance', 0)):
+                    selected_name, selected_cfg = items[0]
+                else:
+                    selected_name, selected_cfg = items[-1]
+        except Exception:
+            pass
+
+    # Final fallback if still nothing found
+    if not selected_cfg:
+        return {
+            'tier_name': 'unknown',
+            'description': 'Default tier',
+            'tier_config': {
+                'max_total_exposure_usd': 100.0,
+                'max_position_size_usd': 10.0
+            }
+        }
+
+    return {
+        'tier_name': selected_name or 'unknown',
+        'description': selected_cfg.get('description', ''),
+        'tier_config': selected_cfg,
+    }
+
 def get_tier_based_risk_limits(wallet_balance_usd: float = None):
     """Get risk limits based on wallet tier using combined balance from all chains"""
     try:
@@ -27,7 +82,6 @@ def get_tier_based_risk_limits(wallet_balance_usd: float = None):
         if wallet_balance_usd is None:
             wallet_balance_usd = _get_combined_wallet_balance_usd()
         
-        from main import get_wallet_tier
         tier_info = get_wallet_tier(wallet_balance_usd)
         tier_config = tier_info['tier_config']
         tier_name = tier_info['tier_name']
@@ -82,6 +136,10 @@ def _get_wallet_balance_usd(chain_id="ethereum"):
             from src.utils.utils import get_eth_price_usd
             eth_price = get_eth_price_usd()
             
+            if eth_price is None or eth_price <= 0:
+                print(f"⚠️ Could not get ETH price for balance calculation - using emergency fallback of $3000")
+                eth_price = 3000.0  # Emergency fallback to prevent trading halt
+            
             return float(balance_eth) * eth_price
         elif chain_id.lower() == "base":
             # Base uses same wallet as Ethereum, check ETH balance
@@ -92,6 +150,10 @@ def _get_wallet_balance_usd(chain_id="ethereum"):
             # Get ETH price in USD
             from src.utils.utils import get_eth_price_usd
             eth_price = get_eth_price_usd()
+            
+            if eth_price is None or eth_price <= 0:
+                print(f"⚠️ Could not get ETH price for balance calculation - using emergency fallback of $3000")
+                eth_price = 3000.0  # Emergency fallback to prevent trading halt
             
             return float(balance_eth) * eth_price
         elif chain_id.lower() == "solana":
