@@ -239,7 +239,7 @@ def _check_solana_token_delisted(token: dict) -> bool:
     # Try to get current price from multiple sources to verify if token is actually delisted
     # IMPORTANT: Only mark as delisted if we can CONFIRM it's delisted, not on API failures
     try:
-        from solana_executor import SimpleSolanaExecutor
+        from src.execution.solana_executor import SimpleSolanaExecutor
         executor = SimpleSolanaExecutor()
         current_price = executor.get_token_price_usd(address)
         
@@ -392,7 +392,7 @@ def _get_ethereum_token_price_with_fallbacks(address: str, symbol: str) -> float
     """
     # Primary: Uniswap Graph API
     try:
-        from utils import fetch_token_price_usd
+        from src.utils.utils import fetch_token_price_usd
         price = fetch_token_price_usd(address)
         if price and price > 0:
             return price

@@ -6,11 +6,11 @@ import csv
 import signal
 from datetime import datetime
 
-from uniswap_executor import sell_token as sell_token_ethereum
-from base_executor import sell_token as sell_token_base
-from solana_executor import sell_token_solana
-from utils import fetch_token_price_usd
-from telegram_bot import send_telegram_message
+from src.execution.uniswap_executor import sell_token as sell_token_ethereum
+from src.execution.base_executor import sell_token as sell_token_base
+from src.execution.solana_executor import sell_token_solana
+from src.utils.utils import fetch_token_price_usd
+from src.monitoring.telegram_bot import send_telegram_message
 from src.config.config_loader import get_config, get_config_float
 
 # Dynamic config loading
@@ -175,7 +175,7 @@ def _fetch_token_price_multi_chain(token_address: str) -> float:
         # Try Solana price first (if it looks like a Solana address)
         if len(token_address) == 44:  # Solana addresses are 44 chars
             try:
-                from solana_executor import get_token_price_usd
+                from src.execution.solana_executor import get_token_price_usd
                 price = get_token_price_usd(token_address)
                 if price and price > 0:
                     print(f"🔗 Fetched Solana price for {token_address[:8]}...{token_address[-8:]}: ${price:.6f}")
@@ -209,7 +209,7 @@ def _sell_token_multi_chain(token_address: str, chain_id: str, symbol: str = "?"
         elif chain_id == "base":
             print(f"🔄 Selling {symbol} on Base...")
             # Get token balance for BASE
-            from base_executor import get_token_balance
+            from src.execution.base_executor import get_token_balance
             balance = get_token_balance(token_address)
             if balance > 0:
                 tx_hash, success = sell_token_base(token_address, balance, symbol)
@@ -219,7 +219,7 @@ def _sell_token_multi_chain(token_address: str, chain_id: str, symbol: str = "?"
         elif chain_id == "solana":
             print(f"🔄 Selling {symbol} on Solana...")
             # For Solana, we need to get the balance first
-            from solana_executor import get_token_balance
+            from src.execution.solana_executor import get_token_balance
             balance = get_token_balance(token_address)
             if balance > 0:
                 tx_hash, success = sell_token_solana(token_address, balance, symbol)

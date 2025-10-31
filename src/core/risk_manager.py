@@ -79,7 +79,7 @@ def _get_wallet_balance_usd(chain_id="ethereum"):
             balance_eth = w3.from_wei(balance_wei, 'ether')
             
             # Get ETH price in USD
-            from utils import get_eth_price_usd
+            from src.utils.utils import get_eth_price_usd
             eth_price = get_eth_price_usd()
             
             return float(balance_eth) * eth_price
@@ -90,15 +90,15 @@ def _get_wallet_balance_usd(chain_id="ethereum"):
             balance_eth = w3.from_wei(balance_wei, 'ether')
             
             # Get ETH price in USD
-            from utils import get_eth_price_usd
+            from src.utils.utils import get_eth_price_usd
             eth_price = get_eth_price_usd()
             
             return float(balance_eth) * eth_price
         elif chain_id.lower() == "solana":
             # Real Solana balance checking
             try:
-                from solana_executor import get_solana_balance
-                from utils import get_sol_price_usd
+                from src.execution.solana_executor import get_solana_balance
+                from src.utils.utils import get_sol_price_usd
                 
                 sol_balance = get_solana_balance()
                 sol_price = get_sol_price_usd()

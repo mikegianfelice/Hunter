@@ -155,7 +155,7 @@ class AIMarketRegimeDetector:
         """Analyze Bitcoin trend (0-1 scale)"""
         try:
             # Use real BTC price data
-            from market_data_fetcher import market_data_fetcher
+            from src.utils.market_data_fetcher import market_data_fetcher
             btc_trend = market_data_fetcher.get_btc_trend(hours=24)
             return btc_trend
             
@@ -167,7 +167,7 @@ class AIMarketRegimeDetector:
         """Analyze Ethereum trend (0-1 scale)"""
         try:
             # Use real ETH price data
-            from market_data_fetcher import market_data_fetcher
+            from src.utils.market_data_fetcher import market_data_fetcher
             eth_trend = market_data_fetcher.get_eth_trend(hours=24)
             return eth_trend
             
@@ -179,7 +179,7 @@ class AIMarketRegimeDetector:
         """Analyze market correlation (0-1 scale)"""
         try:
             # Use real market data
-            from market_data_fetcher import market_data_fetcher
+            from src.utils.market_data_fetcher import market_data_fetcher
             correlation = market_data_fetcher.get_market_correlation()
             return correlation
             
@@ -191,7 +191,7 @@ class AIMarketRegimeDetector:
         """Calculate market volatility index (0-1 scale)"""
         try:
             # Use real market volatility data
-            from market_data_fetcher import market_data_fetcher
+            from src.utils.market_data_fetcher import market_data_fetcher
             volatility = market_data_fetcher.get_market_volatility(hours=24)
             return volatility
             
@@ -203,7 +203,7 @@ class AIMarketRegimeDetector:
         """Analyze volume trends (0-1 scale)"""
         try:
             # Use real volume data
-            from market_data_fetcher import market_data_fetcher
+            from src.utils.market_data_fetcher import market_data_fetcher
             volume_trend = market_data_fetcher.get_volume_trends()
             return volume_trend
             
@@ -215,7 +215,7 @@ class AIMarketRegimeDetector:
         """Get Fear & Greed Index (0-1 scale)"""
         try:
             # Use real Fear & Greed Index data
-            from market_data_fetcher import market_data_fetcher
+            from src.utils.market_data_fetcher import market_data_fetcher
             fear_greed = market_data_fetcher.get_fear_greed_index()
             return fear_greed
             
@@ -227,7 +227,7 @@ class AIMarketRegimeDetector:
         """Analyze total market cap trend (0-1 scale)"""
         try:
             # Use real market cap data
-            from market_data_fetcher import market_data_fetcher
+            from src.utils.market_data_fetcher import market_data_fetcher
             market_cap_trend = market_data_fetcher.get_market_cap_trend()
             return market_cap_trend
             

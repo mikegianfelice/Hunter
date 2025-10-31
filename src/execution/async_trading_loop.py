@@ -12,9 +12,9 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime
 from collections import defaultdict
 
-from ai_circuit_breaker import circuit_breaker_manager
-from performance_monitor import performance_monitor, record_trade_metrics
-from config_validator import get_validated_config
+from src.ai.ai_circuit_breaker import circuit_breaker_manager
+from src.monitoring.performance_monitor import performance_monitor, record_trade_metrics
+from src.config.config_validator import get_validated_config
 
 logger = logging.getLogger(__name__)
 

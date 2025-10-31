@@ -3,7 +3,7 @@ import logging
 import os
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
-from log_deduplicator import should_log
+from .log_deduplicator import should_log
 
 _LOGGER_NAME = "hunter"
 _LOG_DIR = "logs"

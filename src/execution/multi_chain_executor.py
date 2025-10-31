@@ -11,12 +11,12 @@ from typing import Optional, Dict, Any
 from web3 import Web3
 
 from src.config.secrets import INFURA_URL, WALLET_ADDRESS, SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
-from utils import get_eth_price_usd
-from telegram_bot import send_telegram_message
+from src.utils.utils import get_eth_price_usd
+from src.monitoring.telegram_bot import send_telegram_message
 from src.config.config_loader import get_config, get_config_bool, get_config_float
 from src.monitoring.logger import log_event
-from advanced_trading import advanced_trading
-from address_utils import validate_chain_address_match, normalize_evm_address, detect_chain_from_address
+from src.core.advanced_trading import advanced_trading
+from src.utils.address_utils import validate_chain_address_match, normalize_evm_address, detect_chain_from_address
 
 # Dynamic config loading
 def get_multi_chain_config():
@@ -317,16 +317,16 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
             # Real trading mode (test_mode is false in config)
             if chain_id == "ethereum":
                 # Use existing uniswap executor for Ethereum (MetaMask)
-                from uniswap_executor import buy_token
+                from src.execution.uniswap_executor import buy_token
                 tx_hash, ok = buy_token(token_address, slice_amount, symbol)
             elif chain_id == "base":
                 # Use BASE executor for Base chain
-                from base_executor import buy_token
+                from src.execution.base_executor import buy_token
                 tx_hash, ok = buy_token(token_address, slice_amount, symbol)
             elif chain_id == "solana":
                 # Try Jupiter first, then fallback to Raydium if Jupiter fails
-                from jupiter_executor import buy_token_solana
-                from raydium_executor import execute_raydium_fallback_trade
+                from src.execution.jupiter_executor import buy_token_solana
+                from src.execution.raydium_executor import execute_raydium_fallback_trade
 
                 # Check if this is a volatile token (like BONK) that should use Raydium first
                 volatile_tokens = [

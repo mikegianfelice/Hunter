@@ -361,7 +361,7 @@ class AIExecutionOptimizer:
                 timing_confidence = 0.3
             
             # Calculate timing factors deterministically
-            from market_data_fetcher import market_data_fetcher
+            from src.utils.market_data_fetcher import market_data_fetcher
             market_volatility = market_data_fetcher.get_market_volatility(hours=24)
             volume_patterns = execution_analysis.get('volume_analysis', 0.5)
             liquidity_cycles = execution_analysis.get('liquidity_analysis', 0.5)

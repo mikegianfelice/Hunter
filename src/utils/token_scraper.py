@@ -4,8 +4,8 @@ import yaml
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
-from http_utils import get_json
-from address_utils import (
+from src.utils.http_utils import get_json
+from src.utils.address_utils import (
     is_evm_address,
     is_solana_address,
     detect_chain_from_address,

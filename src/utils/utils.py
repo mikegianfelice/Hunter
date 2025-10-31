@@ -5,7 +5,7 @@ import time
 from web3 import Web3
 from pathlib import Path
 from src.config.secrets import INFURA_URL
-from http_utils import get_json
+from src.utils.http_utils import get_json
 
 # Public constants
 UNISWAP_V2_ROUTER = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"

@@ -41,7 +41,7 @@ class SimpleSolanaExecutor:
         import time
         
         # Import here to avoid circular imports
-        from utils import get_sol_price_usd
+        from src.utils.utils import get_sol_price_usd
         
         # If the token is SOL, use the utility function
         sol_mint = "So11111111111111111111111111111111111111112"
@@ -450,7 +450,7 @@ def buy_token_solana(token_address: str, amount_usd: float, symbol: str = "", te
         # In test mode, still use real market data for quotes but don't execute
         # Get quote to validate trade would work
         try:
-            from utils import get_sol_price_usd
+            from src.utils.utils import get_sol_price_usd
             sol_price = get_sol_price_usd()
             if sol_price <= 0:
                 return None, False

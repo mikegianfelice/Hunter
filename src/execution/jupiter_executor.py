@@ -27,7 +27,7 @@ class JupiterCustomExecutor:
         import time
         
         # Import here to avoid circular imports
-        from utils import get_sol_price_usd
+        from src.utils.utils import get_sol_price_usd
         
         # If the token is SOL, use the utility function
         sol_mint = "So11111111111111111111111111111111111111112"
@@ -35,7 +35,7 @@ class JupiterCustomExecutor:
             return get_sol_price_usd()
         
         # Try DexScreener API for token price first (direct price, no SOL dependency)
-        from http_utils import get_json
+        from src.utils.http_utils import get_json
         for attempt in range(2):
             try:
                 url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
@@ -111,7 +111,7 @@ class JupiterCustomExecutor:
             
             if is_buy:
                 # Buying token with SOL (convert USD amount to SOL)
-                from utils import get_sol_price_usd
+                from src.utils.utils import get_sol_price_usd
                 sol_price = get_sol_price_usd()
                 if sol_price <= 0:
                     log_info("solana.trade.error_no_sol_price", level="ERROR")
@@ -184,7 +184,7 @@ def buy_token_solana(token_address: str, amount_usd: float, symbol: str = "", te
         # In test mode, still use real market data for quotes but don't execute
         # Get quote to validate trade would work
         try:
-            from utils import get_sol_price_usd
+            from src.utils.utils import get_sol_price_usd
             sol_price = get_sol_price_usd()
             if sol_price <= 0:
                 return None, False

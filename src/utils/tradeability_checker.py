@@ -6,8 +6,8 @@ Tradeability Checker - Pre-filter tokens to only include tradeable ones
 import requests
 import time
 from typing import Dict, List, Tuple, Optional
-from http_utils import get_json
-from address_utils import detect_chain_from_address, normalize_evm_address, validate_chain_address_match
+from src.utils.http_utils import get_json
+from src.utils.address_utils import detect_chain_from_address, normalize_evm_address, validate_chain_address_match
 
 # Circuit breaker for Raydium API failures
 _raydium_circuit_breaker = {

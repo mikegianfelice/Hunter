@@ -161,7 +161,7 @@ class AIPatternRecognizer:
         """Detect bullish engulfing pattern using real candlestick data"""
         try:
             # Get real candlestick data
-            from market_data_fetcher import market_data_fetcher
+            from src.utils.market_data_fetcher import market_data_fetcher
             
             address = token.get("address", "")
             chain_id = token.get("chainId", "ethereum").lower()
