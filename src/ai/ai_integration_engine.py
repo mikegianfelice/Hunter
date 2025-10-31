@@ -69,68 +69,57 @@ class AIModuleConnector:
         self.health_check_interval = 60  # 1 minute
         
     async def initialize_modules(self):
-        """Initialize all AI modules"""
-        try:
-            # Import all AI modules
-            from src.ai.ai_sentiment_analyzer import AISentimentAnalyzer
-            from src.ai.ai_price_predictor import AIPricePredictor
-            from src.ai.ai_risk_assessor import AIRiskAssessor
-            from src.ai.ai_execution_optimizer import AIExecutionOptimizer
-            from src.ai.ai_microstructure_analyzer import AIMarketMicrostructureAnalyzer
-            from src.ai.ai_portfolio_optimizer import AIPortfolioOptimizer
-            from src.ai.ai_pattern_recognizer import AIPatternRecognizer
-            from src.ai.ai_market_intelligence_aggregator import AIMarketIntelligenceAggregator
-            from src.ai.ai_predictive_analytics_engine import AIPredictiveAnalyticsEngine
-            from src.ai.ai_dynamic_strategy_selector import AIDynamicStrategySelector
-            from src.ai.ai_risk_prediction_prevention_system import AIRiskPredictionPreventionSystem
-            from src.ai.ai_market_regime_transition_detector import AIMarketRegimeTransitionDetector
-            from src.ai.ai_liquidity_flow_analyzer import AILiquidityFlowAnalyzer
-            from src.ai.ai_multi_timeframe_analysis_engine import AIMultiTimeframeAnalysisEngine
-            from src.ai.ai_market_cycle_predictor import AIMarketCyclePredictor
-            from src.ai.ai_drawdown_protection_system import AIDrawdownProtectionSystem
-            from src.ai.ai_performance_attribution_analyzer import AIPerformanceAttributionAnalyzer
-            from src.ai.ai_market_anomaly_detector import AIMarketAnomalyDetector
-            from src.ai.ai_portfolio_rebalancing_engine import AIPortfolioRebalancingEngine
-            from src.ai.ai_emergency_stop_system import AIEmergencyStopSystem
-            from src.ai.ai_position_size_validator import AIPositionSizeValidator
-            from src.ai.ai_trade_execution_monitor import AITradeExecutionMonitor
-            from src.ai.ai_market_condition_guardian import AIMarketConditionGuardian
-            from src.ai.ai_market_regime_detector import AIMarketRegimeDetector
-            
-            # Initialize modules
-            self.modules = {
-                "sentiment_analyzer": AISentimentAnalyzer(),
-                "price_predictor": AIPricePredictor(),
-                "risk_assessor": AIRiskAssessor(),
-                "execution_optimizer": AIExecutionOptimizer(),
-                "microstructure_analyzer": AIMarketMicrostructureAnalyzer(),
-                "portfolio_optimizer": AIPortfolioOptimizer(),
-                "pattern_recognizer": AIPatternRecognizer(),
-                "market_intelligence": AIMarketIntelligenceAggregator(),
-                "predictive_analytics": AIPredictiveAnalyticsEngine(),
-                "strategy_selector": AIDynamicStrategySelector(),
-                "risk_prediction_prevention": AIRiskPredictionPreventionSystem(),
-                "regime_transition_detector": AIMarketRegimeTransitionDetector(),
-                "liquidity_flow_analyzer": AILiquidityFlowAnalyzer(),
-                "multi_timeframe_analyzer": AIMultiTimeframeAnalysisEngine(),
-                "market_cycle_predictor": AIMarketCyclePredictor(),
-                "drawdown_protection": AIDrawdownProtectionSystem(),
-                "performance_attribution": AIPerformanceAttributionAnalyzer(),
-                "market_anomaly_detector": AIMarketAnomalyDetector(),
-                "portfolio_rebalancing": AIPortfolioRebalancingEngine(),
-                "emergency_stop": AIEmergencyStopSystem(),
-                "position_size_validator": AIPositionSizeValidator(),
-                "trade_execution_monitor": AITradeExecutionMonitor(),
-                "market_condition_guardian": AIMarketConditionGuardian(),
-                "market_regime_detector": AIMarketRegimeDetector()
-            }
-            
-            log_info("ai.initialization", f"Initialized {len(self.modules)} AI modules")
-            return True
-            
-        except Exception as e:
-            log_error(f"Error initializing AI modules: {e}")
-            return False
+        """Initialize all AI modules with individual error handling"""
+        self.modules = {}
+        failed_modules = []
+        
+        # Define module specifications
+        module_specs = [
+            ("sentiment_analyzer", "src.ai.ai_sentiment_analyzer", "AISentimentAnalyzer"),
+            ("price_predictor", "src.ai.ai_price_predictor", "AIPricePredictor"),
+            ("risk_assessor", "src.ai.ai_risk_assessor", "AIRiskAssessor"),
+            ("execution_optimizer", "src.ai.ai_execution_optimizer", "AIExecutionOptimizer"),
+            ("microstructure_analyzer", "src.ai.ai_microstructure_analyzer", "AIMarketMicrostructureAnalyzer"),
+            ("portfolio_optimizer", "src.ai.ai_portfolio_optimizer", "AIPortfolioOptimizer"),
+            ("pattern_recognizer", "src.ai.ai_pattern_recognizer", "AIPatternRecognizer"),
+            ("market_intelligence", "src.ai.ai_market_intelligence_aggregator", "AIMarketIntelligenceAggregator"),
+            ("predictive_analytics", "src.ai.ai_predictive_analytics_engine", "AIPredictiveAnalyticsEngine"),
+            ("strategy_selector", "src.ai.ai_dynamic_strategy_selector", "AIDynamicStrategySelector"),
+            ("risk_prediction_prevention", "src.ai.ai_risk_prediction_prevention_system", "AIRiskPredictionPreventionSystem"),
+            ("regime_transition_detector", "src.ai.ai_market_regime_transition_detector", "AIMarketRegimeTransitionDetector"),
+            ("liquidity_flow_analyzer", "src.ai.ai_liquidity_flow_analyzer", "AILiquidityFlowAnalyzer"),
+            ("multi_timeframe_analyzer", "src.ai.ai_multi_timeframe_analysis_engine", "AIMultiTimeframeAnalysisEngine"),
+            ("market_cycle_predictor", "src.ai.ai_market_cycle_predictor", "AIMarketCyclePredictor"),
+            ("drawdown_protection", "src.ai.ai_drawdown_protection_system", "AIDrawdownProtectionSystem"),
+            ("performance_attribution", "src.ai.ai_performance_attribution_analyzer", "AIPerformanceAttributionAnalyzer"),
+            ("market_anomaly_detector", "src.ai.ai_market_anomaly_detector", "AIMarketAnomalyDetector"),
+            ("portfolio_rebalancing", "src.ai.ai_portfolio_rebalancing_engine", "AIPortfolioRebalancingEngine"),
+            ("emergency_stop", "src.ai.ai_emergency_stop_system", "AIEmergencyStopSystem"),
+            ("position_size_validator", "src.ai.ai_position_size_validator", "AIPositionSizeValidator"),
+            ("trade_execution_monitor", "src.ai.ai_trade_execution_monitor", "AITradeExecutionMonitor"),
+            ("market_condition_guardian", "src.ai.ai_market_condition_guardian", "AIMarketConditionGuardian"),
+            ("market_regime_detector", "src.ai.ai_market_regime_detector", "AIMarketRegimeDetector"),
+        ]
+        
+        # Initialize each module individually
+        for module_name, module_path, class_name in module_specs:
+            try:
+                module = __import__(module_path, fromlist=[class_name])
+                module_class = getattr(module, class_name)
+                self.modules[module_name] = module_class()
+                log_info(f"ai.init.{module_name}", f"Successfully initialized {module_name}")
+            except Exception as e:
+                failed_modules.append(module_name)
+                log_error(f"ai.init.{module_name}", f"Failed to initialize {module_name}: {e}")
+        
+        # Log summary
+        if failed_modules:
+            log_info("ai.initialization", f"Initialized {len(self.modules)}/{len(module_specs)} AI modules. Failed: {', '.join(failed_modules)}")
+        else:
+            log_info("ai.initialization", f"Successfully initialized all {len(self.modules)} AI modules")
+        
+        # Return True if at least some modules were initialized
+        return len(self.modules) > 0
     
     async def check_module_health(self) -> Dict[str, bool]:
         """Check health of all AI modules"""

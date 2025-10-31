@@ -99,7 +99,7 @@ class JupiterCustomExecutor:
             
             # Get token liquidity to adjust trade amount
             try:
-                from strategy import _get_token_liquidity
+                from ..core.strategy import _get_token_liquidity
                 liquidity = _get_token_liquidity(token_address)
                 if liquidity and liquidity < amount_usd * 2:  # If liquidity is less than 2x trade amount
                     adjusted_amount = min(amount_usd, liquidity * 0.1)  # Use 10% of liquidity or original amount

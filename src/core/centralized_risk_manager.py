@@ -87,8 +87,23 @@ class CentralizedRiskManager:
             'losing_streak_limit': 3  # 3 consecutive losses
         }
         
+        # Initialize open positions tracking
+        self.positions_file = "open_positions.json"
+        self.open_positions = self._load_open_positions()
+        
         # Load existing risk state
         self._load_risk_state()
+    
+    def _load_open_positions(self) -> Dict[str, Any]:
+        """Load open positions from file"""
+        try:
+            if os.path.exists(self.positions_file):
+                with open(self.positions_file, "r") as f:
+                    data = json.load(f) or {}
+                    return data if isinstance(data, dict) else {}
+        except Exception as e:
+            logger.warning(f"Could not load open positions: {e}")
+        return {}
     
     def _load_risk_state(self):
         """Load risk state from file"""
@@ -249,14 +264,23 @@ class CentralizedRiskManager:
                     overall_portfolio_risk=0.0
                 )
             
+            # Reload open positions to get latest data
+            self.open_positions = self._load_open_positions()
+            positions = self.open_positions or {}
+            
             # Calculate portfolio metrics
             max_drawdown = abs(current_session.get('max_drawdown', 0.0))
             
             # Calculate actual total exposure from open positions
-            total_exposure = sum(
-                pos.get('amount_usd', 0) or pos.get('position_size', 0) or 0
-                for pos in self.open_positions.values()
-            )
+            total_exposure = 0.0
+            for pos in positions.values():
+                amount = float(
+                    pos.get('position_size_usd', 0) or
+                    pos.get('amount_usd', 0) or
+                    pos.get('position_size', 0) or
+                    0.0
+                )
+                total_exposure += amount
             
             # Get max exposure from config or calculate from portfolio
             try:
@@ -264,10 +288,7 @@ class CentralizedRiskManager:
                 max_exposure = getattr(self.config.risk, 'max_total_exposure_usd', None) if hasattr(self.config, 'risk') else None
                 if max_exposure is None:
                     # Fallback: calculate from actual portfolio value if available
-                    portfolio_value = current_session.get('total_profit_loss', 0.0) + sum(
-                        pos.get('amount_usd', 0) or pos.get('position_size', 0) or 0
-                        for pos in self.open_positions.values()
-                    )
+                    portfolio_value = float(current_session.get('total_profit_loss', 0.0)) + total_exposure
                     max_exposure = max(1000.0, portfolio_value * 2.0) if portfolio_value > 0 else 1000.0
                 else:
                     max_exposure = float(max_exposure)
@@ -278,26 +299,31 @@ class CentralizedRiskManager:
             # Calculate concentration risk based on actual exposure vs max exposure
             concentration_risk = min(1.0, total_exposure / max_exposure) if max_exposure > 0 else 0.0
             
-            # Calculate correlation risk (simplified)
-            # Calculate actual correlation risk based on position similarities
+            # Calculate correlation risk based on chain diversity
             correlation_risk = 0.2  # Base correlation risk
-            if len(self.open_positions) > 1:
-                # Increase risk if positions are from same DEX or same chain
-                same_chain_count = sum(1 for p in self.open_positions.values() 
-                                      if p.get('chain', '') == position_data.get('chain', ''))
-                if same_chain_count > 2:
+            if len(positions) > 1:
+                # Increase risk if positions are concentrated on same chain
+                chains = [p.get('chain', '') or p.get('chainId', '') for p in positions.values()]
+                unique_chains = len(set(chains))
+                if unique_chains <= 1:
                     correlation_risk += 0.2
             
-            # Calculate liquidity risk (simplified)
-            # Calculate actual liquidity risk
-            liquidity = position_data.get('liquidity', 0)
+            # Calculate liquidity risk from average position liquidity
             liquidity_risk = 0.4  # High risk baseline
-            if liquidity > 1000000:
-                liquidity_risk = 0.1  # Low risk
-            elif liquidity > 500000:
-                liquidity_risk = 0.2  # Medium risk
-            elif liquidity > 100000:
-                liquidity_risk = 0.3  # Moderate risk
+            liquidity_values = []
+            for pos in positions.values():
+                liq = float(pos.get('liquidity', 0) or 0.0)
+                if liq > 0:
+                    liquidity_values.append(liq)
+            
+            if liquidity_values:
+                avg_liquidity = sum(liquidity_values) / len(liquidity_values)
+                if avg_liquidity > 1000000:
+                    liquidity_risk = 0.1  # Low risk
+                elif avg_liquidity > 500000:
+                    liquidity_risk = 0.2  # Medium risk
+                elif avg_liquidity > 100000:
+                    liquidity_risk = 0.3  # Moderate risk
             
             # Calculate volatility risk (simplified)
             volatility_risk = min(1.0, max_drawdown / 0.1)  # 10% max drawdown threshold
@@ -399,9 +425,9 @@ class CentralizedRiskManager:
                 market_stress = 0.3  # Fallback if data unavailable
             
             # Liquidity conditions (simplified)
-            # Calculate liquidity conditions from token data
-            token_liquidity = position_data.get('liquidity', 0)
-            token_volume = position_data.get('volume24h', 0)
+            # Calculate liquidity conditions from market data
+            token_liquidity = float(market_data.get('liquidity', 0) or 0.0)
+            token_volume = float(market_data.get('volume24h', 0) or 0.0)
             liquidity_conditions = 0.5  # Neutral baseline
             if token_volume > 0 and token_liquidity > 0:
                 vol_liq_ratio = token_volume / token_liquidity
@@ -413,9 +439,11 @@ class CentralizedRiskManager:
             # Correlation breakdown (simplified)
             # Calculate correlation breakdown risk
             correlation_breakdown = 0.1  # Base risk
+            # Reload positions to get latest data
+            self.open_positions = self._load_open_positions()
             if len(self.open_positions) > 2:
                 # Check if positions are diversified
-                chains = set(p.get('chain', '') for p in self.open_positions.values())
+                chains = set(p.get('chain', '') or p.get('chainId', '') for p in self.open_positions.values())
                 if len(chains) < 2:
                     correlation_breakdown += 0.2  # Higher risk if not diversified
             
