@@ -7,7 +7,7 @@ import os
 import sys
 from pathlib import Path
 
-from secrets import BASE_RPC_URL, WALLET_ADDRESS, PRIVATE_KEY
+from src.config.secrets import BASE_RPC_URL, WALLET_ADDRESS, PRIVATE_KEY
 from gas import suggest_fees
 from utils import get_eth_price_usd  # robust ETH/USD (Graph -> on-chain V2)
 from config_loader import get_config, get_config_bool, get_config_float, get_config_int

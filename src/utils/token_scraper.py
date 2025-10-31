@@ -317,7 +317,7 @@ def test_token_tradeability(token_address: str, chain_id: str = "solana") -> boo
         if chain_id.lower() == "solana":
             # Test Jupiter quote
             from jupiter_lib import JupiterCustomLib
-            from secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
+            from src.config.secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
             
             lib = JupiterCustomLib(SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY)
             SOL_MINT = "So11111111111111111111111111111111111111112"

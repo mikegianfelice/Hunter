@@ -12,7 +12,7 @@ from solders.system_program import TransferParams, transfer
 from solana.rpc.commitment import Commitment
 import struct
 
-from secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
+from src.config.secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
 
 # Common token addresses
 WSOL_MINT = "So11111111111111111111111111111111111111112"  # Wrapped SOL

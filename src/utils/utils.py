@@ -4,7 +4,7 @@ import os
 import time
 from web3 import Web3
 from pathlib import Path
-from secrets import INFURA_URL
+from src.config.secrets import INFURA_URL
 from http_utils import get_json
 
 # Public constants
