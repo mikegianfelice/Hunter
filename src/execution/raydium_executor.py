@@ -15,7 +15,7 @@ import struct
 from ..config.secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
 from ..config.config_loader import get_config, get_config_bool, get_config_float
 from .raydium_lib import RaydiumCustomLib
-from ..monitoring.structured_logger import log_info
+from ..monitoring.structured_logger import log_info, log_error
 
 # Common token addresses
 WSOL_MINT = "So11111111111111111111111111111111111111112"  # Wrapped SOL
@@ -218,11 +218,11 @@ class RaydiumExecutor:
                     print(f"❌ No swap transaction in response: {data}")
                     return None
             else:
-                log_info("raydium.swap.api_failed", level="ERROR", status=response.status_code)
+                log_error("raydium.swap.api_failed", status=response.status_code)
                 return None
                 
         except Exception as e:
-            log_info("raydium.swap.tx_error", level="ERROR", error=str(e))
+            log_error("raydium.swap.tx_error", error=str(e))
             return None
 
     def sign_raydium_transaction(self, transaction_data: str) -> Optional[str]:
@@ -251,7 +251,7 @@ class RaydiumExecutor:
             max_size = 1644
             
             if tx_size > max_size:
-                log_info("raydium.swap.tx_too_large", level="ERROR", size=tx_size, max=max_size)
+                log_error("raydium.swap.tx_too_large", size=tx_size, max=max_size)
                 return None
             
             # Send to Solana RPC
@@ -274,15 +274,15 @@ class RaydiumExecutor:
             except requests.exceptions.ConnectionError as e:
                 error_msg = str(e).lower()
                 if "broken pipe" in error_msg or "errno 32" in error_msg:
-                    log_info("raydium.swap.rpc_broken_pipe", level="ERROR")
+                    log_error("raydium.swap.rpc_broken_pipe")
                 else:
-                    log_info("raydium.swap.rpc_conn_error", level="ERROR", error=str(e))
+                    log_error("raydium.swap.rpc_conn_error", error=str(e))
                 return None
             except OSError as e:
                 if e.errno == 32:  # Broken pipe
-                    log_info("raydium.swap.rpc_broken_pipe_os", level="ERROR", error=str(e))
+                    log_error("raydium.swap.rpc_broken_pipe_os", error=str(e))
                 else:
-                    log_info("raydium.swap.rpc_os_error", level="ERROR", error=str(e))
+                    log_error("raydium.swap.rpc_os_error", error=str(e))
                 return None
             
             if response.status_code == 200:
@@ -293,14 +293,14 @@ class RaydiumExecutor:
                     return tx_hash
                 elif "error" in result:
                     error_msg = result["error"]
-                    log_info("raydium.swap.rpc_error", level="ERROR", error=error_msg)
+                    log_error("raydium.swap.rpc_error", error=error_msg)
                     return None
             else:
-                log_info("raydium.swap.rpc_http_failed", level="ERROR", status=response.status_code)
+                log_error("raydium.swap.rpc_http_failed", status=response.status_code)
                 return None
                 
         except Exception as e:
-            log_info("raydium.swap.send_exception", level="ERROR", error=str(e))
+            log_error("raydium.swap.send_exception", error=str(e))
             return None
 
     def execute_raydium_swap(self, input_mint: str, output_mint: str, amount: int, slippage: float = 0.10) -> Tuple[bool, str]:
@@ -310,7 +310,7 @@ class RaydiumExecutor:
                 print("❌ No Raydium library available for swap")
                 return False, "No Raydium library"
             
-                log_info("raydium.swap.start", input=input_mint, output=output_mint, amount=amount)
+            log_info("raydium.swap.start", input=input_mint, output=output_mint, amount=amount)
             
             # Use custom Raydium library to execute the swap
             tx_hash, success = self.raydium_lib.execute_swap(input_mint, output_mint, amount, slippage)
@@ -319,11 +319,11 @@ class RaydiumExecutor:
                 log_info("raydium.swap.executed", tx_hash=tx_hash)
                 return True, tx_hash
             else:
-                log_info("raydium.swap.failed", level="ERROR", tx_hash=tx_hash)
+                log_error("raydium.swap.failed", tx_hash=tx_hash)
                 return False, tx_hash
             
         except Exception as e:
-            log_info("raydium.swap.exception", level="ERROR", error=str(e))
+            log_error("raydium.swap.exception", error=str(e))
             return False, str(e)
 
     def check_token_tradeable_on_raydium(self, token_address: str) -> bool:

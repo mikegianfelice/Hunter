@@ -6,7 +6,7 @@ Jupiter Custom Executor - Using custom Jupiter library for real trades
 import time
 from typing import Tuple, Optional, Dict, Any
 from .jupiter_lib import JupiterCustomLib
-from ..monitoring.structured_logger import log_info
+from ..monitoring.structured_logger import log_info, log_error
 
 from ..config.secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
 
@@ -135,11 +135,11 @@ class JupiterCustomExecutor:
             if success:
                 log_info("solana.trade.sent", token=token_address, side=("buy" if is_buy else "sell"), tx_hash=tx_hash)
             else:
-                log_info("solana.trade.error", level="ERROR", token=token_address, side=("buy" if is_buy else "sell"))
+                log_error("solana.trade.error", token=token_address, side=("buy" if is_buy else "sell"))
             return tx_hash, success
             
         except Exception as e:
-            log_info("solana.trade.exception", level="ERROR", error=str(e))
+            log_error("solana.trade.exception", error=str(e))
             return "", False
 
     def get_solana_balance(self) -> float:

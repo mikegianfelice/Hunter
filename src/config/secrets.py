@@ -53,4 +53,19 @@ def validate_secrets():
         print("\n💡 Run 'python secrets_manager.py' to set up secrets securely")
         return False
     
+    # Check Solana secrets (optional but recommended for Solana trading)
+    solana_secrets = {
+        "SOLANA_RPC_URL": SOLANA_RPC_URL,
+        "SOLANA_WALLET_ADDRESS": SOLANA_WALLET_ADDRESS,
+        "SOLANA_PRIVATE_KEY": SOLANA_PRIVATE_KEY,
+    }
+    
+    missing_solana = [key for key, value in solana_secrets.items() if not value]
+    
+    if missing_solana:
+        print("⚠️  Missing Solana secrets (Solana trading will not work):")
+        for secret in missing_solana:
+            print(f"   - {secret}")
+        print("💡 Add Solana secrets to enable Solana chain trading\n")
+    
     return True

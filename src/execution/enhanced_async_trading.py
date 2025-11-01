@@ -545,7 +545,7 @@ class EnhancedAsyncTradingEngine:
                     tx_hash = trade_result.get("tx_hash", "")
                     execution_time = (time.time() - start_time) * 1000
                     
-                    log_trade(symbol, address, chain, position_size, "buy", "success", profit_loss/position_size if position_size > 0 else 0)
+                    log_trade("buy", symbol, position_size, True, profit_loss, execution_time)
                     log_info("trading.success", f"✅ Real trade successful: {symbol} - PnL: ${profit_loss:.2f} - TX: {tx_hash}")
                     
                     # Record metrics
@@ -575,7 +575,7 @@ class EnhancedAsyncTradingEngine:
                     error_msg = trade_result.get("error", "Unknown error")
                     execution_time = (time.time() - start_time) * 1000
                     
-                    log_trade(symbol, address, chain, position_size, "buy", "failure", 0)
+                    log_trade("buy", symbol, position_size, False, 0.0, execution_time, error_msg)
                     log_error("trading.trade_failed", f"❌ Real trade failed: {symbol} - {error_msg}")
                     
                     # Record metrics
