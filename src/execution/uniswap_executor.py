@@ -237,7 +237,7 @@ def buy_token(token_address: str, usd_amount: float, symbol: str = "?") -> tuple
         return None, False
 
 # === SELL path (unchanged semantics) ===
-def sell_token(token_address: str):
+def sell_token(token_address: str, symbol: str = "?"):
     """
     Sell *all* of a given ERC-20 token for ETH using Uniswap V2:
       - Approves router if needed
