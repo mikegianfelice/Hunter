@@ -31,39 +31,114 @@ class RaydiumCustomLib:
             print(f"❌ Failed to initialize wallet: {e}")
             self.keypair = None
 
-    def get_quote(self, input_mint: str, output_mint: str, amount: int, slippage: float = 0.10) -> Dict[str, Any]:
-        """Get swap quote from Raydium API with enhanced error handling"""
+    def _get_priority_fee(self, priority_level: str = "h") -> int:
+        """Get priority fee from Raydium API
+        
+        Args:
+            priority_level: "vh" (very high), "h" (high), or "m" (medium)
+        
+        Returns:
+            Priority fee in microLamports, or default 1000 if API fails
+        """
         try:
-            # Try Raydium API v2 for quotes
-            url = "https://api.raydium.io/v2/sdk/quote"
+            url = "https://api.raydium.io/priority-fee"
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("success") and data.get("data", {}).get("default", {}).get(priority_level):
+                    fee = int(data["data"]["default"][priority_level])
+                    print(f"✅ Raydium priority fee ({priority_level}): {fee} microLamports")
+                    return fee
+        except Exception as e:
+            print(f"⚠️ Failed to get priority fee: {e}")
+        # Return default if API fails
+        return 1000
+
+    def _get_token_account(self, token_mint: str, wallet_address: str) -> Optional[str]:
+        """Get token account address for a given mint and wallet
+        
+        If token account doesn't exist, returns None (ATA will be created automatically)
+        
+        Args:
+            token_mint: Token mint address
+            wallet_address: Wallet address
+            
+        Returns:
+            Token account address or None if account doesn't exist
+        """
+        try:
+            # Check if token account exists via RPC
+            rpc_payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getTokenAccountsByOwner",
+                "params": [
+                    wallet_address,
+                    {"mint": token_mint},
+                    {"encoding": "jsonParsed"}
+                ]
+            }
+            
+            response = requests.post(self.rpc_url, json=rpc_payload, timeout=10)
+            if response.status_code == 200:
+                result = response.json()
+                if "result" in result and result["result"].get("value"):
+                    accounts = result["result"]["value"]
+                    if accounts and len(accounts) > 0:
+                        # Extract account address from response
+                        account_info = accounts[0]
+                        if isinstance(account_info, dict):
+                            # Response format: {"pubkey": "...", "account": {...}}
+                            account_address = account_info.get("pubkey") or account_info.get("account", {}).get("data", {}).get("parsed", {}).get("info", {}).get("mint")
+                            if account_address:
+                                return account_address
+            # Account doesn't exist - will be created automatically (return None)
+            return None
+        except Exception as e:
+            print(f"⚠️ Error getting token account: {e}")
+            return None
+
+    def get_quote(self, input_mint: str, output_mint: str, amount: int, slippage: float = 0.10) -> Dict[str, Any]:
+        """Get swap quote from Raydium Trade API (official endpoint)
+        
+        Reference: https://docs.raydium.io/raydium/traders/trade-api
+        
+        Uses official endpoint: https://transaction-v1.raydium.io/compute/swap-base-in
+        """
+        try:
+            # Use official Raydium Trade API endpoint
+            base_url = "https://transaction-v1.raydium.io/compute/swap-base-in"
             params = {
                 "inputMint": input_mint,
                 "outputMint": output_mint,
                 "amount": str(amount),
-                "slippage": str(slippage),
-                "version": 4
+                "slippageBps": str(int(slippage * 10000)),  # Convert to basis points (0.01%)
+                "txVersion": "LEGACY"  # Use LEGACY for compatibility, or "V0" for versioned
             }
             
             # Try multiple times with different strategies
             for attempt in range(3):
                 try:
-                    response = requests.get(url, params=params, timeout=15)
+                    response = requests.get(base_url, params=params, timeout=15)
                     
                     if response.status_code == 200:
                         data = response.json()
-                        if data and not data.get("error") and data.get("success") != False:
-                            print(f"✅ Raydium quote: {data.get('inAmount', 'N/A')} -> {data.get('outAmount', 'N/A')}")
-                            return data
+                        # Official API response structure: {success: bool, data: {...}}
+                        if data and data.get("success") and data.get("data"):
+                            swap_response = data["data"]
+                            print(f"✅ Raydium quote: {swap_response.get('inAmount', 'N/A')} -> {swap_response.get('outAmount', 'N/A')}")
+                            # Return full response structure as swapResponse for transaction endpoint
+                            return {
+                                "success": True,
+                                "swapResponse": data,  # Full response for transaction endpoint
+                                "data": swap_response
+                            }
                         else:
                             error_msg = data.get('error', 'Unknown error')
                             print(f"⚠️ Raydium quote failed (attempt {attempt + 1}/3): {error_msg}")
                             
-                            # Try with different parameters
-                            if attempt == 1:
-                                print(f"🔄 Trying with different version...")
-                                params["version"] = 3
-                                continue
-                            elif attempt == 2:
+                            # Try with smaller amount on retry
+                            if attempt < 2:
                                 print(f"🔄 Trying with smaller amount...")
                                 amount = int(amount * 0.5)
                                 params["amount"] = str(amount)
@@ -73,30 +148,22 @@ class RaydiumCustomLib:
                     else:
                         print(f"⚠️ Raydium quote failed (attempt {attempt + 1}/3): {response.status_code}")
                         
-                        # Handle 500 server errors specifically
+                        # Handle errors
                         if response.status_code == 500:
-                            print(f"⚠️ Raydium API server error (500) - trying alternative approach...")
+                            print(f"⚠️ Raydium API server error (500) - retrying...")
                             if attempt < 2:
-                                time.sleep(3)  # Wait longer for server errors
+                                time.sleep(3)
                                 continue
-                            else:
-                                # Try alternative endpoint on final attempt
-                                print(f"🔄 Trying alternative Raydium endpoint...")
-                                return self._try_alternative_raydium_quote(input_mint, output_mint, amount, slippage)
                         
-                        # Try with different parameters on 400/404 errors
                         if (response.status_code == 400 or response.status_code == 404) and attempt < 2:
-                            if attempt == 0:
-                                print(f"🔄 Trying with different version...")
-                                params["version"] = 3
-                            elif attempt == 1:
-                                print(f"🔄 Trying with smaller amount...")
-                                amount = int(amount * 0.5)
-                                params["amount"] = str(amount)
+                            print(f"🔄 Trying with smaller amount...")
+                            amount = int(amount * 0.5)
+                            params["amount"] = str(amount)
                             continue
                         
-                        # If we can't retry, continue to next attempt
-                        continue
+                        if attempt < 2:
+                            time.sleep(2)
+                            continue
                         
                 except requests.exceptions.Timeout:
                     print(f"⚠️ Raydium quote timeout (attempt {attempt + 1}/3)")
@@ -110,141 +177,60 @@ class RaydiumCustomLib:
                     continue
             
             print(f"❌ All Raydium quote attempts failed")
-            
-            # Fallback: Use DexScreener to get price and calculate quote
-            print(f"🔄 Using DexScreener fallback for quote...")
-            try:
-                url3 = f"https://api.dexscreener.com/latest/dex/tokens/{output_mint}"
-                response3 = requests.get(url3, timeout=10)
-                
-                if response3.status_code == 200:
-                    data3 = response3.json()
-                    pairs = data3.get("pairs", [])
-                    
-                    print(f"Found {len(pairs)} pairs in DexScreener")
-                    
-                    # Find Raydium pair
-                    for pair in pairs:
-                        dex_id = pair.get("dexId", "").lower()
-                        if "raydium" in dex_id:
-                            price_usd = float(pair.get("priceUsd", 0))
-                            if price_usd > 0:
-                                # Calculate quote based on price
-                                input_usd = amount / 1000000  # Convert from USDC decimals
-                                output_tokens = input_usd / price_usd
-                                
-                                print(f"✅ DexScreener fallback quote: {amount} -> {int(output_tokens * 1000000000)}")
-                                print(f"   Price: ${price_usd}")
-                                print(f"   Rate: 1 USDC = {output_tokens * 1000000000:,.0f} tokens")
-                                
-                                return {
-                                    "success": True,
-                                    "inAmount": str(amount),
-                                    "outAmount": str(int(output_tokens * 1000000000)),  # Convert to token decimals
-                                    "priceImpact": 0.1,  # Estimated
-                                    "route": "raydium-dexscreener-fallback"
-                                }
-                    
-                    print(f"⚠️ No Raydium pairs found in DexScreener data")
-                else:
-                    print(f"❌ DexScreener API failed: {response3.status_code}")
-            except Exception as e:
-                print(f"⚠️ DexScreener fallback failed: {e}")
-            
             return {}
             
         except Exception as e:
             print(f"❌ Raydium quote error: {e}")
             return {}
 
-    def _try_alternative_raydium_quote(self, input_mint: str, output_mint: str, amount: int, slippage: float) -> Dict[str, Any]:
-        """Try alternative Raydium endpoints when main quote API fails"""
-        try:
-            # Try Raydium main quote endpoint as alternative
-            url = "https://api.raydium.io/v2/main/quote"
-            params = {
-                "inputMint": input_mint,
-                "outputMint": output_mint,
-                "amount": str(amount),
-                "slippage": str(slippage),
-                "version": "4"
-            }
-            
-            print(f"🔄 Trying Raydium main quote endpoint...")
-            response = requests.get(url, params=params, timeout=15)
-            
-            if response.status_code == 200:
-                data = response.json()
-                if data and not data.get("error") and data.get("success") != False:
-                    print(f"✅ Raydium alternative quote: {data.get('inAmount', 'N/A')} -> {data.get('outAmount', 'N/A')}")
-                    return data
-                else:
-                    print(f"⚠️ Raydium alternative quote failed: {data.get('error', 'Unknown error')}")
-            elif response.status_code == 500:
-                print(f"⚠️ Raydium main quote also returning 500 server error")
-            else:
-                print(f"⚠️ Raydium main quote returned {response.status_code}")
-            
-            # If alternative also fails, try DexScreener fallback
-            return self._try_dexscreener_fallback(output_mint, amount)
-            
-        except Exception as e:
-            print(f"❌ Raydium alternative quote error: {e}")
-            return self._try_dexscreener_fallback(output_mint, amount)
-
-    def _try_dexscreener_fallback(self, output_mint: str, amount: int) -> Dict[str, Any]:
-        """Try DexScreener as final fallback for quote calculation"""
-        try:
-            print(f"🔄 Using DexScreener fallback for quote...")
-            url = f"https://api.dexscreener.com/latest/dex/tokens/{output_mint}"
-            response = requests.get(url, timeout=10)
-            
-            if response.status_code == 200:
-                data = response.json()
-                pairs = data.get("pairs", [])
-                
-                # Find Raydium pair
-                for pair in pairs:
-                    dex_id = pair.get("dexId", "").lower()
-                    if "raydium" in dex_id:
-                        price_usd = float(pair.get("priceUsd", 0))
-                        if price_usd > 0:
-                            # Calculate quote based on price
-                            input_usd = amount / 1000000  # Convert from USDC decimals
-                            output_tokens = input_usd / price_usd
-                            
-                            print(f"✅ DexScreener fallback quote: {amount} -> {int(output_tokens * 1000000000)}")
-                            print(f"   Price: ${price_usd}")
-                            
-                            return {
-                                "success": True,
-                                "inAmount": str(amount),
-                                "outAmount": str(int(output_tokens * 1000000000)),  # Convert to token decimals
-                                "priceImpact": 0.1,  # Estimated
-                                "route": "raydium-dexscreener-fallback"
-                            }
-                
-                print(f"⚠️ No Raydium pairs found in DexScreener data")
-            else:
-                print(f"❌ DexScreener API failed: {response.status_code}")
-        except Exception as e:
-            print(f"⚠️ DexScreener fallback failed: {e}")
+    def get_swap_transaction(self, quote_response: Dict[str, Any], input_mint: str = None, output_mint: str = None) -> str:
+        """Get swap transaction from Raydium Trade API (official endpoint)
         
-        return {}
-
-    def get_swap_transaction(self, quote_response: Dict[str, Any]) -> str:
-        """Get swap transaction from Raydium API with enhanced error handling"""
+        Reference: https://docs.raydium.io/raydium/traders/trade-api
+        
+        Uses official endpoint: https://transaction-v1.raydium.io/transaction/swap-base-in
+        """
         try:
-            url = "https://api.raydium.io/v2/sdk/swap"
+            # Extract swapResponse from quote - must be the full response from quote endpoint
+            swap_response = quote_response.get("swapResponse")
+            if not swap_response:
+                print(f"❌ Quote response missing swapResponse field")
+                return ""
+            
+            # Determine if we need to wrap/unwrap SOL
+            WSOL_MINT = "So11111111111111111111111111111111111111112"
+            wrap_sol = input_mint == WSOL_MINT if input_mint else False
+            unwrap_sol = output_mint == WSOL_MINT if output_mint else False
+            
+            # Get token accounts (optional - will auto-create if None)
+            input_account = None
+            output_account = None
+            
+            if input_mint and input_mint != WSOL_MINT:
+                input_account = self._get_token_account(input_mint, self.wallet_address)
+            
+            if output_mint and output_mint != WSOL_MINT:
+                output_account = self._get_token_account(output_mint, self.wallet_address)
+            
+            # Get priority fee
+            priority_fee = self._get_priority_fee("h")  # Use "high" priority
+            
+            # Use official Raydium Trade API transaction endpoint
+            url = "https://transaction-v1.raydium.io/transaction/swap-base-in"
             payload = {
-                "quoteResponse": quote_response,
-                "userPublicKey": self.wallet_address,
-                "wrapUnwrapSOL": True,
-                "computeUnitPriceMicroLamports": 1000,
-                "asLegacyTransaction": True,
-                "useSharedAccounts": False,
-                "maxAccounts": 16
+                "swapResponse": swap_response,  # Full response from quote endpoint
+                "txVersion": "LEGACY",  # or "V0" for versioned transactions
+                "wallet": self.wallet_address,
+                "wrapSol": wrap_sol,
+                "unwrapSol": unwrap_sol,
+                "computeUnitPriceMicroLamports": str(priority_fee)
             }
+            
+            # Add token accounts if provided (None means ATA will be created automatically)
+            if input_account:
+                payload["inputAccount"] = input_account
+            if output_account:
+                payload["outputAccount"] = output_account
             
             # Try multiple times with different strategies
             for attempt in range(3):
@@ -253,35 +239,37 @@ class RaydiumCustomLib:
                     
                     if response.status_code == 200:
                         swap_data = response.json()
-                        if "swapTransaction" in swap_data:
-                            print(f"✅ Raydium swap transaction generated successfully")
-                            return swap_data["swapTransaction"]
-                        else:
-                            error_msg = swap_data.get("error", "No swap transaction in response")
-                            print(f"⚠️ Raydium swap failed (attempt {attempt + 1}/3): {error_msg}")
+                        # Official API response: {success: bool, data: [{transaction: string}]}
+                        if swap_data.get("success") and swap_data.get("data"):
+                            transactions = swap_data["data"]
+                            if transactions and len(transactions) > 0:
+                                # Return first transaction (Raydium may return multiple)
+                                transaction = transactions[0].get("transaction")
+                                if transaction:
+                                    print(f"✅ Raydium swap transaction generated successfully ({len(transactions)} tx(s))")
+                                    return transaction
                             
-                            # Try with different parameters
-                            if attempt == 1:
-                                print(f"🔄 Trying with minimal accounts...")
-                                payload["maxAccounts"] = 8
-                                continue
-                            elif attempt == 2:
-                                print(f"🔄 Trying with compute budget disabled...")
-                                payload["computeUnitPriceMicroLamports"] = 0
-                                continue
-                            
-                            return ""
+                        error_msg = swap_data.get("error", "No transaction in response")
+                        print(f"⚠️ Raydium swap failed (attempt {attempt + 1}/3): {error_msg}")
+                        
+                        # Try with lower priority fee on retry
+                        if attempt < 2:
+                            print(f"🔄 Trying with lower priority fee...")
+                            payload["computeUnitPriceMicroLamports"] = str(priority_fee // 2)
+                            continue
+                        
+                        return ""
                     else:
                         print(f"⚠️ Raydium swap request failed (attempt {attempt + 1}/3): {response.status_code}")
                         
-                        # Try with different parameters on 400 errors
+                        # Try with lower priority fee on 400 errors
                         if response.status_code == 400 and attempt < 2:
-                            if attempt == 0:
-                                print(f"🔄 Trying with minimal accounts...")
-                                payload["maxAccounts"] = 8
-                            elif attempt == 1:
-                                print(f"🔄 Trying with compute budget disabled...")
-                                payload["computeUnitPriceMicroLamports"] = 0
+                            print(f"🔄 Trying with lower priority fee...")
+                            payload["computeUnitPriceMicroLamports"] = str(priority_fee // 2)
+                            continue
+                        
+                        if attempt < 2:
+                            time.sleep(2)
                             continue
                         
                         return ""
@@ -443,12 +431,12 @@ class RaydiumCustomLib:
             
             # Step 1: Get quote
             quote = self.get_quote(input_mint, output_mint, amount, slippage)
-            if not quote:
+            if not quote or not quote.get("swapResponse"):
                 print(f"❌ Failed to get Raydium quote for swap")
                 return "", False
             
-            # Step 2: Get swap transaction
-            transaction_data = self.get_swap_transaction(quote)
+            # Step 2: Get swap transaction (pass mints for SOL wrapping logic)
+            transaction_data = self.get_swap_transaction(quote, input_mint, output_mint)
             if not transaction_data:
                 print(f"❌ Failed to get Raydium swap transaction")
                 return "", False
