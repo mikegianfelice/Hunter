@@ -193,11 +193,58 @@ def format_status_message(risk_summary, recent_summary, open_trades, market_regi
     """Format a comprehensive status message"""
     from datetime import datetime
     
+    # Helper to fetch current token price by chain/address
+    def _current_price(chain: str, address: str) -> float:
+        try:
+            ch = (chain or 'ethereum').lower()
+            if ch == 'solana':
+                # Use Solana executor price fetcher
+                from src.execution.solana_executor import get_token_price_usd
+                px = get_token_price_usd(address)
+                return float(px or 0.0)
+            else:
+                # EVM and others fallback to utils fetcher (Uniswap subgraph etc.)
+                from src.utils.utils import fetch_token_price_usd
+                px = fetch_token_price_usd(address)
+                return float(px or 0.0)
+        except Exception:
+            return 0.0
+    
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     # Calculate total exposure from open trades
     total_exposure = sum(t.get('position_size_usd', 0) for t in open_trades)
     open_count = len(open_trades)
+    
+    # Compute unrealized PnL for open trades
+    unrealized_total_usd = 0.0
+    unrealized_lines = []
+    if open_trades:
+        for i, trade in enumerate(open_trades[:5], 1):
+            try:
+                symbol = trade.get('symbol', 'UNKNOWN')
+                size_usd = float(trade.get('position_size_usd', 0) or 0)
+                chain = trade.get('chain', trade.get('chainId', 'unknown'))
+                address = trade.get('address') or ''
+                entry = float(trade.get('entry_price', trade.get('priceUsd', 0)) or 0)
+                price = _current_price(chain, address) if address else 0.0
+                if entry > 0 and price > 0 and size_usd > 0:
+                    pct = (price - entry) / entry
+                    pnl_usd = pct * size_usd
+                    unrealized_total_usd += pnl_usd
+                    unrealized_lines.append(
+                        f"  {i}. {symbol} [{chain}]: ${size_usd:.2f} | Entry ${entry:.6f} → Now ${price:.6f} | Unrealized: ${pnl_usd:.2f} ({pct*100:.1f}%)\n"
+                    )
+                else:
+                    unrealized_lines.append(
+                        f"  {i}. {symbol} [{chain}]: ${size_usd:.2f}\n"
+                    )
+            except Exception:
+                # Fallback to basic line if anything fails
+                symbol = trade.get('symbol', 'UNKNOWN')
+                size_usd = trade.get('position_size_usd', 0)
+                chain = trade.get('chain', trade.get('chainId', 'unknown'))
+                unrealized_lines.append(f"  {i}. {symbol} [{chain}]: ${size_usd:.2f}\n")
     
     # Get tier information
     try:
@@ -224,13 +271,19 @@ def format_status_message(risk_summary, recent_summary, open_trades, market_regi
 • Tier: {tier_name}
 """
     
-    # Add details of open trades (up to 5)
+    # Add details of open trades (up to 5) with unrealized PnL where available
     if open_trades:
-        for i, trade in enumerate(open_trades[:5], 1):
-            symbol = trade.get('symbol', 'UNKNOWN')
-            size = trade.get('position_size_usd', 0)
-            chain = trade.get('chain', trade.get('chainId', 'unknown'))
-            msg += f"  {i}. {symbol} [{chain}]: ${size:.2f}\n"
+        if unrealized_lines:
+            for line in unrealized_lines:
+                msg += line
+        else:
+            for i, trade in enumerate(open_trades[:5], 1):
+                symbol = trade.get('symbol', 'UNKNOWN')
+                size = trade.get('position_size_usd', 0)
+                chain = trade.get('chain', trade.get('chainId', 'unknown'))
+                msg += f"  {i}. {symbol} [{chain}]: ${size:.2f}\n"
+        # Add total unrealized PnL summary line
+        msg += f"• Unrealized PnL (est.): ${unrealized_total_usd:.2f}\n"
     else:
         msg += "  No open positions\n"
     
