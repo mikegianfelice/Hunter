@@ -3,6 +3,7 @@
 Custom Jupiter Library - Direct transaction handling for Jupiter v6
 """
 
+import os
 import requests
 import json
 import base64
@@ -12,6 +13,13 @@ from typing import Tuple, Optional, Dict, Any, List
 from solders.keypair import Keypair
 import base58
 from ..utils.http_utils import get_json, post_json
+
+# Jupiter API Configuration
+# Default to public API (free tier): https://public.jupiterapi.com
+# For paid access, set JUPITER_API_BASE=https://api.jup.ag and JUPITER_API_KEY=your_key
+JUPITER_API_BASE = os.getenv("JUPITER_API_BASE", "https://public.jupiterapi.com").rstrip("/")
+JUPITER_API_KEY = (os.getenv("JUPITER_API_KEY") or "").strip()
+JUPITER_HEADERS = {"X-API-KEY": JUPITER_API_KEY} if JUPITER_API_KEY else None
 
 class JupiterCustomLib:
     def __init__(self, rpc_url: str, wallet_address: str, private_key: str):
@@ -36,12 +44,19 @@ class JupiterCustomLib:
                   route_preferences: Dict[str, Any] = None, use_exactout: bool = False) -> Dict[str, Any]:
         """Get swap quote from Jupiter v6 with enhanced error handling and advanced features
         
-        NOTE: Using current Jupiter API endpoint (api.jup.ag/v6/quote).
+        Uses configurable Jupiter API endpoint (default: public.jupiterapi.com for free tier).
         Allows multi-hop routes for better liquidity coverage.
+        
+        Configuration:
+        - Set JUPITER_API_BASE env var to change endpoint (default: https://public.jupiterapi.com)
+        - Set JUPITER_API_KEY env var for paid API access (not required for public API)
+        
+        If a 401 or 429 error is returned, the function will return empty dict to trigger
+        Raydium fallback.
         """
         try:
-            # Use current Jupiter API endpoint
-            base_url = "https://api.jup.ag/v6/quote"
+            # Use configurable Jupiter API endpoint
+            base_url = f"{JUPITER_API_BASE}/v6/quote"
             params = {
                 "inputMint": input_mint,
                 "outputMint": output_mint,
@@ -70,7 +85,8 @@ class JupiterCustomLib:
             for attempt in range(3):
                 try:
                     # Use http_utils with retry logic for better network error handling
-                    data = get_json(url, timeout=15, retries=2, backoff=1.0)
+                    # Include API key header if configured
+                    data = get_json(url, headers=JUPITER_HEADERS, timeout=15, retries=2, backoff=1.0)
                     
                     if data and not data.get("error") and data.get("inAmount") and data.get("outAmount"):
                         print(f"✅ Jupiter quote: {data.get('inAmount', 'N/A')} -> {data.get('outAmount', 'N/A')}")
@@ -100,10 +116,20 @@ class JupiterCustomLib:
                         return {}
                         
                 except requests.exceptions.HTTPError as e:
-                    print(f"⚠️ Jupiter quote HTTP error (attempt {attempt + 1}/3): {e.response.status_code if hasattr(e, 'response') else e}")
+                    status_code = e.response.status_code if hasattr(e, 'response') else None
+                    print(f"⚠️ Jupiter quote HTTP error (attempt {attempt + 1}/3): {status_code}")
+                    
+                    # If it's a 401 (Unauthorized) or 429 (Rate Limited), fail fast to fallback to Raydium
+                    if status_code in (401, 429):
+                        if status_code == 401:
+                            print(f"⚠️ Jupiter API returned 401 Unauthorized - API key may be required")
+                        else:
+                            print(f"⚠️ Jupiter API returned 429 Rate Limited - too many requests")
+                        print(f"🔄 Will fallback to Raydium executor...")
+                        return {}  # Return early to trigger Raydium fallback
                     
                     # If it's a 400 error, try with different parameters
-                    if hasattr(e, 'response') and e.response.status_code == 400:
+                    if status_code == 400:
                         print(f"🔄 Trying alternative quote method for 400 error...")
                         # Try with legacy transaction format
                         params["asLegacyTransaction"] = "true"
@@ -137,10 +163,14 @@ class JupiterCustomLib:
     def get_swap_transaction(self, quote_response: Dict[str, Any]) -> str:
         """Get swap transaction from Jupiter with enhanced error handling
         
-        NOTE: Jupiter API has changed. Using api.jup.ag endpoint.
+        Uses configurable Jupiter API endpoint (default: public.jupiterapi.com for free tier).
+        
+        Configuration:
+        - Set JUPITER_API_BASE env var to change endpoint (default: https://public.jupiterapi.com)
+        - Set JUPITER_API_KEY env var for paid API access (not required for public API)
         """
         try:
-            url = "https://api.jup.ag/v6/swap"
+            url = f"{JUPITER_API_BASE}/v6/swap"
             payload = {
                 "quoteResponse": quote_response,
                 "userPublicKey": self.wallet_address,
@@ -155,7 +185,8 @@ class JupiterCustomLib:
             for attempt in range(3):
                 try:
                     # Use post_json with retry logic for better network error handling
-                    swap_data = post_json(url, payload, timeout=15, retries=2, backoff=1.0)
+                    # Include API key header if configured
+                    swap_data = post_json(url, payload, headers=JUPITER_HEADERS, timeout=15, retries=2, backoff=1.0)
                     
                     if "swapTransaction" in swap_data:
                         print(f"✅ Swap transaction generated successfully")
@@ -179,6 +210,15 @@ class JupiterCustomLib:
                 except requests.exceptions.HTTPError as e:
                     status_code = e.response.status_code if hasattr(e, 'response') else None
                     print(f"⚠️ Jupiter swap HTTP error (attempt {attempt + 1}/3): {status_code}")
+                    
+                    # If it's a 401 (Unauthorized) or 429 (Rate Limited), fail fast to fallback to Raydium
+                    if status_code in (401, 429):
+                        if status_code == 401:
+                            print(f"⚠️ Jupiter API returned 401 Unauthorized - API key may be required")
+                        else:
+                            print(f"⚠️ Jupiter API returned 429 Rate Limited - too many requests")
+                        print(f"🔄 Will fallback to Raydium executor...")
+                        return ""  # Return early to trigger Raydium fallback
                     
                     # Try with different parameters on 400 errors
                     if status_code == 400 and attempt < 2:
