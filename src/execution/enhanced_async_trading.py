@@ -578,6 +578,22 @@ class EnhancedAsyncTradingEngine:
                     except Exception as e:
                         log_error("trading.register_buy_error", f"Failed to register buy: {e}")
                     
+                    # Log position to open_positions.json and launch monitor
+                    try:
+                        from src.execution.multi_chain_executor import _log_position, _launch_monitor_detached
+                        # Prepare token data in format expected by _log_position
+                        position_token = {
+                            "address": address,
+                            "priceUsd": float(token.get("priceUsd") or 0.0),
+                            "chainId": chain,  # Use chainId key as expected by _log_position
+                            "symbol": symbol
+                        }
+                        _log_position(position_token)
+                        _launch_monitor_detached()
+                        log_info("trading.position_logged", f"✅ Position logged for {symbol} on {chain}")
+                    except Exception as e:
+                        log_error("trading.position_log_error", f"Failed to log position for {symbol}: {e}")
+                    
                     # Record metrics
                     record_trade_metrics(
                         symbol=symbol,
