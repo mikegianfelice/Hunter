@@ -23,6 +23,7 @@ from src.execution.enhanced_async_trading import run_enhanced_async_trading
 from src.monitoring.realtime_dashboard import start_realtime_dashboard
 from src.analytics.backtesting_engine import run_comprehensive_backtest, optimize_strategy
 from src.monitoring.telegram_bot import send_telegram_message
+from src.utils.preflight_check import run_preflight_checks
 
 # Global variables for graceful shutdown
 shutdown_event = asyncio.Event()
@@ -107,6 +108,16 @@ async def run_production_mode():
     global production_manager
     
     try:
+        # Run preflight checks
+        config = get_validated_config()
+        supported_chains = getattr(config.chains, 'supported_chains', ['solana', 'ethereum', 'base'])
+        preflight_result = await run_preflight_checks(chains=supported_chains)
+        
+        if not preflight_result["overall_ready"]:
+            log_error("main.preflight_failed", 
+                     "❌ Preflight checks failed. Please fix errors before starting production mode.")
+            return False
+        
         # Initialize production manager
         production_manager = ProductionManager()
         
@@ -124,6 +135,16 @@ async def run_enhanced_trading_mode():
     log_info("async_trading.start", "⚡ Starting Enhanced Async Trading Mode")
     
     try:
+        # Run preflight checks
+        config = get_validated_config()
+        supported_chains = getattr(config.chains, 'supported_chains', ['solana', 'ethereum', 'base'])
+        preflight_result = await run_preflight_checks(chains=supported_chains)
+        
+        if not preflight_result["overall_ready"]:
+            log_error("main.preflight_failed", 
+                     "❌ Preflight checks failed. Please fix errors before starting trading.")
+            return False
+        
         await run_enhanced_async_trading()
         return True
     except Exception as e:

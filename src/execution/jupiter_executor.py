@@ -114,7 +114,7 @@ class JupiterCustomExecutor:
                 from src.utils.utils import get_sol_price_usd
                 sol_price = get_sol_price_usd()
                 if sol_price <= 0:
-                    log_info("solana.trade.error_no_sol_price", level="ERROR")
+                    log_error("solana.trade.error_no_sol_price")
                     return "", False
                 
                 sol_amount = amount_usd / sol_price
