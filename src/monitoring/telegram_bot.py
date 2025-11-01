@@ -113,6 +113,22 @@ def send_telegram_message(message: str, markdown: bool = False, disable_preview:
     try:
         resp = requests.post(url, json=payload, timeout=12)
         if resp.status_code != 200:
+            # Fallback: if Markdown parsing fails, retry without formatting
+            if (
+                resp.status_code == 400
+                and "can't parse entities" in resp.text.lower()
+                and payload.get("parse_mode")
+            ):
+                print(f"⚠️ Telegram parse error detected, retrying without formatting...")
+                payload_retry = {k: v for k, v in payload.items() if k != "parse_mode"}
+                resp2 = requests.post(url, json=payload_retry, timeout=12)
+                if resp2.status_code == 200:
+                    print("📨 Telegram alert sent without formatting (parse error fallback).")
+                    return True
+                else:
+                    print(f"❌ Telegram failed even without formatting: {resp2.text}")
+                    return False
+            
             print(f"❌ Telegram failed: {resp.text}")
             return False
         print("📨 Telegram alert sent!")
