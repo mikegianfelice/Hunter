@@ -179,6 +179,34 @@ class SimpleSolanaExecutor:
             print(f"❌ Jupiter quote error: {e}")
             return {}
 
+    def simulate_jupiter_swap(self, quote_response: Dict[str, Any]) -> Dict[str, Any]:
+        """Simulate swap transaction before executing (Jupiter v6 /simulate endpoint)
+        
+        This is a dry-run that helps validate the swap before sending it on-chain.
+        Returns simulation results or empty dict if simulation fails.
+        """
+        try:
+            if not quote_response:
+                return {}
+            
+            url = "https://api.jup.ag/v6/simulate"
+            payload = {
+                "quoteResponse": quote_response,
+                "userPublicKey": self.wallet_address
+            }
+            
+            response = requests.post(url, json=payload, timeout=15)
+            if response.status_code == 200:
+                sim_data = response.json()
+                print(f"✅ Simulation successful")
+                return sim_data
+            else:
+                print(f"⚠️ Simulation failed: {response.status_code} - {response.text}")
+                return {}
+        except Exception as e:
+            print(f"⚠️ Simulation error: {e}")
+            return {}
+
     def execute_jupiter_swap(self, quote_response: Dict[str, Any]) -> Tuple[str, bool]:
         """Execute swap using Jupiter"""
         try:
@@ -190,7 +218,7 @@ class SimpleSolanaExecutor:
             payload = {
                 "quoteResponse": quote_response,
                 "userPublicKey": self.wallet_address,
-                "wrapUnwrapSOL": True,
+                "wrapAndUnwrapSol": True,
                 "computeUnitPriceMicroLamports": 1000,
                 "asLegacyTransaction": False,
                 "useSharedAccounts": True
@@ -317,7 +345,7 @@ class SimpleSolanaExecutor:
             payload = {
                 "quoteResponse": quote_response,
                 "userPublicKey": self.wallet_address,
-                "wrapUnwrapSOL": True,
+                "wrapAndUnwrapSol": True,
                 "computeUnitPriceMicroLamports": 1000,
                 "asLegacyTransaction": True,  # Try legacy format
                 "useSharedAccounts": False
@@ -433,6 +461,14 @@ class SimpleSolanaExecutor:
             if not quote:
                 print(f"❌ No quote available for {token_address[:8]}...{token_address[-8:]}")
                 return "", False
+            
+            # Simulate swap before executing (non-blocking, for validation)
+            sim_result = self.simulate_jupiter_swap(quote)
+            if sim_result:
+                if sim_result.get("error"):
+                    print(f"⚠️ Simulation warning: {sim_result.get('error')}")
+                else:
+                    print(f"✅ Pre-flight simulation passed")
             
             # Execute swap
             tx_hash, success = self.execute_jupiter_swap(quote)
