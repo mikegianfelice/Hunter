@@ -530,6 +530,23 @@ class EnhancedAsyncTradingEngine:
             try:
                 log_info("trading.execute", f"Executing trade for {symbol} on {chain}")
                 
+                # Pre-trade wallet/limits gate - check balance and position limits
+                try:
+                    from src.core.risk_manager import allow_new_trade
+                    allowed, reason = allow_new_trade(position_size, token_address=address, chain_id=chain)
+                    if not allowed:
+                        log_error("trading.risk_gate_blocked",
+                                  symbol=symbol, chain=chain, amount_usd=position_size, reason=reason)
+                        return {
+                            "success": False,
+                            "symbol": symbol,
+                            "error": f"Risk gate blocked: {reason}",
+                            "chain": chain
+                        }
+                except Exception as e:
+                    log_error("trading.risk_gate_error", f"Risk gate error: {e}")
+                    # Continue if risk gate check fails (don't block on errors)
+                
                 # Risk assessment
                 risk_result = await assess_trade_risk(token, position_size)
                 if not risk_result.approved:
@@ -553,6 +570,13 @@ class EnhancedAsyncTradingEngine:
                     
                     log_trade("buy", symbol, position_size, True, profit_loss, execution_time)
                     log_info("trading.success", f"✅ Real trade successful: {symbol} - PnL: ${profit_loss:.2f} - TX: {tx_hash}")
+                    
+                    # Register buy with risk manager
+                    try:
+                        from src.core.risk_manager import register_buy
+                        register_buy(position_size)
+                    except Exception as e:
+                        log_error("trading.register_buy_error", f"Failed to register buy: {e}")
                     
                     # Record metrics
                     record_trade_metrics(

@@ -434,6 +434,23 @@ class SimpleSolanaExecutor:
                     print("❌ Cannot get SOL price")
                     return "", False
                 
+                # Balance gate - check available SOL balance before trading
+                try:
+                    available_sol = self.get_solana_balance()  # in SOL
+                    available_usd = float(available_sol) * float(sol_price)
+                    
+                    # Require 5% buffer for fees/slippage
+                    buffer_pct = 0.05
+                    required_usd = float(amount_usd) * (1.0 + buffer_pct)
+                    
+                    if available_usd < required_usd:
+                        print(f"❌ Insufficient SOL balance: ${available_usd:.2f} available, ${required_usd:.2f} required")
+                        return "", False
+                except Exception as e:
+                    print(f"⚠️ Balance check error: {e}")
+                    # Fail safe: block the trade if we can't verify balance
+                    return "", False
+                
                 sol_amount = amount_usd / sol_price
                 sol_amount_lamports = int(sol_amount * 1_000_000_000)  # SOL has 9 decimals
                 
