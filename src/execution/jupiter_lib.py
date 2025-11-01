@@ -15,10 +15,10 @@ import base58
 from ..utils.http_utils import get_json, post_json
 
 # Jupiter API Configuration
-# Default to free public API: https://public.jupiterapi.com (no API key required)
-# Alternative free endpoint: https://lite-api.jup.ag
+# Default to free public API: https://lite-api.jup.ag (Ultra API - no API key required)
 # For paid access, set JUPITER_API_BASE=https://api.jup.ag and JUPITER_API_KEY=your_key
-JUPITER_API_BASE = os.getenv("JUPITER_API_BASE", "https://public.jupiterapi.com").rstrip("/")
+# Ultra API documentation: https://dev.jup.ag/api-reference/ultra/order
+JUPITER_API_BASE = os.getenv("JUPITER_API_BASE", "https://lite-api.jup.ag").rstrip("/")
 JUPITER_API_KEY = (os.getenv("JUPITER_API_KEY") or "").strip()
 JUPITER_HEADERS = {"X-API-KEY": JUPITER_API_KEY} if JUPITER_API_KEY else None
 
@@ -43,37 +43,35 @@ class JupiterCustomLib:
 
     def get_quote(self, input_mint: str, output_mint: str, amount: int, slippage: float = 0.15, 
                   route_preferences: Dict[str, Any] = None, use_exactout: bool = False) -> Dict[str, Any]:
-        """Get swap quote from Jupiter v6 with enhanced error handling and advanced features
+        """Get swap quote from Jupiter Ultra API with enhanced error handling
         
-        Uses configurable Jupiter API endpoint (default: public.jupiterapi.com for free tier).
-        Allows multi-hop routes for better liquidity coverage.
+        Uses Jupiter Ultra API (https://dev.jup.ag/api-reference/ultra/order)
+        Default endpoint: https://lite-api.jup.ag (free tier, no API key required)
         
         Configuration:
-        - Set JUPITER_API_BASE env var to change endpoint (default: https://public.jupiterapi.com)
-        - Note: Public API may use different path structure - check Jupiter docs if v6 path fails
-        - Set JUPITER_API_KEY env var for paid API access (not required for public API)
+        - Set JUPITER_API_BASE env var to change endpoint (default: https://lite-api.jup.ag)
+        - Set JUPITER_API_KEY env var for paid API access (not required for free tier)
         
         If a 401 or 429 error is returned, the function will return empty dict to trigger
         Raydium fallback.
         """
         try:
-            # Use configurable Jupiter API endpoint
-            base_url = f"{JUPITER_API_BASE}/v6/quote"
+            # Use Jupiter Ultra API endpoint
+            base_url = f"{JUPITER_API_BASE}/ultra/v1/order"
             params = {
                 "inputMint": input_mint,
                 "outputMint": output_mint,
                 "amount": str(amount),
                 "slippageBps": int(slippage * 10000),
-                "onlyDirectRoutes": "false",  # Allow multi-hop routes for better liquidity
-                "asLegacyTransaction": "true"  # Use legacy transactions to reduce size
+                "taker": self.wallet_address  # Include taker to get transaction in response
             }
             
-            # Apply route preferences
+            # Apply route preferences (if needed)
             if route_preferences:
-                if route_preferences.get('onlyDirectRoutes'):
-                    params["onlyDirectRoutes"] = "true"
-                if route_preferences.get('maxHops'):
-                    params["maxHops"] = str(route_preferences['maxHops'])
+                if route_preferences.get('excludeDexes'):
+                    params["excludeDexes"] = route_preferences['excludeDexes']
+                if route_preferences.get('excludeRouters'):
+                    params["excludeRouters"] = route_preferences['excludeRouters']
             
             # Use ExactOut for sketchy tokens
             if use_exactout:
@@ -90,25 +88,24 @@ class JupiterCustomLib:
                     # Include API key header if configured
                     data = get_json(url, headers=JUPITER_HEADERS, timeout=15, retries=2, backoff=1.0)
                     
-                    if data and not data.get("error") and data.get("inAmount") and data.get("outAmount"):
-                        print(f"✅ Jupiter quote: {data.get('inAmount', 'N/A')} -> {data.get('outAmount', 'N/A')}")
+                    # Ultra API response structure
+                    if data and data.get("inAmount") and data.get("outAmount"):
+                        print(f"✅ Jupiter Ultra quote: {data.get('inAmount', 'N/A')} -> {data.get('outAmount', 'N/A')}")
+                        # Store requestId for execution (Ultra API requirement)
+                        if data.get("requestId"):
+                            data["requestId"] = data["requestId"]
+                        # Transaction may already be in response if taker is provided
+                        if data.get("transaction"):
+                            data["transaction"] = data["transaction"]
                         # Add success field for compatibility
                         data["success"] = True
                         return data
                     else:
-                        error_msg = data.get('error', 'Unknown error')
+                        error_msg = data.get('errorMessage', data.get('error', 'Unknown error'))
                         print(f"⚠️ Jupiter quote failed (attempt {attempt + 1}/3): {error_msg}")
                         
-                        # If it's a parsing error, try with different parameters
-                        if "cannot be parsed" in error_msg.lower() or "invalid" in error_msg.lower():
-                            print(f"🔄 Trying alternative quote method for parsing issues...")
-                            # Try with legacy transaction format
-                            params["asLegacyTransaction"] = "true"
-                            url = f"{base_url}?{'&'.join(f'{k}={v}' for k, v in params.items())}"
-                            continue
-                        
                         # If it's a liquidity issue, try with smaller amount
-                        if "insufficient" in error_msg.lower() or "liquidity" in error_msg.lower():
+                        if "insufficient" in str(error_msg).lower() or "liquidity" in str(error_msg).lower():
                             print(f"🔄 Trying with smaller amount due to liquidity issues...")
                             amount = int(amount * 0.5)  # Try with 50% of original amount
                             params["amount"] = str(amount)
@@ -163,25 +160,35 @@ class JupiterCustomLib:
             return {}
 
     def get_swap_transaction(self, quote_response: Dict[str, Any]) -> str:
-        """Get swap transaction from Jupiter with enhanced error handling
+        """Get swap transaction from Jupiter Ultra API with enhanced error handling
         
-        Uses configurable Jupiter API endpoint (default: public.jupiterapi.com for free tier).
+        Uses Jupiter Ultra API execute endpoint (https://dev.jup.ag/api-reference/ultra/execute)
+        Default endpoint: https://lite-api.jup.ag (free tier, no API key required)
         
         Configuration:
-        - Set JUPITER_API_BASE env var to change endpoint (default: https://public.jupiterapi.com)
-        - Note: Public API may use different path structure - check Jupiter docs if v6 path fails
-        - Set JUPITER_API_KEY env var for paid API access (not required for public API)
+        - Set JUPITER_API_BASE env var to change endpoint (default: https://lite-api.jup.ag)
+        - Set JUPITER_API_KEY env var for paid API access (not required for free tier)
+        
+        Note: If quote_response already contains a transaction (from get_quote with taker),
+        this function will return it directly. Otherwise, it will call the execute endpoint.
         """
         try:
-            url = f"{JUPITER_API_BASE}/v6/swap"
+            # If transaction is already in quote response (from Ultra API with taker), use it
+            if quote_response.get("transaction"):
+                transaction = quote_response["transaction"]
+                if transaction and transaction.strip():
+                    print(f"✅ Swap transaction from quote response")
+                    return transaction
+            
+            # Otherwise, use execute endpoint with requestId
+            request_id = quote_response.get("requestId")
+            if not request_id:
+                print(f"⚠️ No requestId in quote response, cannot execute swap")
+                return ""
+            
+            url = f"{JUPITER_API_BASE}/ultra/v1/execute"
             payload = {
-                "quoteResponse": quote_response,
-                "userPublicKey": self.wallet_address,
-                "wrapUnwrapSOL": True,
-                "computeUnitPriceMicroLamports": 1000,
-                "asLegacyTransaction": True,  # Use legacy format to reduce size
-                "useSharedAccounts": False,   # Disable shared accounts to reduce size
-                "maxAccounts": 16             # Reduce max accounts to reduce size
+                "requestId": request_id
             }
             
             # Try multiple times with different strategies
@@ -191,21 +198,20 @@ class JupiterCustomLib:
                     # Include API key header if configured
                     swap_data = post_json(url, payload, headers=JUPITER_HEADERS, timeout=15, retries=2, backoff=1.0)
                     
-                    if "swapTransaction" in swap_data:
-                        print(f"✅ Swap transaction generated successfully")
-                        return swap_data["swapTransaction"]
+                    if "transaction" in swap_data and swap_data["transaction"]:
+                        print(f"✅ Swap transaction generated successfully via execute endpoint")
+                        return swap_data["transaction"]
                     else:
-                        error_msg = swap_data.get("error", "No swap transaction in response")
+                        error_msg = swap_data.get("errorMessage", swap_data.get("error", "No transaction in response"))
                         print(f"⚠️ Jupiter swap failed (attempt {attempt + 1}/3): {error_msg}")
                         
-                        # Try with different parameters
-                        if attempt == 1:
-                            print(f"🔄 Trying with minimal accounts...")
-                            payload["maxAccounts"] = 8
-                            continue
-                        elif attempt == 2:
-                            print(f"🔄 Trying with compute budget disabled...")
-                            payload["computeUnitPriceMicroLamports"] = 0
+                        # Check for specific error codes
+                        error_code = swap_data.get("errorCode")
+                        if error_code:
+                            print(f"   Error code: {error_code}")
+                        
+                        if attempt < 2:
+                            time.sleep(2)
                             continue
                         
                         return ""
