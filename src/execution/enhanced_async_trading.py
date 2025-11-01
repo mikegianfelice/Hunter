@@ -284,7 +284,6 @@ class EnhancedAsyncTradingEngine:
             # Import the appropriate executor based on chain
             if chain.lower() == "solana":
                 from .jupiter_executor import buy_token_solana
-                from .raydium_executor import execute_raydium_fallback_trade
                 
                 # Try Jupiter first
                 try:
@@ -309,8 +308,11 @@ class EnhancedAsyncTradingEngine:
                 
                 # Try Raydium fallback
                 try:
+                    from .raydium_executor import RaydiumExecutor
+                    
                     log_info("trading.raydium", f"Executing Raydium trade for {symbol} on Solana")
-                    success, tx_hash = execute_raydium_fallback_trade(address, symbol, position_size)
+                    raydium = RaydiumExecutor()
+                    success, tx_hash = raydium.execute_trade(address, position_size, is_buy=True)
                     if success and tx_hash:
                         # At entry time, P&L is 0.0 - will be calculated when position is closed
                         profit_loss = 0.0  # No profit/loss until position is closed
