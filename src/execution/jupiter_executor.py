@@ -111,38 +111,39 @@ class JupiterCustomExecutor:
             # Balance gate for SOL buys - prevent trading when insufficient balance
             if is_buy:
                 try:
-                    from src.utils.utils import get_sol_price_usd
-                except ImportError:
                     try:
-                        from ..utils.utils import get_sol_price_usd
-                    except ImportError:
-                        import sys
-                        import os
-                        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
                         from src.utils.utils import get_sol_price_usd
-                
-                sol_price = get_sol_price_usd()
-                if sol_price <= 0:
-                    log_error("solana.trade.error_no_sol_price", "Cannot get SOL price - aborting trade")
+                    except ImportError:
+                        try:
+                            from ..utils.utils import get_sol_price_usd
+                        except ImportError:
+                            import sys
+                            import os
+                            sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+                            from src.utils.utils import get_sol_price_usd
+                    
+                    sol_price = get_sol_price_usd()
+                    if sol_price <= 0:
+                        log_error("solana.trade.error_no_sol_price", "Cannot get SOL price - aborting trade")
+                        return "", False
+                    
+                    # Available SOL balance (USD)
+                    available_sol = self.get_solana_balance()  # in SOL
+                    available_usd = float(available_sol) * float(sol_price)
+                    
+                    # Require 5% buffer for fees/slippage
+                    buffer_pct = 0.05
+                    required_usd = float(amount_usd) * (1.0 + buffer_pct)
+                    
+                    if available_usd < required_usd:
+                        log_error("solana.trade.insufficient_balance",
+                                  token=token_address, available_usd=round(available_usd, 2),
+                                  required_usd=round(required_usd, 2))
+                        return "", False
+                except Exception as e:
+                    log_error("solana.trade.balance_gate_error", error=str(e))
+                    # Fail safe: block the trade if we can't verify balance
                     return "", False
-                
-                # Available SOL balance (USD)
-                available_sol = self.get_solana_balance()  # in SOL
-                available_usd = float(available_sol) * float(sol_price)
-                
-                # Require 5% buffer for fees/slippage
-                buffer_pct = 0.05
-                required_usd = float(amount_usd) * (1.0 + buffer_pct)
-                
-                if available_usd < required_usd:
-                    log_error("solana.trade.insufficient_balance",
-                              token=token_address, available_usd=round(available_usd, 2),
-                              required_usd=round(required_usd, 2))
-                    return "", False
-            except Exception as e:
-                log_error("solana.trade.balance_gate_error", error=str(e))
-                # Fail safe: block the trade if we can't verify balance
-                return "", False
             
             # Get token liquidity to adjust trade amount
             try:
