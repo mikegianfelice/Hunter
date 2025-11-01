@@ -162,6 +162,13 @@ class EnhancedAsyncTradingEngine:
             # DexScreener trending API endpoints - use specific chain searches
             if dex_chain == "ethereum":
                 trending_urls = [
+                    # Broader nets for ERC-20 discovery on Ethereum
+                    "https://api.dexscreener.com/latest/dex/search/?q=uniswap",
+                    "https://api.dexscreener.com/latest/dex/search/?q=trending",
+                    "https://api.dexscreener.com/latest/dex/search/?q=top",
+                    "https://api.dexscreener.com/latest/dex/search/?q=volume",
+                    "https://api.dexscreener.com/latest/dex/search/?q=liquidity",
+                    # Keep originals as supplemental (though they mostly return ETH/WETH pairs)
                     "https://api.dexscreener.com/latest/dex/search/?q=ethereum",
                     "https://api.dexscreener.com/latest/dex/search/?q=eth",
                     "https://api.dexscreener.com/latest/dex/search/?q=weth"
