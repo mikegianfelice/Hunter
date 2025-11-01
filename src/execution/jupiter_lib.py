@@ -15,9 +15,10 @@ import base58
 from ..utils.http_utils import get_json, post_json
 
 # Jupiter API Configuration
-# Default to public API (free tier): https://public.jupiterapi.com
+# Default to free public API (lite-api.jup.ag) - no API key required
+# Alternative free endpoint: https://public.jupiterapi.com
 # For paid access, set JUPITER_API_BASE=https://api.jup.ag and JUPITER_API_KEY=your_key
-JUPITER_API_BASE = os.getenv("JUPITER_API_BASE", "https://public.jupiterapi.com").rstrip("/")
+JUPITER_API_BASE = os.getenv("JUPITER_API_BASE", "https://lite-api.jup.ag").rstrip("/")
 JUPITER_API_KEY = (os.getenv("JUPITER_API_KEY") or "").strip()
 JUPITER_HEADERS = {"X-API-KEY": JUPITER_API_KEY} if JUPITER_API_KEY else None
 
