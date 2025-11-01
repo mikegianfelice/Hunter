@@ -432,6 +432,21 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
             _log_position(token)
             _launch_monitor_detached()
             
+            # Log trade entry to performance tracker for status reports and analytics
+            try:
+                from src.core.performance_tracker import performance_tracker
+                # Get quality score if available in token data
+                quality_score = float(token.get("quality_score", 0.0))
+                # Ensure token has required fields
+                pt_token = dict(token)
+                if "chainId" not in pt_token:
+                    pt_token["chainId"] = chain_id
+                # Log to performance tracker
+                performance_tracker.log_trade_entry(pt_token, total_successful_amount or amount_usd, quality_score)
+                log_event("trade.performance_logged", symbol=symbol)
+            except Exception as e:
+                log_event("trade.performance_log_error", level="WARNING", symbol=symbol, error=str(e))
+            
             return successful_txs[0], True  # Return first transaction hash
         else:
             log_event("trade.end", level="ERROR", successful_slices=0, total_slices=len(slices))

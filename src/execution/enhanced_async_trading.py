@@ -601,6 +601,24 @@ class EnhancedAsyncTradingEngine:
                     except Exception as e:
                         log_error("trading.position_log_error", f"Failed to log position for {symbol}: {e}")
                     
+                    # Log trade entry to performance tracker for status reports and analytics
+                    try:
+                        from src.core.performance_tracker import performance_tracker
+                        quality_score = token.get('ai_analysis', {}).get('quality_score', 0.0)
+                        # Prepare token data with all required fields for performance tracker
+                        pt_token = {
+                            "address": address,
+                            "symbol": symbol,
+                            "chainId": chain,
+                            "priceUsd": float(token.get("priceUsd") or 0.0),
+                            "volume24h": float(token.get("volume24h", 0)),
+                            "liquidity": float(token.get("liquidity", 0))
+                        }
+                        performance_tracker.log_trade_entry(pt_token, position_size, quality_score)
+                        log_info("trading.performance_logged", f"✅ Trade entry logged to performance tracker for {symbol}")
+                    except Exception as e:
+                        log_error("trading.performance_log_error", f"Failed to log trade entry for {symbol}: {e}")
+                    
                     # Record metrics
                     record_trade_metrics(
                         symbol=symbol,
