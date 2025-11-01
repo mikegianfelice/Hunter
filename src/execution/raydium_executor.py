@@ -303,6 +303,53 @@ class RaydiumExecutor:
             log_error("raydium.swap.send_exception", error=str(e))
             return None
 
+    def execute_trade(self, token_address: str, amount_usd: float, is_buy: bool = True) -> Tuple[bool, str]:
+        """
+        Compatibility wrapper for execute_trade method (matches Jupiter interface)
+        Converts USD amount to appropriate token amounts and executes swap
+        """
+        try:
+            if not self.raydium_lib:
+                return False, "No Raydium library"
+            
+            # Convert USD to appropriate input amount
+            if is_buy:
+                # Buying token - need SOL amount
+                try:
+                    # Import with fallback
+                    try:
+                        from src.utils.utils import get_sol_price_usd
+                    except ImportError:
+                        try:
+                            from ..utils.utils import get_sol_price_usd
+                        except ImportError:
+                            import sys
+                            import os
+                            sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+                            from src.utils.utils import get_sol_price_usd
+                    
+                    sol_price = get_sol_price_usd()
+                    if sol_price <= 0:
+                        return False, "Cannot get SOL price"
+                    sol_amount = amount_usd / sol_price
+                    amount = int(sol_amount * 1_000_000_000)  # SOL has 9 decimals
+                    input_mint = WSOL_MINT
+                    output_mint = token_address
+                except Exception as e:
+                    return False, f"Failed to convert USD to SOL: {e}"
+            else:
+                # Selling token - need USDC amount
+                amount = int(amount_usd * 1_000_000)  # USDC has 6 decimals
+                input_mint = token_address
+                output_mint = USDC_MINT
+            
+            # Execute swap with default slippage
+            return self.execute_raydium_swap(input_mint, output_mint, amount, slippage=0.10)
+            
+        except Exception as e:
+            log_error("raydium.execute_trade.exception", error=str(e))
+            return False, str(e)
+
     def execute_raydium_swap(self, input_mint: str, output_mint: str, amount: int, slippage: float = 0.10) -> Tuple[bool, str]:
         """Execute real swap on Raydium using custom library"""
         try:

@@ -26,8 +26,19 @@ class JupiterCustomExecutor:
         """Get token price in USD using multiple sources with retry logic"""
         import time
         
-        # Import here to avoid circular imports
-        from src.utils.utils import get_sol_price_usd
+        # Import here to avoid circular imports with fallback for different import paths
+        try:
+            from src.utils.utils import get_sol_price_usd
+        except ImportError:
+            # Fallback if runtime package layout differs
+            try:
+                from ..utils.utils import get_sol_price_usd
+            except ImportError:
+                # Final fallback
+                import sys
+                import os
+                sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+                from src.utils.utils import get_sol_price_usd
         
         # If the token is SOL, use the utility function
         sol_mint = "So11111111111111111111111111111111111111112"
@@ -111,10 +122,21 @@ class JupiterCustomExecutor:
             
             if is_buy:
                 # Buying token with SOL (convert USD amount to SOL)
-                from src.utils.utils import get_sol_price_usd
+                # Import with fallback for different import paths
+                try:
+                    from src.utils.utils import get_sol_price_usd
+                except ImportError:
+                    try:
+                        from ..utils.utils import get_sol_price_usd
+                    except ImportError:
+                        import sys
+                        import os
+                        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+                        from src.utils.utils import get_sol_price_usd
+                
                 sol_price = get_sol_price_usd()
                 if sol_price <= 0:
-                    log_error("solana.trade.error_no_sol_price")
+                    log_error("solana.trade.error_no_sol_price", "Cannot get SOL price - aborting trade")
                     return "", False
                 
                 sol_amount = amount_usd / sol_price
@@ -184,7 +206,18 @@ def buy_token_solana(token_address: str, amount_usd: float, symbol: str = "", te
         # In test mode, still use real market data for quotes but don't execute
         # Get quote to validate trade would work
         try:
-            from src.utils.utils import get_sol_price_usd
+            # Import with fallback for different import paths
+            try:
+                from src.utils.utils import get_sol_price_usd
+            except ImportError:
+                try:
+                    from ..utils.utils import get_sol_price_usd
+                except ImportError:
+                    import sys
+                    import os
+                    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+                    from src.utils.utils import get_sol_price_usd
+            
             sol_price = get_sol_price_usd()
             if sol_price <= 0:
                 return None, False

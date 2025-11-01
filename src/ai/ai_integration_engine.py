@@ -153,7 +153,7 @@ class AIModuleConnector:
                     health_status[module_name] = True
                     
             except Exception as e:
-                log_error(f"Health check failed for {module_name}: {e}")
+                log_error(f"ai.health_check.{module_name}", f"Health check failed for {module_name}: {e}")
                 health_status[module_name] = False
         
         self.module_health = health_status
@@ -389,7 +389,7 @@ class AIIntegrationEngine:
         
     async def initialize(self):
         """Initialize the AI integration engine"""
-        log_info("Initializing AI Integration Engine")
+        log_info("ai.engine.init", "Initializing AI Integration Engine")
         
         # Initialize cache
         self.cache = get_cache()

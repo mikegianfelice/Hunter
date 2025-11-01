@@ -300,8 +300,12 @@ class EnhancedAsyncTradingEngine:
                             "tx_hash": tx_hash,
                             "dex": "jupiter"
                         }
+                    elif not success:
+                        # Log detailed error for Jupiter failures
+                        error_msg = tx_hash if isinstance(tx_hash, str) and not tx_hash.startswith("0x") else "Jupiter returned unsuccessful"
+                        log_error("trading.jupiter_error", f"Jupiter execution failed for {symbol}: {error_msg}")
                 except Exception as e:
-                    log_error("trading.jupiter_error", f"Jupiter execution failed: {e}")
+                    log_error("trading.jupiter_error", f"Jupiter execution exception for {symbol}: {e}")
                 
                 # Try Raydium fallback
                 try:
