@@ -163,7 +163,7 @@ wallet_tiers: {
     "min_balance": 100,
     "max_balance": 999,
     "base_position_size_usd": 5.0,
-    "max_position_size_usd": 10.0,
+    "max_position_size_usd": 25.0,
     "max_total_exposure_usd": 100.0,
     "max_wallet_usage_percent": 0.10,
     "description": "Learning Phase - Conservative"
