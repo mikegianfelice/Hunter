@@ -7,6 +7,7 @@ import csv
 import signal
 from datetime import datetime
 from pathlib import Path
+from typing import Tuple
 
 # Add project root to path if not already there
 project_root = Path(__file__).resolve().parents[2]
@@ -275,6 +276,120 @@ def _detect_delisted_token(token_address: str, consecutive_failures: int) -> boo
     # Consider delisted after 5 consecutive failures (2.5 minutes of monitoring)
     return consecutive_failures >= 5
 
+def _check_token_balance_on_chain(token_address: str, chain_id: str) -> float:
+    """
+    Check token balance on the specified chain.
+    Returns balance amount (0.0 if balance is zero or check fails).
+    """
+    try:
+        chain_lower = chain_id.lower()
+        
+        if chain_lower == "solana":
+            from src.execution.jupiter_lib import JupiterCustomLib
+            from src.config.secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
+            lib = JupiterCustomLib(SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY)
+            balance = lib.get_token_balance(token_address)
+            return float(balance or 0.0)
+            
+        elif chain_lower == "base":
+            from src.execution.base_executor import get_token_balance
+            balance = get_token_balance(token_address)
+            return float(balance or 0.0)
+            
+        elif chain_lower == "ethereum":
+            # Use web3 to check ERC20 token balance
+            from web3 import Web3
+            from src.config.secrets import INFURA_URL, WALLET_ADDRESS
+            
+            w3 = Web3(Web3.HTTPProvider(INFURA_URL))
+            if not w3.is_connected():
+                print(f"⚠️ Web3 not connected for balance check on Ethereum")
+                return 0.0
+            
+            # ERC20 ABI minimal - just balanceOf and decimals
+            erc20_abi = json.loads("""[
+                {"constant":true,"inputs":[],"name":"decimals","outputs":[{"name":"","type":"uint8"}],"type":"function"},
+                {"constant":true,"inputs":[{"name":"owner","type":"address"}],"name":"balanceOf","outputs":[{"name":"","type":"uint256"}],"type":"function"}
+            ]""")
+            
+            wallet = Web3.to_checksum_address(WALLET_ADDRESS)
+            token_addr = Web3.to_checksum_address(token_address)
+            token_contract = w3.eth.contract(address=token_addr, abi=erc20_abi)
+            
+            balance_wei = token_contract.functions.balanceOf(wallet).call()
+            decimals = token_contract.functions.decimals().call()
+            balance = float(balance_wei) / (10 ** decimals)
+            return balance
+            
+        else:
+            print(f"⚠️ Unsupported chain for balance check: {chain_id}")
+            return 0.0
+            
+    except Exception as e:
+        # If balance check fails, assume we can't verify - keep position
+        # (don't auto-remove on transient errors)
+        print(f"⚠️ Balance check failed for {token_address} on {chain_id}: {e}")
+        return -1.0  # Return -1 to indicate check failed (not zero balance)
+
+def _prune_positions_with_zero_balance(positions: dict) -> Tuple[dict, list]:
+    """
+    Remove positions that no longer have wallet balance.
+    Auto-reconciles after manual closes.
+    
+    Returns: (pruned_positions_dict, list_of_closed_token_addresses)
+    """
+    pruned = dict(positions)
+    to_remove = []
+    
+    if not pruned:
+        return pruned, []
+    
+    print("🔍 Auto-reconciling positions with on-chain balances...")
+    
+    for token_address, position_data in list(positions.items()):
+        # Handle both old format (float) and new format (dict)
+        if isinstance(position_data, dict):
+            chain_id = position_data.get("chain_id", "ethereum").lower()
+            symbol = position_data.get("symbol", "?")
+        else:
+            chain_id = "ethereum"
+            symbol = "?"
+        
+        try:
+            balance = _check_token_balance_on_chain(token_address, chain_id)
+            
+            if balance == -1.0:
+                # Check failed - keep position to be safe
+                print(f"⏸️  Skipping balance check for {symbol} ({token_address[:8]}...{token_address[-8:]}) - check failed")
+                continue
+            elif balance <= 0.0:
+                # Zero balance - position was closed manually
+                print(f"✅ Detected zero balance for {symbol} ({token_address[:8]}...{token_address[-8:]} on {chain_id.upper()}) - removing from tracking")
+                to_remove.append(token_address)
+                pruned.pop(token_address, None)
+            else:
+                # Has balance - position still open
+                print(f"✓ {symbol} ({token_address[:8]}...{token_address[-8:]}) still has balance: {balance:.6f}")
+                
+        except Exception as e:
+            print(f"⚠️ Error checking balance for {token_address}: {e}")
+            # On error, keep the position to be safe
+    
+    if to_remove:
+        print(f"🧹 Auto-reconciled {len(to_remove)} manually closed position(s)")
+        save_positions(pruned)
+        # Send Telegram notification
+        try:
+            closed_list = "\n".join([f"• {addr[:8]}...{addr[-8:]}" for addr in to_remove])
+            send_telegram_message(
+                f"✅ Auto-reconciled manually closed positions:\n{closed_list}\n"
+                f"These positions were detected as closed and removed from tracking."
+            )
+        except Exception:
+            pass  # Don't fail on Telegram errors
+    
+    return pruned, to_remove
+
 def monitor_all_positions():
     config = get_monitor_config()
     positions = load_positions()
@@ -282,12 +397,19 @@ def monitor_all_positions():
         print("📭 No open positions to monitor.")
         return
 
+    # Auto-reconcile: Remove positions with zero on-chain balance (manual closes)
+    positions, reconciled_closed = _prune_positions_with_zero_balance(positions)
+    
+    if not positions:
+        print("📭 No open positions after auto-reconciliation.")
+        return
+
     # Load delisting tracking
     delisted_tokens = load_delisted_tokens()
     failure_counts = delisted_tokens.get("failure_counts", {})
     
     updated_positions = dict(positions)  # shallow copy
-    closed_positions = []
+    closed_positions = list(reconciled_closed)  # Include reconciled positions
     # ephemeral state for trailing stop peaks
     trail_state = {}
 
