@@ -192,6 +192,8 @@ def send_periodic_status_report():
 def format_status_message(risk_summary, recent_summary, open_trades, market_regime=None):
     """Format a comprehensive status message"""
     from datetime import datetime
+    import json
+    import os
     
     # Helper to fetch current token price by chain/address
     def _current_price(chain: str, address: str) -> float:
@@ -209,6 +211,59 @@ def format_status_message(risk_summary, recent_summary, open_trades, market_regi
                 return float(px or 0.0)
         except Exception:
             return 0.0
+    
+    # Helper to load and calculate unrealized PnL from open_positions.json
+    def _get_open_positions_pnl():
+        """Load open positions from file and calculate unrealized PnL"""
+        positions_file = "data/open_positions.json"
+        if not os.path.exists(positions_file):
+            return []
+        
+        try:
+            with open(positions_file, 'r') as f:
+                positions = json.load(f) or {}
+        except Exception:
+            return []
+        
+        pnl_lines = []
+        for token_address, position_data in positions.items():
+            try:
+                if isinstance(position_data, dict):
+                    entry_price = float(position_data.get("entry_price", 0))
+                    chain_id = position_data.get("chain_id", "ethereum").lower()
+                    symbol = position_data.get("symbol", "?")
+                else:
+                    # Legacy format
+                    entry_price = float(position_data)
+                    chain_id = "ethereum"
+                    symbol = "?"
+                
+                if entry_price <= 0:
+                    continue
+                
+                # Fetch current price
+                current_price = _current_price(chain_id, token_address)
+                
+                if current_price > 0:
+                    # Calculate PnL percentage
+                    pnl_pct = ((current_price - entry_price) / entry_price) * 100
+                    # Format prices with appropriate precision (5-6 decimals for small prices)
+                    entry_str = f"{entry_price:.5f}".rstrip('0').rstrip('.')
+                    current_str = f"{current_price:.6f}".rstrip('0').rstrip('.')
+                    # Format as requested: SYMBOL: entry $X → current $Y → PnL Z%
+                    pnl_lines.append(
+                        f"{symbol}: entry ${entry_str} → current ${current_str} → PnL {pnl_pct:+.2f}%"
+                    )
+                else:
+                    # If we can't get current price, still show the position
+                    pnl_lines.append(
+                        f"{symbol}: entry ${entry_price:.5f} → current N/A"
+                    )
+            except Exception as e:
+                # Skip positions that fail to process
+                continue
+        
+        return pnl_lines
     
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
@@ -271,8 +326,14 @@ def format_status_message(risk_summary, recent_summary, open_trades, market_regi
 • Tier: {tier_name}
 """
     
-    # Add details of open trades (up to 5) with unrealized PnL where available
-    if open_trades:
+    # Add open positions with unrealized PnL from open_positions.json
+    open_positions_pnl = _get_open_positions_pnl()
+    if open_positions_pnl:
+        msg += "\n📈 *Open Positions Unrealized PnL:*\n"
+        for pnl_line in open_positions_pnl:
+            msg += f"{pnl_line}\n"
+    elif open_trades:
+        # Fallback to open_trades if available
         if unrealized_lines:
             for line in unrealized_lines:
                 msg += line
@@ -283,7 +344,8 @@ def format_status_message(risk_summary, recent_summary, open_trades, market_regi
                 chain = trade.get('chain', trade.get('chainId', 'unknown'))
                 msg += f"  {i}. {symbol} [{chain}]: ${size:.2f}\n"
         # Add total unrealized PnL summary line
-        msg += f"• Unrealized PnL (est.): ${unrealized_total_usd:.2f}\n"
+        if unrealized_total_usd != 0:
+            msg += f"• Unrealized PnL (est.): ${unrealized_total_usd:.2f}\n"
     else:
         msg += "  No open positions\n"
     
