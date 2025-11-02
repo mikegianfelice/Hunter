@@ -548,7 +548,7 @@ def buy_token_solana(token_address: str, amount_usd: float, symbol: str = "", te
     return executor.execute_trade(token_address, amount_usd, is_buy=True)
 
 def sell_token_solana(token_address: str, amount_usd: float, symbol: str = "", test_mode: bool = False) -> Tuple[str, bool]:
-    """Sell token on Solana (for multi-chain compatibility)"""
+    """Sell token on Solana (for multi-chain compatibility) with Raydium fallback"""
     executor = SimpleSolanaExecutor()
     
     if test_mode:
@@ -564,7 +564,28 @@ def sell_token_solana(token_address: str, amount_usd: float, symbol: str = "", t
             print(f"⚠️ Test mode validation failed: {e}")
             return None, False
     
-    return executor.execute_trade(token_address, amount_usd, is_buy=False)
+    # Primary path: Try Jupiter first
+    try:
+        tx_hash, success = executor.execute_trade(token_address, amount_usd, is_buy=False)
+        if success and tx_hash:
+            return tx_hash, True
+        print(f"⚠️ Jupiter sell failed for {symbol} (success={success}, tx={tx_hash if tx_hash else 'None'}). Trying Raydium fallback...")
+    except Exception as e:
+        print(f"⚠️ Jupiter sell exception for {symbol}: {e}. Trying Raydium fallback...")
+    
+    # Fallback: Try Raydium if Jupiter failed
+    try:
+        from src.execution.raydium_executor import RaydiumExecutor
+        ray = RaydiumExecutor()
+        success_fallback, tx_hash_fallback = ray.execute_trade(token_address, amount_usd, is_buy=False)
+        if success_fallback and tx_hash_fallback:
+            print(f"✅ Raydium fallback sell successful for {symbol}: {tx_hash_fallback}")
+            return tx_hash_fallback, True
+        print(f"❌ Raydium fallback sell also failed for {symbol}: {tx_hash_fallback}")
+        return tx_hash_fallback or "", False
+    except Exception as e:
+        print(f"❌ Raydium fallback sell exception for {symbol}: {e}")
+        return "", False
 
 def get_solana_executor():
     """Get Solana executor instance (for backward compatibility)"""
