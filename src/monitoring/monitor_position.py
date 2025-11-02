@@ -1,10 +1,17 @@
 import os
+import sys
 import time
 import json
 import yaml
 import csv
 import signal
 from datetime import datetime
+from pathlib import Path
+
+# Add project root to path if not already there
+project_root = Path(__file__).resolve().parents[2]
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
 from src.execution.uniswap_executor import sell_token as sell_token_ethereum
 from src.execution.base_executor import sell_token as sell_token_base
@@ -22,11 +29,13 @@ def get_monitor_config():
         'TRAILING_STOP': get_config_float("trailing_stop_percent", 0)
     }
 
-POSITIONS_FILE = "data/open_positions.json"
-LOG_FILE = "data/trade_log.csv"
-MONITOR_LOCK = "data/.monitor_lock"
-HEARTBEAT_FILE = "data/.monitor_heartbeat"
-DELISTED_TOKENS_FILE = "data/delisted_tokens.json"
+# Use absolute paths based on project root
+_project_root = Path(__file__).resolve().parents[2]
+POSITIONS_FILE = _project_root / "data" / "open_positions.json"
+LOG_FILE = _project_root / "data" / "trade_log.csv"
+MONITOR_LOCK = _project_root / "data" / ".monitor_lock"
+HEARTBEAT_FILE = _project_root / "data" / ".monitor_heartbeat"
+DELISTED_TOKENS_FILE = _project_root / "data" / "delisted_tokens.json"
 
 # === Global for cleanup ===
 _running = True
@@ -43,15 +52,15 @@ def _pid_is_alive(pid: int) -> bool:
 
 def _write_lock():
     data = {"pid": os.getpid(), "started_at": datetime.utcnow().isoformat()}
-    os.makedirs('data', exist_ok=True)
+    MONITOR_LOCK.parent.mkdir(parents=True, exist_ok=True)
     with open(MONITOR_LOCK, "w") as f:
         json.dump(data, f)
     print(f"🔒 Monitor lock acquired with PID {data['pid']}")
 
 def _remove_lock():
     try:
-        if os.path.exists(MONITOR_LOCK):
-            os.remove(MONITOR_LOCK)
+        if MONITOR_LOCK.exists():
+            MONITOR_LOCK.unlink()
             print("🧹 Monitor lock removed.")
     except Exception as e:
         print(f"⚠️ Failed to remove monitor lock: {e}")
@@ -61,7 +70,7 @@ def _ensure_singleton():
     Make sure only one monitor runs.
     If a lock exists but its PID is dead, reclaim it.
     """
-    if not os.path.exists(MONITOR_LOCK):
+    if not MONITOR_LOCK.exists():
         _write_lock()
         return
 
@@ -84,7 +93,7 @@ def _ensure_singleton():
 
 def _heartbeat():
     try:
-        os.makedirs('data', exist_ok=True)
+        HEARTBEAT_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(HEARTBEAT_FILE, "w") as f:
             f.write(datetime.utcnow().isoformat())
     except Exception:
@@ -101,7 +110,7 @@ signal.signal(signal.SIGTERM, _signal_handler)
 
 # === Position I/O ===
 def load_positions():
-    if not os.path.exists(POSITIONS_FILE):
+    if not POSITIONS_FILE.exists():
         return {}
     with open(POSITIONS_FILE, "r") as f:
         try:
@@ -110,12 +119,12 @@ def load_positions():
             return {}
 
 def save_positions(positions):
-    os.makedirs('data', exist_ok=True)
+    POSITIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(POSITIONS_FILE, "w") as f:
         json.dump(positions, f, indent=2)
 
 def load_delisted_tokens():
-    if not os.path.exists(DELISTED_TOKENS_FILE):
+    if not DELISTED_TOKENS_FILE.exists():
         return {}
     with open(DELISTED_TOKENS_FILE, "r") as f:
         try:
@@ -124,7 +133,7 @@ def load_delisted_tokens():
             return {}
 
 def save_delisted_tokens(delisted):
-    os.makedirs('data', exist_ok=True)
+    DELISTED_TOKENS_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(DELISTED_TOKENS_FILE, "w") as f:
         json.dump(delisted, f, indent=2)
 
@@ -138,9 +147,9 @@ def log_trade(token, entry_price, exit_price, reason="normal"):
         "pnl_pct": round(pnl_pct, 2),
         "reason": reason
     }
-    file_exists = os.path.isfile(LOG_FILE)
+    file_exists = LOG_FILE.exists()
     try:
-        os.makedirs('data', exist_ok=True)
+        LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(LOG_FILE, "a", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=row.keys())
             if not file_exists:
@@ -223,11 +232,22 @@ def _sell_token_multi_chain(token_address: str, chain_id: str, symbol: str = "?"
                 return None
         elif chain_id == "solana":
             print(f"🔄 Selling {symbol} on Solana...")
-            # For Solana, we need to get the balance first
-            from src.execution.solana_executor import get_token_balance
-            balance = get_token_balance(token_address)
+            # For Solana, we need to get the balance first and convert to USD
+            from src.execution.jupiter_lib import JupiterExecutor
+            executor = JupiterExecutor()
+            balance = executor.get_token_balance(token_address)
             if balance > 0:
-                tx_hash, success = sell_token_solana(token_address, balance, symbol)
+                # Get current price to calculate USD value
+                current_price = _fetch_token_price_multi_chain(token_address)
+                if current_price > 0:
+                    # Calculate USD value of the token balance
+                    amount_usd = balance * current_price
+                    tx_hash, success = sell_token_solana(token_address, amount_usd, symbol)
+                else:
+                    print(f"⚠️ Could not get current price for {symbol}, using estimated value")
+                    # Fallback: use a conservative estimate
+                    amount_usd = balance * 0.01  # Conservative estimate
+                    tx_hash, success = sell_token_solana(token_address, amount_usd, symbol)
             else:
                 print(f"❌ No {symbol} balance to sell")
                 return None

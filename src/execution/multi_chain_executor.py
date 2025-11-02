@@ -103,7 +103,8 @@ CHAIN_CONFIGS = {
 
 # Housekeeping
 POSITIONS_FILE = "data/open_positions.json"
-MONITOR_SCRIPT = "monitor_position.py"
+# Monitor script path - use absolute path from project root
+MONITOR_SCRIPT = Path(__file__).resolve().parents[2] / "src" / "monitoring" / "monitor_position.py"
 PRICE_MEMORY_FILE = "data/price_memory.json"
 
 def get_chain_config(chain_id: str) -> Dict[str, Any]:
@@ -161,23 +162,42 @@ def _log_position(token: dict):
         pass
 
 def _launch_monitor_detached():
-    script = Path(MONITOR_SCRIPT).resolve()
+    # MONITOR_SCRIPT is already a Path object pointing to the correct location
+    script = MONITOR_SCRIPT if isinstance(MONITOR_SCRIPT, Path) else Path(MONITOR_SCRIPT)
+    
     if not script.exists():
         try:
-            print(f"⚠️ {MONITOR_SCRIPT} not found at {script}")
+            print(f"⚠️ monitor_position.py not found at {script}")
+            print(f"⚠️ Current working directory: {os.getcwd()}")
         except BrokenPipeError:
             pass
         return
+    
     try:
-        subprocess.Popen([sys.executable, str(script)],
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # Add the project root to PYTHONPATH so monitor can import modules correctly
+        project_root = script.parents[2]  # Go up from src/monitoring to project root
+        env = os.environ.copy()
+        if 'PYTHONPATH' in env:
+            env['PYTHONPATH'] = f"{project_root}:{env['PYTHONPATH']}"
+        else:
+            env['PYTHONPATH'] = str(project_root)
+        
+        subprocess.Popen(
+            [sys.executable, str(script)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=env,
+            cwd=str(project_root)  # Set working directory to project root
+        )
         try:
-            print(f"👁️ Started {MONITOR_SCRIPT} via {sys.executable}")
+            print(f"👁️ Started monitor_position.py at {script} via {sys.executable}")
         except BrokenPipeError:
             pass
     except Exception as e:
         try:
-            print(f"⚠️ Could not launch {MONITOR_SCRIPT}: {e}")
+            print(f"⚠️ Could not launch monitor_position.py: {e}")
+            import traceback
+            print(f"⚠️ Error details: {traceback.format_exc()}")
         except BrokenPipeError:
             pass
 
