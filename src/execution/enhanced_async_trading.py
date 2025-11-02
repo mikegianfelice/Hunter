@@ -27,6 +27,7 @@ from src.monitoring.performance_monitor import record_trade_metrics, start_tradi
 from src.core.centralized_risk_manager import assess_trade_risk, update_trade_result, is_circuit_breaker_active
 from src.ai.ai_circuit_breaker import circuit_breaker_manager, check_ai_module_health
 from src.monitoring.telegram_bot import send_periodic_status_report
+from src.execution.multi_chain_executor import _launch_monitor_detached
 
 logger = logging.getLogger(__name__)
 
@@ -850,6 +851,13 @@ async def run_enhanced_async_trading():
     
     # Start trading session
     start_trading_session()
+    
+    # Ensure position monitor is running for stop-loss/take-profit exits
+    try:
+        _launch_monitor_detached()
+        log_info("trading.monitor_launched", "✅ Position monitor launched")
+    except Exception as e:
+        log_error("trading.monitor_launch_error", f"Failed to launch monitor: {e}")
     
     try:
         async with EnhancedAsyncTradingEngine() as engine:

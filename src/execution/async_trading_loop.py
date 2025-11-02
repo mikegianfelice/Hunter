@@ -15,6 +15,7 @@ from collections import defaultdict
 from src.ai.ai_circuit_breaker import circuit_breaker_manager
 from src.monitoring.performance_monitor import performance_monitor, record_trade_metrics
 from src.config.config_validator import get_validated_config
+from src.execution.multi_chain_executor import _launch_monitor_detached
 
 logger = logging.getLogger(__name__)
 
@@ -404,6 +405,13 @@ async def run_single_cycle():
 def start_async_trading():
     """Start async trading (can be called from main.py)"""
     try:
+        # Ensure position monitor is running for stop-loss/take-profit exits
+        try:
+            _launch_monitor_detached()
+            logger.info("✅ Position monitor launched")
+        except Exception as e:
+            logger.error(f"Failed to launch monitor: {e}")
+        
         asyncio.run(run_async_trading_loop())
     except KeyboardInterrupt:
         logger.info("Async trading stopped by user")

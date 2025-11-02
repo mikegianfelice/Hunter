@@ -233,9 +233,11 @@ def _sell_token_multi_chain(token_address: str, chain_id: str, symbol: str = "?"
         elif chain_id == "solana":
             print(f"🔄 Selling {symbol} on Solana...")
             # For Solana, we need to get the balance first and convert to USD
-            from src.execution.jupiter_lib import JupiterExecutor
-            executor = JupiterExecutor()
-            balance = executor.get_token_balance(token_address)
+            from src.execution.jupiter_lib import JupiterCustomLib
+            from src.config.secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
+            
+            lib = JupiterCustomLib(SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY)
+            balance = lib.get_token_balance(token_address)
             if balance > 0:
                 # Get current price to calculate USD value
                 current_price = _fetch_token_price_multi_chain(token_address)
