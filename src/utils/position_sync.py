@@ -130,13 +130,15 @@ def sync_all_open_positions() -> Dict[str, bool]:
             chain = trade.get("chain", "ethereum").lower()
             entry_price = float(trade.get("entry_price", 0))
             position_size_usd = trade.get("position_size_usd", 0.0)
+            # Use original address from trade, not lowercased version
+            original_address = trade.get("address", address)
             
             if entry_price <= 0:
                 continue
             
-            # Sync position with position_size_usd
-            success = sync_position_from_performance_data(address, symbol, chain, entry_price, position_size_usd)
-            results[address] = success
+            # Sync position with position_size_usd using original address
+            success = sync_position_from_performance_data(original_address, symbol, chain, entry_price, position_size_usd)
+            results[original_address] = success
             if success:
                 synced_count += 1
             
