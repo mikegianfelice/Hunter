@@ -758,8 +758,9 @@ def monitor_all_positions():
             continue
 
         trade_id_str = f" [Trade: {trade_id}]" if trade_id else ""
-        print(f"\n🔍 Monitoring token: {symbol} ({token_address}) on {chain_id.upper()}{trade_id_str}")
-        print(f"🎯 Entry price: ${entry_price:.6f}")
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"\n[{timestamp}] 🔍 Monitoring token: {symbol} ({token_address}) on {chain_id.upper()}{trade_id_str}")
+        print(f"[{timestamp}] 🎯 Entry price: ${entry_price:.6f}")
 
         # Fetch current price using multi-chain function
         current_price = _fetch_token_price_multi_chain(token_address)
@@ -856,9 +857,10 @@ def monitor_all_positions():
             print(f"⚠️ Could not fetch current price for {token_address}")
             continue
 
-        print(f"📈 Current price: ${current_price:.6f}")
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"[{timestamp}] 📈 Current price: ${current_price:.6f}")
         gain = (current_price - entry_price) / entry_price
-        print(f"📊 PnL: {gain * 100:.2f}%")
+        print(f"[{timestamp}] 📊 PnL: {gain * 100:.2f}%")
 
         # Calculate take profit threshold (static or dynamic based on config)
         trade = _find_open_trade_by_address(token_address, chain_id)
@@ -925,7 +927,16 @@ def monitor_all_positions():
 
         # Hard stop-loss
         if gain <= -config['STOP_LOSS']:
-            print("🛑 Stop-loss hit! Selling...")
+            print(f"\n{'='*60}")
+            print(f"🛑 STOP-LOSS TRIGGERED!")
+            print(f"Token: {symbol} ({token_address[:8]}...{token_address[-8:]})")
+            print(f"Chain: {chain_id.upper()}")
+            print(f"Entry Price: ${entry_price:.6f}")
+            print(f"Current Price: ${current_price:.6f}")
+            print(f"Gain/Loss: {gain * 100:.2f}%")
+            print(f"Stop Loss Threshold: {config['STOP_LOSS'] * 100:.2f}%")
+            print(f"Attempting to sell...")
+            print(f"{'='*60}\n")
             tx = _sell_token_multi_chain(token_address, chain_id, symbol)
             
             if tx:  # Only proceed if sell succeeded
@@ -963,6 +974,15 @@ def monitor_all_positions():
                 closed_positions.append(position_key)
                 updated_positions.pop(position_key, None)
             else:  # Sell failed
+                print(f"\n{'='*60}")
+                print(f"❌ CRITICAL: STOP-LOSS TRIGGERED BUT SELL FAILED!")
+                print(f"Token: {symbol} ({token_address[:8]}...{token_address[-8:]})")
+                print(f"Chain: {chain_id.upper()}")
+                print(f"Entry Price: ${entry_price:.6f}")
+                print(f"Current Price: ${current_price:.6f}")
+                print(f"Loss: {gain * 100:.2f}%")
+                print(f"Position will remain open and retry on next check")
+                print(f"{'='*60}\n")
                 send_telegram_message(
                     f"⚠️ Stop-loss triggered but SELL FAILED!\n"
                     f"Token: {symbol} ({token_address})\n"
@@ -1039,15 +1059,22 @@ def monitor_all_positions():
 
 def _main_loop():
     global _running
+    startup_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"\n{'='*60}")
+    print(f"🚀 POSITION MONITOR STARTING - {startup_time}")
+    print(f"{'='*60}\n")
+    
     _ensure_singleton()
     
     # Sync positions on startup to catch any missed positions
     # Use balance-verified sync to prevent manually closed positions from being re-added
     try:
         _sync_only_positions_with_balance()
-        print("✅ Initial position sync completed (balance-verified)")
+        print(f"[{startup_time}] ✅ Initial position sync completed (balance-verified)")
     except Exception as e:
-        print(f"⚠️ Failed to sync positions on startup: {e}")
+        print(f"[{startup_time}] ⚠️ Failed to sync positions on startup: {e}")
+        import traceback
+        print(f"[{startup_time}] Error details:\n{traceback.format_exc()}")
     
     cycle_count = 0
     try:
@@ -1064,11 +1091,29 @@ def _main_loop():
                 except Exception as e:
                     print(f"⚠️ Periodic position sync failed: {e}")
             
+            cycle_start = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"\n[{cycle_start}] 🔄 Starting monitoring cycle #{cycle_count}")
             monitor_all_positions()
+            cycle_end = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"[{cycle_end}] ✅ Monitoring cycle complete, sleeping 30s...\n")
             time.sleep(30)  # poll interval
     finally:
         # Always remove lock on exit
         _remove_lock()
 
 if __name__ == "__main__":
-    _main_loop()
+    try:
+        _main_loop()
+    except KeyboardInterrupt:
+        print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ⚠️ Monitor interrupted by user")
+        _running = False
+        _remove_lock()
+    except Exception as e:
+        error_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"\n[{error_time}] ❌ CRITICAL ERROR in position monitor!")
+        print(f"[{error_time}] Error: {e}")
+        import traceback
+        print(f"[{error_time}] Traceback:\n{traceback.format_exc()}")
+        _running = False
+        _remove_lock()
+        raise

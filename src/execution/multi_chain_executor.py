@@ -188,13 +188,23 @@ def _launch_monitor_detached():
         else:
             env['PYTHONPATH'] = str(project_root)
         
+        # Redirect output to log file instead of /dev/null so we can see what's happening
+        log_dir = project_root / "logs"
+        log_dir.mkdir(exist_ok=True)
+        monitor_log_file = log_dir / "position_monitor.log"
+        
+        # Open log file in append mode with line buffering for real-time visibility
+        log_file = open(monitor_log_file, "a", buffering=1)  # Line buffering for real-time output
+        
         subprocess.Popen(
             [sys.executable, str(script)],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,  # Redirect stderr to same file
             env=env,
-            cwd=str(project_root)  # Set working directory to project root
+            cwd=str(project_root),  # Set working directory to project root
+            start_new_session=True  # Ensure process runs independently
         )
+        # Note: We don't close log_file here - it will be closed when the process exits
         try:
             print(f"👁️ Started monitor_position.py at {script} via {sys.executable}")
         except BrokenPipeError:
