@@ -20,6 +20,7 @@ from src.execution.solana_executor import sell_token_solana
 from src.utils.utils import fetch_token_price_usd
 from src.monitoring.telegram_bot import send_telegram_message
 from src.config.config_loader import get_config, get_config_float
+from src.utils.position_sync import sync_all_open_positions
 
 # Dynamic config loading
 def get_monitor_config():
@@ -392,6 +393,14 @@ def _prune_positions_with_zero_balance(positions: dict) -> Tuple[dict, list]:
 
 def monitor_all_positions():
     config = get_monitor_config()
+    
+    # FIRST: Sync positions from performance_data.json to ensure nothing is missing
+    # This ensures positions are tracked even if initial logging failed
+    try:
+        sync_all_open_positions()
+    except Exception as e:
+        print(f"⚠️ Failed to sync positions: {e}")
+    
     positions = load_positions()
     if not positions:
         print("📭 No open positions to monitor.")
@@ -545,9 +554,28 @@ def monitor_all_positions():
 def _main_loop():
     global _running
     _ensure_singleton()
+    
+    # Sync positions on startup to catch any missed positions
+    try:
+        sync_all_open_positions()
+        print("✅ Initial position sync completed")
+    except Exception as e:
+        print(f"⚠️ Failed to sync positions on startup: {e}")
+    
+    cycle_count = 0
     try:
         while _running:
             _heartbeat()
+            
+            # Periodically sync positions (every 10 cycles = ~5 minutes)
+            # This ensures positions stay in sync even if performance_data is updated elsewhere
+            cycle_count += 1
+            if cycle_count % 10 == 0:
+                try:
+                    sync_all_open_positions()
+                except Exception as e:
+                    print(f"⚠️ Periodic position sync failed: {e}")
+            
             monitor_all_positions()
             time.sleep(30)  # poll interval
     finally:

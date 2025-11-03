@@ -77,6 +77,21 @@ class PerformanceTracker:
         self.trades.append(trade)
         self.save_data()
         
+        # After saving to performance_data, ensure it's synced to open_positions.json
+        # This is critical to ensure the monitor can track the position
+        try:
+            from src.utils.position_sync import sync_position_from_performance_data
+            address = trade.get('address')
+            symbol = trade.get('symbol', '?')
+            chain = trade.get('chain', 'ethereum').lower()
+            entry_price = float(trade.get('entry_price', 0))
+            
+            if address and entry_price > 0:
+                sync_position_from_performance_data(address, symbol, chain, entry_price)
+        except Exception as e:
+            # Don't fail the whole operation if sync fails, but log it
+            print(f"⚠️ Failed to sync position after logging: {e}")
+        
         print(f"📊 Logged trade entry: {trade['symbol']} - ${position_size:.1f} (Quality: {quality_score:.1f})")
         return trade['id']
     
