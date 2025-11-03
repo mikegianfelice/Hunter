@@ -338,10 +338,15 @@ class RaydiumExecutor:
                 except Exception as e:
                     return False, f"Failed to convert USD to SOL: {e}"
             else:
-                # Selling token - need USDC amount
-                amount = int(amount_usd * 1_000_000)  # USDC has 6 decimals
+                # Selling token - need raw token amount in smallest units
+                # CRITICAL: We need the actual token balance in raw units, not USD amount
+                raw_token_balance = self.get_token_raw_balance(token_address)
+                if raw_token_balance is None or raw_token_balance <= 0:
+                    return False, "No token balance available"
+                
                 input_mint = token_address
                 output_mint = USDC_MINT
+                amount = raw_token_balance  # Use raw token amount for swap
             
             # Execute swap with default slippage
             return self.execute_raydium_swap(input_mint, output_mint, amount, slippage=0.10)
@@ -349,6 +354,49 @@ class RaydiumExecutor:
         except Exception as e:
             log_error("raydium.execute_trade.exception", error=str(e))
             return False, str(e)
+
+    def get_token_raw_balance(self, token_mint: str) -> Optional[int]:
+        """
+        Get raw token balance in smallest units (not UI amount)
+        Returns the actual token amount needed for swap quotes
+        """
+        try:
+            rpc_payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getTokenAccountsByOwner",
+                "params": [
+                    self.wallet_address,
+                    {
+                        "mint": token_mint
+                    },
+                    {
+                        "encoding": "jsonParsed"
+                    }
+                ]
+            }
+            
+            response = requests.post(self.rpc_url, json=rpc_payload, timeout=10)
+            if response.status_code == 200:
+                result = response.json()
+                if "result" in result and "value" in result["result"]:
+                    accounts = result["result"]["value"]
+                    if accounts:
+                        # Get the first account's raw balance (in smallest units)
+                        account_info = accounts[0]["account"]["data"]["parsed"]["info"]
+                        raw_amount_str = account_info["tokenAmount"]["amount"]  # This is a string of the raw amount
+                        return int(raw_amount_str)
+                    else:
+                        return 0
+                else:
+                    log_error("raydium.token_balance.rpc_error", error=result.get('error', 'Unknown'))
+                    return None
+            else:
+                log_error("raydium.token_balance.http_error", status=response.status_code)
+                return None
+        except Exception as e:
+            log_error("raydium.token_balance.exception", error=str(e))
+            return None
 
     def execute_raydium_swap(self, input_mint: str, output_mint: str, amount: int, slippage: float = 0.10) -> Tuple[bool, str]:
         """Execute real swap on Raydium using custom library"""

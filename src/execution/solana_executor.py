@@ -465,9 +465,16 @@ class SimpleSolanaExecutor:
                 amount = sol_amount_lamports
             else:
                 # Selling token for USDC
+                # CRITICAL: We need the actual token balance in raw units, not USD amount
+                # Get raw token balance (in smallest token units)
+                raw_token_balance = self.get_token_raw_balance(token_address)
+                if raw_token_balance is None or raw_token_balance <= 0:
+                    print(f"❌ No token balance available to sell for {token_address[:8]}...{token_address[-8:]}")
+                    return "", False
+                
                 input_mint = token_address
                 output_mint = USDC_MINT
-                amount = int(amount_usd * 1_000_000)  # USDC has 6 decimals
+                amount = raw_token_balance  # Use raw token amount for swap
             
             # Use higher slippage for small trades (microcaps)
             slippage = 0.15 if amount_usd < 50 else 0.10
@@ -505,6 +512,49 @@ class SimpleSolanaExecutor:
         except Exception as e:
             print(f"❌ Error getting SOL balance: {e}")
             return 0.0
+
+    def get_token_raw_balance(self, token_mint: str) -> Optional[int]:
+        """
+        Get raw token balance in smallest units (not UI amount)
+        Returns the actual token amount needed for swap quotes
+        """
+        try:
+            rpc_payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getTokenAccountsByOwner",
+                "params": [
+                    self.wallet_address,
+                    {
+                        "mint": token_mint
+                    },
+                    {
+                        "encoding": "jsonParsed"
+                    }
+                ]
+            }
+            
+            response = requests.post(SOLANA_RPC_URL, json=rpc_payload, timeout=10)
+            if response.status_code == 200:
+                result = response.json()
+                if "result" in result and "value" in result["result"]:
+                    accounts = result["result"]["value"]
+                    if accounts:
+                        # Get the first account's raw balance (in smallest units)
+                        account_info = accounts[0]["account"]["data"]["parsed"]["info"]
+                        raw_amount_str = account_info["tokenAmount"]["amount"]  # This is a string of the raw amount
+                        return int(raw_amount_str)
+                    else:
+                        return 0
+                else:
+                    print(f"⚠️ RPC response error for token raw balance: {result.get('error', 'Unknown')}")
+                    return None
+            else:
+                print(f"⚠️ HTTP error {response.status_code} getting token raw balance")
+                return None
+        except Exception as e:
+            print(f"❌ Error getting token raw balance: {e}")
+            return None
 
 # Legacy functions for backward compatibility
 def get_token_price_usd(token_address: str) -> float:

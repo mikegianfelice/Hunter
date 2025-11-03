@@ -183,11 +183,17 @@ class JupiterCustomExecutor:
                 output_mint = token_address
                 amount = sol_amount_lamports
             else:
-                # Selling token for SOL (convert USD amount to USDC)
-                usdc_amount = int(amount_usd * 1_000_000)  # USDC has 6 decimals
+                # Selling token for SOL
+                # CRITICAL: We need the actual token balance in raw units, not USD amount
+                # Get raw token balance (in smallest token units)
+                raw_token_balance = self.get_token_raw_balance(token_address)
+                if raw_token_balance is None or raw_token_balance <= 0:
+                    log_error("solana.trade.no_token_balance", token=token_address)
+                    return "", False
+                
                 input_mint = token_address
                 output_mint = WSOL_MINT
-                amount = usdc_amount
+                amount = raw_token_balance  # Use raw token amount for swap
             
             # Execute swap using custom Jupiter library
             tx_hash, success = self.jupiter_lib.execute_swap(input_mint, output_mint, amount)
@@ -204,6 +210,50 @@ class JupiterCustomExecutor:
     def get_solana_balance(self) -> float:
         """Get SOL balance"""
         return self.jupiter_lib.get_balance()
+
+    def get_token_raw_balance(self, token_mint: str) -> Optional[int]:
+        """
+        Get raw token balance in smallest units (not UI amount)
+        Returns the actual token amount needed for swap quotes
+        """
+        try:
+            import requests
+            rpc_payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getTokenAccountsByOwner",
+                "params": [
+                    SOLANA_WALLET_ADDRESS,
+                    {
+                        "mint": token_mint
+                    },
+                    {
+                        "encoding": "jsonParsed"
+                    }
+                ]
+            }
+            
+            response = requests.post(SOLANA_RPC_URL, json=rpc_payload, timeout=10)
+            if response.status_code == 200:
+                result = response.json()
+                if "result" in result and "value" in result["result"]:
+                    accounts = result["result"]["value"]
+                    if accounts:
+                        # Get the first account's raw balance (in smallest units)
+                        account_info = accounts[0]["account"]["data"]["parsed"]["info"]
+                        raw_amount_str = account_info["tokenAmount"]["amount"]  # This is a string of the raw amount
+                        return int(raw_amount_str)
+                    else:
+                        return 0
+                else:
+                    log_error("solana.token_balance.rpc_error", error=result.get('error', 'Unknown'))
+                    return None
+            else:
+                log_error("solana.token_balance.http_error", status=response.status_code)
+                return None
+        except Exception as e:
+            log_error("solana.token_balance.exception", error=str(e))
+            return None
 
 # Legacy functions for backward compatibility
 def get_token_price_usd(token_address: str) -> float:
