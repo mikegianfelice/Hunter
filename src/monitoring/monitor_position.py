@@ -549,81 +549,117 @@ def monitor_all_positions():
         if gain >= config['TAKE_PROFIT']:
             print("💰 Take-profit hit! Selling...")
             tx = _sell_token_multi_chain(token_address, chain_id, symbol)
-            log_trade(token_address, entry_price, current_price, "take_profit")
             
-            # Update performance tracker with exit
-            trade = _find_open_trade_by_address(token_address, chain_id)
-            if trade:
-                position_size = trade.get('position_size_usd', 0)
-                pnl_usd = gain * position_size  # gain is already a ratio
-                from src.core.performance_tracker import performance_tracker
-                performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, "take_profit")
-                print(f"📊 Updated performance tracker for take profit: {trade.get('symbol', '?')}")
-            
-            send_telegram_message(
-                f"💰 Take-profit triggered!\n"
-                f"Token: {symbol} ({token_address})\n"
-                f"Chain: {chain_id.upper()}\n"
-                f"Entry: ${entry_price:.6f}\n"
-                f"Now: ${current_price:.6f} (+{gain * 100:.2f}%)\n"
-                f"TX: {tx or 'N/A'}"
-            )
-            closed_positions.append(token_address)
-            updated_positions.pop(token_address, None)
+            if tx:  # Only proceed if sell succeeded
+                log_trade(token_address, entry_price, current_price, "take_profit")
+                
+                # Update performance tracker with exit
+                trade = _find_open_trade_by_address(token_address, chain_id)
+                if trade:
+                    position_size = trade.get('position_size_usd', 0)
+                    pnl_usd = gain * position_size  # gain is already a ratio
+                    from src.core.performance_tracker import performance_tracker
+                    performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, "take_profit")
+                    print(f"📊 Updated performance tracker for take profit: {trade.get('symbol', '?')}")
+                
+                send_telegram_message(
+                    f"💰 Take-profit triggered!\n"
+                    f"Token: {symbol} ({token_address})\n"
+                    f"Chain: {chain_id.upper()}\n"
+                    f"Entry: ${entry_price:.6f}\n"
+                    f"Now: ${current_price:.6f} (+{gain * 100:.2f}%)\n"
+                    f"TX: {tx}"
+                )
+                closed_positions.append(token_address)
+                updated_positions.pop(token_address, None)
+            else:  # Sell failed
+                send_telegram_message(
+                    f"⚠️ Take-profit triggered but SELL FAILED!\n"
+                    f"Token: {symbol} ({token_address})\n"
+                    f"Chain: {chain_id.upper()}\n"
+                    f"Entry: ${entry_price:.6f}\n"
+                    f"Now: ${current_price:.6f} (+{gain * 100:.2f}%)\n"
+                    f"Will retry on next check..."
+                )
+                # Don't remove position - keep monitoring to retry
             continue  # move to next token
 
         # Hard stop-loss
         if gain <= -config['STOP_LOSS']:
             print("🛑 Stop-loss hit! Selling...")
             tx = _sell_token_multi_chain(token_address, chain_id, symbol)
-            log_trade(token_address, entry_price, current_price, "stop_loss")
             
-            # Update performance tracker with exit
-            trade = _find_open_trade_by_address(token_address, chain_id)
-            if trade:
-                position_size = trade.get('position_size_usd', 0)
-                pnl_usd = gain * position_size  # gain is negative for stop loss
-                from src.core.performance_tracker import performance_tracker
-                performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, "stop_loss")
-                print(f"📊 Updated performance tracker for stop loss: {trade.get('symbol', '?')}")
-            
-            send_telegram_message(
-                f"🛑 Stop-loss triggered!\n"
-                f"Token: {symbol} ({token_address})\n"
-                f"Chain: {chain_id.upper()}\n"
-                f"Entry: ${entry_price:.6f}\n"
-                f"Now: ${current_price:.6f} ({gain * 100:.2f}%)\n"
-                f"TX: {tx or 'N/A'}"
-            )
-            closed_positions.append(token_address)
-            updated_positions.pop(token_address, None)
+            if tx:  # Only proceed if sell succeeded
+                log_trade(token_address, entry_price, current_price, "stop_loss")
+                
+                # Update performance tracker with exit
+                trade = _find_open_trade_by_address(token_address, chain_id)
+                if trade:
+                    position_size = trade.get('position_size_usd', 0)
+                    pnl_usd = gain * position_size  # gain is negative for stop loss
+                    from src.core.performance_tracker import performance_tracker
+                    performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, "stop_loss")
+                    print(f"📊 Updated performance tracker for stop loss: {trade.get('symbol', '?')}")
+                
+                send_telegram_message(
+                    f"🛑 Stop-loss triggered!\n"
+                    f"Token: {symbol} ({token_address})\n"
+                    f"Chain: {chain_id.upper()}\n"
+                    f"Entry: ${entry_price:.6f}\n"
+                    f"Now: ${current_price:.6f} ({gain * 100:.2f}%)\n"
+                    f"TX: {tx}"
+                )
+                closed_positions.append(token_address)
+                updated_positions.pop(token_address, None)
+            else:  # Sell failed
+                send_telegram_message(
+                    f"⚠️ Stop-loss triggered but SELL FAILED!\n"
+                    f"Token: {symbol} ({token_address})\n"
+                    f"Chain: {chain_id.upper()}\n"
+                    f"Entry: ${entry_price:.6f}\n"
+                    f"Now: ${current_price:.6f} ({gain * 100:.2f}%)\n"
+                    f"Will retry on next check..."
+                )
+                # Don't remove position - keep monitoring to retry
             continue
 
         # Trailing stop (if enabled and price fell below dynamic level)
         if dyn_stop and current_price <= dyn_stop:
             print("🧵 Trailing stop-loss hit! Selling...")
             tx = _sell_token_multi_chain(token_address, chain_id, symbol)
-            log_trade(token_address, entry_price, current_price, "trailing_stop")
             
-            # Update performance tracker with exit
-            trade = _find_open_trade_by_address(token_address, chain_id)
-            if trade:
-                position_size = trade.get('position_size_usd', 0)
-                pnl_usd = gain * position_size
-                from src.core.performance_tracker import performance_tracker
-                performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, "trailing_stop")
-                print(f"📊 Updated performance tracker for trailing stop: {trade.get('symbol', '?')}")
-            
-            send_telegram_message(
-                f"🧵 Trailing stop-loss triggered!\n"
-                f"Token: {symbol} ({token_address})\n"
-                f"Chain: {chain_id.upper()}\n"
-                f"Entry: ${entry_price:.6f}\n"
-                f"Now: ${current_price:.6f}\n"
-                f"TX: {tx or 'N/A'}"
-            )
-            closed_positions.append(token_address)
-            updated_positions.pop(token_address, None)
+            if tx:  # Only proceed if sell succeeded
+                log_trade(token_address, entry_price, current_price, "trailing_stop")
+                
+                # Update performance tracker with exit
+                trade = _find_open_trade_by_address(token_address, chain_id)
+                if trade:
+                    position_size = trade.get('position_size_usd', 0)
+                    pnl_usd = gain * position_size
+                    from src.core.performance_tracker import performance_tracker
+                    performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, "trailing_stop")
+                    print(f"📊 Updated performance tracker for trailing stop: {trade.get('symbol', '?')}")
+                
+                send_telegram_message(
+                    f"🧵 Trailing stop-loss triggered!\n"
+                    f"Token: {symbol} ({token_address})\n"
+                    f"Chain: {chain_id.upper()}\n"
+                    f"Entry: ${entry_price:.6f}\n"
+                    f"Now: ${current_price:.6f}\n"
+                    f"TX: {tx}"
+                )
+                closed_positions.append(token_address)
+                updated_positions.pop(token_address, None)
+            else:  # Sell failed
+                send_telegram_message(
+                    f"⚠️ Trailing stop-loss triggered but SELL FAILED!\n"
+                    f"Token: {symbol} ({token_address})\n"
+                    f"Chain: {chain_id.upper()}\n"
+                    f"Entry: ${entry_price:.6f}\n"
+                    f"Now: ${current_price:.6f}\n"
+                    f"Will retry on next check..."
+                )
+                # Don't remove position - keep monitoring to retry
         else:
             print("⏳ Holding position...")
 
