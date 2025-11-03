@@ -391,6 +391,22 @@ def _prune_positions_with_zero_balance(positions: dict) -> Tuple[dict, list]:
     
     return pruned, to_remove
 
+def _find_open_trade_by_address(token_address: str, chain_id: str = None):
+    """Find an open trade in performance tracker by token address"""
+    try:
+        from src.core.performance_tracker import performance_tracker
+        open_trades = performance_tracker.get_open_trades()
+        
+        # Find trade matching address and optionally chain
+        for trade in open_trades:
+            if trade.get('address', '').lower() == token_address.lower():
+                if chain_id is None or trade.get('chain', '').lower() == chain_id.lower():
+                    return trade
+        return None
+    except Exception as e:
+        print(f"⚠️ Error finding trade for {token_address}: {e}")
+        return None
+
 def monitor_all_positions():
     config = get_monitor_config()
     
@@ -406,8 +422,39 @@ def monitor_all_positions():
         print("📭 No open positions to monitor.")
         return
 
+    # Save original positions data before pruning (needed for performance tracker updates)
+    original_positions_before_prune = dict(positions)
+
     # Auto-reconcile: Remove positions with zero on-chain balance (manual closes)
     positions, reconciled_closed = _prune_positions_with_zero_balance(positions)
+    
+    # Update performance tracker for manually closed positions
+    if reconciled_closed:
+        try:
+            from src.core.performance_tracker import performance_tracker
+            for token_address in reconciled_closed:
+                # Find the position data to get chain_id and entry_price before it was removed
+                old_position_data = original_positions_before_prune.get(token_address)
+                if old_position_data:
+                    if isinstance(old_position_data, dict):
+                        chain_id = old_position_data.get("chain_id", "ethereum")
+                        entry_price = float(old_position_data.get("entry_price", 0))
+                    else:
+                        chain_id = "ethereum"
+                        entry_price = float(old_position_data) if old_position_data else 0
+                    
+                    # Find and close the trade
+                    trade = _find_open_trade_by_address(token_address, chain_id)
+                    if trade:
+                        # Try to get current price if possible, otherwise use entry price (0 PnL)
+                        current_price = _fetch_token_price_multi_chain(token_address) or entry_price
+                        position_size = trade.get('position_size_usd', 0)
+                        gain = ((current_price - entry_price) / entry_price) if entry_price > 0 else 0
+                        pnl_usd = gain * position_size
+                        performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, "manual_close")
+                        print(f"📊 Updated performance tracker for manually closed position: {trade.get('symbol', '?')}")
+        except Exception as e:
+            print(f"⚠️ Failed to update performance tracker for reconciled positions: {e}")
     
     if not positions:
         print("📭 No open positions after auto-reconciliation.")
@@ -457,6 +504,16 @@ def monitor_all_positions():
                 # Log as delisted trade
                 log_trade(token_address, entry_price, 0.0, "delisted")
                 
+                # Update performance tracker with exit
+                trade = _find_open_trade_by_address(token_address, chain_id)
+                if trade:
+                    # Position value lost (100% loss)
+                    position_size = trade.get('position_size_usd', 0)
+                    pnl_usd = -position_size  # Full loss
+                    from src.core.performance_tracker import performance_tracker
+                    performance_tracker.log_trade_exit(trade['id'], 0.0, pnl_usd, "delisted")
+                    print(f"📊 Updated performance tracker for delisted token: {trade.get('symbol', '?')}")
+                
                 # Send Telegram alert
                 send_telegram_message(
                     f"🚨 TOKEN DELISTED - INVESTMENT LOST!\n"
@@ -493,6 +550,16 @@ def monitor_all_positions():
             print("💰 Take-profit hit! Selling...")
             tx = _sell_token_multi_chain(token_address, chain_id, symbol)
             log_trade(token_address, entry_price, current_price, "take_profit")
+            
+            # Update performance tracker with exit
+            trade = _find_open_trade_by_address(token_address, chain_id)
+            if trade:
+                position_size = trade.get('position_size_usd', 0)
+                pnl_usd = gain * position_size  # gain is already a ratio
+                from src.core.performance_tracker import performance_tracker
+                performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, "take_profit")
+                print(f"📊 Updated performance tracker for take profit: {trade.get('symbol', '?')}")
+            
             send_telegram_message(
                 f"💰 Take-profit triggered!\n"
                 f"Token: {symbol} ({token_address})\n"
@@ -510,6 +577,16 @@ def monitor_all_positions():
             print("🛑 Stop-loss hit! Selling...")
             tx = _sell_token_multi_chain(token_address, chain_id, symbol)
             log_trade(token_address, entry_price, current_price, "stop_loss")
+            
+            # Update performance tracker with exit
+            trade = _find_open_trade_by_address(token_address, chain_id)
+            if trade:
+                position_size = trade.get('position_size_usd', 0)
+                pnl_usd = gain * position_size  # gain is negative for stop loss
+                from src.core.performance_tracker import performance_tracker
+                performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, "stop_loss")
+                print(f"📊 Updated performance tracker for stop loss: {trade.get('symbol', '?')}")
+            
             send_telegram_message(
                 f"🛑 Stop-loss triggered!\n"
                 f"Token: {symbol} ({token_address})\n"
@@ -527,6 +604,16 @@ def monitor_all_positions():
             print("🧵 Trailing stop-loss hit! Selling...")
             tx = _sell_token_multi_chain(token_address, chain_id, symbol)
             log_trade(token_address, entry_price, current_price, "trailing_stop")
+            
+            # Update performance tracker with exit
+            trade = _find_open_trade_by_address(token_address, chain_id)
+            if trade:
+                position_size = trade.get('position_size_usd', 0)
+                pnl_usd = gain * position_size
+                from src.core.performance_tracker import performance_tracker
+                performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, "trailing_stop")
+                print(f"📊 Updated performance tracker for trailing stop: {trade.get('symbol', '?')}")
+            
             send_telegram_message(
                 f"🧵 Trailing stop-loss triggered!\n"
                 f"Token: {symbol} ({token_address})\n"
