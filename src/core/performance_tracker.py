@@ -289,9 +289,145 @@ class PerformanceTracker:
         """Get recent trades"""
         return sorted(self.trades, key=lambda x: x['entry_time'], reverse=True)[:limit]
     
-    def get_open_trades(self) -> List[Dict]:
-        """Get currently open trades"""
-        return [t for t in self.trades if t['status'] == 'open']
+    def get_open_trades(self, validate_balances: bool = False) -> List[Dict]:
+        """
+        Get currently open trades.
+        If validate_balances is True, only returns trades that have on-chain wallet balances.
+        This prevents manually closed positions from appearing as open.
+        """
+        open_trades = [t for t in self.trades if t['status'] == 'open']
+        
+        if not validate_balances:
+            return open_trades
+        
+        # Validate balances for each open trade
+        validated_trades = []
+        for trade in open_trades:
+            address = trade.get('address', '')
+            chain = trade.get('chain', 'ethereum').lower()
+            
+            if not address:
+                continue
+            
+            # Check wallet balance
+            balance = self._check_token_balance_on_chain(address, chain)
+            
+            if balance == -1.0:
+                # Balance check failed - keep trade to be safe (don't lose track of it)
+                validated_trades.append(trade)
+            elif balance <= 0.0 or balance < 0.000001:
+                # Zero or dust balance - position was manually closed
+                # Mark as closed in performance_data
+                trade['status'] = 'manual_close'
+                trade['exit_time'] = datetime.now().isoformat()
+                trade['exit_price'] = 0.0
+                trade['pnl_usd'] = 0.0
+                trade['pnl_percent'] = 0.0
+                # Don't add to validated_trades - it's closed
+                print(f"📝 Marked trade {trade.get('symbol', '?')} as manually closed (zero balance)")
+            else:
+                # Has balance - trade is still open
+                validated_trades.append(trade)
+        
+        # Save updated performance_data if any trades were marked as closed
+        if len(validated_trades) < len(open_trades):
+            self.save_data()
+        
+        return validated_trades
+    
+    def _check_token_balance_on_chain(self, token_address: str, chain_id: str) -> float:
+        """
+        Check token balance on the specified chain.
+        Returns balance amount (0.0 if balance is zero, -1.0 if check failed).
+        """
+        try:
+            chain_lower = chain_id.lower()
+            
+            if chain_lower == "solana":
+                from src.execution.jupiter_lib import JupiterCustomLib
+                from src.config.secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
+                lib = JupiterCustomLib(SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY)
+                balance = lib.get_token_balance(token_address)
+                # None means check failed (error) - return -1.0 to indicate unknown state
+                if balance is None:
+                    return -1.0
+                return float(balance)
+                
+            elif chain_lower == "base":
+                from src.execution.base_executor import get_token_balance
+                balance = get_token_balance(token_address)
+                return float(balance or 0.0)
+                
+            elif chain_lower == "ethereum":
+                # Use web3 to check ERC20 token balance
+                from web3 import Web3
+                from src.config.secrets import INFURA_URL, WALLET_ADDRESS
+                
+                w3 = Web3(Web3.HTTPProvider(INFURA_URL))
+                if not w3.is_connected():
+                    return -1.0
+                
+                # ERC20 ABI minimal - just balanceOf and decimals
+                erc20_abi = [
+                    {"constant":True,"inputs":[],"name":"decimals","outputs":[{"name":"","type":"uint8"}],"type":"function"},
+                    {"constant":True,"inputs":[{"name":"owner","type":"address"}],"name":"balanceOf","outputs":[{"name":"","type":"uint256"}],"type":"function"}
+                ]
+                
+                wallet = Web3.to_checksum_address(WALLET_ADDRESS)
+                token_addr = Web3.to_checksum_address(token_address)
+                token_contract = w3.eth.contract(address=token_addr, abi=erc20_abi)
+                
+                balance_wei = token_contract.functions.balanceOf(wallet).call()
+                decimals = token_contract.functions.decimals().call()
+                balance = float(balance_wei) / (10 ** decimals)
+                return balance
+                
+            else:
+                # For other chains, return -1.0 to indicate check not implemented
+                return -1.0
+                
+        except Exception as e:
+            # If balance check fails, return -1.0 to indicate unknown state
+            return -1.0
+    
+    def validate_and_update_open_trades(self) -> int:
+        """
+        Validate all open trades by checking wallet balances.
+        Marks trades with zero balance as manually closed.
+        Returns the number of trades that were marked as closed.
+        """
+        open_trades = self.get_open_trades(validate_balances=False)
+        closed_count = 0
+        
+        for trade in open_trades:
+            address = trade.get('address', '')
+            chain = trade.get('chain', 'ethereum').lower()
+            
+            if not address:
+                continue
+            
+            # Check wallet balance
+            balance = self._check_token_balance_on_chain(address, chain)
+            
+            if balance == -1.0:
+                # Balance check failed - skip to be safe
+                continue
+            elif balance <= 0.0 or balance < 0.000001:
+                # Zero or dust balance - position was manually closed
+                # Mark as closed in performance_data
+                trade['status'] = 'manual_close'
+                trade['exit_time'] = datetime.now().isoformat()
+                trade['exit_price'] = 0.0
+                trade['pnl_usd'] = 0.0
+                trade['pnl_percent'] = 0.0
+                closed_count += 1
+                print(f"📝 Marked trade {trade.get('symbol', '?')} ({address[:8]}...{address[-8:]}) as manually closed (zero balance)")
+        
+        if closed_count > 0:
+            self.save_data()
+            print(f"✅ Validated open trades: {closed_count} trade(s) marked as manually closed")
+        
+        return closed_count
     
     def get_trade_history(self, limit: int = None) -> List[Dict]:
         """Get trade history (all trades or limited by count)"""

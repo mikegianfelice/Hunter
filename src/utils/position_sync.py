@@ -1,6 +1,7 @@
 """
 Utility to sync positions between performance_data.json and open_positions.json
 Ensures positions are always tracked even if initial logging fails.
+Now validates wallet balances before syncing to prevent manually closed positions from being re-added.
 """
 import json
 import time
@@ -13,6 +14,62 @@ PERFORMANCE_DATA_FILE = PROJECT_ROOT / "data" / "performance_data.json"
 OPEN_POSITIONS_FILE = PROJECT_ROOT / "data" / "open_positions.json"
 
 
+def _check_token_balance_on_chain(token_address: str, chain_id: str) -> float:
+    """
+    Check token balance on the specified chain.
+    Returns balance amount (0.0 if balance is zero, -1.0 if check failed).
+    """
+    try:
+        chain_lower = chain_id.lower()
+        
+        if chain_lower == "solana":
+            from src.execution.jupiter_lib import JupiterCustomLib
+            from src.config.secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
+            lib = JupiterCustomLib(SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY)
+            balance = lib.get_token_balance(token_address)
+            # None means check failed (error) - return -1.0 to indicate unknown state
+            if balance is None:
+                return -1.0
+            return float(balance)
+            
+        elif chain_lower == "base":
+            from src.execution.base_executor import get_token_balance
+            balance = get_token_balance(token_address)
+            return float(balance or 0.0)
+            
+        elif chain_lower == "ethereum":
+            # Use web3 to check ERC20 token balance
+            from web3 import Web3
+            from src.config.secrets import INFURA_URL, WALLET_ADDRESS
+            
+            w3 = Web3(Web3.HTTPProvider(INFURA_URL))
+            if not w3.is_connected():
+                return -1.0
+            
+            # ERC20 ABI minimal - just balanceOf and decimals
+            erc20_abi = json.loads("""[
+                {"constant":true,"inputs":[],"name":"decimals","outputs":[{"name":"","type":"uint8"}],"type":"function"},
+                {"constant":true,"inputs":[{"name":"owner","type":"address"}],"name":"balanceOf","outputs":[{"name":"","type":"uint256"}],"type":"function"}
+            ]""")
+            
+            wallet = Web3.to_checksum_address(WALLET_ADDRESS)
+            token_addr = Web3.to_checksum_address(token_address)
+            token_contract = w3.eth.contract(address=token_addr, abi=erc20_abi)
+            
+            balance_wei = token_contract.functions.balanceOf(wallet).call()
+            decimals = token_contract.functions.decimals().call()
+            balance = float(balance_wei) / (10 ** decimals)
+            return balance
+            
+        else:
+            # For other chains, return -1.0 to indicate check not implemented
+            return -1.0
+            
+    except Exception as e:
+        # If balance check fails, return -1.0 to indicate unknown state
+        return -1.0
+
+
 def sync_position_from_performance_data(token_address: str, symbol: str, chain_id: str, entry_price: float, position_size_usd: float = None) -> bool:
     """Manually sync a position to open_positions.json (legacy function for backward compatibility)"""
     # Use address as key for backward compatibility
@@ -21,9 +78,30 @@ def sync_position_from_performance_data(token_address: str, symbol: str, chain_i
     )
 
 
-def sync_position_from_performance_data_with_key(position_key: str, token_address: str, symbol: str, chain_id: str, entry_price: float, position_size_usd: float = None, trade_id: str = None) -> bool:
-    """Manually sync a position to open_positions.json with a custom key"""
+def sync_position_from_performance_data_with_key(position_key: str, token_address: str, symbol: str, chain_id: str, entry_price: float, position_size_usd: float = None, trade_id: str = None, verify_balance: bool = True) -> bool:
+    """
+    Manually sync a position to open_positions.json with a custom key.
+    If verify_balance is True (default), checks wallet balance before syncing.
+    Returns False if balance check fails (zero balance or check error).
+    """
     try:
+        # CRITICAL: Check wallet balance BEFORE syncing to prevent manually closed positions from being added
+        if verify_balance:
+            balance = _check_token_balance_on_chain(token_address, chain_id)
+            
+            if balance == -1.0:
+                # Balance check failed - skip to be safe (don't add if we can't verify)
+                print(f"⏸️  Skipping sync for {symbol} ({token_address[:8]}...{token_address[-8:]}) - balance check failed")
+                return False
+            elif balance <= 0.0 or balance < 0.000001:
+                # Zero or dust balance - position was manually closed, don't sync it
+                print(f"🚫 Skipping sync for {symbol} ({token_address[:8]}...{token_address[-8:]}) - zero/dust balance ({balance:.8f}) detected (manually closed)")
+                # Mark as closed in performance_data to prevent future syncs
+                _mark_trade_as_closed_in_performance_data(token_address, chain_id, trade_id)
+                return False
+            else:
+                # Has balance - safe to sync
+                print(f"✓ {symbol} ({token_address[:8]}...{token_address[-8:]}) has balance {balance:.6f} - syncing")
         # If position_size_usd not provided, try to get it from performance_data.json
         if position_size_usd is None:
             try:
@@ -91,9 +169,53 @@ def sync_position_from_performance_data_with_key(position_key: str, token_addres
         return False
 
 
-def sync_all_open_positions() -> Dict[str, bool]:
+def _mark_trade_as_closed_in_performance_data(token_address: str, chain_id: str, trade_id: str = None):
+    """Mark a trade as manually closed in performance_data.json"""
+    try:
+        if not PERFORMANCE_DATA_FILE.exists():
+            return
+        
+        with open(PERFORMANCE_DATA_FILE, "r") as f:
+            perf_data = json.load(f)
+        
+        trades = perf_data.get("trades", [])
+        updated = False
+        
+        for trade in trades:
+            if trade.get("status") == "open":
+                # Match by trade_id if available, otherwise by address and chain
+                if trade_id and trade.get("id") == trade_id:
+                    trade['status'] = 'manual_close'
+                    trade['exit_time'] = datetime.now().isoformat()
+                    trade['exit_price'] = 0.0
+                    trade['pnl_usd'] = 0.0
+                    trade['pnl_percent'] = 0.0
+                    updated = True
+                    break
+                elif trade.get("address", "").lower() == token_address.lower() and trade.get("chain", "").lower() == chain_id.lower():
+                    trade['status'] = 'manual_close'
+                    trade['exit_time'] = datetime.now().isoformat()
+                    trade['exit_price'] = 0.0
+                    trade['pnl_usd'] = 0.0
+                    trade['pnl_percent'] = 0.0
+                    updated = True
+                    break
+        
+        if updated:
+            # Save updated performance_data
+            temp_file = PERFORMANCE_DATA_FILE.with_suffix(".tmp")
+            with open(temp_file, "w") as f:
+                json.dump(perf_data, f, indent=2)
+            temp_file.replace(PERFORMANCE_DATA_FILE)
+            print(f"📝 Marked trade as manually closed in performance_data.json")
+    except Exception as e:
+        print(f"⚠️ Failed to mark trade as closed: {e}")
+
+
+def sync_all_open_positions(verify_balances: bool = True) -> Dict[str, bool]:
     """
-    Sync all open positions from performance_data.json to open_positions.json
+    Sync all open positions from performance_data.json to open_positions.json.
+    If verify_balances is True (default), only syncs positions that have on-chain balances.
     Returns dict of {token_address: success_bool}
     """
     results = {}
@@ -126,6 +248,7 @@ def sync_all_open_positions() -> Dict[str, bool]:
         open_trades = [t for t in trades if t.get("status") == "open"]
         
         synced_count = 0
+        skipped_no_balance = 0
         for trade in open_trades:
             address = trade.get("address", "")
             if not address:
@@ -151,9 +274,33 @@ def sync_all_open_positions() -> Dict[str, bool]:
                 # Fallback: use address with entry_time
                 position_key = f"{address}_{entry_time.replace(':', '-')}"
             
-            # Sync position with composite key
+            # Skip if already tracked
+            if position_key in open_positions:
+                continue
+            
+            # CRITICAL: Check balance BEFORE syncing if verify_balances is enabled
+            if verify_balances:
+                balance = _check_token_balance_on_chain(address, chain)
+                
+                if balance == -1.0:
+                    # Balance check failed - skip to be safe (don't add if we can't verify)
+                    print(f"⏸️  Skipping sync for {symbol} ({address[:8]}...{address[-8:]}) - balance check failed")
+                    skipped_no_balance += 1
+                    continue
+                elif balance <= 0.0 or balance < 0.000001:
+                    # Zero or dust balance - position was manually closed, don't sync it
+                    print(f"🚫 Skipping sync for {symbol} ({address[:8]}...{address[-8:]}) - zero/dust balance ({balance:.8f}) detected (manually closed)")
+                    # Mark as closed in performance_data to prevent future syncs
+                    _mark_trade_as_closed_in_performance_data(address, chain, trade_id)
+                    skipped_no_balance += 1
+                    continue
+                else:
+                    # Has balance - safe to sync
+                    print(f"✓ {symbol} ({address[:8]}...{address[-8:]}) has balance {balance:.6f} - syncing")
+            
+            # Sync position with composite key (verify_balance is passed through)
             success = sync_position_from_performance_data_with_key(
-                position_key, address, symbol, chain, entry_price, position_size_usd, trade_id
+                position_key, address, symbol, chain, entry_price, position_size_usd, trade_id, verify_balance=verify_balances
             )
             results[position_key] = success
             if success:
@@ -164,6 +311,8 @@ def sync_all_open_positions() -> Dict[str, bool]:
         
         if synced_count > 0:
             print(f"✅ Synced {synced_count} position(s) from performance_data.json to open_positions.json")
+        if skipped_no_balance > 0:
+            print(f"🚫 Skipped {skipped_no_balance} position(s) with zero balance (manually closed)")
         
         return results
         
@@ -173,8 +322,8 @@ def sync_all_open_positions() -> Dict[str, bool]:
 
 
 if __name__ == "__main__":
-    # Run sync when called directly
-    results = sync_all_open_positions()
+    # Run sync when called directly (with balance verification enabled by default)
+    results = sync_all_open_positions(verify_balances=True)
     if results:
         print(f"Synced {sum(1 for v in results.values() if v)} position(s)")
     else:

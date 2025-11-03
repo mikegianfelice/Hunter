@@ -118,14 +118,56 @@ signal.signal(signal.SIGINT, _signal_handler)
 signal.signal(signal.SIGTERM, _signal_handler)
 
 # === Position I/O ===
-def load_positions():
+def load_positions(validate_balances: bool = False):
+    """
+    Load positions from open_positions.json.
+    If validate_balances is True, filters out positions with zero balance.
+    """
     if not POSITIONS_FILE.exists():
         return {}
     with open(POSITIONS_FILE, "r") as f:
         try:
-            return json.load(f) or {}
+            positions = json.load(f) or {}
         except Exception:
             return {}
+    
+    if not validate_balances:
+        return positions
+    
+    # Validate balances and filter out positions with zero balance
+    validated_positions = {}
+    for position_key, position_data in positions.items():
+        # Handle both old format (float) and new format (dict)
+        if isinstance(position_data, dict):
+            chain_id = position_data.get("chain_id", "ethereum").lower()
+            # Extract actual token address from position data (for composite keys)
+            token_address = position_data.get("address", position_key)
+            # If position_key is composite (address_tradeid), extract just the address part
+            if "_" in position_key and not position_data.get("address"):
+                token_address = position_key.split("_")[0]
+        else:
+            chain_id = "ethereum"
+            token_address = position_key  # Legacy format uses address as key
+        
+        # Check wallet balance
+        balance = _check_token_balance_on_chain(token_address, chain_id)
+        
+        if balance == -1.0:
+            # Balance check failed - keep position to be safe
+            validated_positions[position_key] = position_data
+        elif balance <= 0.0 or balance < 0.000001:
+            # Zero or dust balance - position was manually closed, skip it
+            print(f"🚫 Filtering out position {position_key} - zero/dust balance detected (manually closed)")
+        else:
+            # Has balance - position is still open
+            validated_positions[position_key] = position_data
+    
+    # If positions were filtered, save the cleaned list
+    if len(validated_positions) < len(positions):
+        print(f"🧹 Filtered {len(positions) - len(validated_positions)} position(s) with zero balance")
+        save_positions(validated_positions)
+    
+    return validated_positions
 
 def save_positions(positions):
     POSITIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -591,8 +633,8 @@ def _sync_only_positions_with_balance():
 def monitor_all_positions():
     config = get_monitor_config()
     
-    # Load existing positions first
-    positions = load_positions()
+    # Load existing positions first (with balance validation to filter out manually closed positions)
+    positions = load_positions(validate_balances=True)
     reconciled_closed = []  # Track manually closed positions
     
     # Auto-reconcile FIRST: Remove positions with zero on-chain balance (manual closes)
@@ -972,9 +1014,10 @@ def _main_loop():
     _ensure_singleton()
     
     # Sync positions on startup to catch any missed positions
+    # Use balance-verified sync to prevent manually closed positions from being re-added
     try:
-        sync_all_open_positions()
-        print("✅ Initial position sync completed")
+        _sync_only_positions_with_balance()
+        print("✅ Initial position sync completed (balance-verified)")
     except Exception as e:
         print(f"⚠️ Failed to sync positions on startup: {e}")
     
@@ -985,10 +1028,11 @@ def _main_loop():
             
             # Periodically sync positions (every 10 cycles = ~5 minutes)
             # This ensures positions stay in sync even if performance_data is updated elsewhere
+            # Use balance-verified sync to prevent manually closed positions from being re-added
             cycle_count += 1
             if cycle_count % 10 == 0:
                 try:
-                    sync_all_open_positions()
+                    _sync_only_positions_with_balance()
                 except Exception as e:
                     print(f"⚠️ Periodic position sync failed: {e}")
             
