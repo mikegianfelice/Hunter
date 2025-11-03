@@ -613,6 +613,13 @@ def monitor_all_positions():
             
             # Check if token is likely delisted
             if _detect_delisted_token(token_address, failure_counts[token_address]):
+                # CRITICAL SAFEGUARD: If this position is tracked in open_positions, never mark as delisted
+                # This protects against false positives from balance check failures
+                if position_key in positions:
+                    print(f"🛡️ Position {symbol} is actively tracked in open positions - skipping delisting check to prevent false positive")
+                    failure_counts[token_address] = max(0, failure_counts[token_address] - 2)
+                    continue
+                
                 # BEFORE marking as delisted, verify the token doesn't exist in wallet
                 # If we have a balance, it's clearly not delisted - just a price API issue
                 print(f"🔍 Verifying delisting status by checking on-chain balance...")
