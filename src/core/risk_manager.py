@@ -279,28 +279,48 @@ def _is_token_already_held(token_address: str) -> bool:
 def _get_current_exposure_usd() -> float:
     """Calculate current total exposure in USD across all open positions"""
     try:
-        if not os.path.exists(POSITIONS_FILE):
-            return 0.0
+        total_exposure = 0.0
         
-        with open(POSITIONS_FILE, 'r') as f:
-            data = json.load(f)
-            total_exposure = 0.0
-            
-            for token_address, position_data in data.items():
-                # Get position size from the position data
-                # This assumes position data includes the original trade amount
-                position_size = position_data.get('position_size_usd', 0.0)
-                if position_size > 0:
-                    total_exposure += position_size
-                else:
-                    # Fallback: estimate from entry price if position size not available
-                    entry_price = position_data.get('entry_price', 0.0)
-                    if entry_price > 0:
-                        # Estimate position size (this is approximate)
-                        estimated_size = entry_price * 1000  # Rough estimate
-                        total_exposure += estimated_size
-            
-            return total_exposure
+        # Use performance_data.json as source of truth (has accurate position_size_usd)
+        perf_file = "data/performance_data.json"
+        if os.path.exists(perf_file):
+            try:
+                with open(perf_file, 'r') as f:
+                    perf_data = json.load(f)
+                    trades = perf_data.get("trades", [])
+                    
+                    # Track unique token addresses to avoid duplicates
+                    seen_addresses = set()
+                    
+                    for trade in trades:
+                        if trade.get("status") == "open":
+                            address = trade.get("address", "").lower()
+                            
+                            # Skip duplicates - only count each token address once
+                            # (take the most recent one if there are duplicates)
+                            if address in seen_addresses:
+                                continue
+                            
+                            seen_addresses.add(address)
+                            position_size = trade.get("position_size_usd", 0.0)
+                            if position_size > 0:
+                                total_exposure += position_size
+            except Exception as e:
+                print(f"⚠️ Failed to read performance_data.json for exposure: {e}")
+        
+        # Fallback to open_positions.json if performance_data doesn't exist or has no data
+        if total_exposure == 0.0 and os.path.exists(POSITIONS_FILE):
+            try:
+                with open(POSITIONS_FILE, 'r') as f:
+                    data = json.load(f)
+                    for token_address, position_data in data.items():
+                        position_size = position_data.get('position_size_usd', 0.0)
+                        if position_size > 0:
+                            total_exposure += position_size
+            except Exception as e:
+                print(f"⚠️ Failed to read open_positions.json for exposure: {e}")
+        
+        return total_exposure
             
     except Exception as e:
         print(f"⚠️ Failed to calculate current exposure: {e}")

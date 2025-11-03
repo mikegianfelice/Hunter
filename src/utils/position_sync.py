@@ -13,9 +13,27 @@ PERFORMANCE_DATA_FILE = PROJECT_ROOT / "data" / "performance_data.json"
 OPEN_POSITIONS_FILE = PROJECT_ROOT / "data" / "open_positions.json"
 
 
-def sync_position_from_performance_data(token_address: str, symbol: str, chain_id: str, entry_price: float) -> bool:
+def sync_position_from_performance_data(token_address: str, symbol: str, chain_id: str, entry_price: float, position_size_usd: float = None) -> bool:
     """Manually sync a position to open_positions.json"""
     try:
+        # If position_size_usd not provided, try to get it from performance_data.json
+        if position_size_usd is None:
+            try:
+                if PERFORMANCE_DATA_FILE.exists():
+                    with open(PERFORMANCE_DATA_FILE, "r") as f:
+                        perf_data = json.load(f)
+                        trades = perf_data.get("trades", [])
+                        # Find the most recent open trade for this token
+                        matching_trades = [t for t in trades 
+                                         if t.get("address", "").lower() == token_address.lower() 
+                                         and t.get("status") == "open"]
+                        if matching_trades:
+                            # Sort by entry_time (most recent first)
+                            matching_trades.sort(key=lambda x: x.get("entry_time", ""), reverse=True)
+                            position_size_usd = matching_trades[0].get("position_size_usd", 0.0)
+            except Exception:
+                pass
+        
         OPEN_POSITIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
         
         # Load existing positions
@@ -29,12 +47,18 @@ def sync_position_from_performance_data(token_address: str, symbol: str, chain_i
             positions = {}
         
         # Add or update position
-        positions[token_address] = {
+        position_data = {
             "entry_price": float(entry_price),
             "chain_id": chain_id.lower(),
             "symbol": symbol,
             "timestamp": datetime.now().isoformat()
         }
+        
+        # Include position_size_usd if available
+        if position_size_usd is not None and position_size_usd > 0:
+            position_data["position_size_usd"] = float(position_size_usd)
+        
+        positions[token_address] = position_data
         
         # Atomic write
         temp_file = OPEN_POSITIONS_FILE.with_suffix(".tmp")
@@ -42,7 +66,8 @@ def sync_position_from_performance_data(token_address: str, symbol: str, chain_i
             json.dump(positions, f, indent=2)
         temp_file.replace(OPEN_POSITIONS_FILE)
         
-        print(f"📝 Synced position: {symbol} ({token_address[:8]}...{token_address[-8:]}) on {chain_id.upper()} @ ${entry_price:.6f}")
+        size_str = f" (${position_size_usd:.2f})" if position_size_usd else ""
+        print(f"📝 Synced position: {symbol} ({token_address[:8]}...{token_address[-8:]}) on {chain_id.upper()} @ ${entry_price:.6f}{size_str}")
         return True
     except Exception as e:
         print(f"⚠️ Failed to sync position: {e}")
@@ -79,32 +104,44 @@ def sync_all_open_positions() -> Dict[str, bool]:
             open_positions = {}
         
         # Find all open trades in performance_data
+        # Group by address and keep only the most recent one per token
         trades = perf_data.get("trades", [])
+        open_trades = [t for t in trades if t.get("status") == "open"]
+        
+        # Group by address and keep the most recent (by entry_time)
+        positions_by_address = {}
+        for trade in open_trades:
+            address = trade.get("address", "").lower()
+            if not address:
+                continue
+            
+            entry_time = trade.get("entry_time", "")
+            if address not in positions_by_address:
+                positions_by_address[address] = trade
+            else:
+                # Keep the most recent one
+                existing_time = positions_by_address[address].get("entry_time", "")
+                if entry_time > existing_time:
+                    positions_by_address[address] = trade
+        
         synced_count = 0
-        for trade in trades:
-            if trade.get("status") == "open":
-                address = trade.get("address")
-                symbol = trade.get("symbol", "?")
-                chain = trade.get("chain", "ethereum").lower()
-                entry_price = float(trade.get("entry_price", 0))
-                
-                if not address or entry_price <= 0:
-                    continue
-                
-                # Check if already in open_positions (and entry price matches)
-                if address in open_positions:
-                    existing_entry = open_positions[address].get("entry_price")
-                    if existing_entry and abs(float(existing_entry) - entry_price) < 0.000001:  # Prices match
-                        continue  # Already synced
-                
-                # Sync position
-                success = sync_position_from_performance_data(address, symbol, chain, entry_price)
-                results[address] = success
-                if success:
-                    synced_count += 1
-                
-                # Brief delay to avoid file lock issues
-                time.sleep(0.1)
+        for address, trade in positions_by_address.items():
+            symbol = trade.get("symbol", "?")
+            chain = trade.get("chain", "ethereum").lower()
+            entry_price = float(trade.get("entry_price", 0))
+            position_size_usd = trade.get("position_size_usd", 0.0)
+            
+            if entry_price <= 0:
+                continue
+            
+            # Sync position with position_size_usd
+            success = sync_position_from_performance_data(address, symbol, chain, entry_price, position_size_usd)
+            results[address] = success
+            if success:
+                synced_count += 1
+            
+            # Brief delay to avoid file lock issues
+            time.sleep(0.1)
         
         if synced_count > 0:
             print(f"✅ Synced {synced_count} position(s) from performance_data.json to open_positions.json")
