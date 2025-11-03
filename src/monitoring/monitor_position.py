@@ -7,7 +7,7 @@ import csv
 import signal
 from datetime import datetime
 from pathlib import Path
-from typing import Tuple
+from typing import Tuple, Dict
 
 # Add project root to path if not already there
 project_root = Path(__file__).resolve().parents[2]
@@ -26,9 +26,16 @@ from src.utils.position_sync import sync_all_open_positions
 def get_monitor_config():
     """Get current configuration values dynamically"""
     return {
-        'TAKE_PROFIT': get_config_float("take_profit", 0.5),
-        'STOP_LOSS': get_config_float("stop_loss", 0.25),
-        'TRAILING_STOP': get_config_float("trailing_stop_percent", 0)
+        'TAKE_PROFIT': get_config_float("take_profit", 0.12),
+        'STOP_LOSS': get_config_float("stop_loss", 0.07),
+        'TRAILING_STOP': get_config_float("trailing_stop_percent", 0),
+        'USE_DYNAMIC_TP': get_config("use_dynamic_tp", False),
+        'BASE_TP': get_config_float("base_take_profit", 0.12),
+        'MAX_TP': get_config_float("max_take_profit", 0.20),
+        'MIN_TP': get_config_float("min_take_profit", 0.08),
+        'QUALITY_TP_BONUS': get_config_float("quality_tp_bonus", 0.03),
+        'VOLUME_TP_BONUS': get_config_float("volume_tp_bonus", 0.02),
+        'LIQUIDITY_TP_BONUS': get_config_float("liquidity_tp_bonus", 0.02)
     }
 
 # Use absolute paths based on project root
@@ -407,6 +414,49 @@ def _find_open_trade_by_address(token_address: str, chain_id: str = None):
         print(f"⚠️ Error finding trade for {token_address}: {e}")
         return None
 
+def _calculate_dynamic_take_profit_for_position(trade: Dict, config: Dict) -> float:
+    """Calculate dynamic take profit for a specific position based on quality, volume, liquidity"""
+    if not config.get('USE_DYNAMIC_TP', False):
+        # Dynamic TP disabled, use static take profit
+        return config['TAKE_PROFIT']
+    
+    # Start with base take profit
+    tp = config.get('BASE_TP', 0.12)
+    
+    if not trade:
+        # No trade data available, fallback to static
+        return config['TAKE_PROFIT']
+    
+    # Get quality score (0-100 scale)
+    quality_score = float(trade.get('quality_score', 0))
+    volume_24h = float(trade.get('volume_24h', 0))
+    liquidity = float(trade.get('liquidity', 0))
+    
+    # Apply bonuses based on token quality
+    # Quality score is 0-100, so 0.7 means 70, etc.
+    quality_percent = quality_score * 100 if quality_score <= 1.0 else quality_score
+    
+    # High quality tokens get bonus
+    if quality_percent >= 70:
+        tp += config.get('QUALITY_TP_BONUS', 0.03)
+        print(f"  📈 High quality token: +{config.get('QUALITY_TP_BONUS', 0.03)*100:.0f}% TP")
+    
+    # High volume tokens get bonus
+    if volume_24h >= 10_000_000:  # $10M+ volume
+        tp += config.get('VOLUME_TP_BONUS', 0.02)
+        print(f"  📊 High volume: +{config.get('VOLUME_TP_BONUS', 0.02)*100:.0f}% TP")
+    
+    # High liquidity tokens get bonus
+    if liquidity >= 5_000_000:  # $5M+ liquidity
+        tp += config.get('LIQUIDITY_TP_BONUS', 0.02)
+        print(f"  💧 High liquidity: +{config.get('LIQUIDITY_TP_BONUS', 0.02)*100:.0f}% TP")
+    
+    # Clamp to min/max
+    tp = max(config.get('MIN_TP', 0.08), min(config.get('MAX_TP', 0.20), tp))
+    
+    print(f"  🎯 Dynamic TP: {tp*100:.0f}% (base: {config.get('BASE_TP', 0.12)*100:.0f}%)")
+    return tp
+
 def monitor_all_positions():
     config = get_monitor_config()
     
@@ -540,13 +590,18 @@ def monitor_all_positions():
         gain = (current_price - entry_price) / entry_price
         print(f"📊 PnL: {gain * 100:.2f}%")
 
+        # Calculate take profit threshold (static or dynamic based on config)
+        trade = _find_open_trade_by_address(token_address, chain_id)
+        take_profit_threshold = _calculate_dynamic_take_profit_for_position(trade, config)
+        print(f"💰 TP Threshold: {take_profit_threshold*100:.2f}%")
+
         # Trailing stop logic (optional)
         dyn_stop = _apply_trailing_stop(trail_state, token_address, current_price)
         if dyn_stop:
             print(f"🧵 Trailing stop @ ${dyn_stop:.6f} (peak-based)")
 
         # Take-profit
-        if gain >= config['TAKE_PROFIT']:
+        if gain >= take_profit_threshold:
             print("💰 Take-profit hit! Selling...")
             tx = _sell_token_multi_chain(token_address, chain_id, symbol)
             
@@ -554,7 +609,6 @@ def monitor_all_positions():
                 log_trade(token_address, entry_price, current_price, "take_profit")
                 
                 # Update performance tracker with exit
-                trade = _find_open_trade_by_address(token_address, chain_id)
                 if trade:
                     position_size = trade.get('position_size_usd', 0)
                     pnl_usd = gain * position_size  # gain is already a ratio
