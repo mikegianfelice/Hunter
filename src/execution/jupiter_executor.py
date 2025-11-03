@@ -105,6 +105,7 @@ class JupiterCustomExecutor:
 
     def execute_trade(self, token_address: str, amount_usd: float, is_buy: bool = True) -> Tuple[str, bool]:
         """Execute trade using custom Jupiter library"""
+        print(f"🔍 [DEBUG] execute_trade called: token={token_address}, amount_usd={amount_usd}, is_buy={is_buy}")
         try:
             log_info("solana.trade.start", token=token_address, side=("buy" if is_buy else "sell"), amount_usd=amount_usd)
             
@@ -186,24 +187,42 @@ class JupiterCustomExecutor:
                 # Selling token for SOL
                 # CRITICAL: We need the actual token balance in raw units, not USD amount
                 # Get raw token balance (in smallest token units)
+                print(f"🔍 [DEBUG] [SELL] Getting raw token balance for {token_address}...")
                 raw_token_balance = self.get_token_raw_balance(token_address)
-                if raw_token_balance is None or raw_token_balance <= 0:
+                print(f"🔍 [DEBUG] [SELL] Raw token balance result: {raw_token_balance}, type={type(raw_token_balance)}")
+                
+                if raw_token_balance is None:
+                    print(f"❌ [ERROR] [SELL] Raw token balance is None - RPC call failed or token not found")
+                    log_error("solana.trade.no_token_balance", token=token_address)
+                    return "", False
+                elif raw_token_balance <= 0:
+                    print(f"❌ [ERROR] [SELL] Raw token balance is <= 0: {raw_token_balance}")
                     log_error("solana.trade.no_token_balance", token=token_address)
                     return "", False
                 
+                print(f"✅ [SELL] Raw token balance OK: {raw_token_balance}")
                 input_mint = token_address
                 output_mint = WSOL_MINT
                 amount = raw_token_balance  # Use raw token amount for swap
+                print(f"🔍 [DEBUG] [SELL] Swap parameters: input_mint={input_mint}, output_mint={output_mint}, amount={amount}")
             
             # Execute swap using custom Jupiter library
+            print(f"🔍 [DEBUG] Calling jupiter_lib.execute_swap...")
             tx_hash, success = self.jupiter_lib.execute_swap(input_mint, output_mint, amount)
+            print(f"🔍 [DEBUG] execute_swap result: tx_hash={tx_hash}, success={success}, type(tx_hash)={type(tx_hash)}")
+            
             if success:
                 log_info("solana.trade.sent", token=token_address, side=("buy" if is_buy else "sell"), tx_hash=tx_hash)
+                print(f"✅ [SUCCESS] Trade executed successfully: tx_hash={tx_hash}")
             else:
                 log_error("solana.trade.error", token=token_address, side=("buy" if is_buy else "sell"))
+                print(f"❌ [ERROR] Trade execution failed: tx_hash={tx_hash}")
             return tx_hash, success
             
         except Exception as e:
+            print(f"❌ [EXCEPTION] Exception in execute_trade: {e}")
+            import traceback
+            print(f"🔍 [DEBUG] Exception traceback:\n{traceback.format_exc()}")
             log_error("solana.trade.exception", error=str(e))
             return "", False
 
@@ -216,6 +235,7 @@ class JupiterCustomExecutor:
         Get raw token balance in smallest units (not UI amount)
         Returns the actual token amount needed for swap quotes
         """
+        print(f"🔍 [DEBUG] get_token_raw_balance called: token_mint={token_mint}")
         try:
             import requests
             rpc_payload = {
@@ -233,25 +253,41 @@ class JupiterCustomExecutor:
                 ]
             }
             
+            print(f"🔍 [DEBUG] Sending RPC request to {SOLANA_RPC_URL}...")
             response = requests.post(SOLANA_RPC_URL, json=rpc_payload, timeout=10)
+            print(f"🔍 [DEBUG] RPC response status: {response.status_code}")
+            
             if response.status_code == 200:
                 result = response.json()
+                print(f"🔍 [DEBUG] RPC response result keys: {result.keys() if isinstance(result, dict) else 'not a dict'}")
+                
                 if "result" in result and "value" in result["result"]:
                     accounts = result["result"]["value"]
+                    print(f"🔍 [DEBUG] Found {len(accounts)} token account(s)")
+                    
                     if accounts:
                         # Get the first account's raw balance (in smallest units)
                         account_info = accounts[0]["account"]["data"]["parsed"]["info"]
                         raw_amount_str = account_info["tokenAmount"]["amount"]  # This is a string of the raw amount
-                        return int(raw_amount_str)
+                        raw_balance = int(raw_amount_str)
+                        print(f"✅ [DEBUG] Raw token balance: {raw_balance} (from string: {raw_amount_str})")
+                        return raw_balance
                     else:
+                        print(f"⚠️ [DEBUG] No token accounts found for mint {token_mint}")
                         return 0
                 else:
-                    log_error("solana.token_balance.rpc_error", error=result.get('error', 'Unknown'))
+                    error_msg = result.get('error', 'Unknown')
+                    print(f"❌ [ERROR] RPC error in result: {error_msg}")
+                    log_error("solana.token_balance.rpc_error", error=error_msg)
                     return None
             else:
+                print(f"❌ [ERROR] HTTP error: status={response.status_code}")
                 log_error("solana.token_balance.http_error", status=response.status_code)
                 return None
         except Exception as e:
+            print(f"❌ [EXCEPTION] Error in get_token_raw_balance: {e}")
+            import traceback
+            print(f"🔍 [DEBUG] Exception traceback:\n{traceback.format_exc()}")
             log_error("solana.token_balance.exception", error=str(e))
             return None
 
@@ -322,6 +358,7 @@ def buy_token_solana(token_address: str, amount_usd: float, symbol: str = "", te
 
 def sell_token_solana(token_address: str, amount_usd: float, symbol: str = "", test_mode: bool = False) -> Tuple[str, bool]:
     """Sell token on Solana (for multi-chain compatibility)"""
+    print(f"🔍 [DEBUG] sell_token_solana called: token={token_address}, amount_usd={amount_usd}, symbol={symbol}, test_mode={test_mode}")
     executor = JupiterCustomExecutor()
     
     if test_mode:
@@ -337,7 +374,10 @@ def sell_token_solana(token_address: str, amount_usd: float, symbol: str = "", t
             print(f"⚠️ Test mode validation failed: {e}")
             return None, False
     
-    return executor.execute_trade(token_address, amount_usd, is_buy=False)
+    print(f"🔍 [DEBUG] Calling executor.execute_trade with is_buy=False...")
+    result = executor.execute_trade(token_address, amount_usd, is_buy=False)
+    print(f"🔍 [DEBUG] executor.execute_trade result: {result}, type={type(result)}")
+    return result
 
 def get_solana_executor():
     """Get Solana executor instance (for backward compatibility)"""

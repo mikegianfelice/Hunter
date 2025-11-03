@@ -410,42 +410,52 @@ class JupiterCustomLib:
 
     def execute_swap(self, input_mint: str, output_mint: str, amount: int, slippage: float = 0.10) -> Tuple[str, bool]:
         """Execute complete swap process with enhanced error handling"""
+        print(f"🔍 [DEBUG] [SWAP] execute_swap called: input_mint={input_mint}, output_mint={output_mint}, amount={amount}, slippage={slippage}")
         try:
             try:
-                print(f"🔄 Executing swap: {input_mint[:8]}... -> {output_mint[:8]}...")
+                print(f"🔄 [SWAP] Executing swap: {input_mint[:8]}... -> {output_mint[:8]}...")
             except BrokenPipeError:
                 pass
             
             # Step 1: Get quote
+            print(f"🔍 [DEBUG] [SWAP] Step 1: Getting quote from Jupiter API...")
             quote = self.get_quote(input_mint, output_mint, amount, slippage)
+            print(f"🔍 [DEBUG] [SWAP] Quote result: {quote is not None}, keys={quote.keys() if quote and isinstance(quote, dict) else 'N/A'}")
             if not quote:
                 try:
-                    print(f"❌ Failed to get quote for swap")
+                    print(f"❌ [ERROR] [SWAP] Failed to get quote for swap")
                 except BrokenPipeError:
                     pass
                 return "", False
             
             # Step 2: Get swap transaction
+            print(f"🔍 [DEBUG] [SWAP] Step 2: Getting swap transaction...")
             transaction_data = self.get_swap_transaction(quote)
+            print(f"🔍 [DEBUG] [SWAP] Transaction data result: {bool(transaction_data)}, length={len(transaction_data) if transaction_data else 0}")
             if not transaction_data:
                 try:
-                    print(f"❌ Failed to get swap transaction")
+                    print(f"❌ [ERROR] [SWAP] Failed to get swap transaction")
                 except BrokenPipeError:
                     pass
                 return "", False
             
             # Step 3: Sign transaction
+            print(f"🔍 [DEBUG] [SWAP] Step 3: Signing transaction...")
             signed_transaction = self.sign_transaction(transaction_data)
+            print(f"🔍 [DEBUG] [SWAP] Signed transaction result: {bool(signed_transaction)}, length={len(signed_transaction) if signed_transaction else 0}")
             if not signed_transaction:
                 try:
-                    print(f"❌ Failed to sign transaction")
+                    print(f"❌ [ERROR] [SWAP] Failed to sign transaction")
                 except BrokenPipeError:
                     pass
                 return "", False
             
             # Step 4: Send transaction
+            print(f"🔍 [DEBUG] [SWAP] Step 4: Sending transaction to Solana network...")
             tx_hash, success = self.send_transaction(signed_transaction)
+            print(f"🔍 [DEBUG] [SWAP] Send transaction result: tx_hash={tx_hash}, success={success}")
             if success:
+                print(f"✅ [SUCCESS] [SWAP] Transaction sent successfully: {tx_hash}")
                 return tx_hash, True
             
             # Step 5: If failed due to size, try with smaller amount

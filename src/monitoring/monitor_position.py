@@ -302,56 +302,81 @@ def _sell_token_multi_chain(token_address: str, chain_id: str, symbol: str = "?"
     """
     Sell token using the appropriate executor based on chain
     """
+    print(f"🔍 [DEBUG] _sell_token_multi_chain called: token={token_address}, chain={chain_id}, symbol={symbol}")
     try:
         if chain_id == "ethereum":
             print(f"🔄 Selling {symbol} on Ethereum...")
             tx_hash, success = sell_token_ethereum(token_address)
+            print(f"🔍 [DEBUG] Ethereum sell result: tx_hash={tx_hash}, success={success}")
         elif chain_id == "base":
             print(f"🔄 Selling {symbol} on Base...")
             # Get token balance for BASE
             from src.execution.base_executor import get_token_balance
             balance = get_token_balance(token_address)
+            print(f"🔍 [DEBUG] Base balance check: {balance}")
             if balance > 0:
                 tx_hash, success = sell_token_base(token_address, balance, symbol)
+                print(f"🔍 [DEBUG] Base sell result: tx_hash={tx_hash}, success={success}")
             else:
-                print(f"❌ No {symbol} balance to sell")
+                print(f"❌ [ERROR] No {symbol} balance to sell on Base: balance={balance}")
                 return None
         elif chain_id == "solana":
-            print(f"🔄 Selling {symbol} on Solana...")
+            print(f"🔄 [SELL START] Selling {symbol} on Solana...")
             # For Solana, we need to get the balance first and convert to USD
             from src.execution.jupiter_lib import JupiterCustomLib
             from src.config.secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
             
+            print(f"🔍 [DEBUG] Initializing JupiterCustomLib...")
             lib = JupiterCustomLib(SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY)
+            
+            print(f"🔍 [DEBUG] Checking token balance for {token_address}...")
             balance = lib.get_token_balance(token_address)
-            if balance > 0:
+            print(f"🔍 [DEBUG] Token balance check result: balance={balance}, type={type(balance)}")
+            
+            if balance is None:
+                print(f"❌ [ERROR] Balance check returned None for {symbol} - RPC call may have failed")
+                return None
+            elif balance > 0:
+                print(f"✅ [BALANCE OK] Token balance: {balance}")
                 # Get current price to calculate USD value
+                print(f"🔍 [DEBUG] Fetching current price for USD calculation...")
                 current_price = _fetch_token_price_multi_chain(token_address)
+                print(f"🔍 [DEBUG] Current price: {current_price}")
+                
                 if current_price > 0:
                     # Calculate USD value of the token balance
                     amount_usd = balance * current_price
+                    print(f"🔍 [DEBUG] Calculated amount_usd: {amount_usd} (balance={balance} * price={current_price})")
+                    print(f"🔍 [DEBUG] Calling sell_token_solana with amount_usd={amount_usd}...")
                     tx_hash, success = sell_token_solana(token_address, amount_usd, symbol)
+                    print(f"🔍 [DEBUG] sell_token_solana result: tx_hash={tx_hash}, success={success}, type(tx_hash)={type(tx_hash)}")
                 else:
-                    print(f"⚠️ Could not get current price for {symbol}, using estimated value")
+                    print(f"⚠️ [WARNING] Could not get current price for {symbol} (price={current_price}), using estimated value")
                     # Fallback: use a conservative estimate
                     amount_usd = balance * 0.01  # Conservative estimate
+                    print(f"🔍 [DEBUG] Using fallback amount_usd: {amount_usd}")
+                    print(f"🔍 [DEBUG] Calling sell_token_solana with fallback amount_usd={amount_usd}...")
                     tx_hash, success = sell_token_solana(token_address, amount_usd, symbol)
+                    print(f"🔍 [DEBUG] sell_token_solana result (fallback): tx_hash={tx_hash}, success={success}")
             else:
-                print(f"❌ No {symbol} balance to sell")
+                print(f"❌ [ERROR] No {symbol} balance to sell: balance={balance} (balance <= 0)")
                 return None
         else:
-            print(f"❌ Unsupported chain for selling: {chain_id}")
+            print(f"❌ [ERROR] Unsupported chain for selling: {chain_id}")
             return None
             
+        print(f"🔍 [DEBUG] Final sell result check: success={success}, tx_hash={tx_hash}")
         if success:
-            print(f"✅ {symbol} sold successfully: {tx_hash}")
+            print(f"✅ [SUCCESS] {symbol} sold successfully: {tx_hash}")
             return tx_hash
         else:
-            print(f"❌ Failed to sell {symbol}")
+            print(f"❌ [FAILURE] Failed to sell {symbol}: tx_hash={tx_hash}, success={success}")
             return None
             
     except Exception as e:
-        print(f"❌ Error selling {symbol} on {chain_id}: {e}")
+        print(f"❌ [EXCEPTION] Error selling {symbol} on {chain_id}: {e}")
+        import traceback
+        print(f"🔍 [DEBUG] Exception traceback:\n{traceback.format_exc()}")
         return None
 
 def _detect_delisted_token(token_address: str, consecutive_failures: int) -> bool:
@@ -839,6 +864,7 @@ def monitor_all_positions():
         trade = _find_open_trade_by_address(token_address, chain_id)
         take_profit_threshold = _calculate_dynamic_take_profit_for_position(trade, config)
         print(f"💰 TP Threshold: {take_profit_threshold*100:.2f}%")
+        print(f"🔍 [DEBUG] Take profit check: gain={gain*100:.2f}%, threshold={take_profit_threshold*100:.2f}%, condition={gain >= take_profit_threshold}")
 
         # Trailing stop logic (optional)
         dyn_stop = _apply_trailing_stop(trail_state, token_address, current_price)
@@ -847,8 +873,10 @@ def monitor_all_positions():
 
         # Take-profit
         if gain >= take_profit_threshold:
-            print("💰 Take-profit hit! Selling...")
+            print(f"💰 [TAKE PROFIT] Take-profit hit! Gain: {gain*100:.2f}% >= Threshold: {take_profit_threshold*100:.2f}%")
+            print(f"🔍 [DEBUG] Calling _sell_token_multi_chain for {symbol} ({token_address}) on {chain_id}")
             tx = _sell_token_multi_chain(token_address, chain_id, symbol)
+            print(f"🔍 [DEBUG] Sell result: tx={tx}, type={type(tx)}")
             
             if tx:  # Only proceed if sell succeeded
                 log_trade(token_address, entry_price, current_price, "take_profit")
