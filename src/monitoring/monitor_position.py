@@ -608,6 +608,25 @@ def monitor_all_positions():
 
         # Track price fetch failures
         if current_price == 0:
+            # CRITICAL: For open positions, verify balance BEFORE incrementing failures
+            # This prevents false failure accumulation when APIs have temporary issues
+            if position_key in positions:
+                print(f"🛡️ Position {symbol} is actively tracked - verifying balance to prevent false failures...")
+                balance = _check_token_balance_on_chain(token_address, chain_id)
+                
+                if balance > 0:
+                    # Token definitely exists - just a price API issue, don't track failure
+                    print(f"✅ Token has balance ({balance:.6f}) - price API issue, not tracking failure")
+                    print(f"⏳ Holding position (price unavailable but token exists in wallet)...")
+                    continue
+                elif balance == 0:
+                    # Balance is zero - might be delisted or sold manually, track failure normally
+                    print(f"⚠️ Zero balance detected for {symbol}, tracking price failure")
+                else:  # balance == -1.0 (check failed)
+                    # Can't verify - skip this check to avoid false negatives
+                    print(f"⏸️ Balance check failed for {symbol}, skipping failure tracking")
+                    continue
+            
             failure_counts[token_address] = failure_counts.get(token_address, 0) + 1
             print(f"⚠️ Price fetch failure #{failure_counts[token_address]} for {token_address[:8]}...{token_address[-8:]}")
             
