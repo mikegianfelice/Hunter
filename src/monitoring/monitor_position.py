@@ -332,7 +332,10 @@ def _check_token_balance_on_chain(token_address: str, chain_id: str) -> float:
             from src.config.secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
             lib = JupiterCustomLib(SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY)
             balance = lib.get_token_balance(token_address)
-            return float(balance or 0.0)
+            # None means check failed (error) - return -1.0 to indicate unknown state
+            if balance is None:
+                return -1.0
+            return float(balance)
             
         elif chain_lower == "base":
             from src.execution.base_executor import get_token_balance
@@ -389,14 +392,21 @@ def _prune_positions_with_zero_balance(positions: dict) -> Tuple[dict, list]:
     
     print("🔍 Auto-reconciling positions with on-chain balances...")
     
-    for token_address, position_data in list(positions.items()):
+    for position_key, position_data in list(positions.items()):
         # Handle both old format (float) and new format (dict)
         if isinstance(position_data, dict):
             chain_id = position_data.get("chain_id", "ethereum").lower()
             symbol = position_data.get("symbol", "?")
+            # Extract actual token address from position data (for composite keys)
+            # If address field exists, use it; otherwise fallback to position_key
+            token_address = position_data.get("address", position_key)
+            # If position_key is composite (address_tradeid), extract just the address part
+            if "_" in position_key and not position_data.get("address"):
+                token_address = position_key.split("_")[0]
         else:
             chain_id = "ethereum"
             symbol = "?"
+            token_address = position_key  # Legacy format uses address as key
         
         try:
             balance = _check_token_balance_on_chain(token_address, chain_id)
@@ -408,14 +418,14 @@ def _prune_positions_with_zero_balance(positions: dict) -> Tuple[dict, list]:
             elif balance <= 0.0:
                 # Zero balance - position was closed manually
                 print(f"✅ Detected zero balance for {symbol} ({token_address[:8]}...{token_address[-8:]} on {chain_id.upper()}) - removing from tracking")
-                to_remove.append(token_address)
-                pruned.pop(token_address, None)
+                to_remove.append(position_key)
+                pruned.pop(position_key, None)
             else:
                 # Has balance - position still open
                 print(f"✓ {symbol} ({token_address[:8]}...{token_address[-8:]}) still has balance: {balance:.6f}")
                 
         except Exception as e:
-            print(f"⚠️ Error checking balance for {token_address}: {e}")
+            print(f"⚠️ Error checking balance for {position_key}: {e}")
             # On error, keep the position to be safe
     
     if to_remove:
@@ -517,19 +527,30 @@ def monitor_all_positions():
     if reconciled_closed:
         try:
             from src.core.performance_tracker import performance_tracker
-            for token_address in reconciled_closed:
+            for position_key in reconciled_closed:
                 # Find the position data to get chain_id and entry_price before it was removed
-                old_position_data = original_positions_before_prune.get(token_address)
+                old_position_data = original_positions_before_prune.get(position_key)
                 if old_position_data:
                     if isinstance(old_position_data, dict):
                         chain_id = old_position_data.get("chain_id", "ethereum")
                         entry_price = float(old_position_data.get("entry_price", 0))
+                        # Extract actual token address
+                        token_address = old_position_data.get("address", position_key)
+                        if "_" in position_key and not token_address:
+                            token_address = position_key.split("_")[0]
                     else:
                         chain_id = "ethereum"
                         entry_price = float(old_position_data) if old_position_data else 0
+                        token_address = position_key
                     
-                    # Find and close the trade
-                    trade = _find_open_trade_by_address(token_address, chain_id)
+                    # Find and close the trade using trade_id if available
+                    if isinstance(old_position_data, dict) and old_position_data.get("trade_id"):
+                        trade_id = old_position_data.get("trade_id")
+                        open_trades = performance_tracker.get_open_trades()
+                        trade = next((t for t in open_trades if t.get("id") == trade_id), None)
+                    else:
+                        # Fallback to finding by address
+                        trade = _find_open_trade_by_address(token_address, chain_id)
                     if trade:
                         # Try to get current price if possible, otherwise use entry price (0 PnL)
                         current_price = _fetch_token_price_multi_chain(token_address) or entry_price
@@ -554,23 +575,32 @@ def monitor_all_positions():
     # ephemeral state for trailing stop peaks
     trail_state = {}
 
-    for token_address, position_data in list(positions.items()):
+    for position_key, position_data in list(positions.items()):
         # Handle both old format (float) and new format (dict)
         if isinstance(position_data, dict):
             entry_price = float(position_data.get("entry_price", 0))
             chain_id = position_data.get("chain_id", "ethereum").lower()
             symbol = position_data.get("symbol", "?")
+            # Extract actual token address from position data (for composite keys)
+            token_address = position_data.get("address", position_key)
+            # If position_key is composite (address_tradeid), extract just the address part
+            if "_" in position_key and not position_data.get("address"):
+                token_address = position_key.split("_")[0]
+            trade_id = position_data.get("trade_id")
         else:
             # Legacy format - assume Ethereum
             entry_price = float(position_data)
             chain_id = "ethereum"
             symbol = "?"
+            token_address = position_key
+            trade_id = None
             
         if entry_price <= 0:
-            print(f"⚠️ Invalid entry price for {token_address}: {entry_price}")
+            print(f"⚠️ Invalid entry price for {position_key}: {entry_price}")
             continue
 
-        print(f"\n🔍 Monitoring token: {symbol} ({token_address}) on {chain_id.upper()}")
+        trade_id_str = f" [Trade: {trade_id}]" if trade_id else ""
+        print(f"\n🔍 Monitoring token: {symbol} ({token_address}) on {chain_id.upper()}{trade_id_str}")
         print(f"🎯 Entry price: ${entry_price:.6f}")
 
         # Fetch current price using multi-chain function
@@ -583,36 +613,57 @@ def monitor_all_positions():
             
             # Check if token is likely delisted
             if _detect_delisted_token(token_address, failure_counts[token_address]):
-                print(f"🚨 TOKEN LIKELY DELISTED: {token_address[:8]}...{token_address[-8:]}")
-                print(f"💸 Investment lost: ${entry_price:.6f}")
+                # BEFORE marking as delisted, verify the token doesn't exist in wallet
+                # If we have a balance, it's clearly not delisted - just a price API issue
+                print(f"🔍 Verifying delisting status by checking on-chain balance...")
+                balance = _check_token_balance_on_chain(token_address, chain_id)
                 
-                # Log as delisted trade
-                log_trade(token_address, entry_price, 0.0, "delisted")
-                
-                # Update performance tracker with exit
-                trade = _find_open_trade_by_address(token_address, chain_id)
-                if trade:
-                    # Position value lost (100% loss)
-                    position_size = trade.get('position_size_usd', 0)
-                    pnl_usd = -position_size  # Full loss
-                    from src.core.performance_tracker import performance_tracker
-                    performance_tracker.log_trade_exit(trade['id'], 0.0, pnl_usd, "delisted")
-                    print(f"📊 Updated performance tracker for delisted token: {trade.get('symbol', '?')}")
-                
-                # Send Telegram alert
-                send_telegram_message(
-                    f"🚨 TOKEN DELISTED - INVESTMENT LOST!\n"
-                    f"Token: {token_address[:8]}...{token_address[-8:]}\n"
-                    f"Entry: ${entry_price:.6f}\n"
-                    f"Current: $0.00 (DELISTED)\n"
-                    f"Loss: 100% (${entry_price:.6f})\n"
-                    f"⚠️ Token no longer tradeable"
-                )
-                
-                # Remove from active positions
-                closed_positions.append(token_address)
-                updated_positions.pop(token_address, None)
-                continue
+                if balance == -1.0:
+                    # Balance check failed - can't verify, so don't mark as delisted
+                    print(f"⏸️  Cannot verify delisting: balance check failed. Keeping position active.")
+                    # Reset failure count to give it more time
+                    failure_counts[token_address] = max(0, failure_counts[token_address] - 2)
+                    continue
+                elif balance > 0:
+                    # Token exists in wallet - definitely not delisted, just price API issue
+                    print(f"✅ Token has balance ({balance:.6f}) - not delisted. Price API issue detected.")
+                    # Reset failure count since we know the token exists
+                    failure_counts[token_address] = 0
+                    # Continue monitoring but skip PnL calculations since we don't have price
+                    print(f"⏳ Holding position (price unavailable but token exists in wallet)...")
+                    continue
+                else:
+                    # Balance is 0 AND price fetch fails - likely delisted
+                    print(f"🚨 TOKEN LIKELY DELISTED: {token_address[:8]}...{token_address[-8:]}")
+                    print(f"💸 Investment lost: ${entry_price:.6f}")
+                    
+                    # Log as delisted trade
+                    log_trade(token_address, entry_price, 0.0, "delisted")
+                    
+                    # Update performance tracker with exit
+                    trade = _find_open_trade_by_address(token_address, chain_id)
+                    if trade:
+                        # Position value lost (100% loss)
+                        position_size = trade.get('position_size_usd', 0)
+                        pnl_usd = -position_size  # Full loss
+                        from src.core.performance_tracker import performance_tracker
+                        performance_tracker.log_trade_exit(trade['id'], 0.0, pnl_usd, "delisted")
+                        print(f"📊 Updated performance tracker for delisted token: {trade.get('symbol', '?')}")
+                    
+                    # Send Telegram alert
+                    send_telegram_message(
+                        f"🚨 TOKEN DELISTED - INVESTMENT LOST!\n"
+                        f"Token: {token_address[:8]}...{token_address[-8:]}\n"
+                        f"Entry: ${entry_price:.6f}\n"
+                        f"Current: $0.00 (DELISTED)\n"
+                        f"Loss: 100% (${entry_price:.6f})\n"
+                        f"⚠️ Token no longer tradeable"
+                    )
+                    
+                    # Remove from active positions (use position_key)
+                    closed_positions.append(position_key)
+                    updated_positions.pop(position_key, None)
+                    continue
         else:
             # Reset failure count on successful price fetch
             failure_counts[token_address] = 0
@@ -671,8 +722,8 @@ def monitor_all_positions():
                     f"Now: ${current_price:.6f} (+{gain * 100:.2f}%)\n"
                     f"TX: {tx}"
                 )
-                closed_positions.append(token_address)
-                updated_positions.pop(token_address, None)
+                closed_positions.append(position_key)
+                updated_positions.pop(position_key, None)
             else:  # Sell failed
                 send_telegram_message(
                     f"⚠️ Take-profit triggered but SELL FAILED!\n"
@@ -722,8 +773,8 @@ def monitor_all_positions():
                     f"Now: ${current_price:.6f} ({gain * 100:.2f}%)\n"
                     f"TX: {tx}"
                 )
-                closed_positions.append(token_address)
-                updated_positions.pop(token_address, None)
+                closed_positions.append(position_key)
+                updated_positions.pop(position_key, None)
             else:  # Sell failed
                 send_telegram_message(
                     f"⚠️ Stop-loss triggered but SELL FAILED!\n"
@@ -773,8 +824,8 @@ def monitor_all_positions():
                     f"Now: ${current_price:.6f}\n"
                     f"TX: {tx}"
                 )
-                closed_positions.append(token_address)
-                updated_positions.pop(token_address, None)
+                closed_positions.append(position_key)
+                updated_positions.pop(position_key, None)
             else:  # Sell failed
                 send_telegram_message(
                     f"⚠️ Trailing stop-loss triggered but SELL FAILED!\n"

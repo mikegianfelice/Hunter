@@ -536,8 +536,14 @@ class JupiterCustomLib:
         """Get SOL balance (alias for get_balance)"""
         return self.get_balance()
 
-    def get_token_balance(self, token_mint: str) -> float:
-        """Get token balance for a specific mint"""
+    def get_token_balance(self, token_mint: str):
+        """
+        Get token balance for a specific mint
+        
+        Returns:
+            float: Token balance (> 0 if position exists)
+            None: If RPC call failed or error occurred (unknown state - don't remove position)
+        """
         try:
             # Get token accounts for the wallet
             rpc_payload = {
@@ -565,10 +571,24 @@ class JupiterCustomLib:
                         account_info = accounts[0]["account"]["data"]["parsed"]["info"]
                         balance = float(account_info["tokenAmount"]["uiAmount"])
                         return balance
-            return 0.0
+                    else:
+                        # No token accounts found - this could mean:
+                        # 1. Trade never executed (no account created)
+                        # 2. Position was sold (account closed)
+                        # Return 0.0 to indicate no balance (but only if we're sure)
+                        return 0.0
+                else:
+                    # RPC response error - don't trust this, return None
+                    print(f"⚠️ RPC response error for token balance check: {result.get('error', 'Unknown')}")
+                    return None
+            else:
+                # HTTP error - don't trust this, return None
+                print(f"⚠️ HTTP error {response.status_code} getting token balance")
+                return None
         except Exception as e:
             print(f"❌ Error getting token balance: {e}")
-            return 0.0
+            # Return None to indicate check failed (not zero balance)
+            return None
 
     def swap_tokens(self, input_mint: str, output_mint: str, amount_in: float, slippage_bps: int) -> Dict[str, Any]:
         """Execute token swap and return result dict"""

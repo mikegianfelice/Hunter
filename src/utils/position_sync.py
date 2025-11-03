@@ -14,7 +14,15 @@ OPEN_POSITIONS_FILE = PROJECT_ROOT / "data" / "open_positions.json"
 
 
 def sync_position_from_performance_data(token_address: str, symbol: str, chain_id: str, entry_price: float, position_size_usd: float = None) -> bool:
-    """Manually sync a position to open_positions.json"""
+    """Manually sync a position to open_positions.json (legacy function for backward compatibility)"""
+    # Use address as key for backward compatibility
+    return sync_position_from_performance_data_with_key(
+        token_address, token_address, symbol, chain_id, entry_price, position_size_usd
+    )
+
+
+def sync_position_from_performance_data_with_key(position_key: str, token_address: str, symbol: str, chain_id: str, entry_price: float, position_size_usd: float = None, trade_id: str = None) -> bool:
+    """Manually sync a position to open_positions.json with a custom key"""
     try:
         # If position_size_usd not provided, try to get it from performance_data.json
         if position_size_usd is None:
@@ -23,10 +31,13 @@ def sync_position_from_performance_data(token_address: str, symbol: str, chain_i
                     with open(PERFORMANCE_DATA_FILE, "r") as f:
                         perf_data = json.load(f)
                         trades = perf_data.get("trades", [])
-                        # Find the most recent open trade for this token
-                        matching_trades = [t for t in trades 
-                                         if t.get("address", "").lower() == token_address.lower() 
-                                         and t.get("status") == "open"]
+                        # Find matching trade
+                        if trade_id:
+                            matching_trades = [t for t in trades if t.get("id") == trade_id]
+                        else:
+                            matching_trades = [t for t in trades 
+                                             if t.get("address", "").lower() == token_address.lower() 
+                                             and t.get("status") == "open"]
                         if matching_trades:
                             # Sort by entry_time (most recent first)
                             matching_trades.sort(key=lambda x: x.get("entry_time", ""), reverse=True)
@@ -51,14 +62,19 @@ def sync_position_from_performance_data(token_address: str, symbol: str, chain_i
             "entry_price": float(entry_price),
             "chain_id": chain_id.lower(),
             "symbol": symbol,
+            "address": token_address,  # Store original address for compatibility
             "timestamp": datetime.now().isoformat()
         }
+        
+        # Include trade_id if available
+        if trade_id:
+            position_data["trade_id"] = trade_id
         
         # Include position_size_usd if available
         if position_size_usd is not None and position_size_usd > 0:
             position_data["position_size_usd"] = float(position_size_usd)
         
-        positions[token_address] = position_data
+        positions[position_key] = position_data
         
         # Atomic write
         temp_file = OPEN_POSITIONS_FILE.with_suffix(".tmp")
@@ -67,7 +83,8 @@ def sync_position_from_performance_data(token_address: str, symbol: str, chain_i
         temp_file.replace(OPEN_POSITIONS_FILE)
         
         size_str = f" (${position_size_usd:.2f})" if position_size_usd else ""
-        print(f"📝 Synced position: {symbol} ({token_address[:8]}...{token_address[-8:]}) on {chain_id.upper()} @ ${entry_price:.6f}{size_str}")
+        trade_str = f" [Trade: {trade_id}]" if trade_id else ""
+        print(f"📝 Synced position: {symbol} ({token_address[:8]}...{token_address[-8:]}) on {chain_id.upper()} @ ${entry_price:.6f}{size_str}{trade_str}")
         return True
     except Exception as e:
         print(f"⚠️ Failed to sync position: {e}")
@@ -104,41 +121,41 @@ def sync_all_open_positions() -> Dict[str, bool]:
             open_positions = {}
         
         # Find all open trades in performance_data
-        # Group by address and keep only the most recent one per token
+        # Track ALL open positions, including multiple positions for the same token
         trades = perf_data.get("trades", [])
         open_trades = [t for t in trades if t.get("status") == "open"]
         
-        # Group by address and keep the most recent (by entry_time)
-        positions_by_address = {}
+        synced_count = 0
         for trade in open_trades:
-            address = trade.get("address", "").lower()
+            address = trade.get("address", "")
             if not address:
                 continue
             
-            entry_time = trade.get("entry_time", "")
-            if address not in positions_by_address:
-                positions_by_address[address] = trade
-            else:
-                # Keep the most recent one
-                existing_time = positions_by_address[address].get("entry_time", "")
-                if entry_time > existing_time:
-                    positions_by_address[address] = trade
-        
-        synced_count = 0
-        for address, trade in positions_by_address.items():
             symbol = trade.get("symbol", "?")
             chain = trade.get("chain", "ethereum").lower()
             entry_price = float(trade.get("entry_price", 0))
             position_size_usd = trade.get("position_size_usd", 0.0)
-            # Use original address from trade, not lowercased version
-            original_address = trade.get("address", address)
+            trade_id = trade.get("id", "")
+            entry_time = trade.get("entry_time", "")
             
             if entry_price <= 0:
                 continue
             
-            # Sync position with position_size_usd using original address
-            success = sync_position_from_performance_data(original_address, symbol, chain, entry_price, position_size_usd)
-            results[original_address] = success
+            # Create composite key to support multiple positions per token
+            # Use trade_id if available, otherwise use address_entrytime
+            if trade_id:
+                # Use trade_id as part of the key to make it unique
+                # Format: "address_tradeid" for tracking, but keep address accessible
+                position_key = f"{address}_{trade_id}"
+            else:
+                # Fallback: use address with entry_time
+                position_key = f"{address}_{entry_time.replace(':', '-')}"
+            
+            # Sync position with composite key
+            success = sync_position_from_performance_data_with_key(
+                position_key, address, symbol, chain, entry_price, position_size_usd, trade_id
+            )
+            results[position_key] = success
             if success:
                 synced_count += 1
             
