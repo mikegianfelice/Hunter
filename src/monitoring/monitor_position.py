@@ -415,9 +415,10 @@ def _prune_positions_with_zero_balance(positions: dict) -> Tuple[dict, list]:
                 # Check failed - keep position to be safe
                 print(f"⏸️  Skipping balance check for {symbol} ({token_address[:8]}...{token_address[-8:]}) - check failed")
                 continue
-            elif balance <= 0.0:
-                # Zero balance - position was closed manually
-                print(f"✅ Detected zero balance for {symbol} ({token_address[:8]}...{token_address[-8:]} on {chain_id.upper()}) - removing from tracking")
+            elif balance <= 0.0 or balance < 0.000001:
+                # Zero or dust balance - position was closed manually
+                # Treat very small balances (< 0.000001) as dust/zero
+                print(f"✅ Detected zero/dust balance ({balance:.8f}) for {symbol} ({token_address[:8]}...{token_address[-8:]} on {chain_id.upper()}) - removing from tracking (manually closed)")
                 to_remove.append(position_key)
                 pruned.pop(position_key, None)
             else:
@@ -502,69 +503,159 @@ def _calculate_dynamic_take_profit_for_position(trade: Dict, config: Dict) -> fl
     print(f"  🎯 Dynamic TP: {tp*100:.0f}% (base: {config.get('BASE_TP', 0.12)*100:.0f}%)")
     return tp
 
+def _sync_only_positions_with_balance():
+    """
+    Sync positions from performance_data.json, but ONLY if they actually have on-chain balances.
+    This prevents manually closed positions from being re-added.
+    """
+    try:
+        from src.utils.position_sync import PERFORMANCE_DATA_FILE, OPEN_POSITIONS_FILE
+        
+        if not PERFORMANCE_DATA_FILE.exists():
+            return
+        
+        # Load performance data
+        with open(PERFORMANCE_DATA_FILE, "r") as f:
+            perf_data = json.load(f)
+        
+        # Load existing open positions
+        if OPEN_POSITIONS_FILE.exists():
+            with open(OPEN_POSITIONS_FILE, "r") as f:
+                open_positions = json.load(f) or {}
+        else:
+            open_positions = {}
+        
+        trades = perf_data.get("trades", [])
+        open_trades = [t for t in trades if t.get("status") == "open"]
+        
+        synced_count = 0
+        for trade in open_trades:
+            address = trade.get("address", "")
+            if not address:
+                continue
+            
+            chain = trade.get("chain", "ethereum").lower()
+            symbol = trade.get("symbol", "?")
+            trade_id = trade.get("id", "")
+            
+            # Check if position already exists in open_positions
+            # Create composite key same as position_sync.py
+            if trade_id:
+                position_key = f"{address}_{trade_id}"
+            else:
+                entry_time = trade.get("entry_time", "")
+                position_key = f"{address}_{entry_time.replace(':', '-')}"
+            
+            # Skip if already tracked
+            if position_key in open_positions:
+                continue
+            
+            # CRITICAL: Check balance BEFORE syncing
+            balance = _check_token_balance_on_chain(address, chain)
+            
+            if balance == -1.0:
+                # Balance check failed - skip to be safe (don't add if we can't verify)
+                print(f"⏸️  Skipping sync for {symbol} ({address[:8]}...{address[-8:]}) - balance check failed")
+                continue
+            elif balance <= 0.0 or balance < 0.000001:
+                # Zero or dust balance - position was manually closed, don't sync it
+                print(f"🚫 Skipping sync for {symbol} ({address[:8]}...{address[-8:]}) - zero/dust balance ({balance:.8f}) detected (manually closed)")
+                # Mark as closed in performance_data to prevent future syncs
+                trade['status'] = 'manual_close'
+                trade['exit_time'] = datetime.now().isoformat()
+                trade['exit_price'] = 0.0
+                trade['pnl_usd'] = 0.0
+                trade['pnl_percent'] = 0.0
+                continue
+            else:
+                # Has balance - safe to sync
+                print(f"✓ {symbol} ({address[:8]}...{address[-8:]}) has balance {balance:.6f} - syncing")
+                from src.utils.position_sync import sync_position_from_performance_data_with_key
+                entry_price = float(trade.get("entry_price", 0))
+                position_size_usd = trade.get("position_size_usd", 0.0)
+                if sync_position_from_performance_data_with_key(
+                    position_key, address, symbol, chain, entry_price, position_size_usd, trade_id
+                ):
+                    synced_count += 1
+        
+        # Save updated performance_data if any trades were marked as closed
+        if any(t.get("status") == "manual_close" for t in open_trades):
+            with open(PERFORMANCE_DATA_FILE, "w") as f:
+                json.dump(perf_data, f, indent=2)
+        
+        if synced_count > 0:
+            print(f"✅ Synced {synced_count} position(s) with verified balances from performance_data.json")
+    except Exception as e:
+        print(f"⚠️ Error in smart position sync: {e}")
+
 def monitor_all_positions():
     config = get_monitor_config()
     
-    # FIRST: Sync positions from performance_data.json to ensure nothing is missing
-    # This ensures positions are tracked even if initial logging failed
+    # Load existing positions first
+    positions = load_positions()
+    reconciled_closed = []  # Track manually closed positions
+    
+    # Auto-reconcile FIRST: Remove positions with zero on-chain balance (manual closes)
+    # This prevents manually closed positions from being re-added
+    if positions:
+        # Save original positions data before pruning (needed for performance tracker updates)
+        original_positions_before_prune = dict(positions)
+        
+        # Auto-reconcile: Remove positions with zero on-chain balance (manual closes)
+        positions, reconciled_closed = _prune_positions_with_zero_balance(positions)
+        
+        # Update performance tracker for manually closed positions BEFORE syncing
+        if reconciled_closed:
+            try:
+                from src.core.performance_tracker import performance_tracker
+                for position_key in reconciled_closed:
+                    # Find the position data to get chain_id and entry_price before it was removed
+                    old_position_data = original_positions_before_prune.get(position_key)
+                    if old_position_data:
+                        if isinstance(old_position_data, dict):
+                            chain_id = old_position_data.get("chain_id", "ethereum")
+                            entry_price = float(old_position_data.get("entry_price", 0))
+                            # Extract actual token address
+                            token_address = old_position_data.get("address", position_key)
+                            if "_" in position_key and not token_address:
+                                token_address = position_key.split("_")[0]
+                        else:
+                            chain_id = "ethereum"
+                            entry_price = float(old_position_data) if old_position_data else 0
+                            token_address = position_key
+                        
+                        # Find and close the trade using trade_id if available
+                        if isinstance(old_position_data, dict) and old_position_data.get("trade_id"):
+                            trade_id = old_position_data.get("trade_id")
+                            open_trades = performance_tracker.get_open_trades()
+                            trade = next((t for t in open_trades if t.get("id") == trade_id), None)
+                        else:
+                            # Fallback to finding by address
+                            trade = _find_open_trade_by_address(token_address, chain_id)
+                        if trade:
+                            # Try to get current price if possible, otherwise use entry price (0 PnL)
+                            current_price = _fetch_token_price_multi_chain(token_address) or entry_price
+                            position_size = trade.get('position_size_usd', 0)
+                            gain = ((current_price - entry_price) / entry_price) if entry_price > 0 else 0
+                            pnl_usd = gain * position_size
+                            performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, "manual_close")
+                            print(f"📊 Updated performance tracker for manually closed position: {trade.get('symbol', '?')}")
+            except Exception as e:
+                print(f"⚠️ Failed to update performance tracker for reconciled positions: {e}")
+    
+    # NOW sync positions from performance_data.json, but ONLY for trades that still have balances
+    # This ensures positions are tracked even if initial logging failed, but doesn't re-add manually closed ones
     try:
-        sync_all_open_positions()
+        _sync_only_positions_with_balance()
     except Exception as e:
         print(f"⚠️ Failed to sync positions: {e}")
     
+    # Reload positions after sync (in case new ones were added)
     positions = load_positions()
     if not positions:
         print("📭 No open positions to monitor.")
         return
-
-    # Save original positions data before pruning (needed for performance tracker updates)
-    original_positions_before_prune = dict(positions)
-
-    # Auto-reconcile: Remove positions with zero on-chain balance (manual closes)
-    positions, reconciled_closed = _prune_positions_with_zero_balance(positions)
     
-    # Update performance tracker for manually closed positions
-    if reconciled_closed:
-        try:
-            from src.core.performance_tracker import performance_tracker
-            for position_key in reconciled_closed:
-                # Find the position data to get chain_id and entry_price before it was removed
-                old_position_data = original_positions_before_prune.get(position_key)
-                if old_position_data:
-                    if isinstance(old_position_data, dict):
-                        chain_id = old_position_data.get("chain_id", "ethereum")
-                        entry_price = float(old_position_data.get("entry_price", 0))
-                        # Extract actual token address
-                        token_address = old_position_data.get("address", position_key)
-                        if "_" in position_key and not token_address:
-                            token_address = position_key.split("_")[0]
-                    else:
-                        chain_id = "ethereum"
-                        entry_price = float(old_position_data) if old_position_data else 0
-                        token_address = position_key
-                    
-                    # Find and close the trade using trade_id if available
-                    if isinstance(old_position_data, dict) and old_position_data.get("trade_id"):
-                        trade_id = old_position_data.get("trade_id")
-                        open_trades = performance_tracker.get_open_trades()
-                        trade = next((t for t in open_trades if t.get("id") == trade_id), None)
-                    else:
-                        # Fallback to finding by address
-                        trade = _find_open_trade_by_address(token_address, chain_id)
-                    if trade:
-                        # Try to get current price if possible, otherwise use entry price (0 PnL)
-                        current_price = _fetch_token_price_multi_chain(token_address) or entry_price
-                        position_size = trade.get('position_size_usd', 0)
-                        gain = ((current_price - entry_price) / entry_price) if entry_price > 0 else 0
-                        pnl_usd = gain * position_size
-                        performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, "manual_close")
-                        print(f"📊 Updated performance tracker for manually closed position: {trade.get('symbol', '?')}")
-        except Exception as e:
-            print(f"⚠️ Failed to update performance tracker for reconciled positions: {e}")
-    
-    if not positions:
-        print("📭 No open positions after auto-reconciliation.")
-        return
 
     # Load delisting tracking
     delisted_tokens = load_delisted_tokens()
