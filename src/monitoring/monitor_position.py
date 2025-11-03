@@ -189,6 +189,41 @@ def _apply_trailing_stop(state: dict, addr: str, current_price: float) -> float:
         trail_stop_price = peak * (1 - config['TRAILING_STOP'])
     return trail_stop_price
 
+def _analyze_sell_fees(tx_hash: str, chain_id: str) -> dict:
+    """Analyze sell transaction to extract fee data"""
+    try:
+        if chain_id.lower() == "solana":
+            from src.utils.solana_transaction_analyzer import analyze_jupiter_transaction
+            from src.config.secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS
+            
+            fee_data = analyze_jupiter_transaction(
+                SOLANA_RPC_URL, 
+                tx_hash, 
+                SOLANA_WALLET_ADDRESS,
+                is_buy=False
+            )
+            
+            return {
+                'exit_gas_fee_usd': fee_data.get('gas_fee_usd', 0),
+                'actual_proceeds_usd': fee_data.get('actual_proceeds_usd', 0),
+                'sell_tx_hash': tx_hash
+            }
+        elif chain_id.lower() in ["ethereum", "base", "arbitrum", "polygon"]:
+            from src.utils.transaction_analyzer import analyze_sell_transaction
+            from src.execution.uniswap_executor import w3
+            
+            fee_data = analyze_sell_transaction(w3, tx_hash)
+            
+            return {
+                'exit_gas_fee_usd': fee_data.get('gas_fee_usd', 0),
+                'actual_proceeds_usd': fee_data.get('actual_proceeds_usd', 0),
+                'sell_tx_hash': tx_hash
+            }
+    except Exception as e:
+        print(f"⚠️ Error analyzing sell transaction fees: {e}")
+        return {}
+    return {}
+
 def _fetch_token_price_multi_chain(token_address: str) -> float:
     """
     Fetch token price based on chain type.
@@ -612,8 +647,20 @@ def monitor_all_positions():
                 if trade:
                     position_size = trade.get('position_size_usd', 0)
                     pnl_usd = gain * position_size  # gain is already a ratio
+                    
+                    # Analyze sell transaction for fees
+                    sell_fee_data = _analyze_sell_fees(tx, chain_id)
+                    
+                    # Calculate fee-adjusted PnL
+                    if sell_fee_data and sell_fee_data.get('exit_gas_fee_usd') is not None:
+                        buy_gas = trade.get('entry_gas_fee_usd', 0) or 0
+                        sell_gas = sell_fee_data.get('exit_gas_fee_usd', 0)
+                        total_fees = buy_gas + sell_gas
+                        sell_fee_data['total_fees_usd'] = total_fees
+                    
                     from src.core.performance_tracker import performance_tracker
-                    performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, "take_profit")
+                    performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, "take_profit",
+                                                       additional_data=sell_fee_data)
                     print(f"📊 Updated performance tracker for take profit: {trade.get('symbol', '?')}")
                 
                 send_telegram_message(
@@ -651,8 +698,20 @@ def monitor_all_positions():
                 if trade:
                     position_size = trade.get('position_size_usd', 0)
                     pnl_usd = gain * position_size  # gain is negative for stop loss
+                    
+                    # Analyze sell transaction for fees
+                    sell_fee_data = _analyze_sell_fees(tx, chain_id)
+                    
+                    # Calculate fee-adjusted PnL
+                    if sell_fee_data and sell_fee_data.get('exit_gas_fee_usd') is not None:
+                        buy_gas = trade.get('entry_gas_fee_usd', 0) or 0
+                        sell_gas = sell_fee_data.get('exit_gas_fee_usd', 0)
+                        total_fees = buy_gas + sell_gas
+                        sell_fee_data['total_fees_usd'] = total_fees
+                    
                     from src.core.performance_tracker import performance_tracker
-                    performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, "stop_loss")
+                    performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, "stop_loss",
+                                                       additional_data=sell_fee_data)
                     print(f"📊 Updated performance tracker for stop loss: {trade.get('symbol', '?')}")
                 
                 send_telegram_message(
@@ -690,8 +749,20 @@ def monitor_all_positions():
                 if trade:
                     position_size = trade.get('position_size_usd', 0)
                     pnl_usd = gain * position_size
+                    
+                    # Analyze sell transaction for fees
+                    sell_fee_data = _analyze_sell_fees(tx, chain_id)
+                    
+                    # Calculate fee-adjusted PnL
+                    if sell_fee_data and sell_fee_data.get('exit_gas_fee_usd') is not None:
+                        buy_gas = trade.get('entry_gas_fee_usd', 0) or 0
+                        sell_gas = sell_fee_data.get('exit_gas_fee_usd', 0)
+                        total_fees = buy_gas + sell_gas
+                        sell_fee_data['total_fees_usd'] = total_fees
+                    
                     from src.core.performance_tracker import performance_tracker
-                    performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, "trailing_stop")
+                    performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, "trailing_stop",
+                                                       additional_data=sell_fee_data)
                     print(f"📊 Updated performance tracker for trailing stop: {trade.get('symbol', '?')}")
                 
                 send_telegram_message(

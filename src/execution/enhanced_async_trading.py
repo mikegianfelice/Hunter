@@ -298,6 +298,9 @@ class EnhancedAsyncTradingEngine:
                     log_info("trading.jupiter", f"Executing Jupiter trade for {symbol} on Solana")
                     tx_hash, success = buy_token_solana(address, position_size, symbol, test_mode=False)
                     if success and tx_hash:
+                        # Analyze transaction to get actual execution details
+                        buy_fee_data = await self._analyze_buy_transaction(tx_hash, chain, "jupiter")
+                        
                         # At entry time, P&L is 0.0 - will be calculated when position is closed
                         # Real P&L = (exit_price - entry_price) / entry_price * position_size
                         profit_loss = 0.0  # No profit/loss until position is closed
@@ -305,7 +308,8 @@ class EnhancedAsyncTradingEngine:
                             "success": True,
                             "profit_loss": profit_loss,
                             "tx_hash": tx_hash,
-                            "dex": "jupiter"
+                            "dex": "jupiter",
+                            "fee_data": buy_fee_data
                         }
                     elif not success:
                         # Log detailed error for Jupiter failures
@@ -322,13 +326,17 @@ class EnhancedAsyncTradingEngine:
                     raydium = RaydiumExecutor()
                     success, tx_hash = raydium.execute_trade(address, position_size, is_buy=True)
                     if success and tx_hash:
+                        # Analyze transaction to get actual execution details
+                        buy_fee_data = await self._analyze_buy_transaction(tx_hash, chain, "raydium")
+                        
                         # At entry time, P&L is 0.0 - will be calculated when position is closed
                         profit_loss = 0.0  # No profit/loss until position is closed
                         return {
                             "success": True,
                             "profit_loss": profit_loss,
                             "tx_hash": tx_hash,
-                            "dex": "raydium"
+                            "dex": "raydium",
+                            "fee_data": buy_fee_data
                         }
                 except Exception as e:
                     log_error("trading.raydium_error", f"Raydium execution failed: {e}")
@@ -341,13 +349,17 @@ class EnhancedAsyncTradingEngine:
                     log_info("trading.uniswap", f"Executing Uniswap trade for {symbol} on {chain}")
                     tx_hash, success = buy_token(address, position_size, symbol)
                     if success and tx_hash:
+                        # Analyze transaction to get actual execution details
+                        buy_fee_data = await self._analyze_buy_transaction(tx_hash, chain, "uniswap")
+                        
                         # At entry time, P&L is 0.0 - will be calculated when position is closed
                         profit_loss = 0.0  # No profit/loss until position is closed
                         return {
                             "success": True,
                             "profit_loss": profit_loss,
                             "tx_hash": tx_hash,
-                            "dex": "uniswap"
+                            "dex": "uniswap",
+                            "fee_data": buy_fee_data
                         }
                 except Exception as e:
                     log_error("trading.uniswap_error", f"Uniswap execution failed: {e}")
@@ -490,6 +502,76 @@ class EnhancedAsyncTradingEngine:
                 "error": str(e)
             }
     
+    async def _analyze_buy_transaction(self, tx_hash: str, chain: str, dex: str) -> Dict[str, Any]:
+        """Analyze buy transaction to extract fee data"""
+        try:
+            if chain.lower() == "solana":
+                from src.utils.solana_transaction_analyzer import analyze_jupiter_transaction
+                from src.config.secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS
+                
+                fee_data = analyze_jupiter_transaction(
+                    SOLANA_RPC_URL, 
+                    tx_hash, 
+                    SOLANA_WALLET_ADDRESS,
+                    is_buy=True
+                )
+                
+                return {
+                    'entry_gas_fee_usd': fee_data.get('gas_fee_usd', 0),
+                    'entry_amount_usd_actual': fee_data.get('actual_cost_usd', 0),
+                    'buy_tx_hash': tx_hash
+                }
+            elif chain.lower() in ["ethereum", "base", "arbitrum", "polygon"]:
+                from src.utils.transaction_analyzer import analyze_buy_transaction
+                from src.execution.uniswap_executor import w3
+                
+                fee_data = analyze_buy_transaction(w3, tx_hash)
+                
+                return {
+                    'entry_gas_fee_usd': fee_data.get('gas_fee_usd', 0),
+                    'entry_amount_usd_actual': fee_data.get('actual_cost_usd', 0),
+                    'buy_tx_hash': tx_hash
+                }
+        except Exception as e:
+            log_error("trading.fee_analysis_error", f"Error analyzing buy transaction {tx_hash}: {e}")
+            return {}
+        return {}
+    
+    async def _analyze_sell_transaction(self, tx_hash: str, chain: str, dex: str) -> Dict[str, Any]:
+        """Analyze sell transaction to extract fee data"""
+        try:
+            if chain.lower() == "solana":
+                from src.utils.solana_transaction_analyzer import analyze_jupiter_transaction
+                from src.config.secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS
+                
+                fee_data = analyze_jupiter_transaction(
+                    SOLANA_RPC_URL, 
+                    tx_hash, 
+                    SOLANA_WALLET_ADDRESS,
+                    is_buy=False
+                )
+                
+                return {
+                    'exit_gas_fee_usd': fee_data.get('gas_fee_usd', 0),
+                    'actual_proceeds_usd': fee_data.get('actual_proceeds_usd', 0),
+                    'sell_tx_hash': tx_hash
+                }
+            elif chain.lower() in ["ethereum", "base", "arbitrum", "polygon"]:
+                from src.utils.transaction_analyzer import analyze_sell_transaction
+                from src.execution.uniswap_executor import w3
+                
+                fee_data = analyze_sell_transaction(w3, tx_hash)
+                
+                return {
+                    'exit_gas_fee_usd': fee_data.get('gas_fee_usd', 0),
+                    'actual_proceeds_usd': fee_data.get('actual_proceeds_usd', 0),
+                    'sell_tx_hash': tx_hash
+                }
+        except Exception as e:
+            log_error("trading.fee_analysis_error", f"Error analyzing sell transaction {tx_hash}: {e}")
+            return {}
+        return {}
+    
     async def _process_token_batch(self, batch: List[Dict]) -> List[Dict]:
         """Process a batch of tokens with parallel AI analysis"""
         log_info("trading.batch", f"Processing batch of {len(batch)} tokens")
@@ -628,7 +710,9 @@ class EnhancedAsyncTradingEngine:
                             "volume24h": float(token.get("volume24h", 0)),
                             "liquidity": float(token.get("liquidity", 0))
                         }
-                        performance_tracker.log_trade_entry(pt_token, position_size, quality_score)
+                        # Include fee data if available
+                        fee_data = trade_result.get('fee_data', {})
+                        performance_tracker.log_trade_entry(pt_token, position_size, quality_score, additional_data=fee_data)
                         log_info("trading.performance_logged", f"✅ Trade entry logged to performance tracker for {symbol}")
                     except Exception as e:
                         log_error("trading.performance_log_error", f"Failed to log trade entry for {symbol}: {e}")

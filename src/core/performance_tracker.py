@@ -52,8 +52,9 @@ class PerformanceTracker:
         except Exception as e:
             print(f"⚠️ Could not save performance data: {e}")
     
-    def log_trade_entry(self, token: Dict, position_size: float, quality_score: float):
-        """Log a trade entry"""
+    def log_trade_entry(self, token: Dict, position_size: float, quality_score: float, 
+                       additional_data: Dict = None):
+        """Log a trade entry with optional fee tracking data"""
         trade = {
             'id': f"{token.get('symbol', 'UNKNOWN')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
             'symbol': token.get('symbol', 'UNKNOWN'),
@@ -71,8 +72,19 @@ class PerformanceTracker:
             'pnl_percent': None,
             'status': 'open',  # open, closed, stopped_out
             'take_profit_target': None,
-            'stop_loss_target': None
+            'stop_loss_target': None,
+            # Fee tracking fields
+            'buy_tx_hash': None,
+            'entry_amount_usd_quoted': position_size,
+            'entry_amount_usd_actual': None,
+            'entry_tokens_received': None,
+            'entry_gas_fee_usd': None,
+            'buy_slippage_actual': None,
         }
+        
+        # Merge additional fee data if provided
+        if additional_data:
+            trade.update(additional_data)
         
         self.trades.append(trade)
         self.save_data()
@@ -95,8 +107,9 @@ class PerformanceTracker:
         print(f"📊 Logged trade entry: {trade['symbol']} - ${position_size:.1f} (Quality: {quality_score:.1f})")
         return trade['id']
     
-    def log_trade_exit(self, trade_id: str, exit_price: float, pnl_usd: float, status: str = 'closed'):
-        """Log a trade exit"""
+    def log_trade_exit(self, trade_id: str, exit_price: float, pnl_usd: float, status: str = 'closed',
+                      additional_data: Dict = None):
+        """Log a trade exit with optional fee tracking data"""
         for trade in self.trades:
             if trade['id'] == trade_id and trade['status'] == 'open':
                 trade['exit_time'] = datetime.now().isoformat()
@@ -105,11 +118,52 @@ class PerformanceTracker:
                 trade['pnl_percent'] = (pnl_usd / trade['position_size_usd']) * 100
                 trade['status'] = status
                 
+                # Initialize fee tracking fields if not present
+                if 'exit_gas_fee_usd' not in trade:
+                    trade['exit_gas_fee_usd'] = None
+                if 'total_fees_usd' not in trade:
+                    trade['total_fees_usd'] = None
+                if 'pnl_after_fees_usd' not in trade:
+                    trade['pnl_after_fees_usd'] = None
+                if 'pnl_after_fees_percent' not in trade:
+                    trade['pnl_after_fees_percent'] = None
+                if 'sell_tx_hash' not in trade:
+                    trade['sell_tx_hash'] = None
+                if 'sell_slippage_actual' not in trade:
+                    trade['sell_slippage_actual'] = None
+                
+                # Merge additional fee data if provided
+                if additional_data:
+                    trade.update(additional_data)
+                    
+                    # Calculate fee-adjusted PnL if we have fee data
+                    if additional_data.get('total_fees_usd') is not None:
+                        buy_gas = trade.get('entry_gas_fee_usd', 0) or 0
+                        sell_gas = trade.get('exit_gas_fee_usd', 0) or 0
+                        total_fees = buy_gas + sell_gas
+                        
+                        # Recalculate PnL after fees
+                        entry_cost = trade.get('entry_amount_usd_actual') or trade['position_size_usd']
+                        exit_proceeds = additional_data.get('actual_proceeds_usd')
+                        
+                        if exit_proceeds is not None:
+                            trade['pnl_after_fees_usd'] = exit_proceeds - entry_cost - total_fees
+                            trade['pnl_after_fees_percent'] = (trade['pnl_after_fees_usd'] / entry_cost) * 100 if entry_cost > 0 else 0
+                        else:
+                            # Fallback calculation using nominal PnL minus fees
+                            trade['pnl_after_fees_usd'] = pnl_usd - total_fees
+                            trade['pnl_after_fees_percent'] = (trade['pnl_after_fees_usd'] / trade['position_size_usd']) * 100
+                
                 # Update daily stats
                 self._update_daily_stats(trade)
                 self.save_data()
                 
-                print(f"📊 Logged trade exit: {trade['symbol']} - PnL: ${pnl_usd:.2f} ({trade['pnl_percent']:.1f}%)")
+                # Print summary with fee info if available
+                if trade.get('pnl_after_fees_usd') is not None:
+                    print(f"📊 Logged trade exit: {trade['symbol']} - PnL: ${pnl_usd:.2f} ({trade['pnl_percent']:.1f}%), "
+                          f"After Fees: ${trade['pnl_after_fees_usd']:.2f} ({trade['pnl_after_fees_percent']:.1f}%)")
+                else:
+                    print(f"📊 Logged trade exit: {trade['symbol']} - PnL: ${pnl_usd:.2f} ({trade['pnl_percent']:.1f}%)")
                 return True
         
         print(f"⚠️ Could not find open trade with ID: {trade_id}")
