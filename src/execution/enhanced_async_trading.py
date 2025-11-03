@@ -598,7 +598,8 @@ class EnhancedAsyncTradingEngine:
                                 "address": address,
                                 "priceUsd": float(token.get("priceUsd") or 0.0),
                                 "chainId": chain,  # Use chainId key as expected by _log_position
-                                "symbol": symbol
+                                "symbol": symbol,
+                                "position_size_usd": position_size  # Include position size
                             }
                             _log_position(position_token)
                             _launch_monitor_detached()

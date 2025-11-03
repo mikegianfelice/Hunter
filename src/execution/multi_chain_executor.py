@@ -145,12 +145,18 @@ def _log_position(token: dict):
     chain_id = token.get("chainId", "ethereum").lower()
     
     # Store position with chain information
-    data[addr] = {
+    position_data = {
         "entry_price": entry,
         "chain_id": chain_id,
         "symbol": token.get("symbol", "?"),
         "timestamp": datetime.now().isoformat()
     }
+    
+    # Include position_size_usd if provided
+    if "position_size_usd" in token:
+        position_data["position_size_usd"] = float(token["position_size_usd"])
+    
+    data[addr] = position_data
     
     # Atomic write to prevent corruption in concurrent environments
     target = Path(POSITIONS_FILE)

@@ -87,7 +87,7 @@ class PerformanceTracker:
             entry_price = float(trade.get('entry_price', 0))
             
             if address and entry_price > 0:
-                sync_position_from_performance_data(address, symbol, chain, entry_price)
+                sync_position_from_performance_data(address, symbol, chain, entry_price, position_size)
         except Exception as e:
             # Don't fail the whole operation if sync fails, but log it
             print(f"⚠️ Failed to sync position after logging: {e}")
