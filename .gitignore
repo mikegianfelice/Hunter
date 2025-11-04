@@ -229,6 +229,8 @@ sol_price_cache.json
 # Runtime data files
 delisted_tokens.json
 delisted_tokens_backup.json
+data/performance_data.json
+performance_data.json
 
 # Runtime data files
 trending_tokens.csv
