@@ -123,7 +123,13 @@ def get_tier_based_risk_limits(wallet_balance_usd: float = None):
 w3 = Web3(Web3.HTTPProvider(INFURA_URL))
 
 def _get_wallet_balance_usd(chain_id="ethereum"):
-    """Get wallet balance in USD for specific chain"""
+    """
+    Get wallet balance in USD for specific chain
+    
+    Returns:
+        float: Wallet balance in USD
+        None: If balance check failed after retries (rate limit or RPC error)
+    """
     try:
         if chain_id.lower() == "ethereum":
             # Convert to checksum address if needed
@@ -159,17 +165,62 @@ def _get_wallet_balance_usd(chain_id="ethereum"):
         elif chain_id.lower() == "solana":
             # Real Solana balance checking
             try:
-                from src.execution.solana_executor import get_solana_balance
-                from src.utils.utils import get_sol_price_usd
+                from src.config.config_loader import get_config
                 
-                sol_balance = get_solana_balance()
-                sol_price = get_sol_price_usd()
+                # Check if base currency is USDC or SOL
+                base_currency = get_config("solana_base_currency", "USDC")
                 
-                if sol_price is None or sol_price <= 0:
-                    print(f"⚠️ Cannot get SOL price for balance calculation - using emergency fallback of $140")
-                    sol_price = 140.0  # Emergency fallback to prevent trading halt
-                
-                return float(sol_balance) * float(sol_price)
+                if base_currency.upper() == "USDC":
+                    # Get USDC balance when using USDC as base currency
+                    # Add retry logic at this level in case of rate limits
+                    max_balance_retries = 3
+                    retry_delay = 2.0
+                    
+                    for balance_attempt in range(max_balance_retries):
+                        try:
+                            from src.execution.jupiter_executor import JupiterCustomExecutor
+                            executor = JupiterCustomExecutor()
+                            usdc_balance = executor.get_usdc_balance()
+                            
+                            if usdc_balance is not None:
+                                # Success - USDC is 1:1 with USD, so return directly
+                                print(f"✅ USDC balance check successful: ${usdc_balance:.2f}")
+                                return float(usdc_balance)
+                            
+                            # Balance check failed (likely rate limit)
+                            if balance_attempt < max_balance_retries - 1:
+                                wait_time = retry_delay * (2 ** balance_attempt)
+                                print(f"⚠️ USDC balance check failed (attempt {balance_attempt + 1}/{max_balance_retries}), retrying in {wait_time:.1f}s...")
+                                time.sleep(wait_time)
+                            else:
+                                # All retries exhausted - return None to indicate check failure
+                                print(f"⚠️ Failed to get USDC balance after {max_balance_retries} attempts - cannot verify balance")
+                                return None
+                                
+                        except Exception as e:
+                            if balance_attempt < max_balance_retries - 1:
+                                wait_time = retry_delay * (2 ** balance_attempt)
+                                print(f"⚠️ Error getting USDC balance (attempt {balance_attempt + 1}/{max_balance_retries}): {e}, retrying in {wait_time:.1f}s...")
+                                time.sleep(wait_time)
+                            else:
+                                print(f"⚠️ Error getting USDC balance after {max_balance_retries} attempts: {e}")
+                                return None
+                    
+                    # Should not reach here, but just in case
+                    return None
+                else:
+                    # Fallback to SOL balance checking
+                    from src.execution.solana_executor import get_solana_balance
+                    from src.utils.utils import get_sol_price_usd
+                    
+                    sol_balance = get_solana_balance()
+                    sol_price = get_sol_price_usd()
+                    
+                    if sol_price is None or sol_price <= 0:
+                        print(f"⚠️ Cannot get SOL price for balance calculation - using emergency fallback of $140")
+                        sol_price = 140.0  # Emergency fallback to prevent trading halt
+                    
+                    return float(sol_balance) * float(sol_price)
             except Exception as e:
                 print(f"⚠️ Error getting Solana balance: {e}")
                 return 0.0
@@ -359,6 +410,11 @@ def allow_new_trade(trade_amount_usd: float, token_address: str = None, chain_id
 
     # Check wallet balance for specific chain (still need chain-specific balance for gas)
     chain_wallet_balance = _get_wallet_balance_usd(chain_id)
+    
+    # Handle balance check failure (None indicates rate limit or RPC error after retries)
+    if chain_wallet_balance is None:
+        return False, "balance_check_failed_rate_limit_or_rpc_error_cannot_verify_balance"
+    
     required_amount = trade_amount_usd + (chain_wallet_balance * config['MIN_WALLET_BALANCE_BUFFER'])  # Include buffer for gas
     if chain_wallet_balance < required_amount:
         return False, f"insufficient_balance_{chain_wallet_balance:.2f}_usd_needs_{required_amount:.2f}_usd"

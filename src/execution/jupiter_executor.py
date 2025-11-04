@@ -285,12 +285,40 @@ class JupiterCustomExecutor:
         """Get SOL balance"""
         return self.jupiter_lib.get_balance()
     
-    def get_usdc_balance(self) -> float:
-        """Get USDC balance in USD (USDC has 6 decimals, 1 USDC = $1)"""
-        balance = self.jupiter_lib.get_token_balance(USDC_MINT)
-        if balance is None:
-            return 0.0
-        return float(balance)
+    def get_usdc_balance(self) -> Optional[float]:
+        """
+        Get USDC balance in USD (USDC has 6 decimals, 1 USDC = $1)
+        
+        Returns:
+            float: USDC balance in USD
+            None: If balance check failed after retries (rate limit or other error)
+        """
+        # Retry up to 3 times if we get None (rate limit errors)
+        max_retries = 3
+        retry_delay = 1.0
+        
+        for attempt in range(max_retries):
+            balance = self.jupiter_lib.get_token_balance(USDC_MINT)
+            
+            if balance is not None:
+                # Success - return the balance
+                return float(balance)
+            
+            # If we got None, it might be a rate limit error
+            if attempt < max_retries - 1:
+                # Wait before retrying with exponential backoff
+                wait_time = retry_delay * (2 ** attempt)
+                print(f"⚠️ USDC balance check failed (attempt {attempt + 1}/{max_retries}), retrying in {wait_time:.1f}s...")
+                import time
+                time.sleep(wait_time)
+            else:
+                # All retries exhausted
+                print(f"⚠️ Failed to get USDC balance after {max_retries} attempts (rate limit or RPC error)")
+                # Return None to indicate failure (not zero balance)
+                # This allows risk manager to handle gracefully
+                return None
+        
+        return None
 
     def get_token_raw_balance(self, token_mint: str) -> Optional[int]:
         """

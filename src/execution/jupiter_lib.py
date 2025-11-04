@@ -551,29 +551,72 @@ class JupiterCustomLib:
         Get token balance for a specific mint
         
         Returns:
-            float: Token balance (> 0 if position exists)
-            None: If RPC call failed or error occurred (unknown state - don't remove position)
+            float: Token balance (> 0 if position exists, 0.0 if no balance)
+            None: If RPC call failed after retries (unknown state - don't remove position)
         """
-        try:
-            # Get token accounts for the wallet
-            rpc_payload = {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "getTokenAccountsByOwner",
-                "params": [
-                    str(self.keypair.pubkey()),
-                    {
-                        "mint": token_mint
-                    },
-                    {
-                        "encoding": "jsonParsed"
-                    }
-                ]
-            }
-            
-            response = requests.post(self.rpc_url, json=rpc_payload, timeout=10)
-            if response.status_code == 200:
-                result = response.json()
+        # Get token accounts for the wallet
+        rpc_payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getTokenAccountsByOwner",
+            "params": [
+                str(self.keypair.pubkey()),
+                {
+                    "mint": token_mint
+                },
+                {
+                    "encoding": "jsonParsed"
+                }
+            ]
+        }
+        
+        # Use http_utils.post_json() for retry logic with exponential backoff
+        # Note: http_utils raises HTTPError for 4xx errors, so we need to handle 429 specially
+        max_retries = 4
+        retry_delay = 1.5
+        
+        for attempt in range(max_retries):
+            try:
+                result = post_json(
+                    self.rpc_url, 
+                    rpc_payload, 
+                    timeout=15, 
+                    retries=1,  # Use 1 retry at http_utils level, we handle 429 manually
+                    backoff=0.5
+                )
+                
+                if result is None:
+                    # Circuit breaker open or connection failed
+                    if attempt < max_retries - 1:
+                        wait_time = retry_delay * (2 ** attempt)
+                        print(f"⚠️ Token balance check failed (attempt {attempt + 1}/{max_retries}), retrying in {wait_time:.1f}s...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        print(f"⚠️ Failed to get token balance after retries (circuit breaker or connection error)")
+                        return None
+                
+                # Check for RPC-level errors in response
+                if "error" in result:
+                    error_msg = result.get("error", {})
+                    error_code = error_msg.get("code", "Unknown")
+                    error_message = error_msg.get("message", "Unknown error")
+                    
+                    # For rate limit errors (429), retry with backoff
+                    if error_code == 429 or "rate limit" in str(error_message).lower():
+                        if attempt < max_retries - 1:
+                            wait_time = retry_delay * (2 ** attempt)
+                            print(f"⚠️ RPC rate limit error (attempt {attempt + 1}/{max_retries}), retrying in {wait_time:.1f}s...")
+                            time.sleep(wait_time)
+                            continue
+                        else:
+                            print(f"⚠️ RPC rate limit error after all retries: {error_message}")
+                            return None
+                    
+                    print(f"⚠️ RPC response error for token balance check: {error_message} (code: {error_code})")
+                    return None
+                
+                # Parse successful response
                 if "result" in result and "value" in result["result"]:
                     accounts = result["result"]["value"]
                     if accounts:
@@ -582,23 +625,43 @@ class JupiterCustomLib:
                         balance = float(account_info["tokenAmount"]["uiAmount"])
                         return balance
                     else:
-                        # No token accounts found - this could mean:
+                        # No token accounts found - this means zero balance
                         # 1. Trade never executed (no account created)
                         # 2. Position was sold (account closed)
-                        # Return 0.0 to indicate no balance (but only if we're sure)
                         return 0.0
                 else:
-                    # RPC response error - don't trust this, return None
-                    print(f"⚠️ RPC response error for token balance check: {result.get('error', 'Unknown')}")
+                    # Unexpected response structure
+                    print(f"⚠️ Unexpected RPC response structure for token balance check")
                     return None
-            else:
-                # HTTP error - don't trust this, return None
-                print(f"⚠️ HTTP error {response.status_code} getting token balance")
-                return None
-        except Exception as e:
-            print(f"❌ Error getting token balance: {e}")
-            # Return None to indicate check failed (not zero balance)
-            return None
+                    
+            except requests.exceptions.HTTPError as e:
+                # Handle HTTP 429 errors specially - retry with backoff
+                if hasattr(e, 'response') and e.response.status_code == 429:
+                    if attempt < max_retries - 1:
+                        wait_time = retry_delay * (2 ** attempt)
+                        print(f"⚠️ HTTP 429 rate limit error (attempt {attempt + 1}/{max_retries}), retrying in {wait_time:.1f}s...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        print(f"⚠️ HTTP 429 rate limit error getting token balance after all retries")
+                        return None
+                else:
+                    # Other HTTP errors - don't retry
+                    print(f"⚠️ HTTP error getting token balance: {e}")
+                    return None
+            except Exception as e:
+                # Handle other exceptions - retry if we have attempts left
+                if attempt < max_retries - 1:
+                    wait_time = retry_delay * (2 ** attempt)
+                    print(f"⚠️ Error getting token balance (attempt {attempt + 1}/{max_retries}): {e}, retrying in {wait_time:.1f}s...")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    print(f"❌ Error getting token balance after all retries: {e}")
+                    return None
+        
+        # Should not reach here, but just in case
+        return None
 
     def swap_tokens(self, input_mint: str, output_mint: str, amount_in: float, slippage_bps: int) -> Dict[str, Any]:
         """Execute token swap and return result dict"""
