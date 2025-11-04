@@ -62,6 +62,11 @@ pre_buy_check_timeout: 10
 # === Chain Support ===
 supported_chains: ["ethereum", "solana", "base"]
 
+# === Solana Configuration ===
+solana_base_currency: "USDC"  # Options: "SOL" or "USDC" - base currency for trading
+solana_usdc_mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"  # USDC mint address on Solana mainnet
+solana_min_sol_for_fees: 0.05  # Minimum SOL needed for transaction fees (separate from trading balance)
+
 # === Risk Management ===
 max_concurrent_positions: 3  # REALISTIC SCALING - 3 positions for diversification
 daily_loss_limit_usd: 50.0  # REALISTIC SCALING - $50 daily loss limit

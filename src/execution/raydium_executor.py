@@ -21,6 +21,10 @@ from ..monitoring.structured_logger import log_info, log_error
 WSOL_MINT = "So11111111111111111111111111111111111111112"  # Wrapped SOL
 USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"  # USDC
 
+def get_solana_base_currency():
+    """Get the configured base currency for Solana trading (SOL or USDC)"""
+    return get_config("solana_base_currency", "USDC")
+
 class RaydiumExecutor:
     def __init__(self):
         self.wallet_address = SOLANA_WALLET_ADDRESS
@@ -312,31 +316,42 @@ class RaydiumExecutor:
             if not self.raydium_lib:
                 return False, "No Raydium library"
             
+            # Get base currency configuration
+            base_currency = get_solana_base_currency()
+            
             # Convert USD to appropriate input amount
             if is_buy:
-                # Buying token - need SOL amount
-                try:
-                    # Import with fallback
-                    try:
-                        from src.utils.utils import get_sol_price_usd
-                    except ImportError:
-                        try:
-                            from ..utils.utils import get_sol_price_usd
-                        except ImportError:
-                            import sys
-                            import os
-                            sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-                            from src.utils.utils import get_sol_price_usd
-                    
-                    sol_price = get_sol_price_usd()
-                    if sol_price <= 0:
-                        return False, "Cannot get SOL price"
-                    sol_amount = amount_usd / sol_price
-                    amount = int(sol_amount * 1_000_000_000)  # SOL has 9 decimals
-                    input_mint = WSOL_MINT
+                # Buying token
+                if base_currency == "USDC":
+                    # Buying token with USDC (1 USDC = $1, 6 decimals)
+                    amount = int(float(amount_usd) * 1_000_000)  # USDC has 6 decimals
+                    input_mint = USDC_MINT
                     output_mint = token_address
-                except Exception as e:
-                    return False, f"Failed to convert USD to SOL: {e}"
+                    log_info("raydium.trade.buy_with_usdc", amount_usd=amount_usd, usdc_amount=amount)
+                else:
+                    # Legacy: Buying token with SOL
+                    try:
+                        # Import with fallback
+                        try:
+                            from src.utils.utils import get_sol_price_usd
+                        except ImportError:
+                            try:
+                                from ..utils.utils import get_sol_price_usd
+                            except ImportError:
+                                import sys
+                                import os
+                                sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+                                from src.utils.utils import get_sol_price_usd
+                        
+                        sol_price = get_sol_price_usd()
+                        if sol_price <= 0:
+                            return False, "Cannot get SOL price"
+                        sol_amount = amount_usd / sol_price
+                        amount = int(sol_amount * 1_000_000_000)  # SOL has 9 decimals
+                        input_mint = WSOL_MINT
+                        output_mint = token_address
+                    except Exception as e:
+                        return False, f"Failed to convert USD to SOL: {e}"
             else:
                 # Selling token - need raw token amount in smallest units
                 # CRITICAL: We need the actual token balance in raw units, not USD amount
@@ -345,7 +360,13 @@ class RaydiumExecutor:
                     return False, "No token balance available"
                 
                 input_mint = token_address
-                output_mint = USDC_MINT
+                # Determine output currency based on base currency configuration
+                if base_currency == "USDC":
+                    output_mint = USDC_MINT
+                    log_info("raydium.trade.sell_to_usdc", token=token_address)
+                else:
+                    output_mint = WSOL_MINT
+                    log_info("raydium.trade.sell_to_sol", token=token_address)
                 amount = raw_token_balance  # Use raw token amount for swap
             
             # Execute swap with default slippage

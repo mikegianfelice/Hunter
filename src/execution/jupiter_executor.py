@@ -9,10 +9,19 @@ from .jupiter_lib import JupiterCustomLib
 from ..monitoring.structured_logger import log_info, log_error
 
 from ..config.secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
+from ..config.config_loader import get_config
 
 # Common token addresses
 WSOL_MINT = "So11111111111111111111111111111111111111112"  # Wrapped SOL
 USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"  # USDC
+
+def get_solana_base_currency():
+    """Get the configured base currency for Solana trading (SOL or USDC)"""
+    return get_config("solana_base_currency", "USDC")
+
+def get_min_sol_for_fees():
+    """Get minimum SOL required for transaction fees"""
+    return float(get_config("solana_min_sol_for_fees", 0.05))
 
 class JupiterCustomExecutor:
     def __init__(self):
@@ -109,38 +118,68 @@ class JupiterCustomExecutor:
         try:
             log_info("solana.trade.start", token=token_address, side=("buy" if is_buy else "sell"), amount_usd=amount_usd)
             
-            # Balance gate for SOL buys - prevent trading when insufficient balance
+            # Get base currency configuration
+            base_currency = get_solana_base_currency()
+            min_sol_for_fees = get_min_sol_for_fees()
+            
+            # Balance gate for buys - prevent trading when insufficient balance
             if is_buy:
                 try:
-                    try:
-                        from src.utils.utils import get_sol_price_usd
-                    except ImportError:
+                    # Check SOL balance for transaction fees (always required)
+                    available_sol = self.get_solana_balance()
+                    if available_sol < min_sol_for_fees:
+                        log_error("solana.trade.insufficient_sol_for_fees",
+                                  token=token_address, available_sol=round(available_sol, 6),
+                                  required_sol=round(min_sol_for_fees, 6))
+                        return "", False
+                    
+                    # Check base currency balance for trading
+                    if base_currency == "USDC":
+                        # Check USDC balance
+                        available_usdc = self.get_usdc_balance()
+                        required_usd = float(amount_usd)
+                        
+                        # Require 5% buffer for slippage
+                        buffer_pct = 0.05
+                        required_with_buffer = required_usd * (1.0 + buffer_pct)
+                        
+                        if available_usdc < required_with_buffer:
+                            log_error("solana.trade.insufficient_usdc_balance",
+                                      token=token_address, available_usdc=round(available_usdc, 2),
+                                      required_usdc=round(required_with_buffer, 2))
+                            return "", False
+                        
+                        log_info("solana.trade.balance_check_passed", 
+                                available_usdc=round(available_usdc, 2),
+                                required_usdc=round(required_with_buffer, 2),
+                                available_sol=round(available_sol, 6))
+                    else:
+                        # Legacy SOL-based trading (backward compatibility)
                         try:
-                            from ..utils.utils import get_sol_price_usd
-                        except ImportError:
-                            import sys
-                            import os
-                            sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
                             from src.utils.utils import get_sol_price_usd
-                    
-                    sol_price = get_sol_price_usd()
-                    if sol_price <= 0:
-                        log_error("solana.trade.error_no_sol_price", "Cannot get SOL price - aborting trade")
-                        return "", False
-                    
-                    # Available SOL balance (USD)
-                    available_sol = self.get_solana_balance()  # in SOL
-                    available_usd = float(available_sol) * float(sol_price)
-                    
-                    # Require 5% buffer for fees/slippage
-                    buffer_pct = 0.05
-                    required_usd = float(amount_usd) * (1.0 + buffer_pct)
-                    
-                    if available_usd < required_usd:
-                        log_error("solana.trade.insufficient_balance",
-                                  token=token_address, available_usd=round(available_usd, 2),
-                                  required_usd=round(required_usd, 2))
-                        return "", False
+                        except ImportError:
+                            try:
+                                from ..utils.utils import get_sol_price_usd
+                            except ImportError:
+                                import sys
+                                import os
+                                sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+                                from src.utils.utils import get_sol_price_usd
+                        
+                        sol_price = get_sol_price_usd()
+                        if sol_price <= 0:
+                            log_error("solana.trade.error_no_sol_price", "Cannot get SOL price - aborting trade")
+                            return "", False
+                        
+                        available_usd = float(available_sol) * float(sol_price)
+                        buffer_pct = 0.05
+                        required_usd = float(amount_usd) * (1.0 + buffer_pct)
+                        
+                        if available_usd < required_usd:
+                            log_error("solana.trade.insufficient_balance",
+                                      token=token_address, available_usd=round(available_usd, 2),
+                                      required_usd=round(required_usd, 2))
+                            return "", False
                 except Exception as e:
                     log_error("solana.trade.balance_gate_error", error=str(e))
                     # Fail safe: block the trade if we can't verify balance
@@ -159,32 +198,40 @@ class JupiterCustomExecutor:
                 # Continue with original amount if liquidity check fails
             
             if is_buy:
-                # Buying token with SOL (convert USD amount to SOL)
-                # Import with fallback for different import paths
-                try:
-                    from src.utils.utils import get_sol_price_usd
-                except ImportError:
+                # Determine base currency and set input/output mints
+                if base_currency == "USDC":
+                    # Buying token with USDC (1 USDC = $1, 6 decimals)
+                    usdc_amount = int(float(amount_usd) * 1_000_000)  # USDC has 6 decimals
+                    input_mint = USDC_MINT
+                    output_mint = token_address
+                    amount = usdc_amount
+                    log_info("solana.trade.buy_with_usdc", amount_usd=amount_usd, usdc_amount=usdc_amount)
+                else:
+                    # Legacy: Buying token with SOL
                     try:
-                        from ..utils.utils import get_sol_price_usd
-                    except ImportError:
-                        import sys
-                        import os
-                        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
                         from src.utils.utils import get_sol_price_usd
-                
-                sol_price = get_sol_price_usd()
-                if sol_price <= 0:
-                    log_error("solana.trade.error_no_sol_price", "Cannot get SOL price - aborting trade")
-                    return "", False
-                
-                sol_amount = amount_usd / sol_price
-                sol_amount_lamports = int(sol_amount * 1_000_000_000)  # SOL has 9 decimals
-                
-                input_mint = WSOL_MINT
-                output_mint = token_address
-                amount = sol_amount_lamports
+                    except ImportError:
+                        try:
+                            from ..utils.utils import get_sol_price_usd
+                        except ImportError:
+                            import sys
+                            import os
+                            sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+                            from src.utils.utils import get_sol_price_usd
+                    
+                    sol_price = get_sol_price_usd()
+                    if sol_price <= 0:
+                        log_error("solana.trade.error_no_sol_price", "Cannot get SOL price - aborting trade")
+                        return "", False
+                    
+                    sol_amount = amount_usd / sol_price
+                    sol_amount_lamports = int(sol_amount * 1_000_000_000)  # SOL has 9 decimals
+                    
+                    input_mint = WSOL_MINT
+                    output_mint = token_address
+                    amount = sol_amount_lamports
             else:
-                # Selling token for SOL
+                # Selling token
                 # CRITICAL: We need the actual token balance in raw units, not USD amount
                 # Get raw token balance (in smallest token units)
                 print(f"🔍 [DEBUG] [SELL] Getting raw token balance for {token_address}...")
@@ -202,7 +249,15 @@ class JupiterCustomExecutor:
                 
                 print(f"✅ [SELL] Raw token balance OK: {raw_token_balance}")
                 input_mint = token_address
-                output_mint = WSOL_MINT
+                
+                # Determine output currency based on base currency configuration
+                if base_currency == "USDC":
+                    output_mint = USDC_MINT
+                    log_info("solana.trade.sell_to_usdc", token=token_address)
+                else:
+                    output_mint = WSOL_MINT
+                    log_info("solana.trade.sell_to_sol", token=token_address)
+                
                 amount = raw_token_balance  # Use raw token amount for swap
                 print(f"🔍 [DEBUG] [SELL] Swap parameters: input_mint={input_mint}, output_mint={output_mint}, amount={amount}")
             
@@ -229,6 +284,13 @@ class JupiterCustomExecutor:
     def get_solana_balance(self) -> float:
         """Get SOL balance"""
         return self.jupiter_lib.get_balance()
+    
+    def get_usdc_balance(self) -> float:
+        """Get USDC balance in USD (USDC has 6 decimals, 1 USDC = $1)"""
+        balance = self.jupiter_lib.get_token_balance(USDC_MINT)
+        if balance is None:
+            return 0.0
+        return float(balance)
 
     def get_token_raw_balance(self, token_mint: str) -> Optional[int]:
         """
