@@ -148,7 +148,8 @@ FALLBACK_URLS = [
 CSV_PATH = "data/trending_tokens.csv"
 CSV_FIELDS = [
     "fetched_at", "symbol", "address", "dex", "chainId",
-    "priceUsd", "volume24h", "liquidity"
+    "priceUsd", "volume24h", "liquidity",
+    "priceChange5m", "priceChange1h", "priceChange24h"
 ]
 
 def send_telegram_message(message):
@@ -424,6 +425,12 @@ def fetch_trending_tokens(limit=200):  # INCREASED for more opportunities
         vol24 = float((pair.get("volume", {}) or {}).get("h24") or 0)
         liq = float((pair.get("liquidity", {}) or {}).get("usd") or 0)
         
+        # Extract price change data from DexScreener (percentages: e.g., 5.5 means 5.5%)
+        price_change = (pair.get("priceChange", {}) or {})
+        price_change_5m = price_change.get("m5")  # 5 minute price change percentage
+        price_change_1h = price_change.get("h1")  # 1 hour price change percentage
+        price_change_24h = price_change.get("h24")  # 24 hour price change percentage
+        
         # Early chain filtering - skip unsupported chains immediately
         if chain.lower() not in supported_chains:
             unsupported_chain_count += 1
@@ -477,7 +484,10 @@ def fetch_trending_tokens(limit=200):  # INCREASED for more opportunities
             "chainId": chain,
             "priceUsd": price,
             "volume24h": vol24,
-            "liquidity": liq
+            "liquidity": liq,
+            "priceChange5m": price_change_5m if price_change_5m is not None else "",
+            "priceChange1h": price_change_1h if price_change_1h is not None else "",
+            "priceChange24h": price_change_24h if price_change_24h is not None else ""
         })
     
     print(f"✅ Found {valid_tokens_count} valid tokens out of {len(unique_pairs)} total pairs")
@@ -521,6 +531,9 @@ def fetch_trending_tokens(limit=200):  # INCREASED for more opportunities
                 "priceUsd": row["priceUsd"],
                 "volume24h": volume24h,
                 "liquidity": liquidity,
+                "priceChange5m": row.get("priceChange5m", ""),
+                "priceChange1h": row.get("priceChange1h", ""),
+                "priceChange24h": row.get("priceChange24h", ""),
                 "score": score
             })
         else:

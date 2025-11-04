@@ -74,6 +74,96 @@ def _pct_change(curr: float, prev: float) -> float:
         return 0.0
     return (curr - prev) / prev
 
+def _get_external_momentum(token: dict, config: dict):
+    """
+    Get momentum from external historical data (DexScreener price changes).
+    Returns (momentum_value, source_description) tuple.
+    Returns (None, None) if no external data available.
+    """
+    if not config.get('ENABLE_EXTERNAL_MOMENTUM', True):
+        return None, None
+    
+    # Get price change data from token dict (DexScreener provides these as percentages)
+    # Note: DexScreener returns priceChange as percentages (e.g., 5.5 means 5.5%)
+    price_change_5m = token.get("priceChange5m")
+    price_change_1h = token.get("priceChange1h")
+    price_change_24h = token.get("priceChange24h")
+    
+    # Convert from percentage to decimal (5.5% -> 0.055)
+    def to_decimal(pct_val):
+        if pct_val is None or pct_val == "" or str(pct_val).lower() == "none" or str(pct_val).strip() == "":
+            return None
+        try:
+            return float(pct_val) / 100.0
+        except (ValueError, TypeError):
+            return None
+    
+    pc_5m = to_decimal(price_change_5m)
+    pc_1h = to_decimal(price_change_1h)
+    pc_24h = to_decimal(price_change_24h)
+    
+    primary_timeframe = config.get('EXTERNAL_MOMENTUM_PRIMARY_TIMEFRAME', 'h1')
+    use_multi = config.get('USE_MULTI_TIMEFRAME_MOMENTUM', True)
+    
+    if use_multi and (pc_5m is not None or pc_1h is not None or pc_24h is not None):
+        # Multi-timeframe weighted average
+        weights = {
+            'm5': config.get('EXTERNAL_MOMENTUM_M5_WEIGHT', 0.3),
+            'h1': config.get('EXTERNAL_MOMENTUM_H1_WEIGHT', 0.5),
+            'h24': config.get('EXTERNAL_MOMENTUM_H24_WEIGHT', 0.2)
+        }
+        
+        total_weight = 0
+        weighted_sum = 0
+        sources = []
+        
+        if pc_5m is not None:
+            weighted_sum += pc_5m * weights['m5']
+            total_weight += weights['m5']
+            sources.append(f"5m:{pc_5m*100:.2f}%")
+        
+        if pc_1h is not None:
+            weighted_sum += pc_1h * weights['h1']
+            total_weight += weights['h1']
+            sources.append(f"1h:{pc_1h*100:.2f}%")
+        
+        if pc_24h is not None:
+            weighted_sum += pc_24h * weights['h24']
+            total_weight += weights['h24']
+            sources.append(f"24h:{pc_24h*100:.2f}%")
+        
+        if total_weight > 0:
+            momentum = weighted_sum / total_weight  # Normalize by actual available weights
+            source_desc = f"external (weighted: {', '.join(sources)})"
+            return momentum, source_desc
+    
+    # Single timeframe fallback
+    if primary_timeframe == 'h1' and pc_1h is not None:
+        return pc_1h, "external (1h)"
+    elif primary_timeframe == 'm5' and pc_5m is not None:
+        return pc_5m, "external (5m)"
+    elif primary_timeframe == 'h24' and pc_24h is not None:
+        return pc_24h, "external (24h)"
+    
+    # Try fallback timeframes
+    fallback_timeframe = config.get('EXTERNAL_MOMENTUM_FALLBACK_TIMEFRAME', 'm5')
+    if fallback_timeframe == 'm5' and pc_5m is not None:
+        return pc_5m, "external (5m fallback)"
+    elif fallback_timeframe == 'h1' and pc_1h is not None:
+        return pc_1h, "external (1h fallback)"
+    elif fallback_timeframe == 'h24' and pc_24h is not None:
+        return pc_24h, "external (24h fallback)"
+    
+    # Try any available
+    if pc_1h is not None:
+        return pc_1h, "external (1h any)"
+    if pc_5m is not None:
+        return pc_5m, "external (5m any)"
+    if pc_24h is not None:
+        return pc_24h, "external (24h any)"
+    
+    return None, None
+
 def _add_to_delisted_tokens(address: str, symbol: str, reason: str):
     """
     Add a token to the delisted_tokens.json file with smart verification
@@ -588,6 +678,27 @@ def check_buy_signal(token: dict) -> bool:
         print("🔓 WETH detected - will be handled in executor")
         return True
 
+    # Try external momentum first (DexScreener price change data)
+    ext_momentum, ext_source = _get_external_momentum(token, config)
+    if ext_momentum is not None:
+        print(f"📈 Momentum from {ext_source}: {ext_momentum*100:.4f}% (need ≥ {momentum_need*100:.4f}%)")
+        if ext_momentum >= momentum_need:
+            print("✅ External momentum buy signal → TRUE")
+            return True
+        else:
+            # External momentum insufficient, but check if token has good metrics bypass
+            # Special case for Solana tokens with good volume/liquidity
+            if chain_id == "solana" and vol24h >= 10000 and liq_usd >= 50000:
+                print("🔓 Solana token with good metrics - allowing despite insufficient external momentum")
+                return True
+            # Special case for Base tokens with good volume/liquidity
+            if chain_id == "base" and vol24h >= 10000 and liq_usd >= 50000:
+                print("🔓 Base token with good metrics - allowing despite insufficient external momentum")
+                return True
+            print("❌ External momentum insufficient.")
+            return False
+
+    # Fallback to bot's price memory if external momentum unavailable
     if entry:
         prev_price = float(entry.get("price", 0.0))
         prev_ts    = int(entry.get("ts", 0))
@@ -595,23 +706,25 @@ def check_buy_signal(token: dict) -> bool:
 
         if prev_price > 0 and age <= config['PRICE_MEM_TTL_SECS']:
             mom = _pct_change(price, prev_price)
-            print(f"📈 Momentum vs {age}s ago: {mom*100:.2f}% (need ≥ {momentum_need*100:.2f}%)")
+            print(f"📈 Momentum from price memory ({age}s ago): {mom*100:.4f}% (need ≥ {momentum_need*100:.4f}%)")
             if mom >= momentum_need:
-                print("✅ Momentum buy signal → TRUE")
+                print("✅ Price memory momentum buy signal → TRUE")
                 return True
             else:
                 # Special case for Solana tokens with good volume/liquidity
                 if chain_id == "solana" and vol24h >= 10000 and liq_usd >= 50000:
-                    print("🔓 Solana token with good metrics - allowing despite zero momentum")
+                    print("🔓 Solana token with good metrics - allowing despite insufficient price memory momentum")
                     return True
-                # Special case for Base tokens with good volume/liquidity (same as Solana)
+                # Special case for Base tokens with good volume/liquidity
                 if chain_id == "base" and vol24h >= 10000 and liq_usd >= 50000:
-                    print("🔓 Base token with good metrics - allowing despite zero momentum")
+                    print("🔓 Base token with good metrics - allowing despite insufficient price memory momentum")
                     return True
-                print("❌ Momentum insufficient.")
-                return False
+            print("❌ Price memory momentum insufficient.")
+            return False
         else:
             print("ℹ️ Snapshot stale or missing, evaluating fast-path…")
+    else:
+        print("ℹ️ No price memory available, evaluated external momentum and fast-path only")
 
     # Fast-path: for trusted tokens ignore sentiment; for others require sentiment
     sent_score    = int(token.get("sent_score") or 0)

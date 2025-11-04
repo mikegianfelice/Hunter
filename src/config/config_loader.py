@@ -95,5 +95,13 @@ def get_config_values():
         'FASTPATH_SENT': get_config_int("fastpath_min_sent_score", 30),
         'ENABLE_PRE_BUY_DELISTING_CHECK': get_config_bool("enable_pre_buy_delisting_check", False),
         'PRE_BUY_CHECK_SENSITIVITY': get_config("pre_buy_check_sensitivity", "lenient"),
-        'PRE_BUY_CHECK_TIMEOUT': get_config_int("pre_buy_check_timeout", 10)
+        'PRE_BUY_CHECK_TIMEOUT': get_config_int("pre_buy_check_timeout", 10),
+        'ENABLE_EXTERNAL_MOMENTUM': get_config_bool("enable_external_momentum", True),
+        'EXTERNAL_MOMENTUM_PRIMARY_TIMEFRAME': get_config("external_momentum_primary_timeframe", "h1"),
+        'EXTERNAL_MOMENTUM_FALLBACK_TIMEFRAME': get_config("external_momentum_fallback_timeframe", "m5"),
+        'EXTERNAL_MOMENTUM_MIN_TIMEFRAME_WEIGHT': get_config_float("external_momentum_min_timeframe_weight", 0.3),
+        'USE_MULTI_TIMEFRAME_MOMENTUM': get_config_bool("use_multi_timeframe_momentum", True),
+        'EXTERNAL_MOMENTUM_M5_WEIGHT': get_config_float("external_momentum_m5_weight", 0.3),
+        'EXTERNAL_MOMENTUM_H1_WEIGHT': get_config_float("external_momentum_h1_weight", 0.5),
+        'EXTERNAL_MOMENTUM_H24_WEIGHT': get_config_float("external_momentum_h24_weight", 0.2)
     }

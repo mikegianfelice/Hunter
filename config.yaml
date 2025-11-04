@@ -122,6 +122,16 @@ trailing_stop_percent: 0.1
 price_memory_ttl_minutes: 15
 price_memory_prune_hours: 24
 
+# === External Momentum Configuration ===
+enable_external_momentum: true  # Use DexScreener price change data for momentum
+external_momentum_primary_timeframe: "h1"  # Primary timeframe: "m5", "h1", "h24" (DexScreener provides m5, h1, h6, h24)
+external_momentum_fallback_timeframe: "m5"  # Fallback if primary unavailable
+external_momentum_min_timeframe_weight: 0.3  # Minimum weight for primary timeframe
+use_multi_timeframe_momentum: true  # Combine multiple timeframes for robustness
+external_momentum_m5_weight: 0.3  # Weight for 5m momentum (if multi-timeframe enabled)
+external_momentum_h1_weight: 0.5  # Weight for 1h momentum (if multi-timeframe enabled)
+external_momentum_h24_weight: 0.2  # Weight for 24h momentum (if multi-timeframe enabled)
+
 # === Trusted Tokens ===
 # These tokens bypass most safety checks for testing
 trusted_tokens: [
