@@ -60,7 +60,7 @@ pre_buy_check_sensitivity: "lenient"
 pre_buy_check_timeout: 10
 
 # === Chain Support ===
-supported_chains: ["ethereum", "solana", "base"]
+supported_chains: ["solana", "base"]  # Removed ethereum - focus on active chains with lower fees (Solana: 0.02% approval rate, Base: good discovery volume)
 
 # === Solana Configuration ===
 solana_base_currency: "USDC"  # Options: "SOL" or "USDC" - base currency for trading
