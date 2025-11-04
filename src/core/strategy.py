@@ -604,6 +604,10 @@ def check_buy_signal(token: dict) -> bool:
                 if chain_id == "solana" and vol24h >= 10000 and liq_usd >= 50000:
                     print("🔓 Solana token with good metrics - allowing despite zero momentum")
                     return True
+                # Special case for Base tokens with good volume/liquidity (same as Solana)
+                if chain_id == "base" and vol24h >= 10000 and liq_usd >= 50000:
+                    print("🔓 Base token with good metrics - allowing despite zero momentum")
+                    return True
                 print("❌ Momentum insufficient.")
                 return False
         else:
