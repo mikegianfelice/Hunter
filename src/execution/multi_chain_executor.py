@@ -215,8 +215,13 @@ def _launch_monitor_detached(use_watchdog: bool = True):
                     print(f"👁️ Started monitor_watchdog.py (will manage position monitor)")
                 except BrokenPipeError:
                     pass
-                return
-    
+            except Exception as e:
+                try:
+                    print(f"⚠️ Could not launch monitor_watchdog.py: {e}")
+                except BrokenPipeError:
+                    pass
+            return
+
     # Fallback to direct monitor launch (legacy behavior)
     script = MONITOR_SCRIPT if isinstance(MONITOR_SCRIPT, Path) else Path(MONITOR_SCRIPT)
     

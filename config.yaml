@@ -70,7 +70,7 @@ solana_min_sol_for_fees: 0.05  # Minimum SOL needed for transaction fees (separa
 # === Risk Management ===
 max_concurrent_positions: 3  # REALISTIC SCALING - 3 positions for diversification
 daily_loss_limit_usd: 50.0  # REALISTIC SCALING - $50 daily loss limit
-max_losing_streak: 2  # Stop after 2 losses
+max_losing_streak: 3  # Stop after 3 losses
 circuit_breaker_minutes: 120  # Longer cooldown after losses
 per_trade_max_usd: 25  # REALISTIC SCALING - $25 max per trade
 min_wallet_balance_buffer: 0.05  # Higher buffer for safety
@@ -138,12 +138,6 @@ use_multi_timeframe_momentum: true  # Combine multiple timeframes for robustness
 external_momentum_m5_weight: 0.3  # Weight for 5m momentum (if multi-timeframe enabled)
 external_momentum_h1_weight: 0.5  # Weight for 1h momentum (if multi-timeframe enabled)
 external_momentum_h24_weight: 0.2  # Weight for 24h momentum (if multi-timeframe enabled)
-
-# === Trusted Tokens ===
-# These tokens bypass most safety checks for testing
-trusted_tokens: [
-  "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"   # BONK (verified tradeable)
-]
 
 # === State Management ===
 reset_state_now: false
