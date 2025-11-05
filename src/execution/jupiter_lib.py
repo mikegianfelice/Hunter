@@ -13,6 +13,7 @@ from typing import Tuple, Optional, Dict, Any, List
 from solders.keypair import Keypair
 import base58
 from ..utils.http_utils import get_json, post_json
+from ..utils.solana_ata_utils import get_associated_token_address
 
 # Jupiter API Configuration
 # Default to free public API: https://lite-api.jup.ag (Ultra API - no API key required)
@@ -665,14 +666,172 @@ class JupiterCustomLib:
         """Get SOL balance (alias for get_balance)"""
         return self.get_balance()
 
-    def get_token_balance(self, token_mint: str):
+    def get_token_balance_via_ata(self, token_mint: str):
         """
-        Get token balance for a specific mint
+        Get token balance using Associated Token Account (ATA) method.
+        More efficient than getTokenAccountsByOwner - direct query by account address.
+        
+        Args:
+            token_mint: Token mint address (base58 string)
         
         Returns:
             float: Token balance (> 0 if position exists, 0.0 if no balance)
             None: If RPC call failed after retries (unknown state - don't remove position)
         """
+        if not self.keypair:
+            print("⚠️ No keypair available for ATA balance check")
+            return None
+        
+        try:
+            # Calculate ATA address deterministically
+            wallet_address = str(self.keypair.pubkey())
+            ata_address = get_associated_token_address(wallet_address, token_mint)
+            
+            if not ata_address:
+                print(f"⚠️ Failed to calculate ATA address for token {token_mint}")
+                return None
+            
+            # Use getTokenAccountBalance RPC call (more efficient than searching)
+            rpc_payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getTokenAccountBalance",
+                "params": [
+                    ata_address,
+                    {
+                        "commitment": "confirmed"
+                    }
+                ]
+            }
+            
+            # Retry logic with exponential backoff
+            max_retries = 2
+            retry_delay = 1.5
+            
+            for attempt in range(max_retries):
+                try:
+                    result = post_json(
+                        self.rpc_url,
+                        rpc_payload,
+                        timeout=15,
+                        retries=1,
+                        backoff=0.5
+                    )
+                    
+                    if result is None:
+                        # Circuit breaker open or connection failed
+                        if attempt < max_retries - 1:
+                            wait_time = retry_delay * (2 ** attempt)
+                            print(f"⚠️ ATA balance check failed (attempt {attempt + 1}/{max_retries}), retrying in {wait_time:.1f}s...")
+                            time.sleep(wait_time)
+                            continue
+                        else:
+                            print(f"⚠️ Failed to get ATA balance after retries (circuit breaker or connection error)")
+                            return None
+                    
+                    # Check for RPC-level errors in response
+                    if "error" in result:
+                        error_msg = result.get("error", {})
+                        error_code = error_msg.get("code", "Unknown")
+                        error_message = error_msg.get("message", "Unknown error")
+                        
+                        # For rate limit errors (429), retry with backoff
+                        if error_code == 429 or "rate limit" in str(error_message).lower():
+                            if attempt < max_retries - 1:
+                                wait_time = retry_delay * (2 ** attempt)
+                                print(f"⚠️ RPC rate limit error (attempt {attempt + 1}/{max_retries}), retrying in {wait_time:.1f}s...")
+                                time.sleep(wait_time)
+                                continue
+                            else:
+                                print(f"⚠️ RPC rate limit error after all retries: {error_message}")
+                                return None
+                        
+                        print(f"⚠️ RPC response error for ATA balance check: {error_message} (code: {error_code})")
+                        return None
+                    
+                    # Parse successful response
+                    if "result" in result:
+                        result_value = result["result"].get("value")
+                        
+                        # Account doesn't exist (null response) - this is a valid zero balance
+                        if result_value is None:
+                            return 0.0
+                        
+                        # Account exists - parse balance
+                        if isinstance(result_value, dict):
+                            ui_amount = result_value.get("uiAmount")
+                            if ui_amount is not None:
+                                return float(ui_amount)
+                            else:
+                                # Fallback to parsing amount string
+                                amount_str = result_value.get("amount", "0")
+                                decimals = result_value.get("decimals", 6)
+                                amount = int(amount_str) / (10 ** decimals)
+                                return float(amount)
+                        else:
+                            # Unexpected response structure
+                            print(f"⚠️ Unexpected ATA balance response structure")
+                            return None
+                    else:
+                        # Unexpected response structure
+                        print(f"⚠️ Unexpected RPC response structure for ATA balance check")
+                        return None
+                        
+                except requests.exceptions.HTTPError as e:
+                    # Handle HTTP 429 errors specially - retry with backoff
+                    if hasattr(e, 'response') and e.response.status_code == 429:
+                        if attempt < max_retries - 1:
+                            wait_time = retry_delay * (2 ** attempt)
+                            print(f"⚠️ HTTP 429 rate limit error (attempt {attempt + 1}/{max_retries}), retrying in {wait_time:.1f}s...")
+                            time.sleep(wait_time)
+                            continue
+                        else:
+                            print(f"⚠️ HTTP 429 rate limit error getting ATA balance after all retries")
+                            return None
+                    else:
+                        # Other HTTP errors - don't retry
+                        print(f"⚠️ HTTP error getting ATA balance: {e}")
+                        return None
+                except Exception as e:
+                    # Handle other exceptions - retry if we have attempts left
+                    if attempt < max_retries - 1:
+                        wait_time = retry_delay * (2 ** attempt)
+                        print(f"⚠️ Error getting ATA balance (attempt {attempt + 1}/{max_retries}): {e}, retrying in {wait_time:.1f}s...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        print(f"❌ Error getting ATA balance after all retries: {e}")
+                        return None
+            
+            # Should not reach here, but just in case
+            return None
+            
+        except Exception as e:
+            print(f"❌ Error in get_token_balance_via_ata: {e}")
+            return None
+
+    def get_token_balance(self, token_mint: str):
+        """
+        Get token balance for a specific mint.
+        Tries ATA method first (more efficient), falls back to search method if needed.
+        
+        Returns:
+            float: Token balance (> 0 if position exists, 0.0 if no balance)
+            None: If RPC call failed after retries (unknown state - don't remove position)
+        """
+        # Try ATA method first (faster, more efficient, better rate limits)
+        balance = self.get_token_balance_via_ata(token_mint)
+        if balance is not None:  # Success (even if 0.0) or zero balance
+            return balance
+        
+        # Fallback to original method (getTokenAccountsByOwner) if ATA method failed
+        # This handles edge cases where ATA might not work
+        print(f"⚠️ ATA method failed, falling back to getTokenAccountsByOwner method")
+        
+        if not self.keypair:
+            print("⚠️ No keypair available for balance check")
+            return None
+        
         # Get token accounts for the wallet
         rpc_payload = {
             "jsonrpc": "2.0",
