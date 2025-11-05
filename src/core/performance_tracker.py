@@ -491,6 +491,61 @@ class PerformanceTracker:
         
         self.save_data()
         print(f"🧹 Cleaned up data older than {days_to_keep} days")
+    
+    def validate_and_fix_trades(self, min_balance_threshold: float = 0.000001) -> Dict:
+        """
+        Validate all trades and fix inconsistencies.
+        Marks trades with zero balance as closed if they have 'open' status.
+        
+        Args:
+            min_balance_threshold: Minimum balance to consider as a valid position
+        
+        Returns:
+            Dict with validation results: {"fixed": int, "errors": List[str]}
+        """
+        results = {
+            "fixed": 0,
+            "errors": []
+        }
+        
+        try:
+            open_trades = [t for t in self.trades if t.get('status') == 'open']
+            fixed_count = 0
+            
+            for trade in open_trades:
+                address = trade.get('address', '')
+                chain = trade.get('chain', 'ethereum').lower()
+                
+                if not address:
+                    continue
+                
+                # Check wallet balance
+                balance = self._check_token_balance_on_chain(address, chain)
+                
+                if balance == -1.0:
+                    # Balance check failed - skip to be safe
+                    continue
+                elif balance <= 0.0 or balance < min_balance_threshold:
+                    # Zero or dust balance - mark as closed
+                    trade['status'] = 'manual_close'
+                    trade['exit_time'] = datetime.now().isoformat()
+                    trade['exit_price'] = 0.0
+                    trade['pnl_usd'] = 0.0
+                    trade['pnl_percent'] = 0.0
+                    fixed_count += 1
+                    print(f"📝 Fixed trade: {trade.get('symbol', '?')} ({address[:8]}...{address[-8:]}) - marked as closed (zero balance)")
+            
+            if fixed_count > 0:
+                self.save_data()
+                results["fixed"] = fixed_count
+                print(f"✅ Validated trades: {fixed_count} trade(s) marked as closed")
+        
+        except Exception as e:
+            error_msg = f"Error in validate_and_fix_trades: {e}"
+            print(f"⚠️ {error_msg}")
+            results["errors"].append(error_msg)
+        
+        return results
 
 # Global instance
 performance_tracker = PerformanceTracker()

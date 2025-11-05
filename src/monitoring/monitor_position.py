@@ -20,7 +20,7 @@ from src.execution.solana_executor import sell_token_solana
 from src.utils.utils import fetch_token_price_usd
 from src.monitoring.telegram_bot import send_telegram_message
 from src.config.config_loader import get_config, get_config_float
-from src.utils.position_sync import sync_all_open_positions
+from src.utils.position_sync import sync_all_open_positions, update_open_positions_from_wallet
 
 # Dynamic config loading
 def get_monitor_config():
@@ -336,41 +336,63 @@ def _sell_token_multi_chain(token_address: str, chain_id: str, symbol: str = "?"
             if balance is None:
                 print(f"❌ [ERROR] Balance check returned None for {symbol} - RPC call may have failed")
                 return None
-            elif balance > 0:
-                print(f"✅ [BALANCE OK] Token balance: {balance}")
-                # Get current price to calculate USD value
-                print(f"🔍 [DEBUG] Fetching current price for USD calculation...")
-                current_price = _fetch_token_price_multi_chain(token_address)
-                print(f"🔍 [DEBUG] Current price: {current_price}")
-                
-                if current_price > 0:
-                    # Calculate USD value of the token balance
-                    amount_usd = balance * current_price
-                    print(f"🔍 [DEBUG] Calculated amount_usd: {amount_usd} (balance={balance} * price={current_price})")
-                    print(f"🔍 [DEBUG] Calling sell_token_solana with amount_usd={amount_usd}...")
-                    tx_hash, success = sell_token_solana(token_address, amount_usd, symbol)
-                    print(f"🔍 [DEBUG] sell_token_solana result: tx_hash={tx_hash}, success={success}, type(tx_hash)={type(tx_hash)}")
-                else:
-                    print(f"⚠️ [WARNING] Could not get current price for {symbol} (price={current_price}), using estimated value")
-                    # Fallback: use a conservative estimate
-                    amount_usd = balance * 0.01  # Conservative estimate
-                    print(f"🔍 [DEBUG] Using fallback amount_usd: {amount_usd}")
-                    print(f"🔍 [DEBUG] Calling sell_token_solana with fallback amount_usd={amount_usd}...")
-                    tx_hash, success = sell_token_solana(token_address, amount_usd, symbol)
-                    print(f"🔍 [DEBUG] sell_token_solana result (fallback): tx_hash={tx_hash}, success={success}")
-            else:
+            elif balance <= 0:
                 print(f"❌ [ERROR] No {symbol} balance to sell: balance={balance} (balance <= 0)")
                 return None
+            
+            print(f"✅ [BALANCE OK] Token balance: {balance}")
+            
+            # Get current price to calculate USD value
+            print(f"🔍 [DEBUG] Fetching current price for USD calculation...")
+            current_price = _fetch_token_price_multi_chain(token_address)
+            print(f"🔍 [DEBUG] Current price: {current_price}")
+            
+            if current_price <= 0:
+                print(f"⚠️ [WARNING] Could not get current price for {symbol} (price={current_price}), using estimated value")
+                # Fallback: use a conservative estimate
+                current_price = 0.01  # Conservative estimate
+                print(f"🔍 [DEBUG] Using fallback price: {current_price}")
+            
+            # Calculate USD value of the token balance
+            amount_usd = balance * current_price
+            print(f"🔍 [DEBUG] Calculated amount_usd: {amount_usd} (balance={balance} * price={current_price})")
+            
+            # Try selling with retry logic
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    print(f"🔍 [DEBUG] Calling sell_token_solana (attempt {attempt+1}/{max_retries}) with amount_usd={amount_usd}...")
+                    tx_hash, success = sell_token_solana(token_address, amount_usd, symbol)
+                    print(f"🔍 [DEBUG] sell_token_solana result: tx_hash={tx_hash}, success={success}, type(tx_hash)={type(tx_hash)}")
+                    
+                    if success and tx_hash:
+                        print(f"✅ [SUCCESS] Sell successful on attempt {attempt+1}: {tx_hash}")
+                        return tx_hash
+                    else:
+                        print(f"⚠️ [RETRY {attempt+1}/{max_retries}] Sell failed (success={success}, tx_hash={tx_hash}), retrying...")
+                        if attempt < max_retries - 1:
+                            wait_time = 2 * (attempt + 1)  # Exponential backoff: 2s, 4s, 6s
+                            print(f"⏳ Waiting {wait_time}s before retry...")
+                            time.sleep(wait_time)
+                        else:
+                            print(f"❌ [FAILED] All {max_retries} sell attempts failed")
+                            return None
+                            
+                except Exception as e:
+                    print(f"❌ [EXCEPTION] Sell attempt {attempt+1} failed: {e}")
+                    import traceback
+                    print(f"🔍 [DEBUG] Exception traceback:\n{traceback.format_exc()}")
+                    if attempt < max_retries - 1:
+                        wait_time = 2 * (attempt + 1)
+                        print(f"⏳ Waiting {wait_time}s before retry...")
+                        time.sleep(wait_time)
+                    else:
+                        print(f"❌ [FAILED] All {max_retries} sell attempts failed due to exceptions")
+                        return None
+            
+            return None
         else:
             print(f"❌ [ERROR] Unsupported chain for selling: {chain_id}")
-            return None
-            
-        print(f"🔍 [DEBUG] Final sell result check: success={success}, tx_hash={tx_hash}")
-        if success:
-            print(f"✅ [SUCCESS] {symbol} sold successfully: {tx_hash}")
-            return tx_hash
-        else:
-            print(f"❌ [FAILURE] Failed to sell {symbol}: tx_hash={tx_hash}, success={success}")
             return None
             
     except Exception as e:
@@ -1070,7 +1092,18 @@ def _main_loop():
     
     _ensure_singleton()
     
-    # Sync positions on startup to catch any missed positions
+    # Step 1: Reconcile wallet holdings with tracked positions (discover missing positions)
+    # This ensures we catch tokens that were manually bought or not logged
+    try:
+        print(f"[{startup_time}] 🔍 Running wallet reconciliation...")
+        recon_results = update_open_positions_from_wallet()
+        print(f"[{startup_time}] ✅ Wallet reconciliation complete: {recon_results['added']} added, {recon_results['removed']} removed")
+    except Exception as e:
+        print(f"[{startup_time}] ⚠️ Failed to reconcile wallet on startup: {e}")
+        import traceback
+        print(f"[{startup_time}] Error details:\n{traceback.format_exc()}")
+    
+    # Step 2: Sync positions from performance_data.json to catch any missed positions
     # Use balance-verified sync to prevent manually closed positions from being re-added
     try:
         _sync_only_positions_with_balance()
@@ -1085,15 +1118,21 @@ def _main_loop():
         while _running:
             _heartbeat()
             
-            # Periodically sync positions (every 10 cycles = ~5 minutes)
+            # Periodically reconcile wallet and sync positions (every 10 cycles = ~5 minutes)
             # This ensures positions stay in sync even if performance_data is updated elsewhere
             # Use balance-verified sync to prevent manually closed positions from being re-added
             cycle_count += 1
             if cycle_count % 10 == 0:
                 try:
+                    # Reconcile wallet first (discovers missing positions)
+                    recon_results = update_open_positions_from_wallet()
+                    if recon_results['added'] > 0 or recon_results['removed'] > 0:
+                        print(f"🔄 Periodic reconciliation: {recon_results['added']} added, {recon_results['removed']} removed")
+                    
+                    # Then sync from performance_data
                     _sync_only_positions_with_balance()
                 except Exception as e:
-                    print(f"⚠️ Periodic position sync failed: {e}")
+                    print(f"⚠️ Periodic position sync/reconciliation failed: {e}")
             
             cycle_start = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             print(f"\n[{cycle_start}] 🔄 Starting monitoring cycle #{cycle_count}")

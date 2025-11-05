@@ -498,16 +498,30 @@ class SimpleSolanaExecutor:
             else:
                 # Selling token for USDC
                 # CRITICAL: We need the actual token balance in raw units, not USD amount
-                # Get raw token balance (in smallest token units)
+                print(f"🔍 [SELL DEBUG] Token: {token_address[:8]}...{token_address[-8:]}")
+                print(f"🔍 [SELL DEBUG] Amount USD: {amount_usd}")
+                print(f"🔍 [SELL DEBUG] Getting raw token balance...")
+                
                 raw_token_balance = self.get_token_raw_balance(token_address)
-                if raw_token_balance is None or raw_token_balance <= 0:
-                    print(f"❌ No token balance available to sell for {token_address[:8]}...{token_address[-8:]}")
+                print(f"🔍 [SELL DEBUG] Raw balance result: {raw_token_balance}")
+                
+                if raw_token_balance is None:
+                    print(f"❌ [SELL ERROR] Raw balance check failed (returned None) - RPC error or account issue")
+                    print(f"   Possible causes:")
+                    print(f"   - RPC connection failed")
+                    print(f"   - Token account not found")
+                    print(f"   - Network timeout")
+                    return "", False
+                elif raw_token_balance <= 0:
+                    print(f"❌ [SELL ERROR] Raw balance is <= 0: {raw_token_balance}")
+                    print(f"   Token may have been sold already or balance is zero")
                     return "", False
                 
                 input_mint = token_address
                 output_mint = USDC_MINT  # Always sell to USDC
                 amount = raw_token_balance  # Use raw token amount for swap
-                print(f"💵 Selling {token_address[:8]}...{token_address[-8:]} for USDC (output: {USDC_MINT})")
+                print(f"💵 Selling {token_address[:8]}...{token_address[-8:]} for USDC")
+                print(f"🔍 [SELL DEBUG] Swap params: input={input_mint[:8]}..., output={output_mint[:8]}..., amount={amount}")
             
             # Use higher slippage for small trades (microcaps)
             slippage = 0.15 if amount_usd < 50 else 0.10
@@ -516,9 +530,17 @@ class SimpleSolanaExecutor:
             # Get quote
             print(f"📊 Getting Jupiter quote: {input_mint[:8]}... -> {output_mint[:8]}... (amount: {amount})")
             quote = self.get_jupiter_quote(input_mint, output_mint, amount, slippage=slippage)
+            
             if not quote:
-                print(f"❌ No quote available for {token_address[:8]}...{token_address[-8:]} -> USDC")
+                print(f"❌ [SELL ERROR] No quote available for {token_address[:8]}...{token_address[-8:]} -> USDC")
+                print(f"   Possible causes:")
+                print(f"   - Token may be delisted or have no liquidity")
+                print(f"   - Jupiter API rate limit or error")
+                print(f"   - Insufficient liquidity for swap")
+                print(f"   - Token pair not available on Jupiter")
                 return "", False
+            
+            print(f"✅ Quote received successfully")
             
             # Verify we're selling to USDC for sells
             if not is_buy:
@@ -530,15 +552,25 @@ class SimpleSolanaExecutor:
                     print(f"⚠️ Warning: Quote shows zero USDC output")
             
             # Simulate swap before executing (non-blocking, for validation)
+            print(f"🔍 [SELL DEBUG] Running pre-flight simulation...")
             sim_result = self.simulate_jupiter_swap(quote)
             if sim_result:
                 if sim_result.get("error"):
                     print(f"⚠️ Simulation warning: {sim_result.get('error')}")
+                    print(f"   This may indicate potential issues, but continuing with swap...")
                 else:
                     print(f"✅ Pre-flight simulation passed")
             
             # Execute swap
+            print(f"🔍 [SELL DEBUG] Executing Jupiter swap...")
             tx_hash, success = self.execute_jupiter_swap(quote)
+            
+            if success:
+                print(f"✅ [SELL SUCCESS] Swap executed successfully: {tx_hash}")
+            else:
+                print(f"❌ [SELL FAILED] Swap execution failed (tx_hash: {tx_hash})")
+                print(f"   Check transaction status if tx_hash is provided")
+            
             return tx_hash, success
             
         except Exception as e:
@@ -636,10 +668,75 @@ class SimpleSolanaExecutor:
 
     def get_token_raw_balance(self, token_mint: str) -> Optional[int]:
         """
-        Get raw token balance in smallest units (not UI amount)
-        Returns the actual token amount needed for swap quotes
+        Get raw token balance in smallest units (not UI amount) using ATA method.
+        Returns the actual token amount needed for swap quotes.
+        Uses ATA (Associated Token Account) method which is more reliable.
         """
         try:
+            from src.utils.solana_ata_utils import get_associated_token_address
+            from src.utils.http_utils import post_json
+            
+            if not self.keypair:
+                print("⚠️ No keypair available for balance check")
+                return None
+            
+            # Calculate ATA address (more efficient and reliable than searching)
+            wallet_address = str(self.keypair.pubkey())
+            ata_address = get_associated_token_address(wallet_address, token_mint)
+            
+            if not ata_address:
+                print(f"⚠️ Failed to calculate ATA address for {token_mint[:8]}...{token_mint[-8:]}")
+                # Fallback to old method if ATA calculation fails
+                return self._get_token_raw_balance_fallback(token_mint)
+            
+            # Use getTokenAccountBalance (more efficient than getTokenAccountsByOwner)
+            rpc_payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getTokenAccountBalance",
+                "params": [
+                    ata_address,
+                    {
+                        "commitment": "confirmed"
+                    }
+                ]
+            }
+            
+            # Use http_utils for retry logic
+            result = post_json(SOLANA_RPC_URL, rpc_payload, timeout=15, retries=2, backoff=1.0)
+            
+            if result and "result" in result and "value" in result["result"]:
+                token_amount = result["result"]["value"]
+                raw_amount_str = token_amount.get("amount", "0")
+                raw_balance = int(raw_amount_str)
+                print(f"✅ Raw token balance retrieved: {raw_balance} (via ATA: {ata_address[:8]}...)")
+                return raw_balance
+            else:
+                # Check if account doesn't exist (token not held)
+                if result and "error" in result:
+                    error_code = result["error"].get("code", 0)
+                    if error_code == -32602:  # Invalid params - account might not exist
+                        print(f"⚠️ Token account not found (no balance) for {token_mint[:8]}...")
+                        return 0
+                
+                print(f"⚠️ No balance found for token {token_mint[:8]}...{token_mint[-8:]}")
+                # Fallback to old method
+                return self._get_token_raw_balance_fallback(token_mint)
+            
+        except Exception as e:
+            print(f"❌ Error getting raw token balance via ATA: {e}")
+            import traceback
+            print(traceback.format_exc())
+            # Fallback to old method
+            return self._get_token_raw_balance_fallback(token_mint)
+    
+    def _get_token_raw_balance_fallback(self, token_mint: str) -> Optional[int]:
+        """
+        Fallback method to get raw token balance using getTokenAccountsByOwner.
+        Used when ATA method fails.
+        """
+        try:
+            print(f"🔄 Trying fallback method for token balance...")
             rpc_payload = {
                 "jsonrpc": "2.0",
                 "id": 1,
@@ -668,13 +765,13 @@ class SimpleSolanaExecutor:
                     else:
                         return 0
                 else:
-                    print(f"⚠️ RPC response error for token raw balance: {result.get('error', 'Unknown')}")
+                    print(f"⚠️ RPC response error for token raw balance (fallback): {result.get('error', 'Unknown')}")
                     return None
             else:
-                print(f"⚠️ HTTP error {response.status_code} getting token raw balance")
+                print(f"⚠️ HTTP error {response.status_code} getting token raw balance (fallback)")
                 return None
         except Exception as e:
-            print(f"❌ Error getting token raw balance: {e}")
+            print(f"❌ Error in fallback token raw balance: {e}")
             return None
 
 # Legacy functions for backward compatibility

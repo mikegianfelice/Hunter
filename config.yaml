@@ -267,6 +267,15 @@ track_pnl_analysis: true  # Track PnL analysis and trends
 # Performance reporting
 enable_performance_insights: true  # Show performance insights in trading loop
 performance_insights_days: 7  # Days to show in trading loop insights
+
+# === Position Reconciliation ===
+# Automatic wallet scanning and position reconciliation
+position_reconciliation:
+  enabled: true  # Enable automatic position reconciliation
+  scan_interval_cycles: 10  # Run reconciliation every N monitor cycles (~5 minutes with 30s cycle)
+  min_balance_threshold: 0.000001  # Minimum balance to consider as a valid position (ignore dust)
+  discover_missing_positions: true  # Automatically add wallet tokens not in tracking
+  auto_close_zero_balance: true  # Automatically remove positions with zero balance
 enable_quality_analysis: true  # Enable quality vs performance analysis
 enable_risk_analysis: true  # Enable risk-adjusted return analysis
 
