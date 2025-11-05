@@ -14,6 +14,7 @@ import json
 import os
 
 from src.config.config_validator import get_validated_config
+from src.config.config_loader import get_config_bool, get_config_float
 from src.monitoring.performance_monitor import performance_monitor
 
 logger = logging.getLogger(__name__)
@@ -192,16 +193,89 @@ class CentralizedRiskManager:
                 timestamp=datetime.now().isoformat()
             )
         
+        # Check holder concentration (optional hard block)
+        if get_config_bool("holder_concentration_block_on_high_risk", False):
+            try:
+                from src.utils.holder_concentration_checker import check_holder_concentration
+                
+                token_address = token.get("address", "")
+                chain_id = token.get("chainId", "solana")
+                
+                if token_address and get_config_bool("enable_holder_concentration_check", True):
+                    holder_check = check_holder_concentration(token_address, chain_id)
+                    
+                    if holder_check and not holder_check.get("error"):
+                        threshold = get_config_float("holder_concentration_threshold", 60.0)
+                        percentage = holder_check.get("top_10_percentage", 0)
+                        
+                        if percentage >= threshold:
+                            return RiskAssessment(
+                                overall_risk_score=0.9,
+                                risk_level=RiskLevel.CRITICAL,
+                                approved=False,
+                                reason=f"High holder concentration: top 10 holders own {percentage:.1f}% (threshold: {threshold:.1f}%)",
+                                position_adjustment=0.0,
+                                risk_factors={
+                                    'holder_concentration_pct': percentage,
+                                    'holder_concentration_risk': 1.0,
+                                    'holder_concentration_blocked': True
+                                },
+                                recommendations=["Token has high holder concentration - potential rug pull risk"],
+                                timestamp=datetime.now().isoformat()
+                            )
+            except Exception as e:
+                logger.warning(f"Holder concentration check failed: {e}, continuing with risk assessment")
+        
         # Token-specific risk assessment
         token_risk = await self._assess_token_risk(token)
         
         # Calculate overall risk score
+        risk_weight = get_config_float("holder_concentration_risk_weight", 0.15)
+        base_weights_sum = 0.3 + 0.3 + 0.2 + 0.2
+        # Adjust weights to accommodate holder concentration
+        adjusted_weight = 0.2 - risk_weight  # Reduce token_risk weight
         overall_risk = (
             portfolio_risk.overall_portfolio_risk * 0.3 +
             position_risk * 0.3 +
             market_risk.overall_market_risk * 0.2 +
-            token_risk * 0.2
+            token_risk * adjusted_weight
         )
+        
+        # Add holder concentration risk if available
+        holder_concentration_risk = 0.0
+        holder_concentration_pct = 0.0
+        try:
+            from src.utils.holder_concentration_checker import check_holder_concentration
+            
+            token_address = token.get("address", "")
+            chain_id = token.get("chainId", "solana")
+            
+            if token_address and get_config_bool("enable_holder_concentration_check", True):
+                holder_check = check_holder_concentration(token_address, chain_id)
+                
+                if holder_check and not holder_check.get("error"):
+                    threshold = get_config_float("holder_concentration_threshold", 60.0)
+                    percentage = holder_check.get("top_10_percentage", 0)
+                    holder_concentration_pct = percentage
+                    
+                    # Calculate concentration risk (0.0 to 1.0)
+                    if percentage >= threshold:
+                        holder_concentration_risk = 1.0
+                    elif percentage >= threshold * 0.8:
+                        holder_concentration_risk = 0.8
+                    elif percentage >= threshold * 0.6:
+                        holder_concentration_risk = 0.5
+                    elif percentage >= threshold * 0.4:
+                        holder_concentration_risk = 0.3
+                    else:
+                        holder_concentration_risk = 0.1
+                    
+                    # Add to overall risk
+                    overall_risk += holder_concentration_risk * risk_weight
+        except Exception as e:
+            logger.warning(f"Holder concentration check failed in risk calculation: {e}")
+        
+        overall_risk = min(1.0, overall_risk)
         
         # Determine risk level and approval
         if overall_risk >= 0.8:
@@ -227,8 +301,21 @@ class CentralizedRiskManager:
         
         # Generate recommendations
         recommendations = self._generate_risk_recommendations(
-            portfolio_risk, position_risk, market_risk, token_risk
+            portfolio_risk, position_risk, market_risk, token_risk, holder_concentration_pct
         )
+        
+        # Build risk factors dict
+        risk_factors = {
+            'portfolio_risk': portfolio_risk.overall_portfolio_risk,
+            'position_risk': position_risk,
+            'market_risk': market_risk.overall_market_risk,
+            'token_risk': token_risk
+        }
+        
+        # Add holder concentration if checked
+        if holder_concentration_pct > 0:
+            risk_factors['holder_concentration_pct'] = holder_concentration_pct
+            risk_factors['holder_concentration_risk'] = holder_concentration_risk
         
         return RiskAssessment(
             overall_risk_score=overall_risk,
@@ -236,12 +323,7 @@ class CentralizedRiskManager:
             approved=approved,
             reason=reason,
             position_adjustment=position_adjustment,
-            risk_factors={
-                'portfolio_risk': portfolio_risk.overall_portfolio_risk,
-                'position_risk': position_risk,
-                'market_risk': market_risk.overall_market_risk,
-                'token_risk': token_risk
-            },
+            risk_factors=risk_factors,
             recommendations=recommendations,
             timestamp=datetime.now().isoformat()
         )
@@ -528,7 +610,7 @@ class CentralizedRiskManager:
     
     def _generate_risk_recommendations(self, portfolio_risk: PortfolioRisk, 
                                      position_risk: float, market_risk: MarketRisk, 
-                                     token_risk: float) -> List[str]:
+                                     token_risk: float, holder_concentration_pct: float = 0.0) -> List[str]:
         """Generate risk management recommendations"""
         recommendations = []
         
@@ -549,6 +631,16 @@ class CentralizedRiskManager:
         
         if market_risk.volatility_index > 0.4:
             recommendations.append("Use smaller position sizes due to high volatility")
+        
+        # Holder concentration recommendations
+        if holder_concentration_pct > 0:
+            threshold = get_config_float("holder_concentration_threshold", 60.0)
+            if holder_concentration_pct >= threshold:
+                recommendations.append(f"⚠️ High holder concentration: {holder_concentration_pct:.1f}% - potential rug pull risk")
+            elif holder_concentration_pct >= threshold * 0.8:
+                recommendations.append(f"⚠️ Moderate holder concentration: {holder_concentration_pct:.1f}% - monitor closely")
+            elif holder_concentration_pct >= threshold * 0.6:
+                recommendations.append(f"ℹ️ Some holder concentration: {holder_concentration_pct:.1f}% - acceptable but watch for changes")
         
         if not recommendations:
             recommendations.append("Risk levels acceptable - proceed with normal trading")

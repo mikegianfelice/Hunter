@@ -90,6 +90,13 @@ enable_price_verification: true  # Re-enabled for accuracy
 api_timeout_seconds: 15  # Longer timeout for reliability
 api_retry_attempts: 3  # More retries for reliability
 
+# === Holder Concentration Check ===
+enable_holder_concentration_check: true  # Enable holder concentration analysis
+holder_concentration_threshold: 60.0  # Block if top 10 holders own >60% (moderate threshold)
+holder_concentration_risk_weight: 0.15  # 15% weight in token risk assessment
+holder_concentration_cache_minutes: 10  # Cache holder data for 10 minutes
+holder_concentration_block_on_high_risk: false  # If false, adds to risk score instead of hard blocking
+
 # === Jupiter API Settings ===
 enable_jupiter_pre_check: false  # Allow tokens to proceed even if Jupiter pre-check fails
 jupiter_pre_check_strict: false  # Don't reject tokens based on Jupiter pre-check alone
