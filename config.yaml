@@ -75,6 +75,11 @@ circuit_breaker_minutes: 120  # Longer cooldown after losses
 per_trade_max_usd: 25  # REALISTIC SCALING - $25 max per trade
 min_wallet_balance_buffer: 0.05  # Higher buffer for safety
 
+# === Balance Cache Settings ===
+balance_cache_enabled: true  # Enable balance caching as fallback during RPC failures
+balance_cache_ttl_seconds: 300  # Cache is valid for 5 minutes (300 seconds)
+balance_cache_conservative_buffer: 0.1  # Apply 10% conservative reduction when using cached balance
+
 # === Smart Cleanup ===
 enable_smart_blacklist_cleanup: true
 blacklist_cleanup_interval: 1  # Every loop

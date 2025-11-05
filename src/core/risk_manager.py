@@ -7,6 +7,7 @@ from src.config.config_loader import get_config, get_config_int, get_config_floa
 
 STATE_FILE = "data/risk_state.json"
 POSITIONS_FILE = "data/open_positions.json"
+BALANCE_CACHE_FILE = "data/balance_cache.json"
 
 # Dynamic config loading
 def get_risk_manager_config():
@@ -122,46 +123,74 @@ def get_tier_based_risk_limits(wallet_balance_usd: float = None):
 # Web3 setup for balance checking
 w3 = Web3(Web3.HTTPProvider(INFURA_URL))
 
-def _get_wallet_balance_usd(chain_id="ethereum"):
+def _get_wallet_balance_usd(chain_id="ethereum", use_cache_fallback=True):
     """
     Get wallet balance in USD for specific chain
     
+    Args:
+        chain_id: Chain identifier (ethereum, base, solana)
+        use_cache_fallback: If True, use cached balance as fallback when RPC fails
+    
     Returns:
         float: Wallet balance in USD
-        None: If balance check failed after retries (rate limit or RPC error)
+        None: If balance check failed after retries and no valid cache available
     """
     try:
         if chain_id.lower() == "ethereum":
             # Convert to checksum address if needed
             checksum_address = w3.to_checksum_address(WALLET_ADDRESS)
             # Ethereum balance check
-            balance_wei = w3.eth.get_balance(checksum_address)
-            balance_eth = w3.from_wei(balance_wei, 'ether')
-            
-            # Get ETH price in USD
-            from src.utils.utils import get_eth_price_usd
-            eth_price = get_eth_price_usd()
-            
-            if eth_price is None or eth_price <= 0:
-                print(f"⚠️ Could not get ETH price for balance calculation - using emergency fallback of $3000")
-                eth_price = 3000.0  # Emergency fallback to prevent trading halt
-            
-            return float(balance_eth) * eth_price
+            try:
+                balance_wei = w3.eth.get_balance(checksum_address)
+                balance_eth = w3.from_wei(balance_wei, 'ether')
+                
+                # Get ETH price in USD
+                from src.utils.utils import get_eth_price_usd
+                eth_price = get_eth_price_usd()
+                
+                if eth_price is None or eth_price <= 0:
+                    print(f"⚠️ Could not get ETH price for balance calculation - using emergency fallback of $3000")
+                    eth_price = 3000.0  # Emergency fallback to prevent trading halt
+                
+                balance_usd = float(balance_eth) * eth_price
+                # Cache the successful balance
+                _update_balance_cache(chain_id, balance_usd)
+                return balance_usd
+            except Exception as e:
+                print(f"⚠️ Error getting Ethereum balance: {e}")
+                if use_cache_fallback:
+                    cached_balance, is_valid = _get_cached_balance(chain_id)
+                    if is_valid:
+                        print(f"✅ Using cached Ethereum balance (${cached_balance:.2f})")
+                        return cached_balance
+                return None
         elif chain_id.lower() == "base":
             # Base uses same wallet as Ethereum, check ETH balance
             checksum_address = w3.to_checksum_address(WALLET_ADDRESS)
-            balance_wei = w3.eth.get_balance(checksum_address)
-            balance_eth = w3.from_wei(balance_wei, 'ether')
-            
-            # Get ETH price in USD
-            from src.utils.utils import get_eth_price_usd
-            eth_price = get_eth_price_usd()
-            
-            if eth_price is None or eth_price <= 0:
-                print(f"⚠️ Could not get ETH price for balance calculation - using emergency fallback of $3000")
-                eth_price = 3000.0  # Emergency fallback to prevent trading halt
-            
-            return float(balance_eth) * eth_price
+            try:
+                balance_wei = w3.eth.get_balance(checksum_address)
+                balance_eth = w3.from_wei(balance_wei, 'ether')
+                
+                # Get ETH price in USD
+                from src.utils.utils import get_eth_price_usd
+                eth_price = get_eth_price_usd()
+                
+                if eth_price is None or eth_price <= 0:
+                    print(f"⚠️ Could not get ETH price for balance calculation - using emergency fallback of $3000")
+                    eth_price = 3000.0  # Emergency fallback to prevent trading halt
+                
+                balance_usd = float(balance_eth) * eth_price
+                # Cache the successful balance
+                _update_balance_cache(chain_id, balance_usd)
+                return balance_usd
+            except Exception as e:
+                print(f"⚠️ Error getting Base balance: {e}")
+                if use_cache_fallback:
+                    cached_balance, is_valid = _get_cached_balance(chain_id)
+                    if is_valid:
+                        print(f"✅ Using cached Base balance (${cached_balance:.2f})")
+                        return cached_balance
+                return None
         elif chain_id.lower() == "solana":
             # Real Solana balance checking
             try:
@@ -185,6 +214,8 @@ def _get_wallet_balance_usd(chain_id="ethereum"):
                             if usdc_balance is not None:
                                 # Success - USDC is 1:1 with USD, so return directly
                                 print(f"✅ USDC balance check successful: ${usdc_balance:.2f}")
+                                # Cache the successful balance
+                                _update_balance_cache(chain_id, usdc_balance)
                                 return float(usdc_balance)
                             
                             # Balance check failed (likely rate limit)
@@ -193,9 +224,22 @@ def _get_wallet_balance_usd(chain_id="ethereum"):
                                 print(f"⚠️ USDC balance check failed (attempt {balance_attempt + 1}/{max_balance_retries}), retrying in {wait_time:.1f}s...")
                                 time.sleep(wait_time)
                             else:
-                                # All retries exhausted - return None to indicate check failure
-                                print(f"⚠️ Failed to get USDC balance after {max_balance_retries} attempts - cannot verify balance")
-                                return None
+                                # All retries exhausted - try cache fallback
+                                print(f"⚠️ Failed to get USDC balance after {max_balance_retries} attempts")
+                                if use_cache_fallback:
+                                    cached_balance, is_valid = _get_cached_balance(chain_id)
+                                    if is_valid:
+                                        print(f"✅ Using cached balance (${cached_balance:.2f}) - cache is fresh")
+                                        return cached_balance
+                                    elif cached_balance is not None:
+                                        print(f"⚠️ Cache exists but is stale - rejecting trade for safety")
+                                        return None
+                                    else:
+                                        print(f"⚠️ No cache available - cannot verify balance")
+                                        return None
+                                else:
+                                    print(f"⚠️ Cannot verify balance (cache fallback disabled)")
+                                    return None
                                 
                         except Exception as e:
                             if balance_attempt < max_balance_retries - 1:
@@ -204,7 +248,20 @@ def _get_wallet_balance_usd(chain_id="ethereum"):
                                 time.sleep(wait_time)
                             else:
                                 print(f"⚠️ Error getting USDC balance after {max_balance_retries} attempts: {e}")
-                                return None
+                                # Try cache fallback
+                                if use_cache_fallback:
+                                    cached_balance, is_valid = _get_cached_balance(chain_id)
+                                    if is_valid:
+                                        print(f"✅ Using cached balance (${cached_balance:.2f}) - cache is fresh")
+                                        return cached_balance
+                                    elif cached_balance is not None:
+                                        print(f"⚠️ Cache exists but is stale - rejecting trade for safety")
+                                        return None
+                                    else:
+                                        print(f"⚠️ No cache available - cannot verify balance")
+                                        return None
+                                else:
+                                    return None
                     
                     # Should not reach here, but just in case
                     return None
@@ -213,14 +270,26 @@ def _get_wallet_balance_usd(chain_id="ethereum"):
                     from src.execution.solana_executor import get_solana_balance
                     from src.utils.utils import get_sol_price_usd
                     
-                    sol_balance = get_solana_balance()
-                    sol_price = get_sol_price_usd()
-                    
-                    if sol_price is None or sol_price <= 0:
-                        print(f"⚠️ Cannot get SOL price for balance calculation - using emergency fallback of $140")
-                        sol_price = 140.0  # Emergency fallback to prevent trading halt
-                    
-                    return float(sol_balance) * float(sol_price)
+                    try:
+                        sol_balance = get_solana_balance()
+                        sol_price = get_sol_price_usd()
+                        
+                        if sol_price is None or sol_price <= 0:
+                            print(f"⚠️ Cannot get SOL price for balance calculation - using emergency fallback of $140")
+                            sol_price = 140.0  # Emergency fallback to prevent trading halt
+                        
+                        balance_usd = float(sol_balance) * float(sol_price)
+                        # Cache the successful balance
+                        _update_balance_cache(chain_id, balance_usd)
+                        return balance_usd
+                    except Exception as e:
+                        print(f"⚠️ Error getting SOL balance: {e}")
+                        if use_cache_fallback:
+                            cached_balance, is_valid = _get_cached_balance(chain_id)
+                            if is_valid:
+                                print(f"✅ Using cached SOL balance (${cached_balance:.2f})")
+                                return cached_balance
+                        return None
             except Exception as e:
                 print(f"⚠️ Error getting Solana balance: {e}")
                 return 0.0
@@ -268,6 +337,66 @@ def _today_utc():
 
 def _now_ts():
     return int(time.time())
+
+def _load_balance_cache():
+    """Load balance cache from disk"""
+    if not os.path.exists(BALANCE_CACHE_FILE):
+        return {}
+    try:
+        with open(BALANCE_CACHE_FILE, "r") as f:
+            return json.load(f) or {}
+    except Exception:
+        return {}
+
+def _save_balance_cache(cache_data):
+    """Save balance cache to disk"""
+    os.makedirs('data', exist_ok=True)
+    try:
+        with open(BALANCE_CACHE_FILE, "w") as f:
+            json.dump(cache_data, f, indent=2)
+    except Exception as e:
+        print(f"⚠️ Failed to save balance cache: {e}")
+
+def _get_cached_balance(chain_id: str, cache_ttl_seconds: int = None) -> tuple:
+    """
+    Get cached balance for a chain if it exists and is fresh
+    
+    Returns:
+        tuple: (balance: float or None, is_valid: bool)
+    """
+    # Get cache TTL from config if not provided
+    if cache_ttl_seconds is None:
+        cache_ttl_seconds = get_config_int("balance_cache_ttl_seconds", 300)
+    
+    cache = _load_balance_cache()
+    chain_key = chain_id.lower()
+    
+    if chain_key not in cache:
+        return None, False
+    
+    cached_entry = cache[chain_key]
+    cached_balance = cached_entry.get("balance")
+    cached_timestamp = cached_entry.get("timestamp", 0)
+    
+    if cached_balance is None:
+        return None, False
+    
+    # Check if cache is still valid (within TTL)
+    age_seconds = _now_ts() - cached_timestamp
+    if age_seconds > cache_ttl_seconds:
+        return cached_balance, False  # Cache exists but is stale
+    
+    return cached_balance, True  # Cache is valid
+
+def _update_balance_cache(chain_id: str, balance: float):
+    """Update balance cache with new successful balance check"""
+    cache = _load_balance_cache()
+    chain_key = chain_id.lower()
+    cache[chain_key] = {
+        "balance": float(balance),
+        "timestamp": _now_ts()
+    }
+    _save_balance_cache(cache)
 
 def _load_state():
     s = {
@@ -409,11 +538,26 @@ def allow_new_trade(trade_amount_usd: float, token_address: str = None, chain_id
         return False, f"trade_amount_exceeds_cap_{config['PER_TRADE_MAX_USD']}"
 
     # Check wallet balance for specific chain (still need chain-specific balance for gas)
-    chain_wallet_balance = _get_wallet_balance_usd(chain_id)
+    chain_wallet_balance = _get_wallet_balance_usd(chain_id, use_cache_fallback=True)
     
-    # Handle balance check failure (None indicates rate limit or RPC error after retries)
+    # Handle balance check failure (None indicates rate limit or RPC error after retries and no valid cache)
     if chain_wallet_balance is None:
+        # Check if we have a stale cache (exists but expired)
+        cached_balance, is_valid = _get_cached_balance(chain_id)
+        if cached_balance is not None and not is_valid:
+            return False, "balance_check_failed_cache_stale_requires_fresh_balance_check"
         return False, "balance_check_failed_rate_limit_or_rpc_error_cannot_verify_balance"
+    
+    # When using cached balance, apply a conservative buffer for safety
+    # Check if we're using cached balance (by checking if cache is valid)
+    cached_balance, cache_is_valid = _get_cached_balance(chain_id)
+    if cache_is_valid and abs(cached_balance - chain_wallet_balance) < 0.01:
+        # We're using cached balance - apply conservative reduction from config
+        conservative_buffer = get_config_float("balance_cache_conservative_buffer", 0.1)
+        conservative_balance = chain_wallet_balance * (1.0 - conservative_buffer)
+        buffer_pct = conservative_buffer * 100
+        print(f"⚠️ Using cached balance with {buffer_pct:.0f}% conservative buffer: ${conservative_balance:.2f} (from ${chain_wallet_balance:.2f})")
+        chain_wallet_balance = conservative_balance
     
     required_amount = trade_amount_usd + (chain_wallet_balance * config['MIN_WALLET_BALANCE_BUFFER'])  # Include buffer for gas
     if chain_wallet_balance < required_amount:
