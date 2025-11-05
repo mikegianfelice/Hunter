@@ -972,7 +972,7 @@ async def run_enhanced_async_trading():
                         await asyncio.sleep(30)  # Wait before retry
                         continue
                     
-                    # Send periodic status report (throttled to every 6 hours)
+                    # Send periodic status report (throttled to every 1 hour)
                     try:
                         send_periodic_status_report()
                     except Exception as e:

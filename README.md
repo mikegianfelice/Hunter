@@ -768,7 +768,7 @@ The bot can send real-time notifications via Telegram:
 - **Position Updates**: Take profit, stop loss, and trailing stop triggers
 - **Delisting Alerts**: Notifications when tokens are delisted with loss amounts
 - **Error Alerts**: Important errors and warnings
-- **Daily Summaries**: Performance updates and statistics
+- **Hourly Status Reports**: Comprehensive bot status, performance, and market conditions (sent every 1 hour)
 - **Blacklist Maintenance**: Notifications when smart cleanup removes safer tokens
 
 ## 📈 Monitoring and Analytics
