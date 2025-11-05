@@ -572,7 +572,7 @@ class JupiterCustomLib:
         
         # Use http_utils.post_json() for retry logic with exponential backoff
         # Note: http_utils raises HTTPError for 4xx errors, so we need to handle 429 specially
-        max_retries = 4
+        max_retries = 2  # Limit to 2 tries only (initial attempt + 1 retry)
         retry_delay = 1.5
         
         for attempt in range(max_retries):
