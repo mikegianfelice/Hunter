@@ -312,16 +312,22 @@ def _get_combined_wallet_balance_usd():
         # Get Ethereum balance
         try:
             eth_balance = _get_wallet_balance_usd("ethereum")
-            total_balance += eth_balance
-            print(f"💰 Ethereum balance: ${eth_balance:.2f}")
+            if eth_balance is not None:
+                total_balance += eth_balance
+                print(f"💰 Ethereum balance: ${eth_balance:.2f}")
+            else:
+                print(f"⚠️ Ethereum balance unavailable (None returned)")
         except Exception as e:
             print(f"⚠️ Failed to get Ethereum balance: {e}")
         
         # Get Solana balance
         try:
             sol_balance = _get_wallet_balance_usd("solana")
-            total_balance += sol_balance
-            print(f"💰 Solana balance: ${sol_balance:.2f}")
+            if sol_balance is not None:
+                total_balance += sol_balance
+                print(f"💰 Solana balance: ${sol_balance:.2f}")
+            else:
+                print(f"⚠️ Solana balance unavailable (None returned)")
         except Exception as e:
             print(f"⚠️ Failed to get Solana balance: {e}")
         
