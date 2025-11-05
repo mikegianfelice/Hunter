@@ -105,6 +105,7 @@ CHAIN_CONFIGS = {
 POSITIONS_FILE = "data/open_positions.json"
 # Monitor script path - use absolute path from project root
 MONITOR_SCRIPT = Path(__file__).resolve().parents[2] / "src" / "monitoring" / "monitor_position.py"
+WATCHDOG_SCRIPT = Path(__file__).resolve().parents[2] / "src" / "monitoring" / "monitor_watchdog.py"
 PRICE_MEMORY_FILE = "data/price_memory.json"
 
 def get_chain_config(chain_id: str) -> Dict[str, Any]:
@@ -167,8 +168,56 @@ def _log_position(token: dict):
     except BrokenPipeError:
         pass
 
-def _launch_monitor_detached():
-    # MONITOR_SCRIPT is already a Path object pointing to the correct location
+def _launch_monitor_detached(use_watchdog: bool = True):
+    """
+    Launch the position monitor, optionally with watchdog for automatic restart.
+    
+    Args:
+        use_watchdog: If True, launch the watchdog which will manage the monitor.
+                     If False, launch the monitor directly (legacy behavior).
+    """
+    if use_watchdog:
+        # Launch watchdog instead - it will manage the monitor
+        watchdog_script = WATCHDOG_SCRIPT if isinstance(WATCHDOG_SCRIPT, Path) else Path(WATCHDOG_SCRIPT)
+        
+        if not watchdog_script.exists():
+            try:
+                print(f"⚠️ monitor_watchdog.py not found at {watchdog_script}, falling back to direct launch")
+                use_watchdog = False
+            except BrokenPipeError:
+                pass
+        
+        if use_watchdog:
+            try:
+                project_root = watchdog_script.parents[2]  # Go up from src/monitoring to project root
+                env = os.environ.copy()
+                if 'PYTHONPATH' in env:
+                    env['PYTHONPATH'] = f"{project_root}:{env['PYTHONPATH']}"
+                else:
+                    env['PYTHONPATH'] = str(project_root)
+                
+                log_dir = project_root / "logs"
+                log_dir.mkdir(exist_ok=True)
+                watchdog_log_file = log_dir / "monitor_watchdog.log"
+                
+                log_file = open(watchdog_log_file, "a", buffering=1)
+                
+                subprocess.Popen(
+                    [sys.executable, str(watchdog_script)],
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                    env=env,
+                    cwd=str(project_root),
+                    start_new_session=True
+                )
+                
+                try:
+                    print(f"👁️ Started monitor_watchdog.py (will manage position monitor)")
+                except BrokenPipeError:
+                    pass
+                return
+    
+    # Fallback to direct monitor launch (legacy behavior)
     script = MONITOR_SCRIPT if isinstance(MONITOR_SCRIPT, Path) else Path(MONITOR_SCRIPT)
     
     if not script.exists():

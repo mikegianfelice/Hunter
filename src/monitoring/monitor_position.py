@@ -227,8 +227,8 @@ def _apply_trailing_stop(state: dict, addr: str, current_price: float) -> float:
         state[peak_key] = current_price
         peak = current_price
 
-            # trailing_stop is a % drop from peak
-        trail_stop_price = peak * (1 - config['TRAILING_STOP'])
+    # trailing_stop is a % drop from peak (calculate always, not just when peak updates)
+    trail_stop_price = peak * (1 - config['TRAILING_STOP'])
     return trail_stop_price
 
 def _analyze_sell_fees(tx_hash: str, chain_id: str) -> dict:
@@ -855,6 +855,10 @@ def monitor_all_positions():
 
         if current_price is None or current_price == 0:
             print(f"⚠️ Could not fetch current price for {token_address}")
+            # Still check if we can estimate loss from entry price (conservative approach)
+            # If we can't get price, we can't determine stop loss, so skip this cycle
+            # but log the issue for visibility
+            print(f"⚠️ Skipping stop loss check for {symbol} - price unavailable")
             continue
 
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1093,9 +1097,17 @@ def _main_loop():
             
             cycle_start = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             print(f"\n[{cycle_start}] 🔄 Starting monitoring cycle #{cycle_count}")
-            monitor_all_positions()
-            cycle_end = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            print(f"[{cycle_end}] ✅ Monitoring cycle complete, sleeping 30s...\n")
+            try:
+                monitor_all_positions()
+                cycle_end = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                print(f"[{cycle_end}] ✅ Monitoring cycle complete, sleeping 30s...\n")
+            except Exception as e:
+                cycle_end = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                print(f"\n[{cycle_end}] ❌ ERROR in monitoring cycle: {e}")
+                import traceback
+                print(f"[{cycle_end}] Traceback:\n{traceback.format_exc()}")
+                print(f"[{cycle_end}] ⚠️ Continuing to next cycle...\n")
+                # Don't re-raise - allow loop to continue
             time.sleep(30)  # poll interval
     finally:
         # Always remove lock on exit
@@ -1116,4 +1128,6 @@ if __name__ == "__main__":
         print(f"[{error_time}] Traceback:\n{traceback.format_exc()}")
         _running = False
         _remove_lock()
-        raise
+        # Don't re-raise - allow process to exit cleanly
+        # The error handling in _main_loop should catch most issues now
+        sys.exit(1)
