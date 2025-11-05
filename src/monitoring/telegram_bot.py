@@ -21,7 +21,7 @@ _max_messages_per_window = 5  # Max 5 messages per minute per type
 
 # Periodic status tracking
 _last_status_time = 0
-_status_interval = 6 * 60 * 60  # 6 hours in seconds
+_status_interval = 1 * 60 * 60  # 1 hour in seconds
 
 def _cleanup_old_messages():
     """Remove old messages from the cache"""
@@ -151,13 +151,13 @@ def send_telegram_message(message: str, markdown: bool = False, disable_preview:
 
 def send_periodic_status_report():
     """
-    Send a comprehensive status report to Telegram every 6 hours.
+    Send a comprehensive status report to Telegram every 1 hour.
     Includes bot status, buy/sell summary, and market conditions.
     """
     global _last_status_time
     current_time = time.time()
     
-    # Check if it's time to send a status report (every 6 hours)
+    # Check if it's time to send a status report (every 1 hour)
     if current_time - _last_status_time < _status_interval:
         return False
     
