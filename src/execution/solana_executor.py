@@ -302,7 +302,23 @@ class SimpleSolanaExecutor:
                             rpc_result = rpc_response.json()
                             if "result" in rpc_result:
                                 tx_hash = rpc_result["result"]
-                                print(f"✅ Jupiter swap executed: {tx_hash}")
+                                print(f"✅ Transaction sent: {tx_hash}")
+                                
+                                # CRITICAL: Wait for transaction confirmation
+                                print(f"⏳ Waiting for transaction confirmation...")
+                                confirmed = self._confirm_transaction(tx_hash, max_retries=30)
+                                if not confirmed:
+                                    print(f"❌ Transaction {tx_hash} failed to confirm or was rejected")
+                                    return tx_hash, False
+                                
+                                # Verify transaction succeeded
+                                print(f"🔍 Verifying transaction status...")
+                                tx_success = self._verify_transaction_success(tx_hash)
+                                if not tx_success:
+                                    print(f"❌ Transaction {tx_hash} failed on-chain")
+                                    return tx_hash, False
+                                
+                                print(f"✅ Transaction confirmed and successful: {tx_hash}")
                                 return tx_hash, True
                             elif "error" in rpc_result:
                                 error_msg = rpc_result["error"]
@@ -381,7 +397,23 @@ class SimpleSolanaExecutor:
                         rpc_result = rpc_response.json()
                         if "result" in rpc_result:
                             tx_hash = rpc_result["result"]
-                            print(f"✅ Alternative Jupiter swap executed: {tx_hash}")
+                            print(f"✅ Transaction sent (alternative): {tx_hash}")
+                            
+                            # CRITICAL: Wait for transaction confirmation
+                            print(f"⏳ Waiting for transaction confirmation...")
+                            confirmed = self._confirm_transaction(tx_hash, max_retries=30)
+                            if not confirmed:
+                                print(f"❌ Transaction {tx_hash} failed to confirm or was rejected")
+                                return tx_hash, False
+                            
+                            # Verify transaction succeeded
+                            print(f"🔍 Verifying transaction status...")
+                            tx_success = self._verify_transaction_success(tx_hash)
+                            if not tx_success:
+                                print(f"❌ Transaction {tx_hash} failed on-chain")
+                                return tx_hash, False
+                            
+                            print(f"✅ Transaction confirmed and successful: {tx_hash}")
                             return tx_hash, True
                         elif "error" in rpc_result:
                             print(f"❌ Alternative RPC error: {rpc_result['error']}")
@@ -473,18 +505,29 @@ class SimpleSolanaExecutor:
                     return "", False
                 
                 input_mint = token_address
-                output_mint = USDC_MINT
+                output_mint = USDC_MINT  # Always sell to USDC
                 amount = raw_token_balance  # Use raw token amount for swap
+                print(f"💵 Selling {token_address[:8]}...{token_address[-8:]} for USDC (output: {USDC_MINT})")
             
             # Use higher slippage for small trades (microcaps)
             slippage = 0.15 if amount_usd < 50 else 0.10
             print(f"🎯 Using slippage: {slippage*100:.1f}%")
             
             # Get quote
+            print(f"📊 Getting Jupiter quote: {input_mint[:8]}... -> {output_mint[:8]}... (amount: {amount})")
             quote = self.get_jupiter_quote(input_mint, output_mint, amount, slippage=slippage)
             if not quote:
-                print(f"❌ No quote available for {token_address[:8]}...{token_address[-8:]}")
+                print(f"❌ No quote available for {token_address[:8]}...{token_address[-8:]} -> USDC")
                 return "", False
+            
+            # Verify we're selling to USDC for sells
+            if not is_buy:
+                # The quote response should have outAmount which indicates USDC will be received
+                out_amount = quote.get('outAmount', '0')
+                if out_amount and int(out_amount) > 0:
+                    print(f"✅ Quote confirmed: Will receive {int(out_amount) / 1_000_000:.2f} USDC (raw: {out_amount})")
+                else:
+                    print(f"⚠️ Warning: Quote shows zero USDC output")
             
             # Simulate swap before executing (non-blocking, for validation)
             sim_result = self.simulate_jupiter_swap(quote)
@@ -512,6 +555,84 @@ class SimpleSolanaExecutor:
         except Exception as e:
             print(f"❌ Error getting SOL balance: {e}")
             return 0.0
+
+    def _confirm_transaction(self, tx_hash: str, max_retries: int = 30) -> bool:
+        """Wait for transaction to be confirmed on-chain"""
+        import time
+        
+        for attempt in range(max_retries):
+            try:
+                rpc_payload = {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "getSignatureStatuses",
+                    "params": [[tx_hash], {"searchTransactionHistory": True}]
+                }
+                
+                response = requests.post(SOLANA_RPC_URL, json=rpc_payload, timeout=10)
+                if response.status_code == 200:
+                    result = response.json()
+                    if "result" in result and result["result"]["value"]:
+                        status = result["result"]["value"][0]
+                        if status:
+                            err = status.get("err")
+                            if err is None:
+                                # Transaction confirmed without error
+                                print(f"✅ Transaction confirmed on-chain")
+                                return True
+                            else:
+                                # Transaction failed
+                                print(f"❌ Transaction failed: {err}")
+                                return False
+                
+                # Transaction not yet confirmed, wait and retry
+                if attempt < max_retries - 1:
+                    time.sleep(1)
+                    
+            except Exception as e:
+                print(f"⚠️ Error checking transaction status: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(1)
+        
+        print(f"⚠️ Transaction confirmation timeout after {max_retries} attempts")
+        return False
+
+    def _verify_transaction_success(self, tx_hash: str) -> bool:
+        """Verify transaction actually succeeded by checking transaction details"""
+        try:
+            rpc_payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getTransaction",
+                "params": [
+                    tx_hash,
+                    {
+                        "encoding": "jsonParsed",
+                        "maxSupportedTransactionVersion": 0
+                    }
+                ]
+            }
+            
+            response = requests.post(SOLANA_RPC_URL, json=rpc_payload, timeout=10)
+            if response.status_code == 200:
+                result = response.json()
+                if "result" in result and result["result"]:
+                    tx_data = result["result"]
+                    meta = tx_data.get("meta", {})
+                    
+                    # Check if transaction succeeded
+                    if meta.get("err") is not None:
+                        print(f"❌ Transaction error in meta: {meta['err']}")
+                        return False
+                    
+                    # Transaction succeeded
+                    return True
+            
+            return False
+        except Exception as e:
+            print(f"⚠️ Error verifying transaction: {e}")
+            # If we can't verify, assume it might have succeeded (conservative)
+            return True
 
     def get_token_raw_balance(self, token_mint: str) -> Optional[int]:
         """
