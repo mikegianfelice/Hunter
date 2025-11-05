@@ -222,6 +222,7 @@ delisted_tokens.json
 sol_price_cache.json
 .monitor_heartbeat
 .monitor_lock
+.monitor_watchdog.pid
 
 # Secrets and encryption keys
 .secret_key
@@ -230,6 +231,7 @@ sol_price_cache.json
 delisted_tokens.json
 delisted_tokens_backup.json
 data/performance_data.json
+data/balance_cache.json
 performance_data.json
 
 # Runtime data files
