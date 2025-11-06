@@ -13,6 +13,7 @@ from solana.rpc.commitment import Commitment
 import struct
 
 from src.config.secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
+from src.execution.jupiter_lib import JUPITER_API_BASE, JUPITER_HEADERS
 
 # Common token addresses
 WSOL_MINT = "So11111111111111111111111111111111111111112"  # Wrapped SOL
@@ -128,41 +129,36 @@ class SimpleSolanaExecutor:
         NOTE: Jupiter API has changed to api.jup.ag (may require authentication)
         """
         try:
-            url = "https://api.jup.ag/v6/quote"
+            url = f"{JUPITER_API_BASE}/ultra/v1/order"
             params = {
                 "inputMint": input_mint,
                 "outputMint": output_mint,
                 "amount": str(amount),
-                "slippageBps": int(slippage * 10000),  # Convert to basis points
-                "onlyDirectRoutes": "false",
-                "asLegacyTransaction": "false"
+                "slippageBps": int(slippage * 10000),
+                "taker": self.wallet_address
             }
-            
-            response = requests.get(url, params=params, timeout=15)
+
+            response = requests.get(url, params=params, headers=JUPITER_HEADERS, timeout=15)
             if response.status_code == 200:
                 data = response.json()
-                # Jupiter v6 returns quote data directly, not wrapped in "data" field
                 if data and not data.get("error"):
                     print(f"✅ Jupiter quote: {data.get('inAmount', 'N/A')} -> {data.get('outAmount', 'N/A')}")
                     return data
-                else:
-                    error_msg = data.get('error', 'Unknown error')
-                    print(f"⚠️ Jupiter quote failed: {error_msg}")
-                    return {}
-            elif response.status_code == 400:
-                # Try to get more details about the 400 error
+                error_msg = data.get('error', 'Unknown error')
+                print(f"⚠️ Jupiter quote failed: {error_msg}")
+                return {}
+
+            if response.status_code == 400:
                 try:
                     error_data = response.json()
                     error_msg = error_data.get('error', 'Bad Request')
                     print(f"⚠️ Jupiter quote 400 error: {error_msg}")
-                    
-                    # Try with a smaller amount if it's a liquidity issue
-                    if amount > 1000000:  # If amount > 1 USDC
+
+                    if amount > 1_000_000:
                         smaller_amount = amount // 2
                         print(f"🔄 Retrying with smaller amount: {smaller_amount}")
                         params["amount"] = str(smaller_amount)
-                        
-                        retry_response = requests.get(url, params=params, timeout=15)
+                        retry_response = requests.get(url, params=params, headers=JUPITER_HEADERS, timeout=15)
                         if retry_response.status_code == 200:
                             retry_data = retry_response.json()
                             if retry_data and not retry_data.get("error"):
@@ -170,11 +166,11 @@ class SimpleSolanaExecutor:
                                 return retry_data
                 except Exception as e:
                     print(f"⚠️ Could not parse Jupiter 400 error: {e}")
-                
+
                 return {}
-            else:
-                print(f"⚠️ Jupiter quote failed: {response.status_code}")
-                return {}
+
+            print(f"⚠️ Jupiter quote failed: {response.status_code} - {response.text}")
+            return {}
         except Exception as e:
             print(f"❌ Jupiter quote error: {e}")
             return {}
@@ -189,7 +185,7 @@ class SimpleSolanaExecutor:
             if not quote_response:
                 return {}
             
-            url = "https://api.jup.ag/v6/simulate"
+            url = f"{JUPITER_API_BASE}/ultra/v1/simulate"
             payload = {
                 "quoteResponse": quote_response,
                 "userPublicKey": self.wallet_address
@@ -214,7 +210,7 @@ class SimpleSolanaExecutor:
                 return "", False
             
             # Get swap transaction  
-            url = "https://api.jup.ag/v6/swap"
+            url = f"{JUPITER_API_BASE}/ultra/v1/swap"
             payload = {
                 "quoteResponse": quote_response,
                 "userPublicKey": self.wallet_address,
@@ -235,17 +231,16 @@ class SimpleSolanaExecutor:
                     return "", False
                 
                 # Check if we have the transaction data
-                if "swapTransaction" not in swap_data:
+                transaction_data = swap_data.get("transaction") or swap_data.get("swapTransaction")
+                if not transaction_data:
                     print(f"❌ No swap transaction in response: {swap_data}")
                     return "", False
                 
                 # Sign and send transaction
-                transaction_data = swap_data["swapTransaction"]
                 print(f"📝 Transaction data length: {len(transaction_data)}")
                 
                 try:
-                    # For Jupiter v6, we need to properly sign the transaction
-                    print(f"📡 Processing Jupiter v6 transaction...")
+                    print(f"📡 Processing Jupiter Ultra transaction...")
                     
                     # Decode base64 transaction data
                     import base64

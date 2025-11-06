@@ -16,12 +16,14 @@ from ..utils.http_utils import get_json, post_json
 from ..utils.solana_ata_utils import get_associated_token_address
 
 # Jupiter API Configuration
-# Default to free public API: https://lite-api.jup.ag (Ultra API - no API key required)
+# Default to free Ultra API: https://lite-api.jup.ag (no API key required)
 # For paid access, set JUPITER_API_BASE=https://api.jup.ag and JUPITER_API_KEY=your_key
-# Ultra API documentation: https://dev.jup.ag/api-reference/ultra/order
+# Ultra API documentation: https://dev.jup.ag/api-reference/ultra/overview
 JUPITER_API_BASE = os.getenv("JUPITER_API_BASE", "https://lite-api.jup.ag").rstrip("/")
 JUPITER_API_KEY = (os.getenv("JUPITER_API_KEY") or "").strip()
 JUPITER_HEADERS = {"X-API-KEY": JUPITER_API_KEY} if JUPITER_API_KEY else None
+
+WSOL_MINT = "So11111111111111111111111111111111111111112"
 
 class JupiterCustomLib:
     def __init__(self, rpc_url: str, wallet_address: str, private_key: str):
@@ -41,6 +43,76 @@ class JupiterCustomLib:
         except Exception as e:
             print(f"❌ Failed to initialize wallet: {e}")
             self.keypair = None
+
+    @staticmethod
+    def _convert_ui_amount(value: Any, decimals: Optional[int] = None, treat_as_base_units: bool = False) -> Optional[float]:
+        try:
+            if value is None:
+                return None
+            if isinstance(value, (int, float)):
+                if treat_as_base_units and decimals is not None:
+                    return float(value) / (10 ** decimals)
+                return float(value)
+            if isinstance(value, str):
+                stripped = value.strip()
+                if stripped == "":
+                    return None
+                if treat_as_base_units and decimals is not None and stripped.replace("-", "").isdigit():
+                    return int(stripped) / (10 ** decimals)
+                return float(stripped)
+        except (ValueError, TypeError):
+            pass
+        return None
+
+    def _parse_ultra_balance(self, payload: Dict[str, Any]) -> Optional[float]:
+        """
+        Parse Jupiter Ultra balances/holdings response to extract SOL balance.
+        """
+        if not isinstance(payload, dict):
+            return None
+
+        # Some endpoints return uiAmount / amount at the root level
+        root_ui = self._convert_ui_amount(payload.get("uiAmount"))
+        if root_ui is not None:
+            return root_ui
+
+        root_amount = self._convert_ui_amount(payload.get("amount"), decimals=9, treat_as_base_units=True)
+        if root_amount is not None:
+            return root_amount
+
+        # Native balance block
+        native = payload.get("native")
+        if isinstance(native, dict):
+            native_ui = self._convert_ui_amount(native.get("uiAmount"))
+            if native_ui is not None:
+                return native_ui
+            native_amount = native.get("amount")
+            if native_amount is not None:
+                converted = self._convert_ui_amount(native_amount, decimals=9, treat_as_base_units=True)
+                if converted is not None:
+                    return converted
+
+        # Tokens map keyed by mint address
+        tokens = payload.get("tokens") or payload.get("balances") or {}
+        if isinstance(tokens, dict):
+            token_entries = tokens.get(WSOL_MINT) or tokens.get("SOL") or tokens.get("wSOL")
+            if token_entries:
+                if isinstance(token_entries, list):
+                    token_entry = token_entries[0] if token_entries else None
+                else:
+                    token_entry = token_entries
+                if isinstance(token_entry, dict):
+                    decimals = token_entry.get("decimals", 9)
+                    entry_ui = self._convert_ui_amount(token_entry.get("uiAmount"))
+                    if entry_ui is not None:
+                        return entry_ui
+                    entry_amount = token_entry.get("amount")
+                    if entry_amount is not None:
+                        converted = self._convert_ui_amount(entry_amount, decimals=decimals, treat_as_base_units=True)
+                        if converted is not None:
+                            return converted
+
+        return None
 
     def get_quote(self, input_mint: str, output_mint: str, amount: int, slippage: float = 0.15, 
                   route_preferences: Dict[str, Any] = None, use_exactout: bool = False) -> Dict[str, Any]:
@@ -195,8 +267,6 @@ class JupiterCustomLib:
             # Try multiple times with different strategies
             for attempt in range(3):
                 try:
-                    # Use post_json with retry logic for better network error handling
-                    # Include API key header if configured
                     swap_data = post_json(url, payload, headers=JUPITER_HEADERS, timeout=15, retries=2, backoff=1.0)
                     
                     if "transaction" in swap_data and swap_data["transaction"]:
@@ -230,7 +300,6 @@ class JupiterCustomLib:
                         print(f"🔄 Will fallback to Raydium executor...")
                         return ""  # Return early to trigger Raydium fallback
                     
-                    # Try with different parameters on 400 errors
                     if status_code == 400 and attempt < 2:
                         if attempt == 0:
                             print(f"🔄 Trying with minimal accounts...")
@@ -643,12 +712,28 @@ class JupiterCustomLib:
 
     def get_balance(self) -> float:
         """Get SOL balance"""
+        # Preferred path: Jupiter Ultra balances endpoint
         try:
+            url = f"{JUPITER_API_BASE}/ultra/v1/balances/{self.wallet_address}"
+            data = get_json(url, headers=JUPITER_HEADERS, timeout=10, retries=2, backoff=0.5)
+            if data:
+                sol_balance = self._parse_ultra_balance(data)
+                if sol_balance is not None:
+                    return float(sol_balance)
+        except requests.exceptions.HTTPError as e:
+            status = e.response.status_code if hasattr(e, "response") and e.response else None
+            print(f"⚠️ Jupiter Ultra balance HTTP error: {status}")
+        except Exception as e:
+            print(f"⚠️ Jupiter Ultra balance error: {e}")
+
+        # Fallback path: direct RPC call
+        try:
+            wallet_pubkey = str(self.keypair.pubkey()) if self.keypair else self.wallet_address
             rpc_payload = {
                 "jsonrpc": "2.0",
                 "id": 1,
                 "method": "getBalance",
-                "params": [str(self.keypair.pubkey())]
+                "params": [wallet_pubkey]
             }
             
             response = requests.post(self.rpc_url, json=rpc_payload, timeout=10)
@@ -657,10 +742,10 @@ class JupiterCustomLib:
                 if "result" in result and "value" in result["result"]:
                     balance_lamports = result["result"]["value"]
                     return float(balance_lamports) / 1_000_000_000
-            return 0.0
         except Exception as e:
-            print(f"❌ Error getting balance: {e}")
-            return 0.0
+            print(f"❌ Error getting balance via RPC: {e}")
+        
+        return 0.0
 
     def get_sol_balance(self) -> float:
         """Get SOL balance (alias for get_balance)"""
