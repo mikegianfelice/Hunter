@@ -712,12 +712,20 @@ class JupiterCustomLib:
 
     def get_balance(self) -> float:
         """Get SOL balance"""
-        # Preferred path: Jupiter Ultra balances endpoint
+        # Preferred path: Jupiter Ultra holdings endpoint
         try:
-            url = f"{JUPITER_API_BASE}/ultra/v1/balances/{self.wallet_address}"
+            url = f"{JUPITER_API_BASE}/ultra/v1/holdings/{self.wallet_address}"
             data = get_json(url, headers=JUPITER_HEADERS, timeout=10, retries=2, backoff=0.5)
             if data:
-                sol_balance = self._parse_ultra_balance(data)
+                # holdings returns a list under "tokens"; extract SOL entry
+                sol_balance = None
+                if isinstance(data, dict):
+                    sol_balance = self._parse_ultra_balance(data)
+                if sol_balance is None and isinstance(data, list):
+                    for entry in data:
+                        sol_balance = self._parse_ultra_balance(entry)
+                        if sol_balance is not None:
+                            break
                 if sol_balance is not None:
                     return float(sol_balance)
         except requests.exceptions.HTTPError as e:

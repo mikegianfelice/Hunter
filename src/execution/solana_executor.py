@@ -175,34 +175,6 @@ class SimpleSolanaExecutor:
             print(f"❌ Jupiter quote error: {e}")
             return {}
 
-    def simulate_jupiter_swap(self, quote_response: Dict[str, Any]) -> Dict[str, Any]:
-        """Simulate swap transaction before executing (Jupiter v6 /simulate endpoint)
-        
-        This is a dry-run that helps validate the swap before sending it on-chain.
-        Returns simulation results or empty dict if simulation fails.
-        """
-        try:
-            if not quote_response:
-                return {}
-            
-            url = f"{JUPITER_API_BASE}/ultra/v1/simulate"
-            payload = {
-                "quoteResponse": quote_response,
-                "userPublicKey": self.wallet_address
-            }
-            
-            response = requests.post(url, json=payload, timeout=15)
-            if response.status_code == 200:
-                sim_data = response.json()
-                print(f"✅ Simulation successful")
-                return sim_data
-            else:
-                print(f"⚠️ Simulation failed: {response.status_code} - {response.text}")
-                return {}
-        except Exception as e:
-            print(f"⚠️ Simulation error: {e}")
-            return {}
-
     def execute_jupiter_swap(self, quote_response: Dict[str, Any]) -> Tuple[str, bool]:
         """Execute swap using Jupiter"""
         try:
@@ -545,16 +517,6 @@ class SimpleSolanaExecutor:
                     print(f"✅ Quote confirmed: Will receive {int(out_amount) / 1_000_000:.2f} USDC (raw: {out_amount})")
                 else:
                     print(f"⚠️ Warning: Quote shows zero USDC output")
-            
-            # Simulate swap before executing (non-blocking, for validation)
-            print(f"🔍 [SELL DEBUG] Running pre-flight simulation...")
-            sim_result = self.simulate_jupiter_swap(quote)
-            if sim_result:
-                if sim_result.get("error"):
-                    print(f"⚠️ Simulation warning: {sim_result.get('error')}")
-                    print(f"   This may indicate potential issues, but continuing with swap...")
-                else:
-                    print(f"✅ Pre-flight simulation passed")
             
             # Execute swap
             print(f"🔍 [SELL DEBUG] Executing Jupiter swap...")
