@@ -679,6 +679,27 @@ def _sync_only_positions_with_balance():
 
 def monitor_all_positions():
     config = get_monitor_config()
+
+    # First, attempt a Helius-backed reconciliation to ensure on-chain truth.
+    try:
+        from src.core.helius_reconciliation import reconcile_positions_and_pnl
+
+        helius_summary = reconcile_positions_and_pnl()
+        if helius_summary.get("enabled"):
+            closed = helius_summary.get("open_positions_closed", 0)
+            verified = helius_summary.get("open_positions_verified", 0)
+            updated = helius_summary.get("trades_updated", 0)
+            if closed or updated:
+                print(
+                    f"🔁 Helius reconciliation: {verified} verified, "
+                    f"{closed} closed, {updated} trade(s) updated."
+                )
+        else:
+            reason = helius_summary.get("reason")
+            if reason:
+                print(f"ℹ️ Helius reconciliation skipped: {reason}")
+    except Exception as e:
+        print(f"⚠️ Helius reconciliation failed: {e}")
     
     # Load existing positions first (with balance validation to filter out manually closed positions)
     positions = load_positions(validate_balances=True)

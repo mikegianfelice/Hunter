@@ -1,8 +1,16 @@
 import os
 from dotenv import load_dotenv
+from pathlib import Path
 
 # Load environment variables first
-load_dotenv("system/.env")
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+system_env_path = PROJECT_ROOT / "system" / ".env"
+if system_env_path.exists():
+    try:
+        load_dotenv(system_env_path)
+    except PermissionError:
+        print(f"⚠️ Unable to read {system_env_path}, skipping.")
+load_dotenv()
 
 from .secrets_manager import get_secret, get_secrets_manager
 
@@ -20,6 +28,7 @@ if secrets:
     SOLANA_WALLET_ADDRESS = secrets.get("SOLANA_WALLET_ADDRESS")
     SOLANA_PRIVATE_KEY = secrets.get("SOLANA_PRIVATE_KEY")
     BASE_RPC_URL = secrets.get("BASE_RPC_URL", "https://mainnet.base.org")
+    HELIUS_API_KEY = secrets.get("HELIUS_API_KEY")
 else:
     # Fallback to environment variables (for backward compatibility)
     
@@ -34,6 +43,7 @@ else:
     SOLANA_WALLET_ADDRESS = os.getenv("SOLANA_WALLET_ADDRESS")
     SOLANA_PRIVATE_KEY = os.getenv("SOLANA_PRIVATE_KEY")
     BASE_RPC_URL = os.getenv("BASE_RPC_URL", "https://mainnet.base.org")
+    HELIUS_API_KEY = os.getenv("HELIUS_API_KEY")
 
 # Validate required secrets
 def validate_secrets():

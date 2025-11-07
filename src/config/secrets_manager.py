@@ -136,9 +136,10 @@ class SecretsManager:
             # Fallback to individual environment variables
             secret_data = {}
             expected_keys = [
-                "PRIVATE_KEY", "WALLET_ADDRESS", "SOLANA_PRIVATE_KEY", 
-                "SOLANA_WALLET_ADDRESS", "INFURA_URL", "BASE_RPC_URL", 
-                "SOLANA_RPC_URL", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"
+                "PRIVATE_KEY", "WALLET_ADDRESS", "SOLANA_PRIVATE_KEY",
+                "SOLANA_WALLET_ADDRESS", "INFURA_URL", "BASE_RPC_URL",
+                "SOLANA_RPC_URL", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
+                "HELIUS_API_KEY"
             ]
             
             for key in expected_keys:
