@@ -8,11 +8,46 @@ import json
 import time
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Optional, List
+from typing import Any, Dict, Optional, List, Tuple
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PERFORMANCE_DATA_FILE = PROJECT_ROOT / "data" / "performance_data.json"
 OPEN_POSITIONS_FILE = PROJECT_ROOT / "data" / "open_positions.json"
+
+
+def create_position_key(
+    token_address: str,
+    *,
+    trade_id: Optional[str] = None,
+    entry_time: Optional[str] = None,
+) -> str:
+    """Create the canonical key for entries in open_positions.json."""
+    address = (token_address or "").strip()
+
+    if not address:
+        raise ValueError("token_address is required to build a position key")
+
+    return address
+
+
+def split_position_key(position_key: str) -> Tuple[str, Optional[str]]:
+    """Split a canonical position key back into address and suffix."""
+    if "_" not in position_key:
+        return position_key, None
+
+    address, suffix = position_key.split("_", 1)
+    return address, suffix
+
+
+def resolve_token_address(position_key: str, position_data: Any) -> str:
+    """Resolve the token address represented by a position entry."""
+    if isinstance(position_data, dict):
+        explicit = position_data.get("address")
+        if explicit:
+            return explicit
+
+    address, _ = split_position_key(position_key)
+    return address
 
 
 def _check_token_balance_on_chain(token_address: str, chain_id: str) -> float:
@@ -71,21 +106,82 @@ def _check_token_balance_on_chain(token_address: str, chain_id: str) -> float:
         return -1.0
 
 
-def sync_position_from_performance_data(token_address: str, symbol: str, chain_id: str, entry_price: float, position_size_usd: float = None) -> bool:
-    """Manually sync a position to open_positions.json (legacy function for backward compatibility)"""
-    # Use address as key for backward compatibility
+def sync_position_from_performance_data(
+    token_address: str,
+    symbol: str,
+    chain_id: str,
+    entry_price: float,
+    position_size_usd: float = None,
+) -> bool:
+    """Manually sync a position to open_positions.json (legacy function)."""
+
+    trade_id = None
+    entry_time = None
+    if PERFORMANCE_DATA_FILE.exists():
+        try:
+            with open(PERFORMANCE_DATA_FILE, "r") as f:
+                perf_data = json.load(f)
+            trades = perf_data.get("trades", [])
+            matching_trades = [
+                t
+                for t in trades
+                if t.get("address", "").lower() == token_address.lower()
+                and t.get("status") == "open"
+            ]
+            if matching_trades:
+                matching_trades.sort(key=lambda x: x.get("entry_time", ""), reverse=True)
+                latest_trade = matching_trades[0]
+                trade_id = latest_trade.get("id")
+                entry_time = latest_trade.get("entry_time")
+                if position_size_usd is None:
+                    position_size_usd = latest_trade.get("position_size_usd", 0.0)
+        except Exception:
+            pass
+
+    position_key = create_position_key(
+        token_address,
+        trade_id=trade_id,
+        entry_time=entry_time,
+    )
+
     return sync_position_from_performance_data_with_key(
-        token_address, token_address, symbol, chain_id, entry_price, position_size_usd
+        position_key,
+        token_address,
+        symbol,
+        chain_id,
+        entry_price,
+        position_size_usd,
+        trade_id,
+        entry_time,
     )
 
 
-def sync_position_from_performance_data_with_key(position_key: str, token_address: str, symbol: str, chain_id: str, entry_price: float, position_size_usd: float = None, trade_id: str = None, verify_balance: bool = True) -> bool:
+def sync_position_from_performance_data_with_key(
+    position_key: str,
+    token_address: str,
+    symbol: str,
+    chain_id: str,
+    entry_price: float,
+    position_size_usd: float = None,
+    trade_id: str = None,
+    entry_time: Optional[str] = None,
+    verify_balance: bool = True,
+) -> bool:
     """
     Manually sync a position to open_positions.json with a custom key.
     If verify_balance is True (default), checks wallet balance before syncing.
     Returns False if balance check fails (zero balance or check error).
     """
     try:
+        # Align key with canonical schema (address_tradeId or address_entryTime)
+        canonical_key = create_position_key(
+            token_address,
+            trade_id=trade_id,
+            entry_time=entry_time,
+        )
+        if position_key != canonical_key:
+            position_key = canonical_key
+
         # CRITICAL: Check wallet balance BEFORE syncing to prevent manually closed positions from being added
         if verify_balance:
             balance = _check_token_balance_on_chain(token_address, chain_id)
@@ -266,14 +362,11 @@ def sync_all_open_positions(verify_balances: bool = True) -> Dict[str, bool]:
                 continue
             
             # Create composite key to support multiple positions per token
-            # Use trade_id if available, otherwise use address_entrytime
-            if trade_id:
-                # Use trade_id as part of the key to make it unique
-                # Format: "address_tradeid" for tracking, but keep address accessible
-                position_key = f"{address}_{trade_id}"
-            else:
-                # Fallback: use address with entry_time
-                position_key = f"{address}_{entry_time.replace(':', '-')}"
+            position_key = create_position_key(
+                address,
+                trade_id=trade_id,
+                entry_time=entry_time,
+            )
             
             # Skip if already tracked
             if position_key in open_positions:
@@ -301,7 +394,15 @@ def sync_all_open_positions(verify_balances: bool = True) -> Dict[str, bool]:
             
             # Sync position with composite key (verify_balance is passed through)
             success = sync_position_from_performance_data_with_key(
-                position_key, address, symbol, chain, entry_price, position_size_usd, trade_id, verify_balance=verify_balances
+                position_key,
+                address,
+                symbol,
+                chain,
+                entry_price,
+                position_size_usd,
+                trade_id,
+                entry_time,
+                verify_balance=verify_balances,
             )
             results[position_key] = success
             if success:
@@ -525,14 +626,12 @@ def reconcile_wallet_with_positions(
             for position_key, position_data in list(open_positions.items()):
                 if isinstance(position_data, dict):
                     chain_id = position_data.get("chain_id", "ethereum").lower()
-                    token_address = position_data.get("address", position_key)
-                    if "_" in position_key and not position_data.get("address"):
-                        token_address = position_key.split("_")[0]
                     symbol = position_data.get("symbol", "?")
                 else:
                     chain_id = "ethereum"
-                    token_address = position_key
                     symbol = "?"
+
+                token_address = resolve_token_address(position_key, position_data)
                 
                 # Check if token is in wallet
                 token_address_lower = token_address.lower()
@@ -566,13 +665,7 @@ def reconcile_wallet_with_positions(
                 # Check if this token is already tracked
                 already_tracked = False
                 for position_key, position_data in open_positions.items():
-                    if isinstance(position_data, dict):
-                        pos_address = position_data.get("address", position_key).lower()
-                        if "_" in position_key and not position_data.get("address"):
-                            pos_address = position_key.split("_")[0].lower()
-                    else:
-                        pos_address = position_key.lower()
-                    
+                    pos_address = resolve_token_address(position_key, position_data).lower()
                     if pos_address == token_address_lower:
                         already_tracked = True
                         break
@@ -582,33 +675,35 @@ def reconcile_wallet_with_positions(
                     # Use current price as entry price (best guess)
                     entry_price = price_usd if price_usd > 0 else 0.0
                     position_size_usd = balance * price_usd if price_usd > 0 else 0.0
-                    
-                    # Create position key
-                    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    position_key = f"{token_address}_{symbol}_{timestamp_str}"
-                    
+
+                    timestamp = datetime.now()
+                    timestamp_str = timestamp.strftime("%Y%m%d_%H%M%S")
+                    entry_time = timestamp.isoformat()
+                    trade_id = f"{symbol}_{timestamp_str}"
+                    position_key = create_position_key(token_address, trade_id=trade_id)
+
                     # Add to open_positions
                     position_data = {
                         "entry_price": entry_price,
                         "chain_id": chain_id,
                         "symbol": symbol,
                         "address": token_address,
-                        "timestamp": datetime.now().isoformat(),
+                        "timestamp": entry_time,
                         "position_size_usd": position_size_usd,
                         "discovered": True,  # Flag to indicate this was auto-discovered
-                        "entry_price_estimated": True  # Flag to indicate entry price is estimated
+                        "entry_price_estimated": True,  # Flag to indicate entry price is estimated
+                        "trade_id": trade_id,
                     }
-                    
+
                     open_positions[position_key] = position_data
-                    
+
                     # Add to performance_data as an open trade
-                    trade_id = f"{symbol}_{timestamp_str}"
                     trade = {
                         "id": trade_id,
                         "symbol": symbol,
                         "address": token_address,
                         "chain": chain_id,
-                        "entry_time": datetime.now().isoformat(),
+                        "entry_time": entry_time,
                         "entry_price": entry_price,
                         "position_size_usd": position_size_usd,
                         "quality_score": 0.0,  # Unknown quality for discovered positions
@@ -627,15 +722,7 @@ def reconcile_wallet_with_positions(
                     
                     trades.append(trade)
                     perf_data["trades"] = trades
-                    
-                    # Update position key to include trade_id
-                    position_data["trade_id"] = trade_id
-                    # Update the key to use trade_id format
-                    new_position_key = f"{token_address}_{trade_id}"
-                    open_positions[new_position_key] = position_data
-                    if position_key != new_position_key:
-                        open_positions.pop(position_key, None)
-                    
+ 
                     results["added"] += 1
                     print(f"✅ Discovered new position: {symbol} ({token_address[:8]}...{token_address[-8:]}) - balance: {balance:.6f}, value: ${position_size_usd:.2f}")
         
@@ -696,6 +783,109 @@ def update_open_positions_from_wallet() -> Dict:
         import traceback
         print(traceback.format_exc())
         return {"added": 0, "removed": 0, "updated": 0, "errors": [str(e)]}
+
+
+def migrate_open_positions_to_canonical_keys(dry_run: bool = False) -> Dict[str, int]:
+    """Re-key open_positions.json entries using the canonical schema."""
+
+    stats = {"rekeyed": 0, "deduped": 0, "converted": 0, "errors": 0}
+
+    if not OPEN_POSITIONS_FILE.exists():
+        return stats
+
+    try:
+        with open(OPEN_POSITIONS_FILE, "r") as fh:
+            positions = json.load(fh) or {}
+    except (json.JSONDecodeError, OSError) as exc:
+        stats["errors"] += 1
+        print(f"⚠️ Failed to load open_positions.json for migration: {exc}")
+        return stats
+
+    perf_trades: List[Dict[str, Any]] = []
+    if PERFORMANCE_DATA_FILE.exists():
+        try:
+            with open(PERFORMANCE_DATA_FILE, "r") as fh:
+                perf_payload = json.load(fh) or {}
+                perf_trades = perf_payload.get("trades", []) or []
+        except (json.JSONDecodeError, OSError):
+            perf_trades = []
+
+    def _match_trade_id(address: str, chain_id: str) -> Optional[str]:
+        candidates = [
+            t
+            for t in perf_trades
+            if (t.get("address", "").lower() == address.lower())
+            and (t.get("status", "").lower() == "open")
+            and (not chain_id or t.get("chain", "").lower() == chain_id.lower())
+        ]
+        if not candidates:
+            return None
+        candidates.sort(key=lambda x: x.get("entry_time", ""), reverse=True)
+        return candidates[0].get("id")
+
+    def _timestamp_weight(ts: Optional[str]) -> float:
+        if not ts:
+            return 0.0
+        try:
+            return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            return 0.0
+
+    new_positions: Dict[str, Any] = {}
+
+    for original_key, raw_value in positions.items():
+        if isinstance(raw_value, dict):
+            position_data = dict(raw_value)
+        else:
+            stats["converted"] += 1
+            position_data = {
+                "entry_price": float(raw_value or 0.0),
+                "chain_id": "ethereum",
+                "symbol": "?",
+            }
+
+        address = resolve_token_address(original_key, position_data)
+        suffix = split_position_key(original_key)[1]
+        chain_id = position_data.get("chain_id", "ethereum")
+
+        trade_id = position_data.get("trade_id")
+        if not trade_id:
+            trade_id = _match_trade_id(address, chain_id)
+            if trade_id:
+                position_data["trade_id"] = trade_id
+
+        entry_time = position_data.get("timestamp") or suffix
+
+        position_data["address"] = address
+
+        canonical_key = create_position_key(
+            address,
+            trade_id=trade_id,
+            entry_time=entry_time,
+        )
+
+        if canonical_key != original_key:
+            stats["rekeyed"] += 1
+
+        existing = new_positions.get(canonical_key)
+        if existing:
+            stats["deduped"] += 1
+            existing_ts = existing.get("timestamp") if isinstance(existing, dict) else None
+            candidate_ts = position_data.get("timestamp")
+            if _timestamp_weight(candidate_ts) >= _timestamp_weight(existing_ts):
+                new_positions[canonical_key] = position_data
+        else:
+            new_positions[canonical_key] = position_data
+
+    if dry_run or new_positions == positions:
+        return stats
+
+    temp_file = OPEN_POSITIONS_FILE.with_suffix(".tmp")
+    with open(temp_file, "w") as fh:
+        json.dump(new_positions, fh, indent=2)
+    temp_file.replace(OPEN_POSITIONS_FILE)
+
+    return stats
 
 
 if __name__ == "__main__":

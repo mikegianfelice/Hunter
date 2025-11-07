@@ -12,6 +12,7 @@ from web3 import Web3
 
 from src.config.secrets import INFURA_URL, WALLET_ADDRESS, SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
 from src.utils.utils import get_eth_price_usd
+from src.utils.position_sync import create_position_key
 from src.monitoring.telegram_bot import send_telegram_message
 from src.config.config_loader import get_config, get_config_bool, get_config_float
 from src.monitoring.logger import log_event
@@ -135,7 +136,7 @@ def _atomic_write_json(path: Path):
         except Exception:
             pass
 
-def _log_position(token: dict):
+def _log_position(token: dict, *, trade_id: Optional[str] = None, entry_time: Optional[str] = None):
     _ensure_positions_file()
     try:
         data = json.loads(Path(POSITIONS_FILE).read_text() or "{}")
@@ -144,27 +145,35 @@ def _log_position(token: dict):
     addr = token["address"]
     entry = float(token.get("priceUsd") or 0.0)
     chain_id = token.get("chainId", "ethereum").lower()
+    timestamp = entry_time or datetime.now().isoformat()
+    position_key = create_position_key(addr, trade_id=trade_id, entry_time=timestamp)
     
     # Store position with chain information
     position_data = {
         "entry_price": entry,
         "chain_id": chain_id,
         "symbol": token.get("symbol", "?"),
-        "timestamp": datetime.now().isoformat()
+        "timestamp": timestamp,
+        "address": addr,
     }
     
     # Include position_size_usd if provided
     if "position_size_usd" in token:
         position_data["position_size_usd"] = float(token["position_size_usd"])
+
+    if trade_id:
+        position_data["trade_id"] = trade_id
     
-    data[addr] = position_data
+    data[position_key] = position_data
     
     # Atomic write to prevent corruption in concurrent environments
     target = Path(POSITIONS_FILE)
     with _atomic_write_json(target) as f:
         f.write(json.dumps(data, indent=2))
     try:
-        print(f"📝 Logged position: {token.get('symbol','?')} ({addr}) on {chain_id.upper()} @ ${entry:.6f}")
+        print(
+            f"📝 Logged position: {token.get('symbol','?')} ({addr}) on {chain_id.upper()} @ ${entry:.6f}"
+        )
     except BrokenPipeError:
         pass
 
@@ -518,24 +527,45 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
                 transactions=successful_txs,
             )
             
-            # Log position for monitoring (use total successful amount)
-            _log_position(token)
-            _launch_monitor_detached()
-            
+            # Prepare token payloads for downstream logging
+            token_for_logging = dict(token)
+            if "chainId" not in token_for_logging:
+                token_for_logging["chainId"] = chain_id
+            token_for_logging["position_size_usd"] = total_successful_amount or amount_usd
+
+            trade_id = None
+
             # Log trade entry to performance tracker for status reports and analytics
             try:
                 from src.core.performance_tracker import performance_tracker
-                # Get quality score if available in token data
+
                 quality_score = float(token.get("quality_score", 0.0))
-                # Ensure token has required fields
-                pt_token = dict(token)
-                if "chainId" not in pt_token:
-                    pt_token["chainId"] = chain_id
-                # Log to performance tracker
-                performance_tracker.log_trade_entry(pt_token, total_successful_amount or amount_usd, quality_score)
-                log_event("trade.performance_logged", symbol=symbol)
+                trade_id = performance_tracker.log_trade_entry(
+                    token_for_logging,
+                    total_successful_amount or amount_usd,
+                    quality_score,
+                )
+                log_event("trading.performance_logged", symbol=symbol)
             except Exception as e:
-                log_event("trade.performance_log_error", level="WARNING", symbol=symbol, error=str(e))
+                log_event(
+                    "trading.performance_log_error",
+                    level="WARNING",
+                    symbol=symbol,
+                    error=str(e),
+                )
+
+            # Log position for monitoring (use canonical key schema)
+            try:
+                _log_position(token_for_logging, trade_id=trade_id)
+            except Exception as e:
+                log_event(
+                    "trading.position_log_error",
+                    level="WARNING",
+                    symbol=symbol,
+                    error=str(e),
+                )
+
+            _launch_monitor_detached()
             
             return successful_txs[0], True  # Return first transaction hash
         else:

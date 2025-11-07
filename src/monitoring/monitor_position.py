@@ -20,7 +20,13 @@ from src.execution.solana_executor import sell_token_solana
 from src.utils.utils import fetch_token_price_usd
 from src.monitoring.telegram_bot import send_telegram_message
 from src.config.config_loader import get_config, get_config_float
-from src.utils.position_sync import sync_all_open_positions, update_open_positions_from_wallet
+from src.utils.position_sync import (
+    sync_all_open_positions,
+    update_open_positions_from_wallet,
+    create_position_key,
+    resolve_token_address,
+    split_position_key,
+)
 
 # Dynamic config loading
 def get_monitor_config():
@@ -140,11 +146,7 @@ def load_positions(validate_balances: bool = False):
         # Handle both old format (float) and new format (dict)
         if isinstance(position_data, dict):
             chain_id = position_data.get("chain_id", "ethereum").lower()
-            # Extract actual token address from position data (for composite keys)
-            token_address = position_data.get("address", position_key)
-            # If position_key is composite (address_tradeid), extract just the address part
-            if "_" in position_key and not position_data.get("address"):
-                token_address = position_key.split("_")[0]
+            token_address = resolve_token_address(position_key, position_data)
         else:
             chain_id = "ethereum"
             token_address = position_key  # Legacy format uses address as key
@@ -170,6 +172,18 @@ def load_positions(validate_balances: bool = False):
     return validated_positions
 
 def save_positions(positions):
+    # Validate that every key matches the canonical schema when we have metadata.
+    for key, value in positions.items():
+        if isinstance(value, dict):
+            canonical_key = create_position_key(
+                resolve_token_address(key, value),
+                trade_id=value.get("trade_id"),
+                entry_time=value.get("timestamp") or split_position_key(key)[1],
+            )
+            if canonical_key != key:
+                raise ValueError(
+                    f"Non-canonical position key detected: {key} (expected {canonical_key})"
+                )
     POSITIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(POSITIONS_FILE, "w") as f:
         json.dump(positions, f, indent=2)
@@ -486,12 +500,7 @@ def _prune_positions_with_zero_balance(positions: dict) -> Tuple[dict, list]:
         if isinstance(position_data, dict):
             chain_id = position_data.get("chain_id", "ethereum").lower()
             symbol = position_data.get("symbol", "?")
-            # Extract actual token address from position data (for composite keys)
-            # If address field exists, use it; otherwise fallback to position_key
-            token_address = position_data.get("address", position_key)
-            # If position_key is composite (address_tradeid), extract just the address part
-            if "_" in position_key and not position_data.get("address"):
-                token_address = position_key.split("_")[0]
+            token_address = resolve_token_address(position_key, position_data)
         else:
             chain_id = "ethereum"
             symbol = "?"
@@ -629,11 +638,11 @@ def _sync_only_positions_with_balance():
             
             # Check if position already exists in open_positions
             # Create composite key same as position_sync.py
-            if trade_id:
-                position_key = f"{address}_{trade_id}"
-            else:
-                entry_time = trade.get("entry_time", "")
-                position_key = f"{address}_{entry_time.replace(':', '-')}"
+            position_key = create_position_key(
+                address,
+                trade_id=trade_id,
+                entry_time=trade.get("entry_time", ""),
+            )
             
             # Skip if already tracked
             if position_key in open_positions:
@@ -663,7 +672,14 @@ def _sync_only_positions_with_balance():
                 entry_price = float(trade.get("entry_price", 0))
                 position_size_usd = trade.get("position_size_usd", 0.0)
                 if sync_position_from_performance_data_with_key(
-                    position_key, address, symbol, chain, entry_price, position_size_usd, trade_id
+                    position_key,
+                    address,
+                    symbol,
+                    chain,
+                    entry_price,
+                    position_size_usd,
+                    trade_id,
+                    trade.get("entry_time", ""),
                 ):
                     synced_count += 1
         
@@ -726,9 +742,7 @@ def monitor_all_positions():
                             chain_id = old_position_data.get("chain_id", "ethereum")
                             entry_price = float(old_position_data.get("entry_price", 0))
                             # Extract actual token address
-                            token_address = old_position_data.get("address", position_key)
-                            if "_" in position_key and not token_address:
-                                token_address = position_key.split("_")[0]
+                            token_address = resolve_token_address(position_key, old_position_data)
                         else:
                             chain_id = "ethereum"
                             entry_price = float(old_position_data) if old_position_data else 0
@@ -783,10 +797,7 @@ def monitor_all_positions():
             chain_id = position_data.get("chain_id", "ethereum").lower()
             symbol = position_data.get("symbol", "?")
             # Extract actual token address from position data (for composite keys)
-            token_address = position_data.get("address", position_key)
-            # If position_key is composite (address_tradeid), extract just the address part
-            if "_" in position_key and not position_data.get("address"):
-                token_address = position_key.split("_")[0]
+            token_address = resolve_token_address(position_key, position_data)
             trade_id = position_data.get("trade_id")
         else:
             # Legacy format - assume Ethereum

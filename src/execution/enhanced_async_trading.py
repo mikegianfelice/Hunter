@@ -668,36 +668,8 @@ class EnhancedAsyncTradingEngine:
                     except Exception as e:
                         log_error("trading.register_buy_error", f"Failed to register buy: {e}")
                     
-                    # Log position to open_positions.json and launch monitor
-                    # CRITICAL: This must succeed - retry if needed
-                    position_logged = False
-                    max_retries = 3
-                    for attempt in range(max_retries):
-                        try:
-                            from src.execution.multi_chain_executor import _log_position, _launch_monitor_detached
-                            # Prepare token data in format expected by _log_position
-                            position_token = {
-                                "address": address,
-                                "priceUsd": float(token.get("priceUsd") or 0.0),
-                                "chainId": chain,  # Use chainId key as expected by _log_position
-                                "symbol": symbol,
-                                "position_size_usd": position_size  # Include position size
-                            }
-                            _log_position(position_token)
-                            _launch_monitor_detached()
-                            position_logged = True
-                            log_info("trading.position_logged", f"✅ Position logged for {symbol} on {chain}")
-                            break  # Success - exit retry loop
-                        except Exception as e:
-                            log_error("trading.position_log_error", f"Failed to log position for {symbol} (attempt {attempt + 1}/{max_retries}): {e}")
-                            if attempt < max_retries - 1:
-                                time.sleep(0.5)  # Brief delay before retry
-                    
-                    # If position logging still failed after retries, we'll sync from performance_data
-                    # after it's logged there (see below in performance tracker section)
-                    position_needs_sync = not position_logged
-                    
                     # Log trade entry to performance tracker for status reports and analytics
+                    trade_id = None
                     try:
                         from src.core.performance_tracker import performance_tracker
                         quality_score = token.get('ai_analysis', {}).get('quality_score', 0.0)
@@ -712,10 +684,47 @@ class EnhancedAsyncTradingEngine:
                         }
                         # Include fee data if available
                         fee_data = trade_result.get('fee_data', {})
-                        performance_tracker.log_trade_entry(pt_token, position_size, quality_score, additional_data=fee_data)
+                        trade_id = performance_tracker.log_trade_entry(pt_token, position_size, quality_score, additional_data=fee_data)
                         log_info("trading.performance_logged", f"✅ Trade entry logged to performance tracker for {symbol}")
                     except Exception as e:
                         log_error("trading.performance_log_error", f"Failed to log trade entry for {symbol}: {e}")
+                    
+                    # Log position to open_positions.json and launch monitor
+                    # CRITICAL: This must succeed - retry if needed
+                    position_logged = False
+                    max_retries = 3
+                    position_token = {
+                        "address": address,
+                        "priceUsd": float(token.get("priceUsd") or 0.0),
+                        "chainId": chain,
+                        "symbol": symbol,
+                        "position_size_usd": position_size,
+                    }
+                    try:
+                        from src.execution.multi_chain_executor import _log_position, _launch_monitor_detached
+                        for attempt in range(max_retries):
+                            try:
+                                _log_position(position_token, trade_id=trade_id)
+                                _launch_monitor_detached()
+                                position_logged = True
+                                log_info("trading.position_logged", f"✅ Position logged for {symbol} on {chain}")
+                                break  # Success - exit retry loop
+                            except Exception as e:
+                                log_error(
+                                    "trading.position_log_error",
+                                    f"Failed to log position for {symbol} (attempt {attempt + 1}/{max_retries}): {e}"
+                                )
+                                if attempt < max_retries - 1:
+                                    time.sleep(0.5)  # Brief delay before retry
+                    except Exception as import_error:
+                        log_error(
+                            "trading.position_log_error",
+                            f"Failed to import position logger for {symbol}: {import_error}"
+                        )
+                    
+                    # If position logging still failed after retries, we'll sync from performance_data
+                    # after it's logged there (see below in performance tracker section)
+                    position_needs_sync = (not position_logged) or (trade_id is None)
                     
                     # Record metrics
                     record_trade_metrics(
