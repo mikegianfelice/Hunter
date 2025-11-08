@@ -5,55 +5,25 @@ Lightweight trade-intent idempotency store to avoid duplicate executions.
 from __future__ import annotations
 
 import hashlib
-import json
 import threading
 import time
 from dataclasses import dataclass, asdict, field
-from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from src.monitoring.structured_logger import log_info, log_warning
-
-INTENT_STORE = Path("data/trade_intents.json")
-_LOCK = threading.Lock()
-_DEFAULT_DUPLICATE_TTL_SECONDS = 900  # 15 minutes
-_RETENTION_SECONDS = 24 * 3600        # keep history for 24h for auditing
-
+from src.storage.intents import (
+    get_trade_intent,
+    upsert_trade_intent,
+    prune_trade_intents,
+)
 
 def _now() -> float:
     return time.time()
 
 
-def _load_store() -> Dict[str, Dict[str, Any]]:
-    if not INTENT_STORE.exists():
-        return {}
-    try:
-        with INTENT_STORE.open("r") as fh:
-            data = json.load(fh) or {}
-            if isinstance(data, dict):
-                return data
-    except Exception:
-        pass
-    return {}
-
-
-def _atomic_write(data: Dict[str, Dict[str, Any]]) -> None:
-    INTENT_STORE.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = INTENT_STORE.with_suffix(".tmp")
-    with tmp_path.open("w") as fh:
-        json.dump(data, fh, indent=2)
-    tmp_path.replace(INTENT_STORE)
-
-
-def _prune(store: Dict[str, Dict[str, Any]]) -> None:
-    now = _now()
-    stale = [
-        key
-        for key, entry in store.items()
-        if now - entry.get("updated_at", entry.get("created_at", now)) > _RETENTION_SECONDS
-    ]
-    for key in stale:
-        store.pop(key, None)
+_DEFAULT_DUPLICATE_TTL_SECONDS = 900  # 15 minutes
+_RETENTION_SECONDS = 24 * 3600        # keep history for 24h for auditing
+_LOCK = threading.Lock()
 
 
 @dataclass
@@ -104,9 +74,8 @@ def register_trade_intent(intent: TradeIntent, duplicate_ttl_seconds: int = _DEF
     Store a trade intent. Returns (registered, existing_entry_if_duplicate).
     """
     with _LOCK:
-        store = _load_store()
-        _prune(store)
-        existing = store.get(intent.intent_id)
+        prune_trade_intents(_now() - _RETENTION_SECONDS)
+        existing = get_trade_intent(intent.intent_id)
         now = _now()
         if existing:
             age = now - existing.get("created_at", now)
@@ -126,8 +95,7 @@ def register_trade_intent(intent: TradeIntent, duplicate_ttl_seconds: int = _DEF
                 return False, existing
 
         entry = intent.serialise()
-        store[intent.intent_id] = entry
-        _atomic_write(store)
+        upsert_trade_intent(intent.intent_id, entry)
         log_info(
             "idempotency.intent.registered",
             "Registered trade intent",
@@ -143,14 +111,12 @@ def register_trade_intent(intent: TradeIntent, duplicate_ttl_seconds: int = _DEF
 
 def _update_intent(intent_id: str, **updates: Any) -> None:
     with _LOCK:
-        store = _load_store()
-        entry = store.get(intent_id)
+        entry = get_trade_intent(intent_id)
         if not entry:
             return
         entry.update(updates)
         entry["updated_at"] = _now()
-        store[intent_id] = entry
-        _atomic_write(store)
+        upsert_trade_intent(intent_id, entry)
 
 
 def mark_trade_intent_pending(intent_id: str) -> None:
