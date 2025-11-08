@@ -12,7 +12,7 @@ from web3 import Web3
 
 from src.config.secrets import INFURA_URL, WALLET_ADDRESS, SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
 from src.utils.utils import get_eth_price_usd
-from src.utils.position_sync import create_position_key
+from src.utils.position_sync import create_position_key, is_native_gas_token
 from src.monitoring.telegram_bot import send_telegram_message
 from src.config.config_loader import get_config, get_config_bool, get_config_float
 from src.monitoring.logger import log_event
@@ -146,7 +146,16 @@ def _log_position(token: dict, *, trade_id: Optional[str] = None, entry_time: Op
     entry = float(token.get("priceUsd") or 0.0)
     chain_id = token.get("chainId", "ethereum").lower()
     timestamp = entry_time or datetime.now().isoformat()
-    position_key = create_position_key(addr, trade_id=trade_id, entry_time=timestamp)
+    if is_native_gas_token(addr, token.get("symbol"), chain_id):
+        try:
+            print(
+                f"⛽️ Skipping native gas token {token.get('symbol','?')} ({addr}) on "
+                f"{chain_id.upper()} - not logging to open_positions"
+            )
+        except BrokenPipeError:
+            pass
+        return
+    position_key = create_position_key(addr)
     
     # Store position with chain information
     position_data = {

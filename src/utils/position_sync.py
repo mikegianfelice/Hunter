@@ -14,6 +14,41 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PERFORMANCE_DATA_FILE = PROJECT_ROOT / "data" / "performance_data.json"
 OPEN_POSITIONS_FILE = PROJECT_ROOT / "data" / "open_positions.json"
 
+_EXCLUDED_MINTS_BY_CHAIN = {
+    "solana": {
+        "so11111111111111111111111111111111111111112",  # SOL / wSOL
+        "epjfwdd5aufqssqem2qn1xzybapc8g4weggkzwytdt1v",  # USDC
+        "es9vmfrzacermjfrf4h2fyd4kconky11mcce8benwnyb",  # USDT
+    },
+}
+
+_EXCLUDED_SYMBOLS_BY_CHAIN = {
+    "solana": {"SOL", "WSOL", "USDC", "USDT"},
+}
+
+
+def is_native_gas_token(
+    token_address: Optional[str],
+    symbol: Optional[str],
+    chain_id: Optional[str],
+) -> bool:
+    """
+    Return True when the token represents a native gas asset that we should never
+    track as an open position (e.g., SOL used for fees).
+    """
+    chain_lower = (chain_id or "").strip().lower()
+    address_lower = (token_address or "").strip().lower()
+    symbol_upper = (symbol or "").strip().upper()
+
+    excluded_mints = _EXCLUDED_MINTS_BY_CHAIN.get(chain_lower, set())
+    excluded_symbols = _EXCLUDED_SYMBOLS_BY_CHAIN.get(chain_lower, set())
+
+    if address_lower and address_lower in excluded_mints:
+        return True
+    if symbol_upper and symbol_upper in excluded_symbols:
+        return True
+
+    return False
 
 def create_position_key(
     token_address: str,
@@ -21,17 +56,28 @@ def create_position_key(
     trade_id: Optional[str] = None,
     entry_time: Optional[str] = None,
 ) -> str:
-    """Create the canonical key for entries in open_positions.json."""
+    """
+    Create the canonical key for entries in open_positions.json.
+
+    Keys are the normalized token mint/address (lowercase). The optional arguments
+    remain for backward compatibility with older call sites but no longer affect
+    the generated key.
+    """
     address = (token_address or "").strip()
 
     if not address:
         raise ValueError("token_address is required to build a position key")
 
-    return address
+    return address.lower()
 
 
 def split_position_key(position_key: str) -> Tuple[str, Optional[str]]:
-    """Split a canonical position key back into address and suffix."""
+    """
+    Split a legacy composite key back into address and suffix.
+
+    Mint-only keys simply return (key, None). The legacy suffix (trade/timestamp)
+    is preserved for migration scenarios.
+    """
     if "_" not in position_key:
         return position_key, None
 
@@ -173,7 +219,7 @@ def sync_position_from_performance_data_with_key(
     Returns False if balance check fails (zero balance or check error).
     """
     try:
-        # Align key with canonical schema (address_tradeId or address_entryTime)
+        # Align key with canonical schema (mint-only)
         canonical_key = create_position_key(
             token_address,
             trade_id=trade_id,
@@ -181,6 +227,44 @@ def sync_position_from_performance_data_with_key(
         )
         if position_key != canonical_key:
             position_key = canonical_key
+
+        OPEN_POSITIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+        # Load existing positions once for both skip and update flows.
+        if OPEN_POSITIONS_FILE.exists():
+            try:
+                with open(OPEN_POSITIONS_FILE, "r") as f:
+                    positions = json.load(f) or {}
+            except (json.JSONDecodeError, IOError):
+                positions = {}
+        else:
+            positions = {}
+
+        # Never track native gas/base tokens (e.g., SOL / USDC on Solana).
+        if is_native_gas_token(token_address, symbol, chain_id):
+            print(
+                f"⛽️ Skipping native gas token {symbol or token_address} "
+                f"on {chain_id.upper()} - not tracked in open_positions"
+            )
+
+            removed = False
+            normalized_address = (token_address or "").lower()
+            # Remove any existing entries that map to the same token.
+            for existing_key, existing_value in list(positions.items()):
+                resolved_address = resolve_token_address(existing_key, existing_value).lower()
+                if normalized_address and resolved_address == normalized_address:
+                    positions.pop(existing_key, None)
+                    removed = True
+
+            if removed:
+                temp_file = OPEN_POSITIONS_FILE.with_suffix(".tmp")
+                with open(temp_file, "w") as f:
+                    json.dump(positions, f, indent=2)
+                temp_file.replace(OPEN_POSITIONS_FILE)
+                print(f"🧹 Removed native gas token entry {token_address} from open_positions.json")
+
+            _mark_trade_as_closed_in_performance_data(token_address, chain_id, trade_id)
+            return False
 
         # CRITICAL: Check wallet balance BEFORE syncing to prevent manually closed positions from being added
         if verify_balance:
@@ -220,35 +304,49 @@ def sync_position_from_performance_data_with_key(
             except Exception:
                 pass
         
-        OPEN_POSITIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Load existing positions
-        if OPEN_POSITIONS_FILE.exists():
-            try:
-                with open(OPEN_POSITIONS_FILE, "r") as f:
-                    positions = json.load(f) or {}
-            except (json.JSONDecodeError, IOError):
-                positions = {}
-        else:
-            positions = {}
-        
         # Add or update position
+        existing_entry = positions.get(position_key)
+
+        timestamp_value = entry_time
+        if not timestamp_value and isinstance(existing_entry, dict):
+            timestamp_value = existing_entry.get("timestamp")
+        if not timestamp_value:
+            timestamp_value = datetime.now().isoformat()
+
         position_data = {
             "entry_price": float(entry_price),
             "chain_id": chain_id.lower(),
             "symbol": symbol,
             "address": token_address,  # Store original address for compatibility
-            "timestamp": datetime.now().isoformat()
+            "timestamp": timestamp_value,
         }
         
         # Include trade_id if available
         if trade_id:
             position_data["trade_id"] = trade_id
+        elif isinstance(existing_entry, dict) and existing_entry.get("trade_id"):
+            position_data["trade_id"] = existing_entry.get("trade_id")
         
         # Include position_size_usd if available
         if position_size_usd is not None and position_size_usd > 0:
             position_data["position_size_usd"] = float(position_size_usd)
+        elif isinstance(existing_entry, dict) and existing_entry.get("position_size_usd"):
+            position_data["position_size_usd"] = float(existing_entry.get("position_size_usd"))
+
+        # Preserve additional metadata flags when present
+        if isinstance(existing_entry, dict):
+            for key in ("discovered", "entry_price_estimated"):
+                if key in existing_entry and key not in position_data:
+                    position_data[key] = existing_entry[key]
         
+        # Remove any legacy keys that map to the same token address
+        address_lower = token_address.lower()
+        for existing_key, existing_value in list(positions.items()):
+            if existing_key == position_key:
+                continue
+            if resolve_token_address(existing_key, existing_value).lower() == address_lower:
+                positions.pop(existing_key, None)
+
         positions[position_key] = position_data
         
         # Atomic write
@@ -367,10 +465,6 @@ def sync_all_open_positions(verify_balances: bool = True) -> Dict[str, bool]:
                 trade_id=trade_id,
                 entry_time=entry_time,
             )
-            
-            # Skip if already tracked
-            if position_key in open_positions:
-                continue
             
             # CRITICAL: Check balance BEFORE syncing if verify_balances is enabled
             if verify_balances:
@@ -788,7 +882,7 @@ def update_open_positions_from_wallet() -> Dict:
 def migrate_open_positions_to_canonical_keys(dry_run: bool = False) -> Dict[str, int]:
     """Re-key open_positions.json entries using the canonical schema."""
 
-    stats = {"rekeyed": 0, "deduped": 0, "converted": 0, "errors": 0}
+    stats = {"rekeyed": 0, "deduped": 0, "converted": 0, "errors": 0, "skipped_gas_tokens": 0}
 
     if not OPEN_POSITIONS_FILE.exists():
         return stats
@@ -831,6 +925,16 @@ def migrate_open_positions_to_canonical_keys(dry_run: bool = False) -> Dict[str,
         except ValueError:
             return 0.0
 
+    def _merge_position_entries(preferred: Dict[str, Any], fallback: Dict[str, Any]) -> Dict[str, Any]:
+        merged: Dict[str, Any] = dict(fallback or {})
+        for key, value in (preferred or {}).items():
+            if value is None or value == "":
+                if key not in merged or merged.get(key) in (None, ""):
+                    merged[key] = value
+            else:
+                merged[key] = value
+        return merged
+
     new_positions: Dict[str, Any] = {}
 
     for original_key, raw_value in positions.items():
@@ -848,6 +952,10 @@ def migrate_open_positions_to_canonical_keys(dry_run: bool = False) -> Dict[str,
         suffix = split_position_key(original_key)[1]
         chain_id = position_data.get("chain_id", "ethereum")
 
+        if is_native_gas_token(address, position_data.get("symbol"), chain_id):
+            stats["skipped_gas_tokens"] += 1
+            continue
+
         trade_id = position_data.get("trade_id")
         if not trade_id:
             trade_id = _match_trade_id(address, chain_id)
@@ -858,22 +966,20 @@ def migrate_open_positions_to_canonical_keys(dry_run: bool = False) -> Dict[str,
 
         position_data["address"] = address
 
-        canonical_key = create_position_key(
-            address,
-            trade_id=trade_id,
-            entry_time=entry_time,
-        )
+        canonical_key = create_position_key(address)
 
         if canonical_key != original_key:
             stats["rekeyed"] += 1
 
         existing = new_positions.get(canonical_key)
-        if existing:
+        if isinstance(existing, dict):
             stats["deduped"] += 1
-            existing_ts = existing.get("timestamp") if isinstance(existing, dict) else None
+            existing_ts = existing.get("timestamp")
             candidate_ts = position_data.get("timestamp")
             if _timestamp_weight(candidate_ts) >= _timestamp_weight(existing_ts):
-                new_positions[canonical_key] = position_data
+                new_positions[canonical_key] = _merge_position_entries(position_data, existing)
+            else:
+                new_positions[canonical_key] = _merge_position_entries(existing, position_data)
         else:
             new_positions[canonical_key] = position_data
 
@@ -889,6 +995,11 @@ def migrate_open_positions_to_canonical_keys(dry_run: bool = False) -> Dict[str,
 
 
 if __name__ == "__main__":
+    # Ensure existing data uses mint-only keys before any syncs
+    print("🔄 Migrating open_positions.json to mint-only keys...")
+    migration_stats = migrate_open_positions_to_canonical_keys(dry_run=False)
+    print(f"✅ Migration complete: {migration_stats}")
+
     # Run sync when called directly (with balance verification enabled by default)
     print("🔄 Running position sync from performance_data.json...")
     results = sync_all_open_positions(verify_balances=True)

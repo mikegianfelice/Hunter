@@ -25,7 +25,7 @@ from src.utils.position_sync import (
     update_open_positions_from_wallet,
     create_position_key,
     resolve_token_address,
-    split_position_key,
+    is_native_gas_token,
 )
 
 # Dynamic config loading
@@ -167,21 +167,20 @@ def load_positions(validate_balances: bool = False):
     return validated_positions
 
 def save_positions(positions):
-    # Validate that every key matches the canonical schema when we have metadata.
+    # Re-key entries to the canonical mint-only format before persisting.
+    canonical_positions = {}
     for key, value in positions.items():
         if isinstance(value, dict):
-            canonical_key = create_position_key(
-                resolve_token_address(key, value),
-                trade_id=value.get("trade_id"),
-                entry_time=value.get("timestamp") or split_position_key(key)[1],
-            )
-            if canonical_key != key:
-                raise ValueError(
-                    f"Non-canonical position key detected: {key} (expected {canonical_key})"
-                )
+            token_address = resolve_token_address(key, value)
+            if is_native_gas_token(token_address, value.get("symbol"), value.get("chain_id")):
+                continue
+            canonical_key = create_position_key(token_address)
+            canonical_positions[canonical_key] = value
+        else:
+            canonical_positions[key] = value
     POSITIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(POSITIONS_FILE, "w") as f:
-        json.dump(positions, f, indent=2)
+        json.dump(canonical_positions, f, indent=2)
 
 def load_delisted_tokens():
     if not DELISTED_TOKENS_FILE.exists():
@@ -634,11 +633,7 @@ def _sync_only_positions_with_balance():
             
             # Check if position already exists in open_positions
             # Create composite key same as position_sync.py
-            position_key = create_position_key(
-                address,
-                trade_id=trade_id,
-                entry_time=trade.get("entry_time", ""),
-            )
+            position_key = create_position_key(address)
             
             # Skip if already tracked
             if position_key in open_positions:
