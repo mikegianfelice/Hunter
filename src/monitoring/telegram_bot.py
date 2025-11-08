@@ -190,10 +190,19 @@ def send_periodic_status_report():
         return False
 
 def format_status_message(risk_summary, recent_summary, open_trades, market_regime=None):
-    """Format a comprehensive status message"""
+    """Format a simplified status message with only Open Positions and Market Conditions"""
     from datetime import datetime
     import json
     import os
+    import re
+    
+    # Helper to escape markdown special characters
+    def _escape_markdown(text: str) -> str:
+        """Escape markdown special characters to prevent parsing errors"""
+        if not text:
+            return text
+        # Escape special markdown characters: _ * [ ] ( ) ~ ` > # + - = | { } . !
+        return re.sub(r'([_*\[\]()~`>#+\-=|{}.!])', r'\\\1', str(text))
     
     # Helper to fetch current token price by chain/address
     def _current_price(chain: str, address: str) -> float:
@@ -226,17 +235,21 @@ def format_status_message(risk_summary, recent_summary, open_trades, market_regi
             return []
         
         pnl_lines = []
+        total_unrealized_usd = 0.0
+        
         for token_address, position_data in positions.items():
             try:
                 if isinstance(position_data, dict):
                     entry_price = float(position_data.get("entry_price", 0))
                     chain_id = position_data.get("chain_id", "ethereum").lower()
                     symbol = position_data.get("symbol", "?")
+                    position_size_usd = float(position_data.get("position_size_usd", 0))
                 else:
                     # Legacy format
                     entry_price = float(position_data)
                     chain_id = "ethereum"
                     symbol = "?"
+                    position_size_usd = 0.0
                 
                 if entry_price <= 0:
                     continue
@@ -247,127 +260,80 @@ def format_status_message(risk_summary, recent_summary, open_trades, market_regi
                 if current_price > 0:
                     # Calculate PnL percentage
                     pnl_pct = ((current_price - entry_price) / entry_price) * 100
+                    # Calculate unrealized USD if we have position size
+                    unrealized_usd = None
+                    if position_size_usd > 0:
+                        unrealized_usd = (pnl_pct / 100) * position_size_usd
+                        total_unrealized_usd += unrealized_usd
+                    
                     # Format prices with appropriate precision (5-6 decimals for small prices)
                     entry_str = f"{entry_price:.5f}".rstrip('0').rstrip('.')
                     current_str = f"{current_price:.6f}".rstrip('0').rstrip('.')
                     # Format as requested: SYMBOL: entry $X → current $Y → PnL Z%
-                    pnl_lines.append(
-                        f"{symbol}: entry ${entry_str} → current ${current_str} → PnL {pnl_pct:+.2f}%"
-                    )
+                    pnl_lines.append({
+                        'symbol': symbol,
+                        'entry': entry_str,
+                        'current': current_str,
+                        'pnl_pct': pnl_pct,
+                        'unrealized_usd': unrealized_usd
+                    })
                 else:
                     # If we can't get current price, still show the position
-                    pnl_lines.append(
-                        f"{symbol}: entry ${entry_price:.5f} → current N/A"
-                    )
+                    pnl_lines.append({
+                        'symbol': symbol,
+                        'entry': f"{entry_price:.5f}".rstrip('0').rstrip('.'),
+                        'current': 'N/A',
+                        'pnl_pct': None,
+                        'unrealized_usd': None
+                    })
             except Exception as e:
                 # Skip positions that fail to process
                 continue
         
-        return pnl_lines
+        return pnl_lines, total_unrealized_usd
     
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
-    # Calculate total exposure from open trades
-    total_exposure = sum(t.get('position_size_usd', 0) for t in open_trades)
-    open_count = len(open_trades)
+    # Build message starting with header
+    msg = f"*Status Report* - {current_time}\n"
+    msg += "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
     
-    # Compute unrealized PnL for open trades
-    unrealized_total_usd = 0.0
-    unrealized_lines = []
-    if open_trades:
-        for i, trade in enumerate(open_trades[:5], 1):
-            try:
-                symbol = trade.get('symbol', 'UNKNOWN')
-                size_usd = float(trade.get('position_size_usd', 0) or 0)
-                chain = trade.get('chain', trade.get('chainId', 'unknown'))
-                address = trade.get('address') or ''
-                entry = float(trade.get('entry_price', trade.get('priceUsd', 0)) or 0)
-                price = _current_price(chain, address) if address else 0.0
-                if entry > 0 and price > 0 and size_usd > 0:
-                    pct = (price - entry) / entry
-                    pnl_usd = pct * size_usd
-                    unrealized_total_usd += pnl_usd
-                    unrealized_lines.append(
-                        f"  {i}. {symbol} [{chain}]: ${size_usd:.2f} | Entry ${entry:.6f} → Now ${price:.6f} | Unrealized: ${pnl_usd:.2f} ({pct*100:.1f}%)\n"
-                    )
-                else:
-                    unrealized_lines.append(
-                        f"  {i}. {symbol} [{chain}]: ${size_usd:.2f}\n"
-                    )
-            except Exception:
-                # Fallback to basic line if anything fails
-                symbol = trade.get('symbol', 'UNKNOWN')
-                size_usd = trade.get('position_size_usd', 0)
-                chain = trade.get('chain', trade.get('chainId', 'unknown'))
-                unrealized_lines.append(f"  {i}. {symbol} [{chain}]: ${size_usd:.2f}\n")
+    # Add open positions with unrealized PnL
+    msg += "*Open Positions Unrealized PnL:*\n"
+    open_positions_pnl, total_unrealized_usd = _get_open_positions_pnl()
     
-    # Get tier information
-    try:
-        from src.core.risk_manager import get_tier_based_risk_limits
-        tier_limits = get_tier_based_risk_limits()
-        tier_name = tier_limits.get('TIER_NAME', 'unknown')
-    except Exception:
-        tier_name = 'unknown'
-    
-    msg = f"""🤖 *Bot Status Report* - {current_time}
-━━━━━━━━━━━━━━━━━━━━━━━
-
-✅ *Bot Status:* Online & Operational
-
-📊 *Recent Activity (Last 7 Days):*
-• Total Trades: {recent_summary.get('total_trades', 0)}
-• Win Rate: {recent_summary.get('win_rate', 0):.1f}%
-• Total PnL: ${recent_summary.get('total_pnl', 0):.2f}
-• Avg PnL: ${recent_summary.get('avg_pnl', 0):.2f}
-
-💼 *Current Positions:*
-• Open Trades: {open_count}
-• Approx. Exposure: ${total_exposure:.2f}
-• Tier: {tier_name}
-"""
-    
-    # Add open positions with unrealized PnL from open_positions.json
-    open_positions_pnl = _get_open_positions_pnl()
     if open_positions_pnl:
-        msg += "\n📈 *Open Positions Unrealized PnL:*\n"
-        for pnl_line in open_positions_pnl:
-            msg += f"{pnl_line}\n"
-    elif open_trades:
-        # Fallback to open_trades if available
-        if unrealized_lines:
-            for line in unrealized_lines:
-                msg += line
-        else:
-            for i, trade in enumerate(open_trades[:5], 1):
-                symbol = trade.get('symbol', 'UNKNOWN')
-                size = trade.get('position_size_usd', 0)
-                chain = trade.get('chain', trade.get('chainId', 'unknown'))
-                msg += f"  {i}. {symbol} [{chain}]: ${size:.2f}\n"
-        # Add total unrealized PnL summary line
-        if unrealized_total_usd != 0:
-            msg += f"• Unrealized PnL (est.): ${unrealized_total_usd:.2f}\n"
+        for pos in open_positions_pnl:
+            symbol = pos['symbol']
+            entry = pos['entry']
+            current = pos['current']
+            
+            if pos['pnl_pct'] is not None:
+                pnl_pct = pos['pnl_pct']
+                pnl_sign = "+" if pnl_pct >= 0 else ""
+                pnl_emoji = "📈" if pnl_pct >= 0 else "📉"
+                
+                line = f"{pnl_emoji} {symbol}: entry ${entry} → current ${current} → PnL {pnl_sign}{pnl_pct:.2f}%"
+                
+                # Add USD unrealized if available
+                if pos['unrealized_usd'] is not None:
+                    usd_sign = "+" if pos['unrealized_usd'] >= 0 else ""
+                    line += f" (${usd_sign}{pos['unrealized_usd']:.2f})"
+                
+                msg += f"{line}\n"
+            else:
+                msg += f"• {symbol}: entry ${entry} → current {current}\n"
+        
+        # Add total unrealized PnL if we have it
+        if total_unrealized_usd != 0:
+            total_sign = "+" if total_unrealized_usd >= 0 else ""
+            msg += f"\n*Total Unrealized PnL:* ${total_sign}{total_unrealized_usd:.2f}\n"
     else:
-        msg += "  No open positions\n"
+        msg += "No open positions\n"
     
-    # Add risk management info
-    msg += f"""
-🛡️ *Risk Management:*
-• Daily Buys: {risk_summary.get('buys_today', 0)}
-• Daily Sells: {risk_summary.get('sells_today', 0)}
-• Realized PnL: ${risk_summary.get('realized_pnl_usd', 0):.2f}
-• Losing Streak: {risk_summary.get('losing_streak', 0)}
-• Open Positions: {risk_summary.get('open_positions', open_count)}
-"""
+    # Add market conditions
+    msg += "\n*Market Conditions:*\n"
     
-    # Check if paused
-    paused_until = risk_summary.get('paused_until', 0)
-    if paused_until > time.time():
-        pause_mins = int((paused_until - time.time()) / 60)
-        msg += f"⏸️ *Status:* Paused for {pause_mins} more minutes\n"
-    else:
-        msg += "▶️ *Status:* Active Trading\n"
-    
-    # Add market conditions with regime information
     if market_regime:
         regime = market_regime.get('regime', 'unknown')
         confidence = market_regime.get('confidence', 0) * 100.0  # Convert to percentage
@@ -384,23 +350,26 @@ def format_status_message(risk_summary, recent_summary, open_trades, market_regi
             'recovery_market': '🔄'
         }.get(regime, '📊')
         
-        msg += f"""
-📈 *Market Conditions:*
-{regime_emoji} *Regime:* {regime.replace('_', ' ').title()}
-📊 *Confidence:* {confidence:.1f}%
-💡 *Strategy:* {strategy.title()}
-📝 *Description:* {description}
-"""
+        # Escape special characters for markdown
+        regime_display = regime.replace('_', ' ').title()
+        strategy_display = strategy.title()
+        
+        msg += f"{regime_emoji} *Regime:* {regime_display}\n"
+        msg += f"📊 *Confidence:* {confidence:.1f}%\n"
+        msg += f"💡 *Strategy:* {strategy_display}\n"
+        # Escape description to prevent markdown parsing errors
+        escaped_description = _escape_markdown(description)
+        msg += f"📝 *Description:* {escaped_description}\n"
+        
         if recommendations:
-            msg += "✅ *Focus Now:*\n"
+            msg += "\n✅ *Focus Now:*\n"
             for r in recommendations:
-                msg += f"• {r}\n"
+                # Escape recommendations to prevent markdown parsing errors
+                escaped_rec = _escape_markdown(r)
+                msg += f"• {escaped_rec}\n"
     else:
-        msg += """
-📈 *Market Conditions:*
-• Bot is monitoring opportunities
-• Following sustainable trading strategy
-• Target: 10-20% consistent gains
-"""
+        msg += "• Bot is monitoring opportunities\n"
+        msg += "• Following sustainable trading strategy\n"
+        msg += "• Target: 10-20% consistent gains\n"
     
     return msg
