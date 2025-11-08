@@ -23,11 +23,13 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from src.monitoring.structured_logger import log_info, log_error, log_trade, log_performance
 from src.config.config_validator import get_validated_config
+from src.config.config_loader import get_config_bool, get_config_int
 from src.monitoring.performance_monitor import record_trade_metrics, start_trading_session, end_trading_session
 from src.core.centralized_risk_manager import assess_trade_risk, update_trade_result, is_circuit_breaker_active
 from src.ai.ai_circuit_breaker import circuit_breaker_manager, check_ai_module_health
 from src.monitoring.telegram_bot import send_periodic_status_report
 from src.execution.multi_chain_executor import _launch_monitor_detached
+from src.core.helius_reconciliation import reconcile_positions_and_pnl
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +75,11 @@ class EnhancedAsyncTradingEngine:
         self.batch_size = 5
         self.max_concurrent_trades = 3
         self.performance_window = deque(maxlen=100)  # Last 100 trades
+        self.helius_reconciliation_enabled = get_config_bool("enable_helius_reconciliation", True)
+        self.helius_reconciliation_interval = max(1, get_config_int("helius_reconciliation_interval_minutes", 10))
+        self.helius_reconciliation_limit = max(1, get_config_int("helius_reconciliation_tx_limit", 200))
+        self._helius_last_reconciliation = 0.0
+        self._helius_disabled_reason: Optional[str] = None
         
         # Rate limiting
         self.rate_limiter = asyncio.Semaphore(self.max_concurrent_trades)
@@ -141,6 +148,48 @@ class EnhancedAsyncTradingEngine:
         """Cache tokens with timestamp"""
         self.token_cache[cache_key] = (tokens, time.time())
         log_info("trading.cache", f"Cached {len(tokens)} tokens for {chain}")
+    
+    async def _maybe_run_helius_reconciliation(self) -> None:
+        """Periodically reconcile Solana positions via Helius to keep exposure accurate."""
+        if not self.helius_reconciliation_enabled:
+            return
+        
+        interval_seconds = self.helius_reconciliation_interval * 60
+        now = time.time()
+        if now - self._helius_last_reconciliation < interval_seconds:
+            return
+        
+        self._helius_last_reconciliation = now
+        
+        try:
+            summary = await asyncio.to_thread(
+                reconcile_positions_and_pnl,
+                limit=self.helius_reconciliation_limit,
+            )
+        except Exception as e:
+            log_error("trading.helius_reconcile_error", f"Helius reconciliation failed: {e}")
+            return
+        
+        if not summary.get("enabled", False):
+            reason = summary.get("reason", "unknown reason")
+            log_info(
+                "trading.helius_reconcile_disabled",
+                f"Helius reconciliation disabled: {reason}",
+            )
+            self.helius_reconciliation_enabled = False
+            self._helius_disabled_reason = reason
+            return
+        
+        log_info(
+            "trading.helius_reconcile",
+            "🔄 Helius reconciliation executed",
+            {
+                "open_positions_closed": summary.get("open_positions_closed", 0),
+                "open_positions_verified": summary.get("open_positions_verified", 0),
+                "trades_updated": summary.get("trades_updated", 0),
+                "issues": summary.get("issues", []),
+            },
+        )
     
     async def _fetch_real_trending_tokens(self, chain: str, limit: int) -> List[Dict]:
         """Fetch real trending tokens from DexScreener API"""
@@ -844,6 +893,8 @@ class EnhancedAsyncTradingEngine:
         """Run a single enhanced trading cycle"""
         cycle_start = time.time()
         log_info("trading.cycle_start", "🚀 Starting enhanced async trading cycle")
+        
+        await self._maybe_run_helius_reconciliation()
         
         # Check AI module health
         ai_health = await self._check_ai_module_health()

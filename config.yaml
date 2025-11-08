@@ -75,6 +75,11 @@ circuit_breaker_minutes: 120  # Longer cooldown after losses
 per_trade_max_usd: 25  # REALISTIC SCALING - $25 max per trade
 min_wallet_balance_buffer: 0.05  # Higher buffer for safety
 
+# === Reconciliation Settings ===
+enable_helius_reconciliation: true  # Periodically sync Solana positions using Helius
+helius_reconciliation_interval_minutes: 5  # How often to run reconciliation
+helius_reconciliation_tx_limit: 200  # Max transactions to request per reconciliation run
+
 # === Balance Cache Settings ===
 balance_cache_enabled: true  # Enable balance caching as fallback during RPC failures
 balance_cache_ttl_seconds: 300  # Cache is valid for 5 minutes (300 seconds)
@@ -185,7 +190,7 @@ wallet_tiers: {
     "max_balance": 999,
     "base_position_size_usd": 5.0,
     "max_position_size_usd": 25.0,
-    "max_total_exposure_usd": 100.0,
+    "max_total_exposure_usd": 500.0,
     "max_wallet_usage_percent": 0.10,
     "description": "Learning Phase - Conservative"
   },
@@ -194,7 +199,7 @@ wallet_tiers: {
     "max_balance": 4999,
     "base_position_size_usd": 25.0,
     "max_position_size_usd": 50.0,
-    "max_total_exposure_usd": 500.0,
+    "max_total_exposure_usd": 2500.0,
     "max_wallet_usage_percent": 0.10,
     "description": "Scaling Phase - Moderate"
   },
@@ -203,7 +208,7 @@ wallet_tiers: {
     "max_balance": 19999,
     "base_position_size_usd": 50.0,
     "max_position_size_usd": 100.0,
-    "max_total_exposure_usd": 1000.0,
+    "max_total_exposure_usd": 5000.0,
     "max_wallet_usage_percent": 0.10,
     "description": "Acceleration Phase - Aggressive"
   },
@@ -212,7 +217,7 @@ wallet_tiers: {
     "max_balance": 99999,
     "base_position_size_usd": 100.0,
     "max_position_size_usd": 200.0,
-    "max_total_exposure_usd": 2000.0,
+    "max_total_exposure_usd": 10000.0,
     "max_wallet_usage_percent": 0.10,
     "description": "Professional Phase - Maximum"
   },
@@ -221,7 +226,7 @@ wallet_tiers: {
     "max_balance": 999999,
     "base_position_size_usd": 200.0,
     "max_position_size_usd": 500.0,
-    "max_total_exposure_usd": 5000.0,
+    "max_total_exposure_usd": 10000.0,
     "max_wallet_usage_percent": 0.10,
     "description": "Institutional Phase - Elite"
   }
