@@ -27,6 +27,7 @@ from src.utils.position_sync import (
     resolve_token_address,
     is_native_gas_token,
 )
+from src.storage.positions import load_positions as load_positions_store
 
 # Dynamic config loading
 def get_monitor_config():
@@ -126,44 +127,31 @@ signal.signal(signal.SIGTERM, _signal_handler)
 # === Position I/O ===
 def load_positions(validate_balances: bool = False):
     """
-    Load positions from open_positions.json.
+    Load positions using the centralized positions store.
     If validate_balances is True, filters out positions with zero balance.
     """
-    if not POSITIONS_FILE.exists():
-        return {}
-    with open(POSITIONS_FILE, "r") as f:
-        try:
-            positions = json.load(f) or {}
-        except Exception:
-            return {}
-    
+    positions = load_positions_store()
     if not validate_balances:
         return positions
-    
-    # Validate balances and filter out positions with zero balance
+
     validated_positions = {}
     for position_key, position_data in positions.items():
-        # Handle both old format (float) and new format (dict)
         if isinstance(position_data, dict):
             chain_id = position_data.get("chain_id", "ethereum").lower()
             token_address = resolve_token_address(position_key, position_data)
         else:
             chain_id = "ethereum"
-            token_address = position_key  # Legacy format uses address as key
-        
-        # Check wallet balance
+            token_address = position_key
+
         balance = _check_token_balance_on_chain(token_address, chain_id)
-        
+
         if balance == -1.0:
-            # Balance check failed - keep position to be safe
             validated_positions[position_key] = position_data
         elif balance <= 0.0 or balance < 0.000001:
-            # Zero or dust balance - position was manually closed, skip it
             print(f"🚫 Filtering out position {position_key} - zero/dust balance detected (manually closed)")
         else:
-            # Has balance - position is still open
             validated_positions[position_key] = position_data
-    
+
     return validated_positions
 
 def save_positions(positions):

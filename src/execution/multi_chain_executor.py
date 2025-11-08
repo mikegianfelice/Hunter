@@ -1,12 +1,10 @@
 import yaml
-import json
 import time
 import sys
 import subprocess
 import os
 from datetime import datetime
 from pathlib import Path
-from contextlib import contextmanager
 from typing import Optional, Dict, Any
 from web3 import Web3
 
@@ -18,6 +16,7 @@ from src.config.config_loader import get_config, get_config_bool, get_config_flo
 from src.monitoring.logger import log_event
 from src.core.advanced_trading import advanced_trading
 from src.utils.address_utils import validate_chain_address_match, normalize_evm_address, detect_chain_from_address
+from src.storage.positions import upsert_position
 
 # Dynamic config loading
 def get_multi_chain_config():
@@ -103,45 +102,12 @@ CHAIN_CONFIGS = {
 }
 
 # Housekeeping
-POSITIONS_FILE = "data/open_positions.json"
-# Monitor script path - use absolute path from project root
 MONITOR_SCRIPT = Path(__file__).resolve().parents[2] / "src" / "monitoring" / "monitor_position.py"
 WATCHDOG_SCRIPT = Path(__file__).resolve().parents[2] / "src" / "monitoring" / "monitor_watchdog.py"
 PRICE_MEMORY_FILE = "data/price_memory.json"
 
-def get_chain_config(chain_id: str) -> Dict[str, Any]:
-    """Get configuration for a specific chain"""
-    chain_id_lower = chain_id.lower()
-    if chain_id_lower not in CHAIN_CONFIGS:
-        raise ValueError(f"Unsupported chain: {chain_id}")
-    return CHAIN_CONFIGS[chain_id_lower]
-
-def _ensure_positions_file():
-    p = Path(POSITIONS_FILE)
-    if not p.exists():
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text("{}")
-
-@contextmanager
-def _atomic_write_json(path: Path):
-    tmp_path = Path(str(path) + ".tmp")
-    try:
-        with open(tmp_path, "w") as f:
-            yield f
-        os.replace(tmp_path, path)
-    finally:
-        try:
-            if tmp_path.exists():
-                tmp_path.unlink(missing_ok=True)
-        except Exception:
-            pass
 
 def _log_position(token: dict, *, trade_id: Optional[str] = None, entry_time: Optional[str] = None):
-    _ensure_positions_file()
-    try:
-        data = json.loads(Path(POSITIONS_FILE).read_text() or "{}")
-    except Exception:
-        data = {}
     addr = token["address"]
     entry = float(token.get("priceUsd") or 0.0)
     chain_id = token.get("chainId", "ethereum").lower()
@@ -156,8 +122,7 @@ def _log_position(token: dict, *, trade_id: Optional[str] = None, entry_time: Op
             pass
         return
     position_key = create_position_key(addr)
-    
-    # Store position with chain information
+
     position_data = {
         "entry_price": entry,
         "chain_id": chain_id,
@@ -165,20 +130,14 @@ def _log_position(token: dict, *, trade_id: Optional[str] = None, entry_time: Op
         "timestamp": timestamp,
         "address": addr,
     }
-    
-    # Include position_size_usd if provided
+
     if "position_size_usd" in token:
         position_data["position_size_usd"] = float(token["position_size_usd"])
 
     if trade_id:
         position_data["trade_id"] = trade_id
-    
-    data[position_key] = position_data
-    
-    # Atomic write to prevent corruption in concurrent environments
-    target = Path(POSITIONS_FILE)
-    with _atomic_write_json(target) as f:
-        f.write(json.dumps(data, indent=2))
+
+    upsert_position(position_key, position_data)
     try:
         print(
             f"📝 Logged position: {token.get('symbol','?')} ({addr}) on {chain_id.upper()} @ ${entry:.6f}"
@@ -565,7 +524,7 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
 
             # Log position for monitoring (use canonical key schema)
             try:
-                _log_position(token_for_logging, trade_id=trade_id)
+                upsert_position(token_for_logging, trade_id=trade_id)
             except Exception as e:
                 log_event(
                     "trading.position_log_error",

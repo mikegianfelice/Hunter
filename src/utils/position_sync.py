@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, Optional, List, Tuple
+from src.storage.positions import load_positions as load_positions_store, replace_positions
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PERFORMANCE_DATA_FILE = PROJECT_ROOT / "data" / "performance_data.json"
@@ -231,14 +232,7 @@ def sync_position_from_performance_data_with_key(
         OPEN_POSITIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
 
         # Load existing positions once for both skip and update flows.
-        if OPEN_POSITIONS_FILE.exists():
-            try:
-                with open(OPEN_POSITIONS_FILE, "r") as f:
-                    positions = json.load(f) or {}
-            except (json.JSONDecodeError, IOError):
-                positions = {}
-        else:
-            positions = {}
+        positions = _load_open_positions()
 
         # Never track native gas/base tokens (e.g., SOL / USDC on Solana).
         if is_native_gas_token(token_address, symbol, chain_id):
@@ -257,10 +251,7 @@ def sync_position_from_performance_data_with_key(
                     removed = True
 
             if removed:
-                temp_file = OPEN_POSITIONS_FILE.with_suffix(".tmp")
-                with open(temp_file, "w") as f:
-                    json.dump(positions, f, indent=2)
-                temp_file.replace(OPEN_POSITIONS_FILE)
+                _save_open_positions(positions)
                 print(f"🧹 Removed native gas token entry {token_address} from open_positions.json")
 
             _mark_trade_as_closed_in_performance_data(token_address, chain_id, trade_id)
@@ -350,10 +341,7 @@ def sync_position_from_performance_data_with_key(
         positions[position_key] = position_data
         
         # Atomic write
-        temp_file = OPEN_POSITIONS_FILE.with_suffix(".tmp")
-        with open(temp_file, "w") as f:
-            json.dump(positions, f, indent=2)
-        temp_file.replace(OPEN_POSITIONS_FILE)
+        _save_open_positions(positions)
         
         size_str = f" (${position_size_usd:.2f})" if position_size_usd else ""
         trade_str = f" [Trade: {trade_id}]" if trade_id else ""
@@ -428,14 +416,7 @@ def sync_all_open_positions(verify_balances: bool = True) -> Dict[str, bool]:
             return results
         
         # Load existing open positions
-        if OPEN_POSITIONS_FILE.exists():
-            try:
-                with open(OPEN_POSITIONS_FILE, "r") as f:
-                    open_positions = json.load(f) or {}
-            except (json.JSONDecodeError, IOError):
-                open_positions = {}
-        else:
-            open_positions = {}
+        positions = _load_open_positions()
         
         # Find all open trades in performance_data
         # Track ALL open positions, including multiple positions for the same token
@@ -682,14 +663,7 @@ def reconcile_wallet_with_positions(
     
     try:
         # Load existing data
-        if OPEN_POSITIONS_FILE.exists():
-            try:
-                with open(OPEN_POSITIONS_FILE, "r") as f:
-                    open_positions = json.load(f) or {}
-            except (json.JSONDecodeError, IOError):
-                open_positions = {}
-        else:
-            open_positions = {}
+        open_positions = _load_open_positions()
         
         if PERFORMANCE_DATA_FILE.exists():
             try:
@@ -822,12 +796,7 @@ def reconcile_wallet_with_positions(
         
         # Save updated files
         if results["added"] > 0 or results["removed"] > 0:
-            # Save open_positions
-            temp_file = OPEN_POSITIONS_FILE.with_suffix(".tmp")
-            with open(temp_file, "w") as f:
-                json.dump(open_positions, f, indent=2)
-            temp_file.replace(OPEN_POSITIONS_FILE)
-            
+            _save_open_positions(open_positions)
             # Save performance_data
             perf_data["last_updated"] = datetime.now().isoformat()
             temp_file = PERFORMANCE_DATA_FILE.with_suffix(".tmp")
@@ -986,12 +955,17 @@ def migrate_open_positions_to_canonical_keys(dry_run: bool = False) -> Dict[str,
     if dry_run or new_positions == positions:
         return stats
 
-    temp_file = OPEN_POSITIONS_FILE.with_suffix(".tmp")
-    with open(temp_file, "w") as fh:
-        json.dump(new_positions, fh, indent=2)
-    temp_file.replace(OPEN_POSITIONS_FILE)
+    _save_open_positions(new_positions)
 
     return stats
+
+
+def _load_open_positions() -> Dict[str, Any]:
+    return load_positions_store()
+
+
+def _save_open_positions(positions: Dict[str, Any]) -> None:
+    replace_positions(positions)
 
 
 if __name__ == "__main__":

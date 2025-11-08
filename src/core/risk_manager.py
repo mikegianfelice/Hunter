@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 from web3 import Web3
 from src.config.secrets import INFURA_URL, WALLET_ADDRESS
 from src.config.config_loader import get_config, get_config_int, get_config_float
+from src.storage.positions import load_positions as load_positions_store
+from src.utils.utils import resolve_token_address
 
 STATE_FILE = "data/risk_state.json"
 POSITIONS_FILE = "data/open_positions.json"
@@ -440,76 +442,35 @@ def _save_state(s):
         json.dump(s, f, indent=2)
 
 def _open_positions_count():
-    if not os.path.exists(POSITIONS_FILE):
-        return 0
-    try:
-        with open(POSITIONS_FILE, "r") as f:
-            data = json.load(f) or {}
-            return len(data)
-    except Exception:
-        return 0
+    positions = load_positions_store()
+    return len(positions)
+
 
 def _is_token_already_held(token_address: str) -> bool:
     """Check if a specific token is already held in open positions"""
-    if not os.path.exists(POSITIONS_FILE):
-        return False
-    try:
-        with open(POSITIONS_FILE, "r") as f:
-            data = json.load(f) or {}
-            # Normalize address to lowercase for comparison
-            token_address_lower = token_address.lower()
-            return any(addr.lower() == token_address_lower for addr in data.keys())
-    except Exception:
-        return False
+    positions = load_positions_store()
+    token_address_lower = token_address.lower()
+    for position_key, payload in positions.items():
+        try:
+            resolved = resolve_token_address(position_key, payload).lower()
+        except Exception:
+            resolved = position_key.lower()
+        if resolved == token_address_lower:
+            return True
+    return False
+
 
 def _get_current_exposure_usd() -> float:
     """Calculate current total exposure in USD across all open positions"""
     try:
         total_exposure = 0.0
-        
-        # Use performance_data.json as source of truth (has accurate position_size_usd)
-        perf_file = "data/performance_data.json"
-        if os.path.exists(perf_file):
-            try:
-                with open(perf_file, 'r') as f:
-                    perf_data = json.load(f)
-                    trades = perf_data.get("trades", [])
-                    
-                    # Track unique token addresses to avoid duplicates
-                    seen_addresses = set()
-                    
-                    for trade in trades:
-                        if trade.get("status") == "open":
-                            address = trade.get("address", "").lower()
-                            
-                            # Skip duplicates - only count each token address once
-                            # (take the most recent one if there are duplicates)
-                            if address in seen_addresses:
-                                continue
-                            
-                            seen_addresses.add(address)
-                            position_size = trade.get("position_size_usd", 0.0)
-                            if position_size > 0:
-                                total_exposure += position_size
-            except Exception as e:
-                print(f"⚠️ Failed to read performance_data.json for exposure: {e}")
-        
-        # Fallback to open_positions.json if performance_data doesn't exist or has no data
-        if total_exposure == 0.0 and os.path.exists(POSITIONS_FILE):
-            try:
-                with open(POSITIONS_FILE, 'r') as f:
-                    data = json.load(f)
-                    for token_address, position_data in data.items():
-                        position_size = position_data.get('position_size_usd', 0.0)
-                        if position_size > 0:
-                            total_exposure += position_size
-            except Exception as e:
-                print(f"⚠️ Failed to read open_positions.json for exposure: {e}")
-        
+        positions = load_positions_store()
+        for payload in positions.values():
+            if isinstance(payload, dict):
+                total_exposure += float(payload.get("position_size_usd", 0.0) or 0.0)
         return total_exposure
-            
     except Exception as e:
-        print(f"⚠️ Failed to calculate current exposure: {e}")
+        print(f"⚠️ Failed to calculate exposure from positions store: {e}")
         return 0.0
 
 def allow_new_trade(trade_amount_usd: float, token_address: str = None, chain_id: str = "ethereum"):

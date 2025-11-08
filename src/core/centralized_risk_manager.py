@@ -16,6 +16,7 @@ import os
 from src.config.config_validator import get_validated_config
 from src.config.config_loader import get_config_bool, get_config_float
 from src.monitoring.performance_monitor import performance_monitor
+from src.storage.positions import load_positions as load_positions_store, replace_positions
 
 logger = logging.getLogger(__name__)
 
@@ -96,15 +97,12 @@ class CentralizedRiskManager:
         self._load_risk_state()
     
     def _load_open_positions(self) -> Dict[str, Any]:
-        """Load open positions from file"""
+        """Load open positions from persistent storage"""
         try:
-            if os.path.exists(self.positions_file):
-                with open(self.positions_file, "r") as f:
-                    data = json.load(f) or {}
-                    return data if isinstance(data, dict) else {}
+            return load_positions_store()
         except Exception as e:
             logger.warning(f"Could not load open positions: {e}")
-        return {}
+            return {}
     
     def _load_risk_state(self):
         """Load risk state from file"""

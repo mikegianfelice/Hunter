@@ -10,6 +10,7 @@ from src.config.secrets import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 from src.monitoring.structured_logger import log_info, log_warning, log_error
 import threading
 from datetime import datetime
+from src.storage.positions import load_positions as load_positions_store
 
 # Message deduplication cache
 _sent_messages = {}
@@ -280,14 +281,8 @@ def format_status_message(risk_summary, recent_summary, open_trades, market_regi
     # Helper to load and calculate unrealized PnL from open_positions.json
     def _get_open_positions_pnl():
         """Load open positions from file and calculate unrealized PnL"""
-        positions_file = "data/open_positions.json"
-        if not os.path.exists(positions_file):
-            return []
-        
-        try:
-            with open(positions_file, 'r') as f:
-                positions = json.load(f) or {}
-        except Exception:
+        positions = load_positions_store()
+        if not positions:
             return []
         
         pnl_lines = []

@@ -23,6 +23,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 from src.config.secrets import HELIUS_API_KEY, SOLANA_WALLET_ADDRESS
 from src.core.performance_tracker import performance_tracker
 from src.utils.helius_client import HeliusClient
+from src.storage.positions import load_positions as load_positions_store, replace_positions
 
 try:
     # Lazily imported – falls back to static SOL price if API fails.
@@ -62,7 +63,7 @@ def reconcile_positions_and_pnl(limit: int = 200) -> Dict[str, Any]:
         "issues": [],
     }
 
-    open_positions = _load_json(OPEN_POSITIONS_FILE, default={})
+    open_positions = load_positions_store()
     trades_changed = False
     positions_changed = False
 
@@ -156,7 +157,7 @@ def reconcile_positions_and_pnl(limit: int = 200) -> Dict[str, Any]:
     if trades_changed:
         performance_tracker.save_data()
     if positions_changed:
-        _atomic_write_json(OPEN_POSITIONS_FILE, open_positions)
+        replace_positions(open_positions)
 
     return summary
 
