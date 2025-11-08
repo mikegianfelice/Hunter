@@ -12,7 +12,7 @@ from src.storage.risk import (
     load_balance_cache as load_balance_cache_store,
     save_balance_cache as save_balance_cache_store,
 )
-from src.utils.utils import resolve_token_address
+from src.utils.position_sync import resolve_token_address
 
 # Dynamic config loading
 def get_risk_manager_config():
