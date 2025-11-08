@@ -14,6 +14,30 @@ load_dotenv()
 
 from .secrets_manager import get_secret, get_secrets_manager
 
+# Helper constants/utilities
+_DEFAULT_SOLANA_RPC = "https://api.mainnet-beta.solana.com"
+
+
+def _derive_solana_rpc(explicit_url: str, helius_key: str) -> str:
+    """
+    Determine which Solana RPC endpoint to use.
+    Priority:
+      1. Explicit URL if it is set and not the public default (user override)
+      2. Helius endpoint when API key is available
+      3. Public Solana RPC fallback
+    """
+    explicit_url = (explicit_url or "").strip()
+    helius_key = (helius_key or "").strip()
+
+    if explicit_url and explicit_url != _DEFAULT_SOLANA_RPC:
+        return explicit_url
+
+    if helius_key:
+        return f"https://mainnet.helius-rpc.com/?api-key={helius_key}"
+
+    return explicit_url or _DEFAULT_SOLANA_RPC
+
+
 # Try to get secrets from secure backend first
 secrets = get_secret("trading_bot_secrets")
 
@@ -24,11 +48,11 @@ if secrets:
     INFURA_URL = secrets.get("INFURA_URL")
     TELEGRAM_BOT_TOKEN = secrets.get("TELEGRAM_BOT_TOKEN")
     TELEGRAM_CHAT_ID = secrets.get("TELEGRAM_CHAT_ID")
-    SOLANA_RPC_URL = secrets.get("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
     SOLANA_WALLET_ADDRESS = secrets.get("SOLANA_WALLET_ADDRESS")
     SOLANA_PRIVATE_KEY = secrets.get("SOLANA_PRIVATE_KEY")
     BASE_RPC_URL = secrets.get("BASE_RPC_URL", "https://mainnet.base.org")
     HELIUS_API_KEY = secrets.get("HELIUS_API_KEY")
+    SOLANA_RPC_URL = _derive_solana_rpc(secrets.get("SOLANA_RPC_URL"), HELIUS_API_KEY)
 else:
     # Fallback to environment variables (for backward compatibility)
     
@@ -39,11 +63,11 @@ else:
 
     TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
     TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-    SOLANA_RPC_URL = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
     SOLANA_WALLET_ADDRESS = os.getenv("SOLANA_WALLET_ADDRESS")
     SOLANA_PRIVATE_KEY = os.getenv("SOLANA_PRIVATE_KEY")
     BASE_RPC_URL = os.getenv("BASE_RPC_URL", "https://mainnet.base.org")
     HELIUS_API_KEY = os.getenv("HELIUS_API_KEY")
+    SOLANA_RPC_URL = _derive_solana_rpc(os.getenv("SOLANA_RPC_URL"), HELIUS_API_KEY)
 
 # Validate required secrets
 def validate_secrets():

@@ -10,6 +10,37 @@ from src.config.secrets import SOLANA_RPC_URL
 from src.config.config_loader import get_config, get_config_int, get_config_float, get_config_bool
 from src.utils.advanced_cache import cache_get, cache_set
 
+_PUBLIC_SOLANA_RPC = "https://api.mainnet-beta.solana.com"
+
+
+def _post_with_fallback(payload: Dict, primary_url: str, timeout: int = 15) -> requests.Response:
+    """
+    Execute an RPC POST with graceful fallback to the public Solana RPC if the
+    primary endpoint rejects or deprioritizes the request.
+    """
+    headers = {"Content-Type": "application/json"}
+
+    response = requests.post(primary_url, json=payload, timeout=timeout, headers=headers)
+
+    # Retry on rate-limit / deprioritized responses when possible
+    if response.status_code in (429, 503):
+        response = requests.post(_PUBLIC_SOLANA_RPC, json=payload, timeout=timeout, headers=headers)
+        return response
+
+    # Some providers return HTTP 200 but include an error object describing a deprioritized request
+    try:
+        body = response.json()
+        error_message = ""
+        if isinstance(body, dict) and "error" in body:
+            error_message = str(body["error"].get("message", "")).lower()
+        if "deprioritized" in error_message or "rate" in error_message:
+            response = requests.post(_PUBLIC_SOLANA_RPC, json=payload, timeout=timeout, headers=headers)
+    except ValueError:
+        # Non-JSON response; just return whatever we have
+        pass
+
+    return response
+
 
 def check_holder_concentration(token_address: str, chain_id: str = "solana") -> Dict:
     """
@@ -122,7 +153,7 @@ def _check_solana_holder_concentration(token_address: str) -> Dict:
             "params": [token_address]
         }
         
-        supply_response = requests.post(rpc_url, json=supply_payload, timeout=15)
+        supply_response = _post_with_fallback(supply_payload, rpc_url, timeout=15)
         
         if supply_response.status_code != 200:
             result["error"] = f"RPC request failed: HTTP {supply_response.status_code}"
@@ -155,12 +186,14 @@ def _check_solana_holder_concentration(token_address: str) -> Dict:
             "params": [
                 token_address,
                 {
-                    "limit": 10
+                    "limit": 10,
+                    "commitment": "finalized",
+                    "encoding": "jsonParsed",
                 }
             ]
         }
         
-        accounts_response = requests.post(rpc_url, json=accounts_payload, timeout=15)
+        accounts_response = _post_with_fallback(accounts_payload, rpc_url, timeout=15)
         
         if accounts_response.status_code != 200:
             result["error"] = f"RPC request failed: HTTP {accounts_response.status_code}"
