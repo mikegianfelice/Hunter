@@ -75,7 +75,7 @@ A sophisticated AI-powered cryptocurrency trading bot designed for **consistent 
 ## 🎯 AI-Enhanced Sustainable Trading Strategy
 
 ### **🌱 Strategy Overview**
-The bot has evolved from high-frequency "moonshot" trading to a **sustainable 10-20% gains strategy** focused on quality over quantity. This approach prioritizes:
+The bot uses a **sustainable 10-20% gains strategy** focused on quality over quantity. This approach prioritizes:
 
 - **Quality Token Selection** - AI-enhanced quality scoring (0-100) based on volume, liquidity, sentiment, and technical analysis
 - **Risk-Adjusted Position Sizing** - Dynamic position sizing based on token quality, market regime, and risk assessment
