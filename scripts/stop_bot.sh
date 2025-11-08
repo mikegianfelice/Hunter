@@ -76,14 +76,20 @@ else
     echo -e "${YELLOW}⚠️  screen command not available${NC}"
 fi
 
-# Kill all Python processes related to trading
+# Kill core python entrypoints
 kill_processes "python.*main\.py" "Python trading bot"
 
-# Kill any processes with 'hunter' in the name
-kill_processes ".*hunter.*" "Hunter-related processes"
+# Kill detached monitor/watchdog processes
+kill_processes "monitor_position\.py" "Position monitor"
+kill_processes "monitor_watchdog\.py" "Monitor watchdog"
 
-# Kill any processes with 'trading' in the name
-kill_processes ".*trading.*" "Trading-related processes"
+# Kill async trading executors/workers
+kill_processes "enhanced_async_trading\.py" "Enhanced async trading engine"
+kill_processes "multi_chain_executor\.py" "Multi-chain executor"
+
+# Catch-all: any hunter/trading named helpers
+kill_processes ".*hunter.*" "Hunter-related processes"
+kill_processes ".*trading.*" "Trading-related helper processes"
 
 # Kill any processes writing to our log files
 echo -e "${BLUE}📝 Checking for processes writing to log files...${NC}"
@@ -111,10 +117,18 @@ fi
 
 # Final verification
 echo -e "${BLUE}🔍 Final verification...${NC}"
-remaining_processes=$(ps aux | grep -E "(python.*main\.py|.*hunter.*|.*trading.*)" | grep -v grep | wc -l)
+remaining_processes=$(ps aux | grep -E "(python.*main\.py|monitor_position\.py|monitor_watchdog\.py|enhanced_async_trading\.py|multi_chain_executor\.py|.*hunter.*|.*trading.*)" | grep -v grep | wc -l)
 
 if [ "$remaining_processes" -eq 0 ]; then
     echo -e "${GREEN}✅ All trading bot processes stopped successfully!${NC}"
+    
+    # Clean up monitor lock/heartbeat artifacts
+    lock_file="data/.monitor_lock"
+    heartbeat_file="data/.monitor_heartbeat"
+    if [ -f "$lock_file" ] || [ -f "$heartbeat_file" ]; then
+        echo -e "${BLUE}🧹 Removing monitor lock/heartbeat files...${NC}"
+        rm -f "$lock_file" "$heartbeat_file"
+    fi
     
     # Send Telegram notification
     echo -e "${BLUE}📨 Sending Telegram notification...${NC}"
