@@ -6,19 +6,49 @@ import time
 import os
 import sys
 from pathlib import Path
+from typing import Optional, Tuple
 
 from src.config.secrets import BASE_RPC_URL, WALLET_ADDRESS, PRIVATE_KEY
 from src.utils.gas import suggest_fees
 from src.utils.utils import get_eth_price_usd  # robust ETH/USD (Graph -> on-chain V2)
 from src.config.config_loader import get_config, get_config_bool, get_config_float, get_config_int
 from src.monitoring.logger import log_event
+from src.monitoring.metrics import record_trade_attempt, record_trade_success, record_trade_failure
+from src.execution.execution_policy import (
+    enforce_slippage_limit,
+    gas_ceiling_for_chain,
+    priority_fee_limit_for_chain,
+    apply_gas_guardrails,
+    should_simulate_transaction,
+    simulate_evm_transaction,
+)
+from src.utils.idempotency import (
+    build_trade_intent,
+    register_trade_intent,
+    mark_trade_intent_pending,
+    mark_trade_intent_completed,
+    mark_trade_intent_failed,
+)
 
 # Dynamic config loading
 def get_base_config():
     """Get current configuration values dynamically"""
+    slippage_raw = get_config_float("slippage", 0.02)
+    slippage = enforce_slippage_limit(
+        "base",
+        slippage_raw,
+        context={"config_key": "slippage"},
+    )
+    gas_ceiling_config = float(get_config("gas_ceiling_gwei"))
+    gas_ceiling_policy = gas_ceiling_for_chain("base")
+    priority_ceiling_config = float(get_config("gas_priority_max_gwei"))
+    priority_ceiling_policy = priority_fee_limit_for_chain("base")
+    gas_ceiling = min(gas_ceiling_config, gas_ceiling_policy)
+    priority_ceiling = min(priority_ceiling_config, priority_ceiling_policy)
+
     return {
         'TEST_MODE': get_config_bool("test_mode", True),
-        'SLIPPAGE': get_config_float("slippage", 0.02),
+        'SLIPPAGE': slippage,
         'USE_SUPPORTING_FEE': get_config_bool("use_supporting_fee_swap", True),
         'REQUOTE_DELAY_SECONDS': get_config_int("requote_delay_seconds", 10),
         'REQUOTE_SLIPPAGE_BUFFER': get_config_float("requote_slippage_buffer", 0.005),
@@ -27,8 +57,8 @@ def get_base_config():
             "gas_reward_percentile": get_config("gas_reward_percentile"),
             "gas_basefee_headroom": get_config("gas_basefee_headroom"),
             "gas_priority_min_gwei": get_config("gas_priority_min_gwei"),
-            "gas_priority_max_gwei": get_config("gas_priority_max_gwei"),
-            "gas_ceiling_gwei": get_config("gas_ceiling_gwei"),
+            "gas_priority_max_gwei": priority_ceiling,
+            "gas_ceiling_gwei": gas_ceiling,
             "gas_multiplier": get_config("gas_multiplier"),
             "gas_extra_priority_gwei": get_config("gas_extra_priority_gwei"),
         }
@@ -117,6 +147,10 @@ ERC20_MIN_ABI = json.loads("""
 ]
 """)
 
+# Logging helper
+def _log(level: str, event: str, message: str, **context):
+    log_event(event, level=level, message=message, **context)
+
 # === Helpers ===
 def _next_nonce():
     return w3.eth.get_transaction_count(WALLET)
@@ -127,6 +161,7 @@ def _apply_eip1559(tx_dict: dict) -> dict:
     """
     config = get_base_config()
     max_fee, max_prio = suggest_fees(w3, config['GAS_CFG'])
+    max_fee, max_prio = apply_gas_guardrails("base", w3, max_fee, max_prio)
     out = dict(tx_dict)
     out["maxFeePerGas"] = int(max_fee)
     out["maxPriorityFeePerGas"] = int(max_prio)
@@ -159,28 +194,64 @@ def _quote_v3_out(amount_in_wei: int, token_out: str, fee: int = 3000) -> int:
         result = router.functions.exactInputSingle(params).call({'value': amount_in_wei})
         return int(result)
     except Exception as e:
-        print(f"⚠️ Quote failed: {e}")
+        _log("WARNING", "base.quote.error", "Quote call failed", error=str(e))
         return 0
 
 # === BUY with re-quote protection ===
-def buy_token(token_address: str, usd_amount: float, symbol: str = "?") -> tuple[str, bool]:
+def buy_token(token_address: str, usd_amount: float, symbol: str = "?") -> Tuple[Optional[str], bool]:
     """
     Buy `token_address` spending `usd_amount` USD worth of ETH on BASE.
-    - Uses V3 quote to compute amountOutMin with slippage
-    - If delay between quote and send > REQUOTE_DELAY_SECONDS, re-quotes and
-      recomputes minOut with an extra REQUOTE_SLIPPAGE_BUFFER
-    - Uses EIP-1559 fees
-    Returns: (tx_hash_hex or None, success_bool)
+    Returns (tx_hash_hex or None, success_bool).
     """
+    trade_started = time.time()
+    record_trade_attempt("base", "buy")
     config = get_base_config()
-    token_address = Web3.to_checksum_address(token_address)
+
+    # Build idempotent trade intent prior to heavy lifting
+    intent = build_trade_intent(
+        chain="base",
+        side="buy",
+        token_address=token_address,
+        symbol=symbol,
+        quantity=float(usd_amount),
+        metadata={"slippage": config['SLIPPAGE']},
+    )
+    registered, _ = register_trade_intent(intent)
+    if not registered:
+        record_trade_failure("base", "buy", "duplicate_intent")
+        return None, False
+    mark_trade_intent_pending(intent.intent_id)
+
+    def abort(reason: str, level: str, message: str, **ctx):
+        mark_trade_intent_failed(intent.intent_id, reason)
+        latency_ms = int((time.time() - trade_started) * 1000)
+        record_trade_failure("base", "buy", reason, latency_ms=latency_ms)
+        _log(level, f"base.buy.{reason}", message, symbol=symbol, **ctx)
+        return None, False
+
+    def succeed(tx_hash: Optional[str], slippage_used: float):
+        mark_trade_intent_completed(intent.intent_id, tx_hash=tx_hash)
+        latency_ms = int((time.time() - trade_started) * 1000)
+        record_trade_success(
+            "base",
+            "buy",
+            latency_ms=latency_ms,
+            slippage_bps=slippage_used * 10000.0,
+        )
+        _log("INFO", "base.buy.completed", "Buy transaction completed", symbol=symbol, tx_hash=tx_hash)
+        return tx_hash, True
+
+    try:
+        token_address_checksum = Web3.to_checksum_address(token_address)
+    except Exception as exc:
+        return abort("address_invalid", "ERROR", "Invalid token address", error=str(exc))
+
     deadline = int(time.time()) + 600
 
-    # Sizing: USD -> ETH
     eth_usd = get_eth_price_usd()
     if not eth_usd or eth_usd <= 0:
-        print("❌ Could not fetch ETH/USD price for sizing.")
-        return None, False
+        return abort("eth_price_unavailable", "ERROR", "Could not fetch ETH/USD price for sizing.")
+
     eth_amount = float(usd_amount) / float(eth_usd)
     value_wei = w3.to_wei(eth_amount, "ether")
 
@@ -191,36 +262,52 @@ def buy_token(token_address: str, usd_amount: float, symbol: str = "?") -> tuple
         "chainId": BASE_CHAIN_ID,
     }
 
-    # Initial quote - try different fee tiers
     quoted_out = 0
     fee_tiers = [3000, 500, 10000]  # 0.3%, 0.05%, 1%
-    
     for fee in fee_tiers:
         try:
-            quoted_out = _quote_v3_out(value_wei, token_address, fee)
+            quoted_out = _quote_v3_out(value_wei, token_address_checksum, fee)
             if quoted_out > 0:
-                print(f"✅ Quote successful with {fee/10000}% fee tier")
+                _log(
+                    "INFO",
+                    "base.buy.quote_success",
+                    "Quote successful",
+                    symbol=symbol,
+                    fee_tier_bps=fee,
+                    raw_out=int(quoted_out),
+                )
                 break
-        except Exception as e:
-            print(f"⚠️ Quote failed with {fee/10000}% fee: {e}")
+        except Exception as exc:
+            _log(
+                "WARNING",
+                "base.buy.quote_retry",
+                "Quote attempt failed; trying next fee tier",
+                symbol=symbol,
+                fee_tier_bps=fee,
+                error=str(exc),
+            )
             continue
-    
+
     if quoted_out <= 0:
-        print(f"❌ All quote attempts failed for {symbol}")
-        return None, False
+        return abort("quote_failed", "ERROR", "All quote attempts failed", fee_tiers=fee_tiers)
 
     amount_out_min = int(quoted_out * (1.0 - config['SLIPPAGE']))
     if amount_out_min <= 0:
-        print(f"❌ Computed minOut <= 0 for {symbol}; aborting.")
-        return None, False
+        return abort("min_out_invalid", "ERROR", "Computed minimum output is non-positive", quoted_out=int(quoted_out))
 
-    log_event("base.buy.quote", symbol=symbol, eth_in=round(eth_amount, 6), out_raw=int(quoted_out), slippage=round(config['SLIPPAGE'], 6), min_out=int(amount_out_min))
+    log_event(
+        "base.buy.quote",
+        symbol=symbol,
+        eth_in=round(eth_amount, 6),
+        out_raw=int(quoted_out),
+        slippage=round(config['SLIPPAGE'], 6),
+        min_out=int(amount_out_min),
+    )
 
-    # Build swap parameters
     params = {
         'tokenIn': BASE_WETH,
-        'tokenOut': token_address,
-        'fee': 3000,  # 0.3% fee tier
+        'tokenOut': token_address_checksum,
+        'fee': 3000,
         'recipient': WALLET,
         'deadline': deadline,
         'amountIn': value_wei,
@@ -228,7 +315,6 @@ def buy_token(token_address: str, usd_amount: float, symbol: str = "?") -> tuple
         'sqrtPriceLimitX96': 0
     }
 
-    # Build transaction
     if config['USE_SUPPORTING_FEE']:
         fn = router.functions.exactInputSingleSupportingFeeOnTransferTokens(params)
     else:
@@ -237,41 +323,70 @@ def buy_token(token_address: str, usd_amount: float, symbol: str = "?") -> tuple
     tx = fn.build_transaction(base_tx)
     tx = _apply_eip1559(tx)
 
-    # Estimate gas + buffer
     try:
         est = w3.eth.estimate_gas(tx)
         tx["gas"] = int(est * 1.2)
-    except Exception:
+    except Exception as exc:
+        _log("WARNING", "base.buy.gas_estimate_failed", "Gas estimate failed; using fallback", error=str(exc))
         tx["gas"] = 300000
 
-    # Re-quote protection: if we spent too long, re-quote and rebuild minOut
     t_quote = time.time()
+
     def _maybe_requote_and_adjust(tx_dict):
         elapsed = time.time() - t_quote
         if elapsed <= config['REQUOTE_DELAY_SECONDS']:
-            return tx_dict  # still fresh
+            return tx_dict
 
-        print(f"⏱️ Quote stale ({elapsed:.1f}s). Re-quoting before send…")
+        _log(
+            "INFO",
+            "base.buy.requote",
+            "Quote stale; attempting re-quote before send",
+            elapsed_seconds=round(elapsed, 2),
+            symbol=symbol,
+        )
+
         try:
-            re_quoted_out = _quote_v3_out(value_wei, token_address, 3000)
-        except Exception as e:
-            print(f"⚠️ Re-quote failed ({e}); sending with original minOut.")
+            re_quoted_out = _quote_v3_out(value_wei, token_address_checksum, 3000)
+        except Exception as exc:
+            _log(
+                "WARNING",
+                "base.buy.requote_failed",
+                "Re-quote failed; sending original transaction",
+                error=str(exc),
+                symbol=symbol,
+            )
             return tx_dict
 
         if re_quoted_out <= 0:
-            print("⚠️ Re-quote returned 0; sending with original minOut.")
+            _log(
+                "WARNING",
+                "base.buy.requote_zero",
+                "Re-quote returned zero; keeping original minOut",
+                symbol=symbol,
+            )
             return tx_dict
 
-        # Expand slippage slightly on re-quote to reduce false failures
         total_slip = config['SLIPPAGE'] + max(0.0, config['REQUOTE_SLIPPAGE_BUFFER'])
         new_min_out = int(re_quoted_out * (1.0 - total_slip))
         if new_min_out <= 0:
-            print("⚠️ Re-quote minOut <= 0; keeping original minOut.")
+            _log(
+                "WARNING",
+                "base.buy.requote_invalid_min_out",
+                "Re-quote produced invalid minOut; keeping original",
+                symbol=symbol,
+                re_quoted_out=int(re_quoted_out),
+            )
             return tx_dict
 
-        print(f"🔁 Re-quoted out: {re_quoted_out} → new minOut {new_min_out} (slip {total_slip*100:.2f}%)")
-        
-        # rebuild function with new minOut
+        _log(
+            "INFO",
+            "base.buy.requote_applied",
+            "Re-quote applied with expanded slippage buffer",
+            symbol=symbol,
+            re_quoted_out=int(re_quoted_out),
+            new_min_out=int(new_min_out),
+            total_slippage_percent=total_slip * 100.0,
+        )
         params['amountOutMinimum'] = new_min_out
         if config['USE_SUPPORTING_FEE']:
             fn2 = router.functions.exactInputSingleSupportingFeeOnTransferTokens(params)
@@ -280,60 +395,98 @@ def buy_token(token_address: str, usd_amount: float, symbol: str = "?") -> tuple
 
         tx2 = fn2.build_transaction(base_tx)
         tx2 = _apply_eip1559(tx2)
-        tx2["gas"] = tx_dict["gas"]  # keep same gas estimate
+        tx2["gas"] = tx_dict["gas"]
         return tx2
 
-    # Final transaction with potential re-quote
     final_tx = _maybe_requote_and_adjust(tx)
 
-    # Send transaction
+    if should_simulate_transaction("base"):
+        simulated, sim_error = simulate_evm_transaction("base", w3, final_tx)
+        if not simulated:
+            return abort("simulation_failed", "ERROR", "Transaction simulation failed", error=sim_error)
+
+    if config['TEST_MODE']:
+        log_event("base.buy.test_mode", symbol=symbol, note="Transaction validated but not sent")
+        return succeed(None, config['SLIPPAGE'])
+
     try:
-        if config['TEST_MODE']:
-            # In test mode, still build and validate transaction but don't send
-            # This allows testing with real market data and quotes
-            log_event("base.buy.test_mode", symbol=symbol, note="Transaction validated but not sent")
-            # Return None to indicate no actual transaction was sent
-            return None, True
-        
         signed = w3.eth.account.sign_transaction(final_tx, PRIVATE_KEY)
         tx_hash = w3.eth.send_raw_transaction(signed.rawTransaction)
-        log_event("base.buy.sent", symbol=symbol, tx_hash=tx_hash.hex())
-        return tx_hash.hex(), True
-    except Exception as e:
-        log_event("base.buy.error", level="ERROR", symbol=symbol, error=str(e))
-        return None, False
+        return succeed(tx_hash.hex(), config['SLIPPAGE'])
+    except Exception as exc:
+        return abort("send_failed", "ERROR", "Buy transaction failed to send", error=str(exc))
 
 # === SELL functionality ===
-def sell_token(token_address: str, token_amount: float, symbol: str = "?") -> tuple[str, bool]:
+def sell_token(token_address: str, token_amount: float, symbol: str = "?") -> Tuple[Optional[str], bool]:
     """
     Sell `token_amount` of `token_address` for ETH on BASE.
-    Returns: (tx_hash_hex or None, success_bool)
+    Returns (tx_hash_hex or None, success_bool).
     """
+    trade_started = time.time()
+    record_trade_attempt("base", "sell")
     config = get_base_config()
-    token_address = Web3.to_checksum_address(token_address)
-    
-    # Get token contract
-    token_contract = _erc20(token_address)
-    
-    # Get token balance
+
+    intent = build_trade_intent(
+        chain="base",
+        side="sell",
+        token_address=token_address,
+        symbol=symbol,
+        quantity=float(token_amount),
+        metadata={"slippage": config['SLIPPAGE']},
+    )
+    registered, _ = register_trade_intent(intent)
+    if not registered:
+        record_trade_failure("base", "sell", "duplicate_intent")
+        return None, False
+    mark_trade_intent_pending(intent.intent_id)
+
+    def abort(reason: str, level: str, message: str, **ctx):
+        mark_trade_intent_failed(intent.intent_id, reason)
+        latency_ms = int((time.time() - trade_started) * 1000)
+        record_trade_failure("base", "sell", reason, latency_ms=latency_ms)
+        _log(level, f"base.sell.{reason}", message, symbol=symbol, **ctx)
+        return None, False
+
+    def succeed(tx_hash: Optional[str], slippage_used: float):
+        mark_trade_intent_completed(intent.intent_id, tx_hash=tx_hash)
+        latency_ms = int((time.time() - trade_started) * 1000)
+        record_trade_success(
+            "base",
+            "sell",
+            latency_ms=latency_ms,
+            slippage_bps=slippage_used * 10000.0,
+        )
+        _log("INFO", "base.sell.completed", "Sell transaction completed", symbol=symbol, tx_hash=tx_hash)
+        return tx_hash, True
+
+    try:
+        token_address_checksum = Web3.to_checksum_address(token_address)
+    except Exception as exc:
+        return abort("address_invalid", "ERROR", "Invalid token address", error=str(exc))
+
+    token_contract = _erc20(token_address_checksum)
+
     try:
         balance = token_contract.functions.balanceOf(WALLET).call()
         decimals = token_contract.functions.decimals().call()
         token_amount_wei = int(token_amount * (10 ** decimals))
-        
-        if balance < token_amount_wei:
-            print(f"❌ Insufficient {symbol} balance: {balance} < {token_amount_wei}")
-            return None, False
-    except Exception as e:
-        print(f"❌ Failed to get {symbol} balance: {e}")
-        return None, False
 
-    # Approve router to spend tokens
+        if balance < token_amount_wei:
+            return abort(
+                "insufficient_balance",
+                "ERROR",
+                "Insufficient token balance for sell",
+                balance=int(balance),
+                required=int(token_amount_wei),
+            )
+    except Exception as exc:
+        return abort("balance_fetch_failed", "ERROR", "Failed to fetch token balance", error=str(exc))
+
     if not config['TEST_MODE']:
         try:
             allowance = token_contract.functions.allowance(WALLET, ROUTER_ADDR).call()
             if allowance < token_amount_wei:
-                print(f"🔐 Approving {symbol} spend...")
+                _log("INFO", "base.sell.approval", "Approving router spend", symbol=symbol)
                 approve_tx = token_contract.functions.approve(
                     ROUTER_ADDR, token_amount_wei
                 ).build_transaction({
@@ -343,44 +496,44 @@ def sell_token(token_address: str, token_amount: float, symbol: str = "?") -> tu
                 })
                 approve_tx = _apply_eip1559(approve_tx)
                 approve_tx["gas"] = 100000
-                
+
                 signed = w3.eth.account.sign_transaction(approve_tx, PRIVATE_KEY)
                 approve_hash = w3.eth.send_raw_transaction(signed.rawTransaction)
-                print(f"✅ {symbol} approval: {approve_hash.hex()}")
-                
-                # Wait for approval to be mined
+                log_event("base.sell.approval_sent", symbol=symbol, tx_hash=approve_hash.hex())
                 w3.eth.wait_for_transaction_receipt(approve_hash, timeout=60)
-        except Exception as e:
-            print(f"❌ {symbol} approval failed: {e}")
-            return None, False
+        except Exception as exc:
+            return abort("approval_failed", "ERROR", "Approval transaction failed", error=str(exc))
 
-    # Build sell transaction
     deadline = int(time.time()) + 600
-    
+
     params = {
-        'tokenIn': token_address,
+        'tokenIn': token_address_checksum,
         'tokenOut': BASE_WETH,
-        'fee': 3000,  # 0.3% fee tier
+        'fee': 3000,
         'recipient': WALLET,
         'deadline': deadline,
         'amountIn': token_amount_wei,
-        'amountOutMinimum': 0,  # Will be set after quote
+        'amountOutMinimum': 0,
         'sqrtPriceLimitX96': 0
     }
 
-    # Quote the sell
     try:
         quoted_out = router.functions.exactInputSingle(params).call()
         amount_out_min = int(quoted_out * (1.0 - config['SLIPPAGE']))
         params['amountOutMinimum'] = amount_out_min
-        
-        print(f"🧮 Sell quote for {symbol}: in {token_amount_wei} → out {quoted_out} ETH wei")
-        print(f"🎯 Slippage {config['SLIPPAGE']*100:.2f}% → minOut {amount_out_min}")
-    except Exception as e:
-        print(f"❌ Sell quote failed for {symbol}: {e}")
-        return None, False
+        _log(
+            "INFO",
+            "base.sell.quote",
+            "Sell quote computed",
+            symbol=symbol,
+            amount_in=int(token_amount_wei),
+            quoted_out=int(quoted_out),
+            min_out=int(amount_out_min),
+            slippage_percent=config['SLIPPAGE'] * 100.0,
+        )
+    except Exception as exc:
+        return abort("quote_failed", "ERROR", "Sell quote failed", error=str(exc))
 
-    # Build transaction
     if config['USE_SUPPORTING_FEE']:
         fn = router.functions.exactInputSingleSupportingFeeOnTransferTokens(params)
     else:
@@ -393,32 +546,54 @@ def sell_token(token_address: str, token_amount: float, symbol: str = "?") -> tu
     })
     tx = _apply_eip1559(tx)
 
-    # Estimate gas
     try:
         est = w3.eth.estimate_gas(tx)
         tx["gas"] = int(est * 1.2)
-    except Exception:
+    except Exception as exc:
+        _log("WARNING", "base.sell.gas_estimate_failed", "Gas estimate failed; using fallback", error=str(exc))
         tx["gas"] = 300000
 
-    # Re-quote protection similar to buy path
     t_quote = time.time()
+
     def _maybe_requote_and_adjust(tx_dict):
         elapsed = time.time() - t_quote
         if elapsed <= config['REQUOTE_DELAY_SECONDS']:
             return tx_dict
-        print(f"⏱️ Sell quote stale ({elapsed:.1f}s). Re-quoting before send…")
+        _log(
+            "INFO",
+            "base.sell.requote",
+            "Sell quote stale; attempting re-quote",
+            symbol=symbol,
+            elapsed_seconds=round(elapsed, 2),
+        )
         try:
             re_quoted_out = router.functions.exactInputSingle(params).call()
-        except Exception as e:
-            print(f"⚠️ Sell re-quote failed ({e}); sending with original minOut.")
+        except Exception as exc_inner:
+            _log(
+                "WARNING",
+                "base.sell.requote_failed",
+                "Sell re-quote failed; sending original transaction",
+                error=str(exc_inner),
+                symbol=symbol,
+            )
             return tx_dict
         if re_quoted_out <= 0:
-            print("⚠️ Sell re-quote returned 0; sending with original minOut.")
+            _log(
+                "WARNING",
+                "base.sell.requote_zero",
+                "Sell re-quote returned zero; sending original transaction",
+                symbol=symbol,
+            )
             return tx_dict
         total_slip = config['SLIPPAGE'] + max(0.0, config['REQUOTE_SLIPPAGE_BUFFER'])
         new_min_out = int(re_quoted_out * (1.0 - total_slip))
         if new_min_out <= 0:
-            print("⚠️ Sell re-quote minOut <= 0; keeping original minOut.")
+            _log(
+                "WARNING",
+                "base.sell.requote_invalid_min_out",
+                "Sell re-quote produced invalid minOut; keeping original",
+                symbol=symbol,
+            )
             return tx_dict
         params['amountOutMinimum'] = new_min_out
         if config['USE_SUPPORTING_FEE']:
@@ -434,23 +609,23 @@ def sell_token(token_address: str, token_amount: float, symbol: str = "?") -> tu
         tx2["gas"] = tx_dict.get("gas", 300000)
         return tx2
 
-    # Send transaction
+    final_tx = _maybe_requote_and_adjust(tx)
+
+    if should_simulate_transaction("base"):
+        simulated, sim_error = simulate_evm_transaction("base", w3, final_tx)
+        if not simulated:
+            return abort("simulation_failed", "ERROR", "Sell transaction simulation failed", error=sim_error)
+
+    if config['TEST_MODE']:
+        log_event("base.sell.test_mode", symbol=symbol, note="Transaction validated but not sent")
+        return succeed(None, config['SLIPPAGE'])
+
     try:
-        if config['TEST_MODE']:
-            # In test mode, still build and validate transaction but don't send
-            # This allows testing with real market data and quotes
-            log_event("base.sell.test_mode", symbol=symbol, note="Transaction validated but not sent")
-            # Return None to indicate no actual transaction was sent
-            return None, True
-        
-        final_tx = _maybe_requote_and_adjust(tx)
         signed = w3.eth.account.sign_transaction(final_tx, PRIVATE_KEY)
         tx_hash = w3.eth.send_raw_transaction(signed.rawTransaction)
-        log_event("base.sell.sent", symbol=symbol, tx_hash=tx_hash.hex())
-        return tx_hash.hex(), True
-    except Exception as e:
-        log_event("base.sell.error", level="ERROR", symbol=symbol, error=str(e))
-        return None, False
+        return succeed(tx_hash.hex(), config['SLIPPAGE'])
+    except Exception as exc:
+        return abort("send_failed", "ERROR", "Sell transaction failed to send", error=str(exc))
 
 # === Utility functions ===
 def get_base_balance() -> float:
@@ -460,7 +635,7 @@ def get_base_balance() -> float:
         balance_eth = w3.from_wei(balance_wei, "ether")
         return float(balance_eth)
     except Exception as e:
-        print(f"❌ Failed to get BASE balance: {e}")
+        _log("ERROR", "base.balance.failed", "Failed to fetch BASE balance", error=str(e))
         return 0.0
 
 def get_token_balance(token_address: str) -> float:
@@ -472,5 +647,5 @@ def get_token_balance(token_address: str) -> float:
         balance = balance_wei / (10 ** decimals)
         return float(balance)
     except Exception as e:
-        print(f"❌ Failed to get token balance: {e}")
+        _log("ERROR", "base.token_balance.failed", "Failed to fetch token balance", token_address=token_address, error=str(e))
         return 0.0

@@ -112,6 +112,67 @@ class MonitoringConfig(BaseModel):
     enable_telegram_alerts: bool = Field(default=True, description="Enable Telegram alerts")
     enable_performance_alerts: bool = Field(default=True, description="Enable performance alerts")
 
+class ExecutionConfig(BaseModel):
+    """Execution policy configuration validation"""
+    max_slippage_percent: float = Field(
+        default=0.025,
+        ge=0.0005,
+        le=0.25,
+        description="Global slippage cap applied to trades (decimal form, e.g. 0.025 = 2.5%)",
+    )
+    max_slippage_percent_by_chain: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Optional per-chain slippage caps (decimal form)",
+    )
+    gas_ceiling_gwei: float = Field(
+        default=250.0,
+        ge=10.0,
+        le=5000.0,
+        description="Global gas ceiling (gwei) for maxFeePerGas",
+    )
+    gas_ceiling_gwei_by_chain: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Optional per-chain gas ceilings (gwei)",
+    )
+    max_priority_fee_gwei: float = Field(
+        default=50.0,
+        ge=0.0,
+        le=500.0,
+        description="Global max priority fee (gwei)",
+    )
+    max_priority_fee_gwei_by_chain: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Optional per-chain max priority fees (gwei)",
+    )
+    max_retries: int = Field(
+        default=2,
+        ge=0,
+        le=5,
+        description="Maximum retry attempts for failed executions",
+    )
+    retry_backoff_seconds: float = Field(
+        default=1.5,
+        ge=0.0,
+        le=60.0,
+        description="Base backoff between retries (seconds)",
+    )
+    enable_simulation: bool = Field(
+        default=True,
+        description="Require eth_call transaction simulation before broadcast",
+    )
+    simulation_timeout_seconds: int = Field(
+        default=15,
+        ge=1,
+        le=120,
+        description="Timeout for transaction simulation (seconds)",
+    )
+    rpc_failover_budget: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Maximum sequential RPC failures before abort",
+    )
+
 class BotConfig(BaseModel):
     """Main bot configuration validation"""
     test_mode: bool = Field(default=False, description="Test mode flag")
@@ -123,6 +184,7 @@ class BotConfig(BaseModel):
     ai: Optional[AIConfig] = Field(default=None, description="AI configuration")
     quality: Optional[QualityConfig] = Field(default=None, description="Quality configuration")
     monitoring: Optional[MonitoringConfig] = Field(default=None, description="Monitoring configuration")
+    execution: Optional[ExecutionConfig] = Field(default=None, description="Execution configuration")
     
     # Additional validation
     @model_validator(mode='after')
@@ -163,6 +225,7 @@ class ConfigValidator:
             ai_config = AIConfig(**self.raw_config)
             quality_config = QualityConfig(**self.raw_config)
             monitoring_config = MonitoringConfig(**self.raw_config)
+            execution_config = ExecutionConfig(**self.raw_config)
             
             # Create main config with sub-configurations
             main_config = {
@@ -172,7 +235,8 @@ class ConfigValidator:
                 'chains': chains_config,
                 'ai': ai_config,
                 'quality': quality_config,
-                'monitoring': monitoring_config
+                'monitoring': monitoring_config,
+                'execution': execution_config
             }
             
             # Validate against schema
@@ -231,6 +295,10 @@ class ConfigValidator:
     def get_monitoring_config(self) -> MonitoringConfig:
         """Get monitoring configuration"""
         return self.get_config().monitoring
+    
+    def get_execution_config(self) -> ExecutionConfig:
+        """Get execution configuration"""
+        return self.get_config().execution
     
     def validate_environment(self) -> Dict[str, Any]:
         """
@@ -343,3 +411,7 @@ def validate_config() -> bool:
 def get_config_summary() -> Dict[str, Any]:
     """Get configuration summary"""
     return config_validator.get_config_summary()
+
+def get_execution_config() -> ExecutionConfig:
+    """Convenience accessor for execution configuration"""
+    return config_validator.get_execution_config()
