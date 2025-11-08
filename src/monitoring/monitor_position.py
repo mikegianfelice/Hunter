@@ -164,11 +164,6 @@ def load_positions(validate_balances: bool = False):
             # Has balance - position is still open
             validated_positions[position_key] = position_data
     
-    # If positions were filtered, save the cleaned list
-    if len(validated_positions) < len(positions):
-        print(f"🧹 Filtered {len(positions) - len(validated_positions)} position(s) with zero balance")
-        save_positions(validated_positions)
-    
     return validated_positions
 
 def save_positions(positions):
@@ -529,6 +524,7 @@ def _prune_positions_with_zero_balance(positions: dict) -> Tuple[dict, list]:
     
     if to_remove:
         print(f"🧹 Auto-reconciled {len(to_remove)} manually closed position(s)")
+        # Persist removals for manual closes
         save_positions(pruned)
         # Send Telegram notification
         try:
@@ -695,27 +691,6 @@ def _sync_only_positions_with_balance():
 
 def monitor_all_positions():
     config = get_monitor_config()
-
-    # First, attempt a Helius-backed reconciliation to ensure on-chain truth.
-    try:
-        from src.core.helius_reconciliation import reconcile_positions_and_pnl
-
-        helius_summary = reconcile_positions_and_pnl()
-        if helius_summary.get("enabled"):
-            closed = helius_summary.get("open_positions_closed", 0)
-            verified = helius_summary.get("open_positions_verified", 0)
-            updated = helius_summary.get("trades_updated", 0)
-            if closed or updated:
-                print(
-                    f"🔁 Helius reconciliation: {verified} verified, "
-                    f"{closed} closed, {updated} trade(s) updated."
-                )
-        else:
-            reason = helius_summary.get("reason")
-            if reason:
-                print(f"ℹ️ Helius reconciliation skipped: {reason}")
-    except Exception as e:
-        print(f"⚠️ Helius reconciliation failed: {e}")
     
     # Load existing positions first (with balance validation to filter out manually closed positions)
     positions = load_positions(validate_balances=True)
@@ -767,14 +742,7 @@ def monitor_all_positions():
             except Exception as e:
                 print(f"⚠️ Failed to update performance tracker for reconciled positions: {e}")
     
-    # NOW sync positions from performance_data.json, but ONLY for trades that still have balances
-    # This ensures positions are tracked even if initial logging failed, but doesn't re-add manually closed ones
-    try:
-        _sync_only_positions_with_balance()
-    except Exception as e:
-        print(f"⚠️ Failed to sync positions: {e}")
-    
-    # Reload positions after sync (in case new ones were added)
+    # Do not write or sync open_positions.json from monitor; only read current positions
     positions = load_positions()
     if not positions:
         print("📭 No open positions to monitor.")
@@ -1104,8 +1072,7 @@ def monitor_all_positions():
         else:
             print("⏳ Holding position...")
 
-    # Save updated positions and failure counts
-    save_positions(updated_positions)
+    # Save only failure counts (do not modify open_positions.json from monitor)
     delisted_tokens["failure_counts"] = failure_counts
     save_delisted_tokens(delisted_tokens)
 
@@ -1124,47 +1091,16 @@ def _main_loop():
     
     _ensure_singleton()
     
-    # Step 1: Reconcile wallet holdings with tracked positions (discover missing positions)
-    # This ensures we catch tokens that were manually bought or not logged
-    try:
-        print(f"[{startup_time}] 🔍 Running wallet reconciliation...")
-        recon_results = update_open_positions_from_wallet()
-        print(f"[{startup_time}] ✅ Wallet reconciliation complete: {recon_results['added']} added, {recon_results['removed']} removed")
-    except Exception as e:
-        print(f"[{startup_time}] ⚠️ Failed to reconcile wallet on startup: {e}")
-        import traceback
-        print(f"[{startup_time}] Error details:\n{traceback.format_exc()}")
-    
-    # Step 2: Sync positions from performance_data.json to catch any missed positions
-    # Use balance-verified sync to prevent manually closed positions from being re-added
-    try:
-        _sync_only_positions_with_balance()
-        print(f"[{startup_time}] ✅ Initial position sync completed (balance-verified)")
-    except Exception as e:
-        print(f"[{startup_time}] ⚠️ Failed to sync positions on startup: {e}")
-        import traceback
-        print(f"[{startup_time}] Error details:\n{traceback.format_exc()}")
+    # Monitor should not modify open_positions.json; skip wallet reconciliation and sync
     
     cycle_count = 0
     try:
         while _running:
             _heartbeat()
             
-            # Periodically reconcile wallet and sync positions (every 10 cycles = ~5 minutes)
-            # This ensures positions stay in sync even if performance_data is updated elsewhere
-            # Use balance-verified sync to prevent manually closed positions from being re-added
+            # Monitor should not write to open_positions.json; skip periodic reconciliation/sync
             cycle_count += 1
-            if cycle_count % 10 == 0:
-                try:
-                    # Reconcile wallet first (discovers missing positions)
-                    recon_results = update_open_positions_from_wallet()
-                    if recon_results['added'] > 0 or recon_results['removed'] > 0:
-                        print(f"🔄 Periodic reconciliation: {recon_results['added']} added, {recon_results['removed']} removed")
-                    
-                    # Then sync from performance_data
-                    _sync_only_positions_with_balance()
-                except Exception as e:
-                    print(f"⚠️ Periodic position sync/reconciliation failed: {e}")
+            # (no-op)
             
             cycle_start = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             print(f"\n[{cycle_start}] 🔄 Starting monitoring cycle #{cycle_count}")
