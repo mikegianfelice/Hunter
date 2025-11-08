@@ -346,7 +346,7 @@ The bot now includes an intelligent delisting detection system that automaticall
 
 ### **📁 Files Used:**
 - `delisted_tokens.json` - Stores permanently delisted tokens
-- `cooldown_log.json` - Tracks failure counts and temporary cooldowns
+- `cooldown.json` - Tracks failure counts and temporary cooldowns (legacy `cooldown_log.json` automatically migrated)
 - `blacklist_manager.py` - Manages both regular blacklist and delisted tokens
 
 ### **⚙️ Configuration:**
