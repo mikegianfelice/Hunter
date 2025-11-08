@@ -347,29 +347,29 @@ def _sell_token_multi_chain(token_address: str, chain_id: str, symbol: str = "?"
             balance = lib.get_token_balance(token_address)
             print(f"🔍 [DEBUG] Token balance check result: balance={balance}, type={type(balance)}")
             
+            amount_usd = 0.0
             if balance is None:
-                print(f"❌ [ERROR] Balance check returned None for {symbol} - RPC call may have failed")
-                return None
+                print(f"⚠️ [WARNING] Balance pre-check failed (likely RPC rate limit). Proceeding with executor-level balance read.")
             elif balance <= 0:
                 print(f"❌ [ERROR] No {symbol} balance to sell: balance={balance} (balance <= 0)")
                 return None
-            
-            print(f"✅ [BALANCE OK] Token balance: {balance}")
-            
-            # Get current price to calculate USD value
-            print(f"🔍 [DEBUG] Fetching current price for USD calculation...")
-            current_price = _fetch_token_price_multi_chain(token_address)
-            print(f"🔍 [DEBUG] Current price: {current_price}")
-            
-            if current_price <= 0:
-                print(f"⚠️ [WARNING] Could not get current price for {symbol} (price={current_price}), using estimated value")
-                # Fallback: use a conservative estimate
-                current_price = 0.01  # Conservative estimate
-                print(f"🔍 [DEBUG] Using fallback price: {current_price}")
-            
-            # Calculate USD value of the token balance
-            amount_usd = balance * current_price
-            print(f"🔍 [DEBUG] Calculated amount_usd: {amount_usd} (balance={balance} * price={current_price})")
+            else:
+                print(f"✅ [BALANCE OK] Token balance: {balance}")
+                
+                # Get current price to calculate USD value
+                print(f"🔍 [DEBUG] Fetching current price for USD calculation...")
+                current_price = _fetch_token_price_multi_chain(token_address)
+                print(f"🔍 [DEBUG] Current price: {current_price}")
+                
+                if current_price <= 0:
+                    print(f"⚠️ [WARNING] Could not get current price for {symbol} (price={current_price}), using estimated value")
+                    # Fallback: use a conservative estimate
+                    current_price = 0.01  # Conservative estimate
+                    print(f"🔍 [DEBUG] Using fallback price: {current_price}")
+                
+                # Calculate USD value of the token balance
+                amount_usd = balance * current_price
+                print(f"🔍 [DEBUG] Calculated amount_usd: {amount_usd} (balance={balance} * price={current_price})")
             
             # Try selling with retry logic
             max_retries = 3
