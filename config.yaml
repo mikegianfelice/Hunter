@@ -68,7 +68,7 @@ solana_usdc_mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"  # USDC mint ad
 solana_min_sol_for_fees: 0.05  # Minimum SOL needed for transaction fees (separate from trading balance)
 
 # === Risk Management ===
-max_concurrent_positions: 3  # REALISTIC SCALING - 3 positions for diversification
+max_concurrent_positions: 4  # REALISTIC SCALING - 3 positions for diversification
 daily_loss_limit_usd: 50.0  # REALISTIC SCALING - $50 daily loss limit
 max_losing_streak: 3  # Stop after 3 losses
 circuit_breaker_minutes: 120  # Longer cooldown after losses
