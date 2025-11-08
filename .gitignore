@@ -226,6 +226,7 @@ sol_price_cache.json
 
 # Secrets and encryption keys
 .secret_key
+cacert.pem
 
 # Runtime data files
 delisted_tokens.json
