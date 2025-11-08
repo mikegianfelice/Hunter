@@ -10,13 +10,12 @@ from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 from enum import Enum
-import json
-import os
 
 from src.config.config_validator import get_validated_config
 from src.config.config_loader import get_config_bool, get_config_float
 from src.monitoring.performance_monitor import performance_monitor
 from src.storage.positions import load_positions as load_positions_store, replace_positions
+from src.storage.risk import load_risk_state as load_risk_state_store, save_risk_state as save_risk_state_store
 
 logger = logging.getLogger(__name__)
 
@@ -105,26 +104,19 @@ class CentralizedRiskManager:
             return {}
     
     def _load_risk_state(self):
-        """Load risk state from file"""
+        """Load risk state from persistent storage"""
         try:
-            risk_state_path = os.path.join('data', 'risk_state.json')
-            if os.path.exists(risk_state_path):
-                with open(risk_state_path, 'r') as f:
-                    saved_state = json.load(f)
-                    # Only load if it's from today
-                    if saved_state.get('last_reset_date') == datetime.now().date().isoformat():
-                        self.risk_state.update(saved_state)
+            stored = load_risk_state_store() or {}
+            today = datetime.now().date().isoformat()
+            if stored.get('last_reset_date') == today:
+                self.risk_state.update(stored)
         except Exception as e:
             logger.warning(f"Could not load risk state: {e}")
-    
+
     def _save_risk_state(self):
-        """Save risk state to file"""
+        """Persist risk state via storage layer"""
         try:
-            # Ensure data directory exists
-            os.makedirs('data', exist_ok=True)
-            risk_state_path = os.path.join('data', 'risk_state.json')
-            with open(risk_state_path, 'w') as f:
-                json.dump(self.risk_state, f, indent=2)
+            save_risk_state_store(self.risk_state)
         except Exception as e:
             logger.warning(f"Could not save risk state: {e}")
     

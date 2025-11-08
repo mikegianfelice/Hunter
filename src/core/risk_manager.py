@@ -1,15 +1,18 @@
 # risk_manager.py
-import json, os, time, yaml
+import time
 from datetime import datetime, timezone
 from web3 import Web3
+
 from src.config.secrets import INFURA_URL, WALLET_ADDRESS
 from src.config.config_loader import get_config, get_config_int, get_config_float
 from src.storage.positions import load_positions as load_positions_store
+from src.storage.risk import (
+    load_risk_state as load_risk_state_store,
+    save_risk_state as save_risk_state_store,
+    load_balance_cache as load_balance_cache_store,
+    save_balance_cache as save_balance_cache_store,
+)
 from src.utils.utils import resolve_token_address
-
-STATE_FILE = "data/risk_state.json"
-POSITIONS_FILE = "data/open_positions.json"
-BALANCE_CACHE_FILE = "data/balance_cache.json"
 
 # Dynamic config loading
 def get_risk_manager_config():
@@ -347,21 +350,14 @@ def _now_ts():
     return int(time.time())
 
 def _load_balance_cache():
-    """Load balance cache from disk"""
-    if not os.path.exists(BALANCE_CACHE_FILE):
-        return {}
-    try:
-        with open(BALANCE_CACHE_FILE, "r") as f:
-            return json.load(f) or {}
-    except Exception:
-        return {}
+    """Load balance cache from persistent storage"""
+    return load_balance_cache_store().copy()
+
 
 def _save_balance_cache(cache_data):
-    """Save balance cache to disk"""
-    os.makedirs('data', exist_ok=True)
+    """Persist balance cache via storage layer"""
     try:
-        with open(BALANCE_CACHE_FILE, "w") as f:
-            json.dump(cache_data, f, indent=2)
+        save_balance_cache_store(cache_data or {})
     except Exception as e:
         print(f"⚠️ Failed to save balance cache: {e}")
 
@@ -407,39 +403,42 @@ def _update_balance_cache(chain_id: str, balance: float):
     _save_balance_cache(cache)
 
 def _load_state():
-    s = {
+    base_state = {
         "date": _today_utc(),
         "realized_pnl_usd": 0.0,
         "buys_today": 0,
         "sells_today": 0,
         "losing_streak": 0,
-        "paused_until": 0,     # epoch seconds; 0 = not paused
-        "daily_spend_usd": 0.0
+        "paused_until": 0,
+        "daily_spend_usd": 0.0,
     }
-    if os.path.exists(STATE_FILE):
-        try:
-            with open(STATE_FILE, "r") as f:
-                data = json.load(f)
-                s.update(data or {})
-        except Exception:
-            pass
-    # reset if new day
-    if s.get("date") != _today_utc():
-        s.update({
-            "date": _today_utc(),
-            "realized_pnl_usd": 0.0,
-            "buys_today": 0,
-            "sells_today": 0,
-            "losing_streak": 0,
-            "paused_until": 0,
-            "daily_spend_usd": 0.0
-        })
-    return s
+    try:
+        stored = load_risk_state_store() or {}
+        if isinstance(stored, dict):
+            base_state.update(stored)
+    except Exception as e:
+        print(f"⚠️ Failed to load risk state from storage: {e}")
 
-def _save_state(s):
-    os.makedirs('data', exist_ok=True)
-    with open(STATE_FILE, "w") as f:
-        json.dump(s, f, indent=2)
+    if base_state.get("date") != _today_utc():
+        base_state.update(
+            {
+                "date": _today_utc(),
+                "realized_pnl_usd": 0.0,
+                "buys_today": 0,
+                "sells_today": 0,
+                "losing_streak": 0,
+                "paused_until": 0,
+                "daily_spend_usd": 0.0,
+            }
+        )
+    return base_state
+
+
+def _save_state(state):
+    try:
+        save_risk_state_store(state or {})
+    except Exception as e:
+        print(f"⚠️ Failed to persist risk state: {e}")
 
 def _open_positions_count():
     positions = load_positions_store()
