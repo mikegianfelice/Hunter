@@ -61,8 +61,7 @@ cover/
 # Test scripts (do not commit)
 test_*.py
 */test_*.py
-tests/
-*/tests/
+# Allow committed tests
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
