@@ -6,6 +6,9 @@ Keep only the most recent open position per token address
 import json
 import sys
 from pathlib import Path
+from datetime import datetime
+
+from src.storage.performance import load_performance_data, replace_performance_data
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PERFORMANCE_DATA_FILE = PROJECT_ROOT / "data" / "performance_data.json"
@@ -14,18 +17,15 @@ PERFORMANCE_DATA_FILE = PROJECT_ROOT / "data" / "performance_data.json"
 def cleanup_duplicates():
     """Remove duplicate open positions, keeping only the most recent per token"""
     try:
-        if not PERFORMANCE_DATA_FILE.exists():
-            print("❌ performance_data.json not found")
-            return False
-        
-        # Load performance data
-        with open(PERFORMANCE_DATA_FILE, "r") as f:
-            perf_data = json.load(f)
-        
+        perf_data = load_performance_data()
         trades = perf_data.get("trades", [])
         open_trades = [t for t in trades if t.get("status") == "open"]
         closed_trades = [t for t in trades if t.get("status") != "open"]
-        
+
+        if not trades and not PERFORMANCE_DATA_FILE.exists():
+            print("⚠️ No performance data found")
+            return False
+
         print(f"📊 Found {len(open_trades)} open trades and {len(closed_trades)} closed trades")
         
         # Group open trades by address
@@ -75,25 +75,23 @@ def cleanup_duplicates():
         all_trades.sort(key=lambda x: x.get("entry_time", ""))
         
         perf_data["trades"] = all_trades
-        
-        # Save back
+
         backup_file = PERFORMANCE_DATA_FILE.with_suffix(".json.bak")
-        if backup_file.exists():
-            backup_file.unlink()
-        
-        # Create backup
-        with open(backup_file, "w") as f:
-            json.dump(perf_data, f, indent=2)
-        
-        # Write cleaned data
-        with open(PERFORMANCE_DATA_FILE, "w") as f:
-            json.dump(perf_data, f, indent=2)
-        
+        if PERFORMANCE_DATA_FILE.exists():
+            if backup_file.exists():
+                backup_file.unlink()
+            with open(PERFORMANCE_DATA_FILE, "r") as f_src, open(backup_file, "w") as f_dest:
+                f_dest.write(f_src.read())
+
+        perf_data["last_updated"] = datetime.now().isoformat()
+        replace_performance_data(perf_data)
+
         print(f"✅ Cleaned up duplicates:")
         print(f"   - {len(unique_open_trades)} unique open position(s) remaining")
         print(f"   - {len(duplicates_to_close)} duplicate(s) marked as closed")
-        print(f"   - Backup saved to {backup_file.name}")
-        
+        if PERFORMANCE_DATA_FILE.exists():
+            print(f"   - Backup saved to {backup_file.name}")
+
         return True
         
     except Exception as e:

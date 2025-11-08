@@ -7,7 +7,7 @@ import csv
 import signal
 from datetime import datetime
 from pathlib import Path
-from typing import Tuple, Dict
+from typing import Tuple, Dict, Any
 
 # Add project root to path if not already there
 project_root = Path(__file__).resolve().parents[2]
@@ -28,6 +28,7 @@ from src.utils.position_sync import (
     is_native_gas_token,
 )
 from src.storage.positions import load_positions as load_positions_store
+from src.storage.performance import load_performance_data, replace_performance_data
 
 # Dynamic config loading
 def get_monitor_config():
@@ -590,66 +591,44 @@ def _sync_only_positions_with_balance():
     This prevents manually closed positions from being re-added.
     """
     try:
-        from src.utils.position_sync import PERFORMANCE_DATA_FILE, OPEN_POSITIONS_FILE
-        
-        if not PERFORMANCE_DATA_FILE.exists():
-            return
-        
-        # Load performance data
-        with open(PERFORMANCE_DATA_FILE, "r") as f:
-            perf_data = json.load(f)
-        
-        # Load existing open positions
-        if OPEN_POSITIONS_FILE.exists():
-            with open(OPEN_POSITIONS_FILE, "r") as f:
-                open_positions = json.load(f) or {}
-        else:
-            open_positions = {}
-        
+        from src.utils.position_sync import create_position_key
+
+        perf_data = load_performance_data()
+        open_positions = load_positions(validate_balances=False)
+
         trades = perf_data.get("trades", [])
         open_trades = [t for t in trades if t.get("status") == "open"]
-        
+
         synced_count = 0
         for trade in open_trades:
             address = trade.get("address", "")
             if not address:
                 continue
-            
+
             chain = trade.get("chain", "ethereum").lower()
             symbol = trade.get("symbol", "?")
             trade_id = trade.get("id", "")
-            
-            # Check if position already exists in open_positions
-            # Create composite key same as position_sync.py
+
             position_key = create_position_key(address)
-            
-            # Skip if already tracked
+
             if position_key in open_positions:
                 continue
-            
-            # CRITICAL: Check balance BEFORE syncing
+
             balance = _check_token_balance_on_chain(address, chain)
-            
+
             if balance == -1.0:
-                # Balance check failed - skip to be safe (don't add if we can't verify)
                 print(f"⏸️  Skipping sync for {symbol} ({address[:8]}...{address[-8:]}) - balance check failed")
                 continue
             elif balance <= 0.0 or balance < 0.000001:
-                # Zero or dust balance - position was manually closed, don't sync it
                 print(f"🚫 Skipping sync for {symbol} ({address[:8]}...{address[-8:]}) - zero/dust balance ({balance:.8f}) detected (manually closed)")
-                # Mark as closed in performance_data to prevent future syncs
-                trade['status'] = 'manual_close'
-                trade['exit_time'] = datetime.now().isoformat()
-                trade['exit_price'] = 0.0
-                trade['pnl_usd'] = 0.0
-                trade['pnl_percent'] = 0.0
+                _close_trade_record(trade)
                 continue
             else:
-                # Has balance - safe to sync
                 print(f"✓ {symbol} ({address[:8]}...{address[-8:]}) has balance {balance:.6f} - syncing")
                 from src.utils.position_sync import sync_position_from_performance_data_with_key
                 entry_price = float(trade.get("entry_price", 0))
                 position_size_usd = trade.get("position_size_usd", 0.0)
+                entry_time = trade.get("entry_time", "")
                 if sync_position_from_performance_data_with_key(
                     position_key,
                     address,
@@ -658,19 +637,26 @@ def _sync_only_positions_with_balance():
                     entry_price,
                     position_size_usd,
                     trade_id,
-                    trade.get("entry_time", ""),
+                    entry_time,
                 ):
                     synced_count += 1
-        
-        # Save updated performance_data if any trades were marked as closed
+
         if any(t.get("status") == "manual_close" for t in open_trades):
-            with open(PERFORMANCE_DATA_FILE, "w") as f:
-                json.dump(perf_data, f, indent=2)
-        
+            perf_data["last_updated"] = datetime.now().isoformat()
+            replace_performance_data(perf_data)
+
         if synced_count > 0:
-            print(f"✅ Synced {synced_count} position(s) with verified balances from performance_data.json")
+            print(f"✅ Synced {synced_count} position(s) with verified balances from performance dataset")
     except Exception as e:
         print(f"⚠️ Error in smart position sync: {e}")
+
+def _close_trade_record(trade: Dict[str, Any]) -> None:
+    trade['status'] = 'manual_close'
+    trade['exit_time'] = datetime.now().isoformat()
+    trade['exit_price'] = 0.0
+    trade['pnl_usd'] = 0.0
+    trade['pnl_percent'] = 0.0
+
 
 def monitor_all_positions():
     config = get_monitor_config()

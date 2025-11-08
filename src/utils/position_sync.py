@@ -10,6 +10,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, Optional, List, Tuple
 from src.storage.positions import load_positions as load_positions_store, replace_positions
+from src.storage.performance import load_performance_data, replace_performance_data
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PERFORMANCE_DATA_FILE = PROJECT_ROOT / "data" / "performance_data.json"
@@ -164,26 +165,24 @@ def sync_position_from_performance_data(
 
     trade_id = None
     entry_time = None
-    if PERFORMANCE_DATA_FILE.exists():
-        try:
-            with open(PERFORMANCE_DATA_FILE, "r") as f:
-                perf_data = json.load(f)
-            trades = perf_data.get("trades", [])
-            matching_trades = [
-                t
-                for t in trades
-                if t.get("address", "").lower() == token_address.lower()
-                and t.get("status") == "open"
-            ]
-            if matching_trades:
-                matching_trades.sort(key=lambda x: x.get("entry_time", ""), reverse=True)
-                latest_trade = matching_trades[0]
-                trade_id = latest_trade.get("id")
-                entry_time = latest_trade.get("entry_time")
-                if position_size_usd is None:
-                    position_size_usd = latest_trade.get("position_size_usd", 0.0)
-        except Exception:
-            pass
+    try:
+        perf_data = load_performance_data()
+        trades = perf_data.get("trades", [])
+        matching_trades = [
+            t
+            for t in trades
+            if t.get("address", "").lower() == token_address.lower()
+            and t.get("status") == "open"
+        ]
+        if matching_trades:
+            matching_trades.sort(key=lambda x: x.get("entry_time", ""), reverse=True)
+            latest_trade = matching_trades[0]
+            trade_id = latest_trade.get("id")
+            entry_time = latest_trade.get("entry_time")
+            if position_size_usd is None:
+                position_size_usd = latest_trade.get("position_size_usd", 0.0)
+    except Exception:
+        pass
 
     position_key = create_position_key(
         token_address,
@@ -277,21 +276,20 @@ def sync_position_from_performance_data_with_key(
         # If position_size_usd not provided, try to get it from performance_data.json
         if position_size_usd is None:
             try:
-                if PERFORMANCE_DATA_FILE.exists():
-                    with open(PERFORMANCE_DATA_FILE, "r") as f:
-                        perf_data = json.load(f)
-                        trades = perf_data.get("trades", [])
-                        # Find matching trade
-                        if trade_id:
-                            matching_trades = [t for t in trades if t.get("id") == trade_id]
-                        else:
-                            matching_trades = [t for t in trades 
-                                             if t.get("address", "").lower() == token_address.lower() 
-                                             and t.get("status") == "open"]
-                        if matching_trades:
-                            # Sort by entry_time (most recent first)
-                            matching_trades.sort(key=lambda x: x.get("entry_time", ""), reverse=True)
-                            position_size_usd = matching_trades[0].get("position_size_usd", 0.0)
+                perf_data = load_performance_data()
+                trades = perf_data.get("trades", [])
+                if trade_id:
+                    matching_trades = [t for t in trades if t.get("id") == trade_id]
+                else:
+                    matching_trades = [
+                        t
+                        for t in trades
+                        if t.get("address", "").lower() == token_address.lower()
+                        and t.get("status") == "open"
+                    ]
+                if matching_trades:
+                    matching_trades.sort(key=lambda x: x.get("entry_time", ""), reverse=True)
+                    position_size_usd = matching_trades[0].get("position_size_usd", 0.0)
             except Exception:
                 pass
         
@@ -353,46 +351,39 @@ def sync_position_from_performance_data_with_key(
 
 
 def _mark_trade_as_closed_in_performance_data(token_address: str, chain_id: str, trade_id: str = None):
-    """Mark a trade as manually closed in performance_data.json"""
+    """Mark a trade as manually closed in performance storage"""
     try:
-        if not PERFORMANCE_DATA_FILE.exists():
-            return
-        
-        with open(PERFORMANCE_DATA_FILE, "r") as f:
-            perf_data = json.load(f)
-        
+        perf_data = load_performance_data()
         trades = perf_data.get("trades", [])
         updated = False
-        
+
         for trade in trades:
             if trade.get("status") == "open":
-                # Match by trade_id if available, otherwise by address and chain
                 if trade_id and trade.get("id") == trade_id:
-                    trade['status'] = 'manual_close'
-                    trade['exit_time'] = datetime.now().isoformat()
-                    trade['exit_price'] = 0.0
-                    trade['pnl_usd'] = 0.0
-                    trade['pnl_percent'] = 0.0
+                    _close_trade_record(trade)
                     updated = True
                     break
                 elif trade.get("address", "").lower() == token_address.lower() and trade.get("chain", "").lower() == chain_id.lower():
-                    trade['status'] = 'manual_close'
-                    trade['exit_time'] = datetime.now().isoformat()
-                    trade['exit_price'] = 0.0
-                    trade['pnl_usd'] = 0.0
-                    trade['pnl_percent'] = 0.0
+                    _close_trade_record(trade)
                     updated = True
                     break
-        
+
         if updated:
-            # Save updated performance_data
-            temp_file = PERFORMANCE_DATA_FILE.with_suffix(".tmp")
-            with open(temp_file, "w") as f:
-                json.dump(perf_data, f, indent=2)
-            temp_file.replace(PERFORMANCE_DATA_FILE)
-            print(f"📝 Marked trade as manually closed in performance_data.json")
+            perf_data["trades"] = trades
+            perf_data.setdefault("daily_stats", perf_data.get("daily_stats", {}))
+            perf_data["last_updated"] = datetime.now().isoformat()
+            replace_performance_data(perf_data)
+            print(f"📝 Marked trade as manually closed in performance history")
     except Exception as e:
         print(f"⚠️ Failed to mark trade as closed: {e}")
+
+
+def _close_trade_record(trade: Dict[str, Any]) -> None:
+    trade['status'] = 'manual_close'
+    trade['exit_time'] = datetime.now().isoformat()
+    trade['exit_price'] = 0.0
+    trade['pnl_usd'] = 0.0
+    trade['pnl_percent'] = 0.0
 
 
 def sync_all_open_positions(verify_balances: bool = True) -> Dict[str, bool]:
@@ -409,8 +400,7 @@ def sync_all_open_positions(verify_balances: bool = True) -> Dict[str, bool]:
         
         # Load performance data
         try:
-            with open(PERFORMANCE_DATA_FILE, "r") as f:
-                perf_data = json.load(f)
+            perf_data = load_performance_data()
         except (json.JSONDecodeError, IOError) as e:
             print(f"⚠️ Failed to read performance_data.json: {e}")
             return results
@@ -418,8 +408,7 @@ def sync_all_open_positions(verify_balances: bool = True) -> Dict[str, bool]:
         # Load existing open positions
         positions = _load_open_positions()
         
-        # Find all open trades in performance_data
-        # Track ALL open positions, including multiple positions for the same token
+        # Find all open trades in performance data
         trades = perf_data.get("trades", [])
         open_trades = [t for t in trades if t.get("status") == "open"]
         
@@ -510,7 +499,12 @@ def get_all_wallet_token_holdings(chain_id: str, min_balance_threshold: float = 
         List of dicts with token info: [{"address": str, "balance": float, "symbol": str, "price_usd": float, "value_usd": float}]
     """
     holdings = []
-    
+    perf_data_snapshot = {}
+    try:
+        perf_data_snapshot = load_performance_data()
+    except Exception:
+        perf_data_snapshot = {}
+
     try:
         chain_lower = chain_id.lower()
         
@@ -565,22 +559,15 @@ def get_all_wallet_token_holdings(chain_id: str, min_balance_threshold: float = 
                             symbol = "UNKNOWN"
                             price_usd = 0.0
                             
-                            # First, try to get symbol from existing performance_data.json (if token was previously traded)
-                            try:
-                                if PERFORMANCE_DATA_FILE.exists():
-                                    with open(PERFORMANCE_DATA_FILE, "r") as f:
-                                        perf_data_check = json.load(f)
-                                        trades_check = perf_data_check.get("trades", [])
-                                        # Find most recent trade with this address
-                                        matching_trades = [t for t in trades_check 
-                                                         if t.get("address", "").lower() == mint.lower()]
-                                        if matching_trades:
-                                            # Use symbol from most recent trade
-                                            matching_trades.sort(key=lambda x: x.get("entry_time", ""), reverse=True)
-                                            symbol = matching_trades[0].get("symbol", "UNKNOWN")
-                            except Exception:
-                                pass  # If we can't read performance_data, continue with UNKNOWN
-                            
+                            # First, try to get symbol from stored performance history (if token was previously traded)
+                            trades_check = perf_data_snapshot.get("trades", [])
+                            matching_trades = [
+                                t for t in trades_check if t.get("address", "").lower() == mint.lower()
+                            ]
+                            if matching_trades:
+                                matching_trades.sort(key=lambda x: x.get("entry_time", ""), reverse=True)
+                                symbol = matching_trades[0].get("symbol", "UNKNOWN")
+
                             # Try to get price (for Solana tokens, try Solana-specific price fetcher)
                             try:
                                 # Try Solana price fetcher first
@@ -664,19 +651,9 @@ def reconcile_wallet_with_positions(
     try:
         # Load existing data
         open_positions = _load_open_positions()
-        
-        if PERFORMANCE_DATA_FILE.exists():
-            try:
-                with open(PERFORMANCE_DATA_FILE, "r") as f:
-                    perf_data = json.load(f)
-                    trades = perf_data.get("trades", [])
-            except (json.JSONDecodeError, IOError):
-                trades = []
-                perf_data = {"trades": [], "daily_stats": {}}
-        else:
-            trades = []
-            perf_data = {"trades": [], "daily_stats": {}}
-        
+        perf_data = load_performance_data()
+        trades = perf_data.get("trades", [])
+
         # Get all wallet holdings (for Solana - can extend to other chains)
         print("🔍 Scanning wallet for token holdings...")
         wallet_holdings = get_all_wallet_token_holdings("solana", min_balance_threshold)
@@ -797,13 +774,9 @@ def reconcile_wallet_with_positions(
         # Save updated files
         if results["added"] > 0 or results["removed"] > 0:
             _save_open_positions(open_positions)
-            # Save performance_data
             perf_data["last_updated"] = datetime.now().isoformat()
-            temp_file = PERFORMANCE_DATA_FILE.with_suffix(".tmp")
-            with open(temp_file, "w") as f:
-                json.dump(perf_data, f, indent=2)
-            temp_file.replace(PERFORMANCE_DATA_FILE)
-            
+            replace_performance_data(perf_data)
+
             print(f"✅ Reconciliation complete: {results['added']} added, {results['removed']} removed")
     
     except Exception as e:
@@ -865,13 +838,11 @@ def migrate_open_positions_to_canonical_keys(dry_run: bool = False) -> Dict[str,
         return stats
 
     perf_trades: List[Dict[str, Any]] = []
-    if PERFORMANCE_DATA_FILE.exists():
-        try:
-            with open(PERFORMANCE_DATA_FILE, "r") as fh:
-                perf_payload = json.load(fh) or {}
-                perf_trades = perf_payload.get("trades", []) or []
-        except (json.JSONDecodeError, OSError):
-            perf_trades = []
+    try:
+        perf_payload = load_performance_data()
+        perf_trades = perf_payload.get("trades", []) or []
+    except Exception:
+        perf_trades = []
 
     def _match_trade_id(address: str, chain_id: str) -> Optional[str]:
         candidates = [

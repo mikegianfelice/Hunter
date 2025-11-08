@@ -4,12 +4,16 @@ Performance Tracking System for Sustainable Trading Bot
 Tracks trades, analyzes performance by quality tiers, and provides insights
 """
 
-import json
-import os
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 from collections import defaultdict
 import statistics
+
+from src.storage.performance import (
+    load_performance_data,
+    replace_performance_data,
+    set_json_path,
+)
 
 class PerformanceTracker:
     def __init__(self, data_file: str = "data/performance_data.json"):
@@ -27,28 +31,25 @@ class PerformanceTracker:
     
     def load_data(self):
         """Load existing performance data"""
-        if os.path.exists(self.data_file):
-            try:
-                with open(self.data_file, 'r') as f:
-                    data = json.load(f)
-                    self.trades = data.get('trades', [])
-                    self.daily_stats = data.get('daily_stats', {})
-            except Exception as e:
-                print(f"⚠️ Could not load performance data: {e}")
-                self.trades = []
-                self.daily_stats = {}
+        set_json_path(self.data_file)
+        try:
+            payload = load_performance_data()
+            self.trades = payload.get('trades', [])
+            self.daily_stats = payload.get('daily_stats', {})
+        except Exception as e:
+            print(f"⚠️ Could not load performance data: {e}")
+            self.trades = []
+            self.daily_stats = {}
     
     def save_data(self):
-        """Save performance data to file"""
+        """Persist performance data to storage"""
         try:
             data = {
                 'trades': self.trades,
                 'daily_stats': self.daily_stats,
                 'last_updated': datetime.now().isoformat()
             }
-            os.makedirs('data', exist_ok=True)
-            with open(self.data_file, 'w') as f:
-                json.dump(data, f, indent=2)
+            replace_performance_data(data)
         except Exception as e:
             print(f"⚠️ Could not save performance data: {e}")
     

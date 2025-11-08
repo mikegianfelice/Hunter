@@ -1,39 +1,18 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 import threading
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
-DB_PATH = Path("data/hunter_state.db")
+from .db import get_connection, get_meta, set_meta
+
 POSITIONS_JSON_PATH = Path("data/open_positions.json")
 _LOCK = threading.Lock()
 
-META_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS metadata (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-)
-"""
-
-def _get_meta(conn: sqlite3.Connection, key: str) -> Optional[str]:
-    row = conn.execute("SELECT value FROM metadata WHERE key = ?", (key,)).fetchone()
-    return row[0] if row else None
-
-def _set_meta(conn: sqlite3.Connection, key: str, value: str) -> None:
-    conn.execute("REPLACE INTO metadata (key, value) VALUES (?, ?)", (key, value))
-
-
-def _get_connection() -> sqlite3.Connection:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
 
 def _init_db() -> None:
-    with _get_connection() as conn:
+    with get_connection() as conn:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS positions (
@@ -43,7 +22,6 @@ def _init_db() -> None:
             )
             """
         )
-        conn.execute(META_TABLE_SQL)
     _migrate_from_json()
 
 
@@ -60,7 +38,7 @@ def _migrate_from_json() -> None:
     if not isinstance(positions, dict) or not positions:
         return
 
-    with _get_connection() as conn:
+    with get_connection() as conn:
         count = conn.execute("SELECT COUNT(1) FROM positions").fetchone()[0]
         if count > 0:
             return
@@ -72,7 +50,7 @@ def _migrate_from_json() -> None:
                 )
             except Exception:
                 continue
-        _set_meta(conn, "positions_json_mtime", str(POSITIONS_JSON_PATH.stat().st_mtime))
+        set_meta("positions_json_mtime", str(POSITIONS_JSON_PATH.stat().st_mtime), conn)
 
 
 def _write_json_snapshot() -> None:
@@ -80,9 +58,7 @@ def _write_json_snapshot() -> None:
     POSITIONS_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
     with POSITIONS_JSON_PATH.open("w", encoding="utf-8") as fh:
         json.dump(positions, fh, indent=2)
-    mtime = str(POSITIONS_JSON_PATH.stat().st_mtime)
-    with _get_connection() as conn:
-        _set_meta(conn, "positions_json_mtime", mtime)
+    set_meta("positions_json_mtime", str(POSITIONS_JSON_PATH.stat().st_mtime))
 
 
 def load_positions() -> Dict[str, Dict[str, Any]]:
@@ -95,8 +71,7 @@ def load_positions() -> Dict[str, Dict[str, Any]]:
             json_mtime = None
 
     if json_mtime is not None:
-        with _get_connection() as conn:
-            recorded = _get_meta(conn, "positions_json_mtime")
+        recorded = get_meta("positions_json_mtime")
         if recorded is None or float(recorded) < json_mtime:
             try:
                 with POSITIONS_JSON_PATH.open("r", encoding="utf-8") as fh:
@@ -106,15 +81,15 @@ def load_positions() -> Dict[str, Dict[str, Any]]:
                 positions_from_json = {}
             if isinstance(positions_from_json, dict) and positions_from_json:
                 with _LOCK:
-                    with _get_connection() as conn:
+                    with get_connection() as conn:
                         conn.execute("DELETE FROM positions")
                         conn.executemany(
                             "INSERT INTO positions (position_key, data, updated_at) VALUES (?, ?, strftime('%s','now'))",
                             ((k, json.dumps(v)) for k, v in positions_from_json.items()),
                         )
-                        _set_meta(conn, "positions_json_mtime", str(json_mtime))
+                        set_meta("positions_json_mtime", str(json_mtime), conn)
 
-    with _get_connection() as conn:
+    with get_connection() as conn:
         rows = conn.execute("SELECT position_key, data FROM positions").fetchall()
     result: Dict[str, Dict[str, Any]] = {}
     for row in rows:
@@ -136,7 +111,7 @@ def upsert_position(position_key: str, position_data: Dict[str, Any]) -> None:
     _init_db()
     with _LOCK:
         serialized = json.dumps(position_data)
-        with _get_connection() as conn:
+        with get_connection() as conn:
             conn.execute(
                 "REPLACE INTO positions (position_key, data, updated_at) VALUES (?, ?, strftime('%s','now'))",
                 (position_key, serialized),
@@ -147,7 +122,7 @@ def upsert_position(position_key: str, position_data: Dict[str, Any]) -> None:
 def remove_position(position_key: str) -> None:
     _init_db()
     with _LOCK:
-        with _get_connection() as conn:
+        with get_connection() as conn:
             conn.execute("DELETE FROM positions WHERE position_key = ?", (position_key,))
         _write_json_snapshot()
 
@@ -155,7 +130,7 @@ def remove_position(position_key: str) -> None:
 def replace_positions(positions: Dict[str, Dict[str, Any]]) -> None:
     _init_db()
     with _LOCK:
-        with _get_connection() as conn:
+        with get_connection() as conn:
             conn.execute("DELETE FROM positions")
             conn.executemany(
                 "INSERT INTO positions (position_key, data, updated_at) VALUES (?, ?, strftime('%s','now'))",
