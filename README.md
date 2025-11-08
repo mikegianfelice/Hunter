@@ -32,9 +32,9 @@ A sophisticated AI-powered cryptocurrency trading bot designed for **consistent 
 
 ### **🌐 Multi-Chain Trading**
 - **Real trading on Ethereum (MetaMask), Solana (Phantom), and Base**
-- **Multi-DEX Integration** - Uniswap V2/V3, Raydium, PumpSwap, Meteora, Heaven
+- **DEX Integration** - Uniswap V2/V3 (Ethereum/Base), Jupiter + Raydium (Solana)
 - **Chain-Specific Optimization** - Tailored strategies for each blockchain
-- **Cross-Chain Arbitrage Detection** - Identifies arbitrage opportunities across chains
+- **Robust Fallbacks on Solana** - Jupiter as primary with Raydium fallback for reliability
 
 ### **📊 Advanced Analytics & Performance**
 - **Dynamic Position Sizing** - AI-calculated position sizes based on token quality, risk, and market conditions
@@ -67,7 +67,7 @@ A sophisticated AI-powered cryptocurrency trading bot designed for **consistent 
 | Chain | Native Token | DEX | Status | Features |
 |-------|-------------|-----|--------|----------|
 | **Ethereum** | ETH | Uniswap V2/V3 | ✅ Full Support | Real trading, sentiment analysis, TokenSniffer |
-| **Solana** | SOL | Multi-DEX (Raydium, PumpSwap, Meteora, Heaven) | ✅ Full Support | Real trading, ATA creation, multi-DEX pool discovery, Raydium fallback |
+| **Solana** | SOL | Jupiter + Raydium | ✅ Full Support | Real trading, ATA creation, Raydium fallback |
 | **Base** | ETH | Uniswap V3 | ✅ Full Support | Real trading, EIP-1559 gas optimization, re-quote protection |
 
 *Note: Other chains (Polygon, BSC, Arbitrum, Optimism, PulseChain) are disabled by default to focus on chains where you have active wallets.*
@@ -158,8 +158,9 @@ wallet_tiers:
 ```
 
 ### ⚠️ Current Solana/Jupiter API Status (Updated)
-- **Jupiter API Endpoint Changed**: The old `quote-api.jup.ag` endpoint no longer exists (DNS resolution fails)
-- **New Endpoint Requires Authentication**: Jupiter moved to `api.jup.ag` which returns 401 Unauthorized without API keys
+- **Jupiter API Endpoint Changes**: The legacy `quote-api.jup.ag` is deprecated
+- **Default Uses Ultra (Free)**: The bot uses `https://lite-api.jup.ag` (Ultra) by default — no API key required
+- **Paid Endpoint Optional**: You can set `JUPITER_API_BASE=https://api.jup.ag` and `JUPITER_API_KEY` to use the paid API
 - **Tradeability Checks**: Uses real market data from DexScreener for liquidity and trading activity verification
 - **Real Data Integration**: All tradeability checks use actual DexScreener data (liquidity, transaction counts, prices)
 - **Impact**: Minimal - actual trading functionality continues to work with real market data validation
@@ -257,42 +258,13 @@ The bot now includes a **custom Raydium library** with DexScreener fallback for 
 - **Transaction Size Management**: Automatic parameter adjustment for large transactions
 - **Comprehensive Error Handling**: Detailed logging and fallback mechanisms
 
-## 🌐 Multi-DEX Solana Support
+## 🌐 Solana DEX Support
 
-The bot now supports **multiple Solana DEXs** for enhanced trading opportunities and better success rates:
+The bot supports Jupiter and Raydium on Solana, with intelligent fallback:
 
-### **🔍 Supported Solana DEXs:**
-
-| DEX | API Base | Status | Priority |
-|-----|----------|--------|----------|
-| **Raydium** | `https://api.raydium.io/v2` | ✅ Primary | 1st |
-| **PumpSwap** | `https://api.pumpswap.finance` | ✅ Active | 2nd |
-| **Meteora** | `https://api.meteora.ag` | ✅ Active | 3rd |
-| **Heaven** | `https://api.heaven.so` | ✅ Active | 4th |
-
-### **🚀 How Multi-DEX Works:**
-
-#### **1. Priority-Based Pool Discovery**
-- **Sequential Search**: Searches DEXs in priority order (Raydium → PumpSwap → Meteora → Heaven)
-- **First Match Wins**: Uses the first DEX that has a valid pool for the token
-- **Automatic Fallback**: If one DEX fails, automatically tries the next
-
-#### **2. Enhanced Token Discovery**
-- **Broader Coverage**: Tokens listed on any supported DEX can be traded
-- **Better Liquidity**: Access to pools across multiple DEXs increases trading opportunities
-- **Reduced Failures**: Higher success rate when one DEX is unavailable
-
-#### **3. Unified Trading Interface**
-- **Single API**: All DEXs use the same trading interface
-- **Consistent Execution**: Same slippage protection and quote generation across all DEXs
-- **Simplified Management**: No need to configure multiple DEX settings
-
-### **📊 Benefits:**
-- **🎯 Higher Success Rate**: More trading opportunities across multiple DEXs
-- **💰 Better Liquidity**: Access to pools that might not be on Raydium
-- **🛡️ Redundancy**: If one DEX is down, others continue working
-- **⚡ Faster Execution**: Priority-based selection finds pools quickly
-
+- **Primary**: Jupiter Ultra API (`lite-api.jup.ag`) for quoting and swaps
+- **Fallback**: Raydium swap flow when Jupiter rejects or times out
+- **DexScreener Validation**: Used to validate liquidity and pricing before trading
 ## 🎯 Enhanced Token Discovery System
 
 The bot now features a significantly improved token discovery system that addresses quality, diversity, and filtering issues:
@@ -973,63 +945,82 @@ log_level: DEBUG
 
 ```
 Hunter/
-├── main.py                    # Main entry point
-├── config.yaml               # Configuration file
-├── requirements.txt          # Python dependencies
-├── .env                      # Environment variables (create this)
-├── main.py                   # Main trading bot with AI integration
-├── config.yaml                # Comprehensive configuration file
-├── multi_chain_executor.py  # Multi-chain trade execution with advanced features
-├── strategy.py              # Trading strategy implementation
-├── token_scraper.py         # Token discovery across chains
-├── sentiment_scraper.py     # Sentiment analysis
-├── risk_manager.py          # Risk management
-├── monitor_position.py      # Position monitoring and sell triggers
-├── telegram_bot.py          # Telegram notifications
-├── token_sniffer.py         # Token safety checks
-├── performance_tracker.py   # Performance tracking and analytics
-├── performance_dashboard.py # Interactive performance dashboard
-├── jupiter_lib.py           # Custom Jupiter library for real trading
-├── jupiter_executor.py      # Jupiter trading executor
-├── raydium_lib.py           # Custom Raydium library with DexScreener fallback
-├── raydium_executor.py      # Raydium trading executor
-├── solana_executor.py       # Solana blockchain interactions (legacy)
-├── config_loader.py         # Dynamic configuration loading
-├── clear_cache.py           # Python cache clearing helper
-
-### **🧠 AI System Files**
-├── ai_sentiment_analyzer.py      # AI sentiment analysis system
-├── ai_market_regime_detector.py  # AI market regime detection
-├── ai_price_predictor.py         # AI price prediction system
-├── ai_portfolio_optimizer.py     # AI portfolio optimization
-├── ai_risk_assessor.py           # AI risk assessment system
-├── ai_pattern_recognizer.py      # AI pattern recognition
-├── ai_execution_optimizer.py     # AI trade execution optimizer
-├── ai_microstructure_analyzer.py # AI market microstructure analyzer
-├── ai_market_intelligence_aggregator.py # AI market intelligence aggregator
-├── ai_predictive_analytics_engine.py # AI predictive analytics engine
-├── ai_dynamic_strategy_selector.py # AI dynamic strategy selector
-├── ai_risk_prediction_prevention_system.py # AI risk prediction and prevention system
-├── ai_market_regime_transition_detector.py # AI market regime transition detector
-├── ai_liquidity_flow_analyzer.py # AI liquidity flow analyzer
-├── ai_multi_timeframe_analysis_engine.py # AI multi-timeframe analysis engine
-├── ai_market_cycle_predictor.py # AI market cycle predictor
-├── ai_drawdown_protection_system.py # AI drawdown protection system
-├── ai_performance_attribution_analyzer.py # AI performance attribution analyzer
-├── ai_market_anomaly_detector.py # AI market anomaly detector
-├── ai_portfolio_rebalancing_engine.py # AI portfolio rebalancing engine
-
-├── SOLANA_IMPLEMENTATION.md # Solana documentation
-├── secrets_manager.py       # Secure secrets management
-├── setup_secrets.py         # Secrets setup and migration
-├── utils.py                 # Utility functions
-├── uniswap_router_abi.json  # Uniswap contract ABI
-├── trending_tokens.csv      # Token discovery history
-├── price_memory.json        # Price history for momentum
-├── open_positions.json      # Current positions
-├── delisted_tokens.json     # Delisting tracking
-├── trade_log.csv            # Detailed trade history
-└── blacklist.json           # Blacklisted tokens
+├── main.py
+├── README.md
+├── requirements.txt
+├── config.yaml
+├── .env                         # User-provided (ignored)
+├── data/
+│   ├── open_positions.json
+│   ├── performance_data.json
+│   ├── delisted_tokens.json
+│   ├── risk_state.json
+│   ├── balance_cache.json
+│   ├── sol_price_cache.json
+│   ├── trade_log.csv
+│   ├── trending_tokens.csv
+│   └── uniswap_router_abi.json
+├── logs/
+│   ├── trading.log
+│   ├── performance.log
+│   ├── errors.log
+│   └── ...
+├── scripts/
+│   ├── launch_bot.sh
+│   ├── stop_bot.sh
+│   ├── status_bot.sh
+│   ├── setup_secrets.py
+│   ├── clear_state.py
+│   └── dev_runner.py
+├── src/
+│   ├── __init__.py
+│   ├── ai/
+│   │   ├── ai_circuit_breaker.py
+│   │   ├── ai_integration_engine.py
+│   │   ├── ai_market_regime_detector.py
+│   │   └── ... (many AI modules)
+│   ├── analytics/
+│   │   └── backtesting_engine.py
+│   ├── config/
+│   │   ├── __init__.py
+│   │   ├── config_loader.py
+│   │   ├── config_validator.py
+│   │   ├── secrets.py
+│   │   └── secrets_manager.py
+│   ├── core/
+│   │   ├── strategy.py
+│   │   ├── risk_manager.py
+│   │   ├── performance_tracker.py
+│   │   ├── advanced_trading.py
+│   │   └── centralized_risk_manager.py
+│   ├── deployment/
+│   │   └── production_manager.py
+│   ├── execution/
+│   │   ├── async_trading_loop.py
+│   │   ├── enhanced_async_trading.py
+│   │   ├── multi_chain_executor.py
+│   │   ├── uniswap_executor.py
+│   │   ├── base_executor.py
+│   │   ├── jupiter_lib.py
+│   │   ├── jupiter_executor.py
+│   │   ├── raydium_lib.py
+│   │   ├── raydium_executor.py
+│   │   └── solana_executor.py
+│   ├── monitoring/
+│   │   ├── monitor_position.py
+│   │   ├── performance_monitor.py
+│   │   ├── realtime_dashboard.py
+│   │   ├── structured_logger.py
+│   │   └── telegram_bot.py
+│   └── utils/
+│       ├── token_scraper.py
+│       ├── tradeability_checker.py
+│       ├── preflight_check.py
+│       ├── cooldown.py
+│       ├── http_utils.py
+│       └── ... (other utilities)
+├── system/
+└── test_telegram_status.py
 ```
 
 ## 🚀 AI-Enhanced Trading Features
