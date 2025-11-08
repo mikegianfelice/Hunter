@@ -53,11 +53,18 @@ def fetch_token_price_usd(token_address: str):
 
     url = "https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3-ethereum"
     try:
-        r = requests.post(url, json={"query": query}, timeout=10)
+        payload = {"query": query}
+        headers = {"Content-Type": "application/json"}
+        r = requests.post(url, json=payload, headers=headers, timeout=10)
         if r.status_code != 200:
             print(f"⚠️ GraphQL status {r.status_code}")
             return None
-        data = r.json().get("data") or {}
+        resp = r.json()
+        errors = resp.get("errors")
+        if errors:
+            print(f"⚠️ Graph returned errors: {errors}")
+            return None
+        data = resp.get("data") or {}
         tok = data.get("token")
         bun = data.get("bundle")
         if not tok or not bun:
