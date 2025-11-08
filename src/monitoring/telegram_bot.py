@@ -4,6 +4,8 @@ import time
 import hashlib
 import sys
 import os
+import atexit
+from queue import Queue, Empty
 # Add src to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 from src.config.secrets import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
@@ -11,6 +13,71 @@ from src.monitoring.structured_logger import log_info, log_warning, log_error
 import threading
 from datetime import datetime
 from src.storage.positions import load_positions as load_positions_store
+
+_SESSION = requests.Session()
+
+class TelegramDispatcher:
+    def __init__(self, max_retries: int = 2, base_backoff: float = 2.0, worker_name: str = "telegram-dispatcher"):
+        self._queue: Queue = Queue()
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._max_retries = max_retries
+        self._base_backoff = base_backoff
+        self._worker_name = worker_name
+
+    def start(self):
+        if self._thread and self._thread.is_alive():
+            return
+        self._stop_event.clear()
+        self._thread = threading.Thread(target=self._worker, name=self._worker_name, daemon=True)
+        self._thread.start()
+
+    def stop(self, drain: bool = False, timeout: float = 5.0):
+        self._stop_event.set()
+        if drain:
+            self._queue.join()
+        if self._thread:
+            self._thread.join(timeout=timeout)
+
+    def submit(self, job: dict):
+        self._queue.put(job)
+
+    def _worker(self):
+        while not self._stop_event.is_set():
+            try:
+                job = self._queue.get(timeout=0.5)
+            except Empty:
+                continue
+
+            success = _send_message_sync(job)
+
+            if success:
+                if job.get("deduplicate") and job.get("fingerprint"):
+                    _sent_messages[job["fingerprint"]] = time.time()
+                _pending_fingerprints.discard(job.get("fingerprint"))
+                self._queue.task_done()
+                continue
+
+            attempt = job.get("attempt", 0) + 1
+            if attempt > self._max_retries or self._stop_event.is_set():
+                log_error(
+                    "telegram.async.failed",
+                    "Telegram async send failed after retries",
+                    context={"message_type": job.get("message_type"), "attempts": attempt},
+                )
+                _pending_fingerprints.discard(job.get("fingerprint"))
+                self._queue.task_done()
+                continue
+
+            job["attempt"] = attempt
+            delay = min(self._base_backoff ** attempt, 30)
+            time.sleep(delay)
+            self._queue.put(job)
+            self._queue.task_done()
+
+_dispatcher = TelegramDispatcher()
+
+_pending_fingerprints: set[str] = set()
 
 # Message deduplication cache
 _sent_messages = {}
@@ -71,103 +138,15 @@ def _check_rate_limit(message_type: str) -> bool:
     _rate_limits[message_type].append(current_time)
     return True
 
-def send_telegram_message(message: str, markdown: bool = False, disable_preview: bool = True, deduplicate: bool = True, message_type: str = "general"):
-    """
-    Send a Telegram message using secrets loaded from .env (via secrets.py).
-    - message: text to send
-    - markdown: enable Telegram Markdown parsing
-    - disable_preview: disable link previews
-    - deduplicate: prevent sending the same message multiple times within 5 minutes
-    - message_type: category for rate limiting (e.g., "error", "trade", "status")
-    """
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        log_warning(
-            "telegram.config.missing",
-            "Telegram not configured (missing TELEGRAM_BOT_TOKEN/CHAT_ID).",
-        )
-        return False
-
-    # Check rate limiting
-    if not _check_rate_limit(message_type):
-        log_warning(
-            "telegram.rate_limited",
-            "Telegram message rate limited",
-            context={"message_type": message_type, "window": _rate_limit_window, "max_messages": _max_messages_per_window},
-        )
-        return False
-
-    # Deduplication logic
-    if deduplicate:
-        _cleanup_old_messages()
-        current_time = time.time()
-        
-        # Check if this message type was sent recently (using fingerprint)
-        fingerprint = _get_message_fingerprint(message)
-        if fingerprint in _sent_messages:
-            log_info(
-                "telegram.duplicate_skipped",
-                "Skipping duplicate Telegram message",
-                context={"message_type": message_type},
-            )
-            return True  # Return True since we "handled" it
-        
-        # Add to cache
-        _sent_messages[fingerprint] = current_time
-
+def _send_message_sync(job: dict) -> bool:
+    payload = dict(job.get("payload") or {})
+    message_type = job.get("message_type", "general")
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": message,
-        "disable_web_page_preview": disable_preview,
-    }
-    if markdown:
-        payload["parse_mode"] = "Markdown"
 
     try:
-        resp = requests.post(url, json=payload, timeout=12)
-        if resp.status_code != 200:
-            # Fallback: if Markdown parsing fails, retry without formatting
-            if (
-                resp.status_code == 400
-                and "can't parse entities" in resp.text.lower()
-                and payload.get("parse_mode")
-            ):
-                log_warning(
-                    "telegram.parse_error",
-                    "Telegram parse error detected, retrying without formatting",
-                    context={"status": resp.status_code, "response": resp.text[:120]},
-                )
-                payload_retry = {k: v for k, v in payload.items() if k != "parse_mode"}
-                resp2 = requests.post(url, json=payload_retry, timeout=12)
-                if resp2.status_code == 200:
-                    log_info(
-                        "telegram.sent_without_formatting",
-                        "Telegram alert sent without formatting after parse error fallback",
-                        context={"message_type": message_type},
-                    )
-                    return True
-                else:
-                    log_error(
-                        "telegram.send_failed_without_formatting",
-                        "Telegram send failed after removing formatting",
-                        context={"status": resp2.status_code, "response": resp2.text[:200]},
-                    )
-                    return False
-            
-            log_error(
-                "telegram.send_failed",
-                "Telegram send failed",
-                context={"status": resp.status_code, "response": resp.text[:200]},
-            )
-            return False
-        log_info(
-            "telegram.sent",
-            "Telegram alert sent",
-            context={"message_type": message_type},
-        )
-        return True
+        response = _SESSION.post(url, json=payload, timeout=12)
     except requests.RequestException as e:
-        if hasattr(e, 'errno') and e.errno == 32:  # Broken pipe
+        if hasattr(e, "errno") and e.errno == 32:
             log_warning(
                 "telegram.broken_pipe_request",
                 "Telegram broken pipe error (connection closed)",
@@ -181,7 +160,7 @@ def send_telegram_message(message: str, markdown: bool = False, disable_preview:
             )
         return False
     except OSError as e:
-        if e.errno == 32:  # Broken pipe
+        if getattr(e, "errno", None) == 32:
             log_warning(
                 "telegram.broken_pipe_os",
                 "Telegram broken pipe error (OS)",
@@ -201,6 +180,128 @@ def send_telegram_message(message: str, markdown: bool = False, disable_preview:
             context={"error": str(e), "message_type": message_type},
         )
         return False
+
+    if response.status_code == 200:
+        log_info(
+            "telegram.sent",
+            "Telegram alert sent",
+            context={"message_type": message_type},
+        )
+        return True
+
+    if (
+        response.status_code == 400
+        and "can't parse entities" in response.text.lower()
+        and payload.get("parse_mode")
+    ):
+        log_warning(
+            "telegram.parse_error",
+            "Telegram parse error detected, retrying without formatting",
+            context={"status": response.status_code, "response": response.text[:120]},
+        )
+        payload_retry = {k: v for k, v in payload.items() if k != "parse_mode"}
+        try:
+            resp2 = _SESSION.post(url, json=payload_retry, timeout=12)
+        except Exception as e:
+            log_error(
+                "telegram.send_failed_without_formatting",
+                "Telegram send failed after removing formatting due to exception",
+                context={"error": str(e), "message_type": message_type},
+            )
+            return False
+        if resp2.status_code == 200:
+            log_info(
+                "telegram.sent_without_formatting",
+                "Telegram alert sent without formatting after parse error fallback",
+                context={"message_type": message_type},
+            )
+            return True
+        log_error(
+            "telegram.send_failed_without_formatting",
+            "Telegram send failed after removing formatting",
+            context={"status": resp2.status_code, "response": resp2.text[:200]},
+        )
+        return False
+
+    log_error(
+        "telegram.send_failed",
+        "Telegram send failed",
+        context={"status": response.status_code, "response": response.text[:200]},
+    )
+    return False
+
+def send_telegram_message(
+    message: str,
+    markdown: bool = False,
+    disable_preview: bool = True,
+    deduplicate: bool = True,
+    message_type: str = "general",
+    async_mode: bool = True,
+):
+    """
+    Send a Telegram message using secrets loaded from .env (via secrets.py).
+    - message: text to send
+    - markdown: enable Telegram Markdown parsing
+    - disable_preview: disable link previews
+    - deduplicate: prevent sending the same message multiple times within 5 minutes
+    - message_type: category for rate limiting (e.g., "error", "trade", "status")
+    - async_mode: enqueue message for asynchronous delivery (default). If False, send synchronously.
+    """
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        log_warning(
+            "telegram.config.missing",
+            "Telegram not configured (missing TELEGRAM_BOT_TOKEN/CHAT_ID).",
+        )
+        return False
+
+    if not _check_rate_limit(message_type):
+        log_warning(
+            "telegram.rate_limited",
+            "Telegram message rate limited",
+            context={"message_type": message_type, "window": _rate_limit_window, "max_messages": _max_messages_per_window},
+        )
+        return False
+
+    fingerprint = None
+    if deduplicate:
+        _cleanup_old_messages()
+        fingerprint = _get_message_fingerprint(message)
+        if fingerprint in _pending_fingerprints or fingerprint in _sent_messages:
+            log_info(
+                "telegram.duplicate_skipped",
+                "Skipping duplicate Telegram message",
+                context={"message_type": message_type},
+            )
+            return True
+        _pending_fingerprints.add(fingerprint)
+
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message,
+        "disable_web_page_preview": disable_preview,
+    }
+    if markdown:
+        payload["parse_mode"] = "Markdown"
+
+    job = {
+        "payload": payload,
+        "message_type": message_type,
+        "deduplicate": deduplicate,
+        "fingerprint": fingerprint,
+        "attempt": 0,
+    }
+
+    if async_mode:
+        _dispatcher.start()
+        _dispatcher.submit(job)
+        return True
+
+    success = _send_message_sync(job)
+    if deduplicate and fingerprint:
+        if success:
+            _sent_messages[fingerprint] = time.time()
+        _pending_fingerprints.discard(fingerprint)
+    return success
 
 def send_periodic_status_report():
     """
@@ -424,3 +525,10 @@ def format_status_message(risk_summary, recent_summary, open_trades, market_regi
         msg += "• Target: 10-20% consistent gains\n"
     
     return msg
+
+def shutdown_telegram_dispatcher(drain: bool = False):
+    """Stop the background telegram dispatcher."""
+    _dispatcher.stop(drain=drain)
+
+
+atexit.register(shutdown_telegram_dispatcher)

@@ -151,7 +151,8 @@ try:
     result = send_telegram_message(
         '🛑 Sustainable Trading Bot Stopped\n\nBot has been manually stopped via stop_bot.sh\n\nStatus: All processes terminated successfully',
         deduplicate=False,
-        message_type="status"
+        message_type="status",
+        async_mode=False
     )
     if result:
         print('✅ Telegram notification sent successfully')
