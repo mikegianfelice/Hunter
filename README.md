@@ -70,7 +70,7 @@ A sophisticated AI-powered cryptocurrency trading bot designed for **consistent 
 | **Solana** | SOL | Jupiter + Raydium | ✅ Full Support | Real trading, ATA creation, Raydium fallback |
 | **Base** | ETH | Uniswap V3 | ✅ Full Support | Real trading, EIP-1559 gas optimization, re-quote protection |
 
-*Note: Other chains (Polygon, BSC, Arbitrum, Optimism, PulseChain) are disabled by default to focus on chains where you have active wallets.*
+*Note: Other chains (Polygon, BSC, Arbitrum, Optimism, PulseChain) are disabled to focus on chains with the most opportunity.*
 
 ## 🎯 AI-Enhanced Sustainable Trading Strategy
 
