@@ -749,68 +749,26 @@ def execute_solana_trade(token_address: str, amount_usd: float, is_buy: bool = T
 
 # Additional functions for multi-chain compatibility
 def buy_token_solana(token_address: str, amount_usd: float, symbol: str = "", test_mode: bool = False) -> Tuple[str, bool]:
-    """Buy token on Solana (for multi-chain compatibility)"""
-    executor = SimpleSolanaExecutor()
-    
-    if test_mode:
-        # In test mode, still use real market data for quotes but don't execute
-        # Get quote to validate trade would work
-        try:
-            from src.utils.utils import get_sol_price_usd
-            sol_price = get_sol_price_usd()
-            if sol_price <= 0:
-                return None, False
-            sol_amount = amount_usd / sol_price
-            sol_amount_lamports = int(sol_amount * 1_000_000_000)
-            quote = executor.get_jupiter_quote(WSOL_MINT, token_address, sol_amount_lamports)
-            if quote:
-                print(f"🔄 Test mode: Validated Solana buy for {symbol} ({token_address[:8]}...{token_address[-8:]}) - Transaction not sent")
-                return None, True
-        except Exception as e:
-            print(f"⚠️ Test mode validation failed: {e}")
-            return None, False
-    
-    return executor.execute_trade(token_address, amount_usd, is_buy=True)
+    """Compatibility wrapper that delegates to the guardrail-enabled Jupiter executor."""
+    from src.execution.jupiter_executor import buy_token_solana as _buy_token_solana
+
+    return _buy_token_solana(
+        token_address=token_address,
+        amount_usd=amount_usd,
+        symbol=symbol,
+        test_mode=test_mode,
+    )
 
 def sell_token_solana(token_address: str, amount_usd: float, symbol: str = "", test_mode: bool = False) -> Tuple[str, bool]:
-    """Sell token on Solana (for multi-chain compatibility) with Raydium fallback"""
-    executor = SimpleSolanaExecutor()
-    
-    if test_mode:
-        # In test mode, still use real market data for quotes but don't execute
-        # Get quote to validate trade would work
-        try:
-            usdc_amount = int(amount_usd * 1_000_000)
-            quote = executor.get_jupiter_quote(token_address, USDC_MINT, usdc_amount)
-            if quote:
-                print(f"🔄 Test mode: Validated Solana sell for {symbol} ({token_address[:8]}...{token_address[-8:]}) - Transaction not sent")
-                return None, True
-        except Exception as e:
-            print(f"⚠️ Test mode validation failed: {e}")
-            return None, False
-    
-    # Primary path: Try Jupiter first
-    try:
-        tx_hash, success = executor.execute_trade(token_address, amount_usd, is_buy=False)
-        if success and tx_hash:
-            return tx_hash, True
-        print(f"⚠️ Jupiter sell failed for {symbol} (success={success}, tx={tx_hash if tx_hash else 'None'}). Trying Raydium fallback...")
-    except Exception as e:
-        print(f"⚠️ Jupiter sell exception for {symbol}: {e}. Trying Raydium fallback...")
-    
-    # Fallback: Try Raydium if Jupiter failed
-    try:
-        from src.execution.raydium_executor import RaydiumExecutor
-        ray = RaydiumExecutor()
-        success_fallback, tx_hash_fallback = ray.execute_trade(token_address, amount_usd, is_buy=False)
-        if success_fallback and tx_hash_fallback:
-            print(f"✅ Raydium fallback sell successful for {symbol}: {tx_hash_fallback}")
-            return tx_hash_fallback, True
-        print(f"❌ Raydium fallback sell also failed for {symbol}: {tx_hash_fallback}")
-        return tx_hash_fallback or "", False
-    except Exception as e:
-        print(f"❌ Raydium fallback sell exception for {symbol}: {e}")
-        return "", False
+    """Compatibility wrapper that delegates to the guardrail-enabled Jupiter executor."""
+    from src.execution.jupiter_executor import sell_token_solana as _sell_token_solana
+
+    return _sell_token_solana(
+        token_address=token_address,
+        amount_usd=amount_usd,
+        symbol=symbol,
+        test_mode=test_mode,
+    )
 
 def get_solana_executor():
     """Get Solana executor instance (for backward compatibility)"""

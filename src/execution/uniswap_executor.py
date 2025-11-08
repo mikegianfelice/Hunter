@@ -322,7 +322,12 @@ def buy_token(token_address: str, usd_amount: float, symbol: str = "?") -> Tuple
         return abort("send_failed", "ERROR", "Buy transaction failed to send", error=str(exc))
 
 
-def sell_token(token_address: str, token_amount: float, symbol: str = "?") -> Tuple[Optional[str], bool]:
+def sell_token(token_address: str, token_amount: Optional[float] = None, symbol: str = "?") -> Tuple[Optional[str], bool]:
+    """
+    Sell `token_amount` (in human units) of `token_address` for ETH.
+    If token_amount is None, sell the full balance.
+    Returns: (tx_hash_hex or None, success_bool)
+    """
     trade_started = time.time()
     record_trade_attempt(CHAIN_NAME, "sell")
     config = get_uniswap_config()
@@ -332,12 +337,13 @@ def sell_token(token_address: str, token_amount: float, symbol: str = "?") -> Tu
         side="sell",
         token_address=token_address,
         symbol=symbol,
-        quantity=float(token_amount),
+        quantity=float(token_amount) if token_amount is not None else -1.0,
         metadata={"slippage": config["SLIPPAGE"]},
     )
-    registered, _ = register_trade_intent(intent)
+    registered, existing = register_trade_intent(intent)
     if not registered:
         record_trade_failure(CHAIN_NAME, "sell", "duplicate_intent")
+        _log("INFO", "eth.sell.duplicate", "Duplicate sell intent detected", token=token_address, existing_intent=existing)
         return None, False
     mark_trade_intent_pending(intent.intent_id)
 
@@ -372,21 +378,25 @@ def sell_token(token_address: str, token_amount: float, symbol: str = "?") -> Tu
     except Exception:
         decimals = 18
 
-    token_amount_wei = int(float(token_amount) * (10 ** int(decimals)))
-    if token_amount_wei <= 0:
-        return abort("amount_invalid", "ERROR", "Sell amount must be positive", decimals=int(decimals))
-
     try:
-        balance = token_contract.functions.balanceOf(WALLET).call()
+        balance_wei = token_contract.functions.balanceOf(WALLET).call()
     except Exception as exc:
         return abort("balance_fetch_failed", "ERROR", "Failed to fetch token balance", error=str(exc))
 
-    if balance < token_amount_wei:
+    if token_amount is None:
+        token_amount_wei = int(balance_wei)
+    else:
+        token_amount_wei = int(float(token_amount) * (10 ** decimals))
+
+    if token_amount_wei <= 0:
+        return abort("amount_invalid", "ERROR", "Sell amount must be positive", token_amount=token_amount)
+
+    if balance_wei < token_amount_wei:
         return abort(
             "insufficient_balance",
             "ERROR",
             "Insufficient token balance",
-            balance=int(balance),
+            balance=int(balance_wei),
             required=int(token_amount_wei),
         )
 
@@ -395,9 +405,11 @@ def sell_token(token_address: str, token_amount: float, symbol: str = "?") -> Tu
             allowance = token_contract.functions.allowance(WALLET, ROUTER_ADDR).call()
             if allowance < token_amount_wei:
                 _log("INFO", "eth.sell.approval", "Approving router spend", symbol=symbol)
-                approve_tx = token_contract.functions.approve(ROUTER_ADDR, token_amount_wei).build_transaction(
-                    {"from": WALLET, "nonce": _next_nonce(), "chainId": CHAIN_ID}
-                )
+                approve_tx = token_contract.functions.approve(ROUTER_ADDR, token_amount_wei).build_transaction({
+                    "from": WALLET,
+                    "nonce": _next_nonce(),
+                    "chainId": CHAIN_ID,
+                })
                 approve_tx = _apply_eip1559(approve_tx)
                 approve_tx = _estimate_gas(approve_tx, fallback=120000)
                 signed = w3.eth.account.sign_transaction(approve_tx, PRIVATE_KEY)
