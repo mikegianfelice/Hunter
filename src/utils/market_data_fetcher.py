@@ -12,6 +12,8 @@ from typing import Dict, Optional, List
 from datetime import datetime, timedelta
 import statistics
 
+from src.config.secrets import GRAPH_API_KEY, UNISWAP_V3_DEPLOYMENT_ID
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -470,7 +472,12 @@ class MarketDataFetcher:
         try:
             # Use The Graph (Uniswap subgraph) - FREE tier works
             if chain_id == "ethereum":
-                subgraph_url = "https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3"
+                api_key = (GRAPH_API_KEY or "").strip()
+                deployment_id = (UNISWAP_V3_DEPLOYMENT_ID or "").strip()
+                if not api_key or not deployment_id:
+                    logger.warning("Missing GRAPH_API_KEY or UNISWAP_V3_DEPLOYMENT_ID; cannot fetch Ethereum candles.")
+                    return None
+                subgraph_url = f"https://gateway.thegraph.com/api/{api_key}/subgraphs/id/{deployment_id}"
             elif chain_id == "base":
                 subgraph_url = "https://api.studio.thegraph.com/query/48211/base-uniswap-v3/version/latest"
             else:

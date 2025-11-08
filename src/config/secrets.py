@@ -46,6 +46,8 @@ if secrets:
     WALLET_ADDRESS = secrets.get("WALLET_ADDRESS")
     PRIVATE_KEY = secrets.get("PRIVATE_KEY")
     INFURA_URL = secrets.get("INFURA_URL")
+    GRAPH_API_KEY = secrets.get("GRAPH_API_KEY")
+    UNISWAP_V3_DEPLOYMENT_ID = secrets.get("UNISWAP_V3_DEPLOYMENT_ID")
     TELEGRAM_BOT_TOKEN = secrets.get("TELEGRAM_BOT_TOKEN")
     TELEGRAM_CHAT_ID = secrets.get("TELEGRAM_CHAT_ID")
     SOLANA_WALLET_ADDRESS = secrets.get("SOLANA_WALLET_ADDRESS")
@@ -59,6 +61,8 @@ else:
     WALLET_ADDRESS = os.getenv("WALLET_ADDRESS")
     PRIVATE_KEY = os.getenv("PRIVATE_KEY")
     INFURA_URL = os.getenv("INFURA_URL")
+    GRAPH_API_KEY = os.getenv("GRAPH_API_KEY")
+    UNISWAP_V3_DEPLOYMENT_ID = os.getenv("UNISWAP_V3_DEPLOYMENT_ID")
     
 
     TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")

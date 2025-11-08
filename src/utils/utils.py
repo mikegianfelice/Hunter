@@ -4,7 +4,7 @@ import os
 import time
 from web3 import Web3
 from pathlib import Path
-from src.config.secrets import INFURA_URL
+from src.config.secrets import GRAPH_API_KEY, INFURA_URL, UNISWAP_V3_DEPLOYMENT_ID
 from src.utils.http_utils import get_json
 from typing import Dict, Any, Optional
 
@@ -35,6 +35,14 @@ def _load_router_abi():
 def _router():
     return _w3.eth.contract(address=Web3.to_checksum_address(UNISWAP_V2_ROUTER), abi=_load_router_abi())
 
+def _build_graph_gateway_url(api_key: str, deployment_id: str) -> Optional[str]:
+    api_key = (api_key or "").strip()
+    deployment_id = (deployment_id or "").strip()
+    if not api_key or not deployment_id:
+        return None
+    return f"https://gateway.thegraph.com/api/{api_key}/subgraphs/id/{deployment_id}"
+
+
 def fetch_token_price_usd(token_address: str):
     """
     Tries Uniswap v3 subgraph for token USD price: derivedETH * ethPriceUSD.
@@ -51,7 +59,10 @@ def fetch_token_price_usd(token_address: str):
     }
     """ % token_address
 
-    url = "https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3-ethereum"
+    url = _build_graph_gateway_url(GRAPH_API_KEY, UNISWAP_V3_DEPLOYMENT_ID)
+    if not url:
+        print("⚠️ Graph fetch skipped: missing GRAPH_API_KEY or UNISWAP_V3_DEPLOYMENT_ID")
+        return None
     try:
         payload = {"query": query}
         headers = {"Content-Type": "application/json"}
