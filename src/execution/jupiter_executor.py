@@ -6,7 +6,17 @@ Jupiter Custom Executor - Using custom Jupiter library for real trades
 import time
 from typing import Tuple, Optional, Dict, Any
 from .jupiter_lib import JupiterCustomLib
+from .execution_policy import enforce_slippage_limit
 from ..monitoring.structured_logger import log_info, log_error
+from ..monitoring.metrics import record_trade_attempt, record_trade_failure, record_trade_success
+from ..utils.idempotency import (
+    build_trade_intent,
+    register_trade_intent,
+    mark_trade_intent_pending,
+    mark_trade_intent_completed,
+    mark_trade_intent_failed,
+)
+from ..config.config_validator import get_execution_config
 
 from ..config.secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
 from ..config.config_loader import get_config
@@ -14,6 +24,8 @@ from ..config.config_loader import get_config
 # Common token addresses
 WSOL_MINT = "So11111111111111111111111111111111111111112"  # Wrapped SOL
 USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"  # USDC
+
+CHAIN_NAME = "solana"
 
 def get_solana_base_currency():
     """Get the configured base currency for Solana trading (SOL or USDC)"""
@@ -398,76 +410,158 @@ def execute_solana_trade(token_address: str, amount_usd: float, is_buy: bool = T
     return executor.execute_trade(token_address, amount_usd, is_buy)
 
 # Additional functions for multi-chain compatibility
-def buy_token_solana(token_address: str, amount_usd: float, symbol: str = "", test_mode: bool = False, 
-                     slippage: float = None, route_preferences: Dict[str, Any] = None, 
+def buy_token_solana(token_address: str, amount_usd: float, symbol: str = "", test_mode: bool = False,
+                     slippage: float = None, route_preferences: Dict[str, Any] = None,
                      use_exactout: bool = False) -> Tuple[str, bool]:
-    """Buy token on Solana (for multi-chain compatibility) with advanced features"""
+    """Buy token on Solana (for multi-chain compatibility) with guardrails and metrics."""
+    trade_started = time.time()
+    record_trade_attempt(CHAIN_NAME, "buy")
+
+    execution_cfg = get_execution_config()
+    default_slippage = execution_cfg.max_slippage_percent_by_chain.get(
+        CHAIN_NAME, execution_cfg.max_slippage_percent
+    )
+    requested_slippage = slippage if slippage is not None else default_slippage
+    effective_slippage = enforce_slippage_limit(CHAIN_NAME, requested_slippage)
+
+    intent = build_trade_intent(
+        chain=CHAIN_NAME,
+        side="buy",
+        token_address=token_address,
+        symbol=symbol,
+        quantity=float(amount_usd),
+        metadata={"slippage": effective_slippage},
+    )
+    registered, existing = register_trade_intent(intent)
+    if not registered:
+        record_trade_failure(CHAIN_NAME, "buy", "duplicate_intent")
+        log_warning_context = existing or {}
+        log_info("solana.trade.duplicate", "Duplicate Solana buy intent skipped", context=log_warning_context)
+        return "", False
+    mark_trade_intent_pending(intent.intent_id)
+
     executor = JupiterCustomExecutor()
-    
-    # Apply advanced features if provided
-    if slippage is not None:
-        executor.jupiter_lib.slippage = slippage
-        print(f"🎯 Using dynamic slippage: {slippage*100:.2f}%")
-    
+    executor.jupiter_lib.slippage = effective_slippage
+
     if route_preferences:
-        print(f"🛣️ Using route preferences: {route_preferences}")
-    
+        log_info("solana.trade.route_preferences", route_preferences=route_preferences)
     if use_exactout:
-        print(f"🔄 Using ExactOut mode for sketchy token")
-    
+        log_info("solana.trade.use_exactout", note="Using ExactOut mode for swap")
+
+    def abort(reason: str, message: str, **context) -> Tuple[str, bool]:
+        mark_trade_intent_failed(intent.intent_id, reason)
+        latency_ms = int((time.time() - trade_started) * 1000)
+        record_trade_failure(CHAIN_NAME, "buy", reason, latency_ms=latency_ms)
+        log_error(f"solana.trade.{reason}", message, context=context)
+        return "", False
+
+    def succeed(tx_hash: Optional[str]) -> Tuple[str, bool]:
+        mark_trade_intent_completed(intent.intent_id, tx_hash=tx_hash)
+        latency_ms = int((time.time() - trade_started) * 1000)
+        record_trade_success(
+            CHAIN_NAME,
+            "buy",
+            latency_ms=latency_ms,
+            slippage_bps=effective_slippage * 10000.0,
+        )
+        log_info("solana.trade.completed", token=token_address, symbol=symbol, tx_hash=tx_hash)
+        return tx_hash or "", True
+
     if test_mode:
-        # In test mode, still use real market data for quotes but don't execute
-        # Get quote to validate trade would work
         try:
-            # Import with fallback for different import paths
             try:
                 from src.utils.utils import get_sol_price_usd
             except ImportError:
-                try:
-                    from ..utils.utils import get_sol_price_usd
-                except ImportError:
-                    import sys
-                    import os
-                    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-                    from src.utils.utils import get_sol_price_usd
-            
+                from ..utils.utils import get_sol_price_usd
             sol_price = get_sol_price_usd()
             if sol_price <= 0:
-                return None, False
+                return abort("price_unavailable", "Cannot fetch SOL price for test mode validation")
             sol_amount = amount_usd / sol_price
             sol_amount_lamports = int(sol_amount * 1_000_000_000)
             quote = executor.jupiter_lib.get_quote(WSOL_MINT, token_address, sol_amount_lamports)
             if quote:
-                print(f"🔄 Test mode: Validated Solana buy for {symbol} ({token_address[:8]}...{token_address[-8:]}) - Transaction not sent")
-                return None, True
-        except Exception as e:
-            print(f"⚠️ Test mode validation failed: {e}")
-            return None, False
-    
-    return executor.execute_trade(token_address, amount_usd, is_buy=True)
+                log_info("solana.trade.test_mode_valid", token=token_address, symbol=symbol)
+                return succeed(None)
+            return abort("test_mode_quote_failed", "Test mode quote failed", token=token_address)
+        except Exception as exc:
+            return abort("test_mode_exception", "Test mode validation failed", error=str(exc))
+
+    try:
+        tx_hash, success = executor.execute_trade(token_address, amount_usd, is_buy=True)
+    except Exception as exc:
+        return abort("execution_exception", "Executor raised exception", error=str(exc))
+
+    if success:
+        return succeed(tx_hash)
+    return abort("execution_failed", "Executor returned failure", token=token_address, amount_usd=amount_usd)
 
 def sell_token_solana(token_address: str, amount_usd: float, symbol: str = "", test_mode: bool = False) -> Tuple[str, bool]:
-    """Sell token on Solana (for multi-chain compatibility)"""
-    print(f"🔍 [DEBUG] sell_token_solana called: token={token_address}, amount_usd={amount_usd}, symbol={symbol}, test_mode={test_mode}")
+    """Sell token on Solana (for multi-chain compatibility) with guardrails."""
+    trade_started = time.time()
+    record_trade_attempt(CHAIN_NAME, "sell")
+
+    execution_cfg = get_execution_config()
+    default_slippage = execution_cfg.max_slippage_percent_by_chain.get(
+        CHAIN_NAME, execution_cfg.max_slippage_percent
+    )
+    effective_slippage = enforce_slippage_limit(CHAIN_NAME, default_slippage)
+
+    intent = build_trade_intent(
+        chain=CHAIN_NAME,
+        side="sell",
+        token_address=token_address,
+        symbol=symbol,
+        quantity=float(amount_usd),
+        metadata={"slippage": effective_slippage},
+    )
+    registered, existing = register_trade_intent(intent)
+    if not registered:
+        record_trade_failure(CHAIN_NAME, "sell", "duplicate_intent")
+        log_info("solana.trade.duplicate_sell", token=token_address, existing_intent=existing)
+        return "", False
+    mark_trade_intent_pending(intent.intent_id)
+
     executor = JupiterCustomExecutor()
-    
+    executor.jupiter_lib.slippage = effective_slippage
+
+    def abort(reason: str, message: str, **context) -> Tuple[str, bool]:
+        mark_trade_intent_failed(intent.intent_id, reason)
+        latency_ms = int((time.time() - trade_started) * 1000)
+        record_trade_failure(CHAIN_NAME, "sell", reason, latency_ms=latency_ms)
+        log_error(f"solana.sell.{reason}", message, context=context)
+        return "", False
+
+    def succeed(tx_hash: Optional[str]) -> Tuple[str, bool]:
+        mark_trade_intent_completed(intent.intent_id, tx_hash=tx_hash)
+        latency_ms = int((time.time() - trade_started) * 1000)
+        record_trade_success(
+            CHAIN_NAME,
+            "sell",
+            latency_ms=latency_ms,
+            slippage_bps=effective_slippage * 10000.0,
+        )
+        log_info("solana.sell.completed", token=token_address, symbol=symbol, tx_hash=tx_hash)
+        return tx_hash or "", True
+
     if test_mode:
-        # In test mode, still use real market data for quotes but don't execute
-        # Get quote to validate trade would work
         try:
             usdc_amount = int(amount_usd * 1_000_000)
             quote = executor.jupiter_lib.get_quote(token_address, USDC_MINT, usdc_amount)
             if quote:
-                print(f"🔄 Test mode: Validated Solana sell for {symbol} ({token_address[:8]}...{token_address[-8:]}) - Transaction not sent")
-                return None, True
-        except Exception as e:
-            print(f"⚠️ Test mode validation failed: {e}")
-            return None, False
-    
-    print(f"🔍 [DEBUG] Calling executor.execute_trade with is_buy=False...")
-    result = executor.execute_trade(token_address, amount_usd, is_buy=False)
-    print(f"🔍 [DEBUG] executor.execute_trade result: {result}, type={type(result)}")
-    return result
+                log_info("solana.sell.test_mode_valid", token=token_address, amount_usd=amount_usd)
+                return succeed(None)
+            return abort("test_mode_quote_failed", "Test mode quote failed", token=token_address)
+        except Exception as exc:
+            return abort("test_mode_exception", "Test mode validation failed", error=str(exc))
+
+    try:
+        tx_hash, success = executor.execute_trade(token_address, amount_usd, is_buy=False)
+    except Exception as exc:
+        return abort("execution_exception", "Executor raised exception", error=str(exc))
+
+    if success:
+        return succeed(tx_hash)
+    return abort("execution_failed", "Executor returned failure", token=token_address, amount_usd=amount_usd)
 
 def get_solana_executor():
     """Get Solana executor instance (for backward compatibility)"""
