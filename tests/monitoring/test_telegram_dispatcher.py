@@ -1,4 +1,11 @@
+import sys
 import time
+import types
+
+stub_secrets = types.ModuleType("src.config.secrets")
+stub_secrets.TELEGRAM_BOT_TOKEN = "token"
+stub_secrets.TELEGRAM_CHAT_ID = "chat"
+sys.modules.setdefault("src.config.secrets", stub_secrets)
 
 import pytest
 
