@@ -345,7 +345,7 @@ The bot now includes an intelligent delisting detection system that automaticall
 - **Automatic Blacklisting**: Delisted tokens are added to `delisted_tokens.json`
 
 ### **📁 Files Used:**
-- `delisted_tokens.json` - Stores permanently delisted tokens
+- `delisted_tokens.json` (snapshot) - Tracking of delisted tokens (SQLite is source of truth)
 - `cooldown.json` - Tracks failure counts and temporary cooldowns (legacy `cooldown_log.json` automatically migrated)
 - `blacklist_manager.py` - Manages both regular blacklist and delisted tokens
 
@@ -775,7 +775,7 @@ The bot creates detailed logs in:
 - Console output - Real-time status updates
 - `trending_tokens.csv` - Token discovery history
 - `trade_log.csv` - Detailed trade history with reason codes
-- `delisted_tokens.json` - Tracking of delisted tokens
+- `delisted_tokens.json` (snapshot) - Tracking of delisted tokens (SQLite is source of truth)
 
 ## 🔧 Advanced Configuration
 

@@ -3,11 +3,15 @@
 Smart Blacklist Cleaner - Verifies if tokens are actually delisted before keeping them in the list
 """
 
-import json
 import time
 import requests
-import os
 from typing import List, Dict, Tuple
+
+from src.storage.delist import (
+    load_delisted_state,
+    save_delisted_state,
+    add_delisted_token,
+)
 
 def check_token_status(token_address: str, symbol: str = "UNKNOWN") -> Tuple[bool, str]:
     """
@@ -59,46 +63,37 @@ def clean_delisted_tokens() -> Dict[str, any]:
     Clean the delisted tokens list by verifying each token's status
     """
     try:
-        # Load current delisted tokens
-        with open("data/delisted_tokens.json", "r") as f:
-            data = json.load(f)
-        
+        data = load_delisted_state()
         delisted_tokens = data.get("delisted_tokens", [])
         original_count = len(delisted_tokens)
-        
+
         print(f"🔍 Verifying {original_count} delisted tokens...")
-        
-        # Check each token
-        still_delisted = []
-        now_active = []
-        
+
+        still_delisted: List[str] = []
+        now_active: List[str] = []
+
         for i, token_address in enumerate(delisted_tokens):
             print(f"  [{i+1}/{original_count}] Checking {token_address[:8]}...{token_address[-8:]}")
-            
+
             is_delisted, reason = check_token_status(token_address)
-            
+
             if is_delisted:
                 still_delisted.append(token_address)
                 print(f"    ❌ Still delisted: {reason}")
             else:
                 now_active.append(token_address)
                 print(f"    ✅ Now active: {reason}")
-            
-            # Small delay to avoid rate limiting
+
             time.sleep(0.5)
-        
-        # Update the delisted tokens list
+
         data["delisted_tokens"] = still_delisted
         data["cleaned_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
         data["removed_count"] = len(now_active)
         data["remaining_count"] = len(still_delisted)
         data["reactivated_tokens"] = now_active
-        
-        # Save updated data
-        os.makedirs('data', exist_ok=True)
-        with open("data/delisted_tokens.json", "w") as f:
-            json.dump(data, f, indent=2)
-        
+
+        save_delisted_state(data)
+
         print(f"\n📊 Cleanup Results:")
         print(f"  • Original delisted tokens: {original_count}")
         print(f"  • Still delisted: {len(still_delisted)}")
@@ -107,14 +102,14 @@ def clean_delisted_tokens() -> Dict[str, any]:
             print(f"  • Cleanup ratio: {len(now_active)/original_count*100:.1f}%")
         else:
             print(f"  • Cleanup ratio: N/A (no original tokens)")
-        
+
         if now_active:
             print(f"\n🔄 Reactivated tokens:")
             for token in now_active:
                 print(f"  • {token}")
-        
+
         return data
-        
+
     except Exception as e:
         print(f"❌ Error cleaning delisted tokens: {e}")
         return {}
@@ -132,27 +127,14 @@ def add_to_delisted_tokens_smart(token_address: str, symbol: str, reason: str) -
             return False
         
         # Token is actually delisted, add it
-        with open("data/delisted_tokens.json", "r") as f:
-            data = json.load(f)
-        
-        delisted_tokens = data.get("delisted_tokens", [])
-        token_address_lower = token_address.lower()
-        
-        if token_address_lower not in delisted_tokens:
-            delisted_tokens.append(token_address_lower)
-            data["delisted_tokens"] = delisted_tokens
-            data["last_added"] = {
-                "address": token_address,
-                "symbol": symbol,
-                "reason": reason,
-                "verified_reason": verification_reason,
-                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S")
-            }
-            
-            os.makedirs('data', exist_ok=True)
-            with open("data/delisted_tokens.json", "w") as f:
-                json.dump(data, f, indent=2)
-            
+        added = add_delisted_token(
+            token_address,
+            symbol=symbol,
+            reason=reason,
+            metadata={"verified_reason": verification_reason},
+        )
+
+        if added:
             print(f"✅ Added {symbol} to delisted tokens (verified: {verification_reason})")
             return True
         else:

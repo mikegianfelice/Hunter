@@ -9,6 +9,7 @@ import yaml
 import requests
 from src.config.config_loader import get_config, get_config_bool, get_config_float, get_config_int, get_config_values
 from src.monitoring.structured_logger import log_info, log_warning, log_error
+from src.storage.delist import add_delisted_token, load_delisted_state
 
 PRICE_MEM_FILE = "data/price_memory.json"
 
@@ -223,28 +224,10 @@ def _add_to_delisted_tokens(address: str, symbol: str, reason: str):
             address=address,
             error=str(e),
         )
-        # Fallback to old method if smart verification fails
+        # Fallback to storage-based method if smart verification fails
         try:
-            # Load existing delisted tokens
-            if os.path.exists("data/delisted_tokens.json"):
-                with open("data/delisted_tokens.json", "r") as f:
-                    data = json.load(f) or {}
-            else:
-                data = {"failure_counts": {}, "delisted_tokens": []}
-            
-            # Add the token address to delisted list
-            delisted_tokens = data.get("delisted_tokens", [])
-            token_address_lower = address.lower()
-            
-            if token_address_lower not in delisted_tokens:
-                delisted_tokens.append(token_address_lower)
-                data["delisted_tokens"] = delisted_tokens
-                
-                # Save updated data
-                os.makedirs('data', exist_ok=True)
-                with open("data/delisted_tokens.json", "w") as f:
-                    json.dump(data, f, indent=2)
-                
+            added = add_delisted_token(address, symbol=symbol, reason=reason)
+            if added:
                 _emit(
                     "warning",
                     "strategy.delisting.added",
@@ -261,7 +244,6 @@ def _add_to_delisted_tokens(address: str, symbol: str, reason: str):
                     symbol=symbol,
                     address=address,
                 )
-                
         except Exception as fallback_error:
             _emit(
                 "error",
@@ -300,23 +282,22 @@ def _check_token_delisted(token: dict) -> bool:
     
     # Check if token is already in our delisted tokens list
     try:
-        with open("data/delisted_tokens.json", "r") as f:
-            data = json.load(f) or {}
-            delisted_tokens = data.get("delisted_tokens", [])
-            if address.lower() in [t.lower() for t in delisted_tokens]:
-                _emit(
-                    "warning",
-                    "strategy.prebuy.already_delisted",
-                    "Token found in delisted list during pre-buy check",
-                    symbol=symbol,
-                    address=address,
-                )
-                return True
+        state = load_delisted_state()
+        delisted_tokens = state.get("delisted_tokens", [])
+        if address.lower() in delisted_tokens:
+            _emit(
+                "warning",
+                "strategy.prebuy.already_delisted",
+                "Token found in delisted list during pre-buy check",
+                symbol=symbol,
+                address=address,
+            )
+            return True
     except Exception as e:
         _emit(
             "warning",
             "strategy.prebuy.delisted_read_error",
-            "Failed to read delisted tokens file",
+            "Failed to read delisted tokens state",
             error=str(e),
         )
         # Don't fail the check if we can't read the file

@@ -29,6 +29,7 @@ from src.utils.position_sync import (
 )
 from src.storage.positions import load_positions as load_positions_store
 from src.storage.performance import load_performance_data, replace_performance_data
+from src.storage.delist import load_delisted_state, save_delisted_state
 
 # Dynamic config loading
 def get_monitor_config():
@@ -172,18 +173,11 @@ def save_positions(positions):
         json.dump(canonical_positions, f, indent=2)
 
 def load_delisted_tokens():
-    if not DELISTED_TOKENS_FILE.exists():
-        return {}
-    with open(DELISTED_TOKENS_FILE, "r") as f:
-        try:
-            return json.load(f) or {}
-        except Exception:
-            return {}
+    return load_delisted_state()
+
 
 def save_delisted_tokens(delisted):
-    DELISTED_TOKENS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(DELISTED_TOKENS_FILE, "w") as f:
-        json.dump(delisted, f, indent=2)
+    save_delisted_state(delisted or {})
 
 def log_trade(token, entry_price, exit_price, reason="normal"):
     pnl_pct = ((exit_price - entry_price) / entry_price) * 100 if entry_price else 0.0

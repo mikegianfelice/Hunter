@@ -3,6 +3,7 @@ import json
 import os
 import time
 from typing import Dict, Set, Tuple
+from src.storage.delist import load_delisted_state
 
 BLACKLIST_FILE = "data/blacklist.json"
 FAILURE_LOG_FILE = "data/blacklist_failures.json"
@@ -109,10 +110,9 @@ def is_blacklisted(address: str) -> bool:
     
     # Check delisted tokens
     try:
-        with open("data/delisted_tokens.json", "r") as f:
-            data = json.load(f) or {}
-            delisted_tokens = data.get("delisted_tokens", [])
-            return (address or "").lower() in delisted_tokens
+        state = load_delisted_state()
+        delisted_tokens = state.get("delisted_tokens", [])
+        return (address or "").lower() in delisted_tokens
     except Exception as e:
         print(f"⚠️ Error checking delisted tokens: {e}")
         return False
@@ -195,34 +195,30 @@ def review_blacklisted_tokens() -> int:
     current_time = time.time()
     cutoff_time = current_time - (BLACKLIST_REVIEW_HOURS * 3600)
     
-        # Check blacklist reasons
-        try:
-            blacklist_log_file = "data/blacklist_reasons.json"
-            if os.path.exists(blacklist_log_file):
-                with open(blacklist_log_file, "r") as f:
-                    reasons = json.load(f) or {}
-            else:
-                reasons = {}
-        
+    try:
+        blacklist_log_file = "data/blacklist_reasons.json"
+        if os.path.exists(blacklist_log_file):
+            with open(blacklist_log_file, "r") as f:
+                reasons = json.load(f) or {}
+        else:
+            reasons = {}
+
         removed_count = 0
         for addr_lower, reason_data in list(reasons.items()):
             timestamp = reason_data.get("timestamp", 0)
             if timestamp < cutoff_time:
-                # Remove from blacklist
                 if remove_from_blacklist(addr_lower, "Automatic review - old entry"):
                     removed_count += 1
-                # Remove from reasons log
                 del reasons[addr_lower]
-        
-        # Save updated reasons
+
         with open(blacklist_log_file, "w") as f:
             json.dump(reasons, f, indent=2)
-        
+
         if removed_count > 0:
             print(f"🔄 Automatically removed {removed_count} old blacklisted tokens")
-        
+
         return removed_count
-        
+
     except Exception as e:
         print(f"⚠️ Error reviewing blacklisted tokens: {e}")
         return 0
