@@ -347,7 +347,8 @@ The bot now includes an intelligent delisting detection system that automaticall
 ### **📁 Files Used:**
 - `delisted_tokens.json` (snapshot) - Tracking of delisted tokens (SQLite is source of truth)
 - `cooldown.json` - Tracks failure counts and temporary cooldowns (legacy `cooldown_log.json` automatically migrated)
-- `blacklist_manager.py` - Manages both regular blacklist and delisted tokens
+- `blacklist_manager.py` - Manages both regular blacklist and delisted tokens (SQLite-backed with JSON snapshots)
+- `blacklist.json` / `blacklist_failures.json` / `blacklist_reasons.json` (snapshots) - SQLite is source of truth
 
 ### **⚙️ Configuration:**
 ```yaml
