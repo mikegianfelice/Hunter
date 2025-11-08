@@ -104,7 +104,6 @@ CHAIN_CONFIGS = {
 # Housekeeping
 MONITOR_SCRIPT = Path(__file__).resolve().parents[2] / "src" / "monitoring" / "monitor_position.py"
 WATCHDOG_SCRIPT = Path(__file__).resolve().parents[2] / "src" / "monitoring" / "monitor_watchdog.py"
-PRICE_MEMORY_FILE = "data/price_memory.json"
 
 
 def _log_position(token: dict, *, trade_id: Optional[str] = None, entry_time: Optional[str] = None):

@@ -6,6 +6,9 @@ from web3 import Web3
 from pathlib import Path
 from src.config.secrets import INFURA_URL
 from src.utils.http_utils import get_json
+from typing import Dict, Any, Optional
+
+from src.storage.sol_price import load_sol_price_cache, save_sol_price_cache
 
 # Public constants
 UNISWAP_V2_ROUTER = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"
@@ -110,13 +113,7 @@ def get_eth_price_usd() -> float:
 def _cache_sol_price(price: float):
     """Cache SOL price with timestamp"""
     try:
-        cache_data = {
-            'price': price,
-            'timestamp': time.time()
-        }
-        os.makedirs('data', exist_ok=True)
-        with open("data/sol_price_cache.json", 'w') as f:
-            json.dump(cache_data, f)
+        save_sol_price_cache(price)
     except Exception:
         pass  # If caching fails, continue without it
 
@@ -132,20 +129,16 @@ def get_sol_price_usd() -> float:
     
     Returns a reasonable price even if all APIs fail to prevent trading halt.
     """
-    # Check for cached price (valid for 5 minutes to reduce API calls)
-    cache_file = "data/sol_price_cache.json"
+    cache = load_sol_price_cache()
     try:
-        if os.path.exists(cache_file):
-            with open(cache_file, 'r') as f:
-                cache_data = json.load(f)
-                cached_price = cache_data.get('price')
-                cached_time = cache_data.get('timestamp', 0)
-                current_time = time.time()
+        cached_price = cache.get('price') if cache else None
+        cached_time = cache.get('timestamp', 0) if cache else 0
+        current_time = time.time()
                 
-                # Use cached price if less than 1 hour old (increased from 5 minutes for API resilience)
-                if cached_price and (current_time - cached_time) < 3600:
-                    print(f"✅ SOL price from cache: ${cached_price}")
-                    return cached_price
+        # Use cached price if less than 1 hour old (increased from 5 minutes for API resilience)
+        if cached_price and (current_time - cached_time) < 3600:
+            print(f"✅ SOL price from cache: ${cached_price}")
+            return cached_price
     except Exception:
         pass  # If cache fails, continue with API calls
     

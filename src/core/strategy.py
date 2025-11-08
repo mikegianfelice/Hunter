@@ -9,9 +9,8 @@ import yaml
 import requests
 from src.config.config_loader import get_config, get_config_bool, get_config_float, get_config_int, get_config_values
 from src.monitoring.structured_logger import log_info, log_warning, log_error
+from src.storage.price_memory import load_price_memory, save_price_memory
 from src.storage.delist import add_delisted_token, load_delisted_state
-
-PRICE_MEM_FILE = "data/price_memory.json"
 
 
 def _emit(level: str, event: str, message: str, **context):
@@ -54,21 +53,13 @@ def _now() -> int:
     return int(time.time())
 
 def _load_price_mem() -> dict:
-    if not os.path.exists(PRICE_MEM_FILE):
-        return {}
-    try:
-        with open(PRICE_MEM_FILE, "r") as f:
-            data = json.load(f) or {}
-    except Exception:
-        return {}
-    return _prune_price_mem(data)
+    mem = load_price_memory()
+    return _prune_price_mem(mem or {})
+
 
 def _save_price_mem(mem: dict):
     try:
-        target = Path(PRICE_MEM_FILE)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        with _atomic_write_json(target) as f:
-            json.dump(mem, f, indent=2)
+        save_price_memory(mem or {})
     except Exception:
         pass
 
@@ -89,13 +80,7 @@ def _prune_price_mem(mem: dict) -> dict:
     return pruned
 
 def prune_price_memory() -> int:
-    if not os.path.exists(PRICE_MEM_FILE):
-        return 0
-    try:
-        with open(PRICE_MEM_FILE, "r") as f:
-            mem = json.load(f) or {}
-    except Exception:
-        return 0
+    mem = load_price_memory()
     before = len(mem)
     pruned = _prune_price_mem(mem)
     return max(0, before - len(pruned))
@@ -1094,11 +1079,11 @@ def check_buy_signal(token: dict) -> bool:
         )
         return False
 
-    mem = _load_price_mem()
+    mem = load_price_memory()
     entry = mem.get(address)
     now_ts = _now()
     mem[address] = {"price": price, "ts": now_ts}
-    _save_price_mem(mem)
+    save_price_memory(mem)
 
     # Trusted tokens: slightly easier momentum threshold
     momentum_need = config['MIN_MOMENTUM_PCT'] if not is_trusted else max(0.003, config['MIN_MOMENTUM_PCT'] * 0.5)  # e.g. 0.3%
