@@ -1,3 +1,8 @@
+# SQLite runtime state
+data/*.db
+data/*.db-wal
+data/*.db-shm
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
