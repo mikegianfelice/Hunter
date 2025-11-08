@@ -3,12 +3,37 @@ import json
 import os
 import time
 from pathlib import Path
+from typing import Optional
 from contextlib import contextmanager
 import yaml
 import requests
 from src.config.config_loader import get_config, get_config_bool, get_config_float, get_config_int, get_config_values
+from src.monitoring.structured_logger import log_info, log_warning, log_error
 
 PRICE_MEM_FILE = "data/price_memory.json"
+
+
+def _emit(level: str, event: str, message: str, **context):
+    ctx = context or None
+    if level == "info":
+        log_info(event, message, context=ctx)
+    elif level == "warning":
+        log_warning(event, message, context=ctx)
+    elif level == "error":
+        log_error(event, message, context=ctx)
+
+
+def _log_trace(message: str, level: Optional[str] = None, event: str = "strategy.trace", **context):
+    resolved_level = level
+    lowered = message.strip()
+    if resolved_level is None:
+        if lowered.startswith("❌") or lowered.startswith("🚨"):
+            resolved_level = "error"
+        elif lowered.startswith("⚠️"):
+            resolved_level = "warning"
+        else:
+            resolved_level = "info"
+    _emit(resolved_level, event, message, **context)
 
 @contextmanager
 def _atomic_write_json(path: Path):
@@ -54,7 +79,12 @@ def _prune_price_mem(mem: dict) -> dict:
     removed = len(mem) - len(pruned)
     if removed > 0:
         _save_price_mem(pruned)
-        print(f"🧹 Pruned {removed} old entries from price_memory.json")
+        _emit(
+            "info",
+            "strategy.price_memory.prune",
+            "Pruned old entries from price memory",
+            removed=removed,
+        )
     return pruned
 
 def prune_price_memory() -> int:
@@ -176,10 +206,23 @@ def _add_to_delisted_tokens(address: str, symbol: str, reason: str):
         success = add_to_delisted_tokens_smart(address, symbol, reason)
         
         if not success:
-            print(f"ℹ️ {symbol} appears to be active - not adding to delisted tokens")
+            _emit(
+                "info",
+                "strategy.delisting.skip",
+                "Token appears active; skipping delisted entry",
+                symbol=symbol,
+                address=address,
+            )
             
     except Exception as e:
-        print(f"⚠️ Failed to add {symbol} to delisted tokens: {e}")
+        _emit(
+            "warning",
+            "strategy.delisting.error",
+            "Failed smart verification when adding token to delisted list",
+            symbol=symbol,
+            address=address,
+            error=str(e),
+        )
         # Fallback to old method if smart verification fails
         try:
             # Load existing delisted tokens
@@ -202,12 +245,32 @@ def _add_to_delisted_tokens(address: str, symbol: str, reason: str):
                 with open("data/delisted_tokens.json", "w") as f:
                     json.dump(data, f, indent=2)
                 
-                print(f"🛑 Added {symbol} ({address}) to delisted tokens: {reason}")
+                _emit(
+                    "warning",
+                    "strategy.delisting.added",
+                    "Token added to delisted tokens",
+                    symbol=symbol,
+                    address=address,
+                    reason=reason,
+                )
             else:
-                print(f"ℹ️ {symbol} already in delisted tokens list")
+                _emit(
+                    "info",
+                    "strategy.delisting.already_present",
+                    "Token already present in delisted list",
+                    symbol=symbol,
+                    address=address,
+                )
                 
         except Exception as fallback_error:
-            print(f"❌ Both smart and fallback methods failed for {symbol}: {fallback_error}")
+            _emit(
+                "error",
+                "strategy.delisting.failure",
+                "Failed to add token to delisted list using smart and fallback methods",
+                symbol=symbol,
+                address=address,
+                error=str(fallback_error),
+            )
 
 def _check_token_delisted(token: dict) -> bool:
     """
@@ -219,7 +282,13 @@ def _check_token_delisted(token: dict) -> bool:
     
     # Check if pre-buy delisting check is enabled
     if not config['ENABLE_PRE_BUY_DELISTING_CHECK']:
-        print(f"🔓 Pre-buy delisting check disabled - allowing {token.get('symbol', 'UNKNOWN')}")
+        _emit(
+            "info",
+            "strategy.delisting.disabled",
+            "Pre-buy delisting check disabled; token allowed",
+            symbol=token.get("symbol", "UNKNOWN"),
+            address=token.get("address"),
+        )
         return False
     
     address = token.get("address", "")
@@ -235,10 +304,21 @@ def _check_token_delisted(token: dict) -> bool:
             data = json.load(f) or {}
             delisted_tokens = data.get("delisted_tokens", [])
             if address.lower() in [t.lower() for t in delisted_tokens]:
-                print(f"🚨 Pre-buy check: {symbol} is already in delisted tokens list")
+                _emit(
+                    "warning",
+                    "strategy.prebuy.already_delisted",
+                    "Token found in delisted list during pre-buy check",
+                    symbol=symbol,
+                    address=address,
+                )
                 return True
     except Exception as e:
-        print(f"⚠️ Error reading delisted tokens: {e}")
+        _emit(
+            "warning",
+            "strategy.prebuy.delisted_read_error",
+            "Failed to read delisted tokens file",
+            error=str(e),
+        )
         # Don't fail the check if we can't read the file
     
     # Check for Solana tokens (43-44 character addresses)
@@ -250,7 +330,13 @@ def _check_token_delisted(token: dict) -> bool:
         return _check_ethereum_token_delisted(token)
     
     # For other chains, skip the check
-    print(f"ℹ️ Pre-buy check: Skipping for {chain_id} chain")
+    _emit(
+        "info",
+        "strategy.prebuy.chain_skipped",
+        "Pre-buy delisting check skipped for chain",
+        chain=chain_id,
+        symbol=symbol,
+    )
     return False
 
 def _check_solana_token_delisted(token: dict) -> bool:
@@ -273,12 +359,28 @@ def _check_solana_token_delisted(token: dict) -> bool:
     # EMERGENCY BYPASS: If token has excellent metrics from DexScreener, trust it completely
     # This prevents API failures from blocking obviously good tokens
     if volume_24h > 50000 and liquidity > 100000 and price_usd > 0:
-        print(f"✅✅ Pre-buy check: {symbol} has EXCELLENT metrics (vol: ${volume_24h:,.0f}, liq: ${liquidity:,.0f}) - BYPASSING all API checks")
+        _emit(
+            "info",
+            "strategy.prebuy.solana.metrics_excellent",
+            "Solana token bypass due to excellent DexScreener metrics",
+            symbol=symbol,
+            volume_24h=volume_24h,
+            liquidity_usd=liquidity,
+            price_usd=price_usd,
+        )
         return False  # NOT delisted - trade it!
     
     # STRONG BYPASS: Very good metrics
     if volume_24h > 25000 and liquidity > 50000 and price_usd > 0:
-        print(f"✅ Pre-buy check: {symbol} has VERY GOOD metrics (vol: ${volume_24h:,.0f}, liq: ${liquidity:,.0f}) - BYPASSING API checks")
+        _emit(
+            "info",
+            "strategy.prebuy.solana.metrics_very_good",
+            "Solana token bypass due to strong DexScreener metrics",
+            symbol=symbol,
+            volume_24h=volume_24h,
+            liquidity_usd=liquidity,
+            price_usd=price_usd,
+        )
         return False  # NOT delisted
     
     # Adjust thresholds based on sensitivity setting
@@ -300,20 +402,48 @@ def _check_solana_token_delisted(token: dict) -> bool:
     
     # If token has good volume and liquidity from DexScreener, trust it
     if volume_24h > vol_threshold and liquidity > liq_threshold:
-        print(f"✅ Pre-buy check: {symbol} has good volume (${volume_24h:.0f}) and liquidity (${liquidity:.0f}) - trusting DexScreener data")
+        _emit(
+            "info",
+            "strategy.prebuy.solana.metrics_good",
+            "Solana token trusted based on DexScreener metrics",
+            symbol=symbol,
+            volume_24h=volume_24h,
+            liquidity_usd=liquidity,
+        )
         return False
     elif volume_24h > vol_threshold/2 and liquidity > liq_threshold/2:
-        print(f"✅ Pre-buy check: {symbol} has moderate volume (${volume_24h:.0f}) and liquidity (${liquidity:.0f}) - trusting DexScreener data")
+        _emit(
+            "info",
+            "strategy.prebuy.solana.metrics_moderate",
+            "Solana token trusted with moderate DexScreener metrics",
+            symbol=symbol,
+            volume_24h=volume_24h,
+            liquidity_usd=liquidity,
+        )
         return False
     elif volume_24h > vol_threshold/4 and liquidity > liq_threshold/4:
-        print(f"✅ Pre-buy check: {symbol} has acceptable volume (${volume_24h:.0f}) and liquidity (${liquidity:.0f}) - trusting DexScreener data")
+        _emit(
+            "info",
+            "strategy.prebuy.solana.metrics_acceptable",
+            "Solana token acceptable metrics; trusting DexScreener",
+            symbol=symbol,
+            volume_24h=volume_24h,
+            liquidity_usd=liquidity,
+        )
         return False
     
     # In lenient mode, trust DexScreener data more when APIs fail
     if config['PRE_BUY_CHECK_SENSITIVITY'] == "lenient":
         # If we have any reasonable volume/liquidity from DexScreener, trust it
         if volume_24h > 10 or liquidity > 50:
-            print(f"✅ Pre-buy check: {symbol} has reasonable DexScreener data (vol: ${volume_24h:.0f}, liq: ${liquidity:.0f}) - trusting in lenient mode")
+            _emit(
+                "info",
+                "strategy.prebuy.solana.lenient_allow",
+                "Lenient mode trusting Solana token metrics",
+                symbol=symbol,
+                volume_24h=volume_24h,
+                liquidity_usd=liquidity,
+            )
             return False
     
     # CRITICAL: If we have valid price from DexScreener, trust it over API checks
@@ -321,10 +451,26 @@ def _check_solana_token_delisted(token: dict) -> bool:
     if price_usd > 0.0000001:  # Very low but non-zero price threshold
         # If DexScreener shows valid price AND decent volume/liquidity, trust it completely
         if volume_24h > poor_vol_threshold or liquidity > poor_liq_threshold:
-            print(f"✅ Pre-buy check: {symbol} has valid DexScreener price (${price_usd}) and decent metrics (vol: ${volume_24h:.0f}, liq: ${liquidity:.0f}) - trusting data")
+            _emit(
+                "info",
+                "strategy.prebuy.solana.price_trusted",
+                "DexScreener price trusted for Solana token",
+                symbol=symbol,
+                price_usd=price_usd,
+                volume_24h=volume_24h,
+                liquidity_usd=liquidity,
+            )
             return False
         else:
-            print(f"✅ Pre-buy check: {symbol} has valid price (${price_usd}) from DexScreener but low metrics - trusting price data")
+            _emit(
+                "info",
+                "strategy.prebuy.solana.price_valid_low_metrics",
+                "DexScreener price valid despite low metrics",
+                symbol=symbol,
+                price_usd=price_usd,
+                volume_24h=volume_24h,
+                liquidity_usd=liquidity,
+            )
             return False
     
     # Only do API price verification if DexScreener price is missing/zero
@@ -337,35 +483,90 @@ def _check_solana_token_delisted(token: dict) -> bool:
         
         # Note: executor may return 0.000001 as a fallback, not actual zero
         if current_price > 0.00001:  # Higher threshold to account for fallback value
-            print(f"✅ Pre-buy check: {symbol} has current price ${current_price} - not delisted")
+            _emit(
+                "info",
+                "strategy.prebuy.solana.price_verified",
+                "Solana token price verified via executor",
+                symbol=symbol,
+                current_price=current_price,
+            )
             return False
         elif current_price <= 0.00001:
             # Only mark as delisted if we have very poor metrics AND API also shows zero/fallback
             if volume_24h < poor_vol_threshold and liquidity < poor_liq_threshold:
-                print(f"🚨 Pre-buy check: {symbol} has zero/unknown price and very low metrics - marking as delisted")
+                _emit(
+                    "warning",
+                    "strategy.prebuy.solana.price_zero_low_metrics",
+                    "Zero price and poor metrics; marking Solana token as delisted",
+                    symbol=symbol,
+                    current_price=current_price,
+                    volume_24h=volume_24h,
+                    liquidity_usd=liquidity,
+                )
                 _add_to_delisted_tokens(address, symbol, f"Zero price and low metrics (vol: ${volume_24h:.0f}, liq: ${liquidity:.0f})")
                 return True
             else:
-                print(f"⚠️ Pre-buy check: {symbol} has zero/unknown price but decent metrics - skipping but not blacklisting")
+                _emit(
+                    "warning",
+                    "strategy.prebuy.solana.price_zero_but_metrics_ok",
+                    "Zero price returned but metrics decent; skipping without blacklist",
+                    symbol=symbol,
+                    current_price=current_price,
+                    volume_24h=volume_24h,
+                    liquidity_usd=liquidity,
+                )
                 return True
     except Exception as e:
-        print(f"⚠️ Pre-buy check: Price verification FAILED for {symbol}: {e}")
-        print(f"🔄 API Error detected - will NOT blacklist {symbol}")
+        _emit(
+            "warning",
+            "strategy.prebuy.solana.price_verification_failed",
+            "Solana price verification failed; allowing token",
+            symbol=symbol,
+            error=str(e),
+        )
         # Graceful degradation: When APIs fail, trust DexScreener data
         # This prevents false rejections during API outages
         # CRITICAL: Never blacklist on API failures!
         if volume_24h > 5000 or liquidity > 10000:
-            print(f"✅✅ Pre-buy check: {symbol} API failed but has GOOD DexScreener data (vol: ${volume_24h:,.0f}, liq: ${liquidity:,.0f}) - ALLOWING token")
+            _emit(
+                "info",
+                "strategy.prebuy.solana.api_failed_but_metrics_good",
+                "Solana API failure but metrics strong; allowing token",
+                symbol=symbol,
+                volume_24h=volume_24h,
+                liquidity_usd=liquidity,
+            )
             return False  # NOT delisted - API just failed
         elif volume_24h > 1000 or liquidity > 5000:
-            print(f"✅ Pre-buy check: {symbol} API failed but has reasonable DexScreener data - ALLOWING token (API outage resilience)")
+            _emit(
+                "info",
+                "strategy.prebuy.solana.api_failed_metrics_reasonable",
+                "Solana API failure but metrics reasonable; allowing token",
+                symbol=symbol,
+                volume_24h=volume_24h,
+                liquidity_usd=liquidity,
+            )
             return False  # NOT delisted - API just failed
         else:
-            print(f"⚠️ Pre-buy check: {symbol} API failed and poor DexScreener data - skipping but NOT blacklisting (API may be down)")
+            _emit(
+                "warning",
+                "strategy.prebuy.solana.api_failed_metrics_poor",
+                "Solana API failure and weak metrics; skipping without blacklist",
+                symbol=symbol,
+                volume_24h=volume_24h,
+                liquidity_usd=liquidity,
+            )
             return True  # Skip this cycle but don't blacklist
     
     # If we're unsure, be conservative but don't blacklist
-    print(f"⚠️ Pre-buy check: {symbol} has uncertain metrics - skipping but not blacklisting")
+    _emit(
+        "warning",
+        "strategy.prebuy.solana.uncertain_metrics",
+        "Solana token metrics uncertain; skipping without blacklist",
+        symbol=symbol,
+        volume_24h=volume_24h,
+        liquidity_usd=liquidity,
+    )
     return True
 
 def _check_ethereum_token_delisted(token: dict) -> bool:
@@ -384,12 +585,28 @@ def _check_ethereum_token_delisted(token: dict) -> bool:
     
     # EMERGENCY BYPASS: If token has excellent metrics from DexScreener, trust it completely
     if volume_24h > 100000 and liquidity > 200000 and price_usd > 0:
-        print(f"✅✅ Pre-buy check: {symbol} has EXCELLENT metrics (vol: ${volume_24h:,.0f}, liq: ${liquidity:,.0f}) - BYPASSING all API checks")
+        _emit(
+            "info",
+            "strategy.prebuy.evm.metrics_excellent",
+            "Ethereum token bypass due to excellent metrics",
+            symbol=symbol,
+            volume_24h=volume_24h,
+            liquidity_usd=liquidity,
+            price_usd=price_usd,
+        )
         return False  # NOT delisted
     
     # STRONG BYPASS: Very good metrics
     if volume_24h > 50000 and liquidity > 100000 and price_usd > 0:
-        print(f"✅ Pre-buy check: {symbol} has VERY GOOD metrics (vol: ${volume_24h:,.0f}, liq: ${liquidity:,.0f}) - BYPASSING API checks")
+        _emit(
+            "info",
+            "strategy.prebuy.evm.metrics_very_good",
+            "Ethereum token bypass due to strong metrics",
+            symbol=symbol,
+            volume_24h=volume_24h,
+            liquidity_usd=liquidity,
+            price_usd=price_usd,
+        )
         return False  # NOT delisted
     
     # Adjust thresholds based on sensitivity setting
@@ -411,20 +628,48 @@ def _check_ethereum_token_delisted(token: dict) -> bool:
     
     # If DexScreener shows good data, trust it even if price APIs fail
     if volume_24h > vol_threshold and liquidity > liq_threshold and price_usd > 0:
-        print(f"✅ Pre-buy check: {symbol} has good DexScreener data - trusting DexScreener")
+        _emit(
+            "info",
+            "strategy.prebuy.evm.metrics_good",
+            "Ethereum token trusted with strong metrics",
+            symbol=symbol,
+            volume_24h=volume_24h,
+            liquidity_usd=liquidity,
+        )
         return False
     elif volume_24h > vol_threshold/2 and liquidity > liq_threshold/2 and price_usd > 0:
-        print(f"✅ Pre-buy check: {symbol} has moderate DexScreener data - trusting DexScreener")
+        _emit(
+            "info",
+            "strategy.prebuy.evm.metrics_moderate",
+            "Ethereum token trusted with moderate metrics",
+            symbol=symbol,
+            volume_24h=volume_24h,
+            liquidity_usd=liquidity,
+        )
         return False
     elif volume_24h > vol_threshold/4 and liquidity > liq_threshold/4 and price_usd > 0:
-        print(f"✅ Pre-buy check: {symbol} has acceptable DexScreener data - trusting DexScreener")
+        _emit(
+            "info",
+            "strategy.prebuy.evm.metrics_acceptable",
+            "Ethereum token accepted with limited metrics",
+            symbol=symbol,
+            volume_24h=volume_24h,
+            liquidity_usd=liquidity,
+        )
         return False
     
     # In lenient mode, trust DexScreener data more when APIs fail
     if config['PRE_BUY_CHECK_SENSITIVITY'] == "lenient":
         # If we have any reasonable volume/liquidity from DexScreener, trust it
         if (volume_24h > 50 or liquidity > 200) and price_usd > 0:
-            print(f"✅ Pre-buy check: {symbol} has reasonable DexScreener data (vol: ${volume_24h:.0f}, liq: ${liquidity:.0f}) - trusting in lenient mode")
+            _emit(
+                "info",
+                "strategy.prebuy.evm.lenient_allow",
+                "Lenient mode trusting Ethereum token metrics",
+                symbol=symbol,
+                volume_24h=volume_24h,
+                liquidity_usd=liquidity,
+            )
             return False
     
     # Try multiple price sources with fallbacks
@@ -432,49 +677,126 @@ def _check_ethereum_token_delisted(token: dict) -> bool:
     
     if current_price is None:
         # API FAILED - Never blacklist on API failures!
-        print(f"⚠️ Pre-buy check: All price APIs failed for {symbol}")
-        print(f"🔄 API Error detected - will NOT blacklist {symbol}")
+        _emit(
+            "warning",
+            "strategy.prebuy.evm.api_all_failed",
+            "All Ethereum price sources failed; allowing token",
+            symbol=symbol,
+        )
         
         # Trust DexScreener data when APIs fail
         if volume_24h > 10000 or liquidity > 20000:
-            print(f"✅✅ Pre-buy check: {symbol} API failed but has GOOD DexScreener data (vol: ${volume_24h:,.0f}, liq: ${liquidity:,.0f}) - ALLOWING token")
+            _emit(
+                "info",
+                "strategy.prebuy.evm.api_failed_metrics_good",
+                "Ethereum API failure but strong metrics; allowing token",
+                symbol=symbol,
+                volume_24h=volume_24h,
+                liquidity_usd=liquidity,
+            )
             return False  # NOT delisted - API just failed
         elif volume_24h > 5000 or liquidity > 10000:
-            print(f"✅ Pre-buy check: {symbol} API failed but has reasonable DexScreener data - ALLOWING token (API outage resilience)")
+            _emit(
+                "info",
+                "strategy.prebuy.evm.api_failed_metrics_reasonable",
+                "Ethereum API failure but metrics reasonable; allowing token",
+                symbol=symbol,
+                volume_24h=volume_24h,
+                liquidity_usd=liquidity,
+            )
             return False  # NOT delisted - API just failed
         elif volume_24h > 1000 or liquidity > 5000:
-            print(f"✅ Pre-buy check: {symbol} API failed but has moderate DexScreener data - ALLOWING token")
+            _emit(
+                "info",
+                "strategy.prebuy.evm.api_failed_metrics_moderate",
+                "Ethereum API failure but acceptable metrics; allowing token",
+                symbol=symbol,
+                volume_24h=volume_24h,
+                liquidity_usd=liquidity,
+            )
             return False  # NOT delisted - API just failed
         elif volume_24h < poor_vol_threshold and liquidity < poor_liq_threshold:
             # Only skip (not blacklist) if metrics are very poor AND API failed
-            print(f"⚠️ Pre-buy check: {symbol} API failed and very poor metrics - skipping but NOT blacklisting (could be API issue)")
+            _emit(
+                "warning",
+                "strategy.prebuy.evm.api_failed_metrics_poor",
+                "Ethereum API failure and poor metrics; skipping without blacklist",
+                symbol=symbol,
+                volume_24h=volume_24h,
+                liquidity_usd=liquidity,
+            )
             return True  # Skip this cycle but don't blacklist
         else:
-            print(f"⚠️ Pre-buy check: {symbol} API failed - skipping but NOT blacklisting (API may be down)")
+            _emit(
+                "warning",
+                "strategy.prebuy.evm.api_failed_generic",
+                "Ethereum API failure; skipping without blacklist",
+                symbol=symbol,
+                volume_24h=volume_24h,
+                liquidity_usd=liquidity,
+            )
             return True  # Skip this cycle but don't blacklist
     
     if current_price == 0:
         # Only mark as delisted if we also have poor metrics
         if volume_24h < poor_vol_threshold and liquidity < poor_liq_threshold:
-            print(f"🚨 Pre-buy check: {symbol} has zero price and poor metrics - likely delisted")
+            _emit(
+                "warning",
+                "strategy.prebuy.evm.price_zero_poor_metrics",
+                "Zero price and poor metrics; marking Ethereum token delisted",
+                symbol=symbol,
+                current_price=current_price,
+                volume_24h=volume_24h,
+                liquidity_usd=liquidity,
+            )
             _add_to_delisted_tokens(address, symbol, "Zero price detected")
             return True
         else:
-            print(f"⚠️ Pre-buy check: {symbol} has zero price but decent metrics - skipping but not blacklisting")
+            _emit(
+                "warning",
+                "strategy.prebuy.evm.price_zero_but_metrics_ok",
+                "Zero price but metrics acceptable; skipping without blacklist",
+                symbol=symbol,
+                current_price=current_price,
+                volume_24h=volume_24h,
+                liquidity_usd=liquidity,
+            )
             return True
         
     # Check if price is extremely low (potential delisting)
     if current_price < 0.0000001:
         # Only mark as delisted if we also have poor metrics
         if volume_24h < poor_vol_threshold and liquidity < poor_liq_threshold:
-            print(f"🚨 Pre-buy check: {symbol} has suspiciously low price ${current_price} and poor metrics")
+            _emit(
+                "warning",
+                "strategy.prebuy.evm.price_low_poor_metrics",
+                "Low price and poor metrics; marking Ethereum token delisted",
+                symbol=symbol,
+                current_price=current_price,
+                volume_24h=volume_24h,
+                liquidity_usd=liquidity,
+            )
             _add_to_delisted_tokens(address, symbol, f"Low price: ${current_price}")
             return True
         else:
-            print(f"⚠️ Pre-buy check: {symbol} has low price ${current_price} but decent metrics - skipping but not blacklisting")
+            _emit(
+                "warning",
+                "strategy.prebuy.evm.price_low_but_metrics_ok",
+                "Low price but metrics acceptable; skipping without blacklist",
+                symbol=symbol,
+                current_price=current_price,
+                volume_24h=volume_24h,
+                liquidity_usd=liquidity,
+            )
             return True
         
-    print(f"✅ Pre-buy check: {symbol} price verified at ${current_price}")
+    _emit(
+        "info",
+        "strategy.prebuy.evm.price_verified",
+        "Ethereum token price verified",
+        symbol=symbol,
+        current_price=current_price,
+    )
     return False
 
 def _get_ethereum_token_price_with_fallbacks(address: str, symbol: str) -> float:
@@ -489,7 +811,14 @@ def _get_ethereum_token_price_with_fallbacks(address: str, symbol: str) -> float
         if price and price > 0:
             return price
     except Exception as e:
-        print(f"⚠️ Primary price source failed for {symbol}: {e}")
+        _emit(
+            "warning",
+            "strategy.price_fetch.primary_failed",
+            "Primary price source failed",
+            symbol=symbol,
+            address=address,
+            error=str(e),
+        )
     
     # Fallback 1: Try DexScreener API
     try:
@@ -505,16 +834,37 @@ def _get_ethereum_token_price_with_fallbacks(address: str, symbol: str) -> float
                     if quote_token in ["USDC", "USDT"]:
                         price = float(pair.get("priceUsd", 0))
                         if price > 0:
-                            print(f"✅ {symbol} price from DexScreener fallback: ${price}")
+                            _emit(
+                                "info",
+                                "strategy.price_fetch.dexscreener_primary_quote",
+                                "DexScreener fallback price obtained from stable pair",
+                                symbol=symbol,
+                                address=address,
+                                price_usd=price,
+                            )
                             return price
                 # If no USDC/USDT pair, use any pair with price
                 for pair in pairs:
                     price = float(pair.get("priceUsd", 0))
                     if price > 0:
-                        print(f"✅ {symbol} price from DexScreener fallback (non-USDC): ${price}")
+                        _emit(
+                            "info",
+                            "strategy.price_fetch.dexscreener_secondary_quote",
+                            "DexScreener fallback price obtained from non-stable pair",
+                            symbol=symbol,
+                            address=address,
+                            price_usd=price,
+                        )
                         return price
     except Exception as e:
-        print(f"⚠️ DexScreener fallback failed for {symbol}: {e}")
+        _emit(
+            "warning",
+            "strategy.price_fetch.dexscreener_failed",
+            "DexScreener fallback failed",
+            symbol=symbol,
+            address=address,
+            error=str(e),
+        )
     
     # Fallback 2: Try CoinGecko API (if we have the token ID)
     try:
@@ -522,9 +872,22 @@ def _get_ethereum_token_price_with_fallbacks(address: str, symbol: str) -> float
         # For now, we'll skip this fallback
         pass
     except Exception as e:
-        print(f"⚠️ CoinGecko fallback failed for {symbol}: {e}")
+        _emit(
+            "warning",
+            "strategy.price_fetch.coingecko_failed",
+            "CoinGecko fallback failed",
+            symbol=symbol,
+            address=address,
+            error=str(e),
+        )
     
-    print(f"⚠️ All price sources failed for {symbol}")
+    _emit(
+        "warning",
+        "strategy.price_fetch.all_failed",
+        "All price sources failed",
+        symbol=symbol,
+        address=address,
+    )
     return None
 
 def _get_token_liquidity(token_address: str) -> float:
@@ -542,7 +905,13 @@ def _get_token_liquidity(token_address: str) -> float:
                     if liquidity > 0:
                         return liquidity
     except Exception as e:
-        print(f"⚠️ Could not get liquidity for {token_address}: {e}")
+        _emit(
+            "warning",
+            "strategy.liquidity_fetch.failed",
+            "Failed to fetch token liquidity",
+            token_address=token_address,
+            error=str(e),
+        )
     return 0.0
 
 def _check_jupiter_tradeable(token_address: str, symbol: str) -> bool:
@@ -553,7 +922,14 @@ def _check_jupiter_tradeable(token_address: str, symbol: str) -> bool:
     try:
         # Validate Solana address format
         if len(token_address) != 44:
-            print(f"❌ Jupiter pre-check: {symbol} invalid address length ({len(token_address)})")
+            _emit(
+                "error",
+                "strategy.jupiter.invalid_address_length",
+                "Jupiter pre-check failed due to invalid address length",
+                symbol=symbol,
+                token_address=token_address,
+                length=len(token_address),
+            )
             return False
         
         # Try a small quote to see if Jupiter supports this token
@@ -572,40 +948,88 @@ def _check_jupiter_tradeable(token_address: str, symbol: str) -> bool:
         if response.status_code == 200:
             data = response.json()
             if data.get("data"):
-                print(f"✅ Jupiter pre-check: {symbol} is tradeable")
+                _emit(
+                    "info",
+                    "strategy.jupiter.tradeable",
+                    "Jupiter pre-check indicates token is tradeable",
+                    symbol=symbol,
+                    token_address=token_address,
+                )
                 return True
             else:
                 error_msg = data.get('error', 'Unknown error')
-                print(f"❌ Jupiter pre-check: {symbol} not tradeable - {error_msg}")
+                _emit(
+                    "error",
+                    "strategy.jupiter.not_tradeable",
+                    "Jupiter pre-check indicates token not tradeable",
+                    symbol=symbol,
+                    token_address=token_address,
+                    error=error_msg,
+                )
                 return False
         elif response.status_code == 400:
             try:
                 error_data = response.json()
                 error_msg = error_data.get('error', 'Bad Request')
                 if "not tradable" in error_msg.lower() or "not tradeable" in error_msg.lower():
-                    print(f"❌ Jupiter pre-check: {symbol} not tradeable - {error_msg}")
+                    _emit(
+                        "error",
+                        "strategy.jupiter.not_tradeable_400",
+                        "Jupiter pre-check indicates token not tradeable (400)",
+                        symbol=symbol,
+                        token_address=token_address,
+                        error=error_msg,
+                    )
                     return False
                 elif "cannot be parsed" in error_msg.lower() or "invalid" in error_msg.lower():
-                    print(f"⚠️ Jupiter pre-check: {symbol} address validation issue - {error_msg}")
-                    # For address parsing issues, let it pass (might be temporary or new token)
-                    print(f"🔓 Allowing {symbol} to proceed despite Jupiter validation issue")
+                    _emit(
+                        "warning",
+                        "strategy.jupiter.validation_issue",
+                        "Jupiter pre-check had address validation issue; allowing token",
+                        symbol=symbol,
+                        token_address=token_address,
+                        error=error_msg,
+                    )
                     return True
                 else:
-                    print(f"⚠️ Jupiter pre-check: {symbol} 400 error - {error_msg}")
-                    # For other 400 errors, let it pass (might be temporary)
+                    _emit(
+                        "warning",
+                        "strategy.jupiter.generic_400",
+                        "Jupiter pre-check 400 error; allowing token",
+                        symbol=symbol,
+                        token_address=token_address,
+                        error=error_msg,
+                    )
                     return True
             except:
-                print(f"⚠️ Jupiter pre-check: {symbol} 400 error - could not parse")
-                # Let it pass for unparseable 400 errors
+                _emit(
+                    "warning",
+                    "strategy.jupiter.400_parse_failed",
+                    "Jupiter pre-check 400 error could not be parsed; allowing token",
+                    symbol=symbol,
+                    token_address=token_address,
+                )
                 return True
         else:
-            print(f"⚠️ Jupiter pre-check: {symbol} status {response.status_code}")
-            # Let it pass for other status codes (might be temporary)
+            _emit(
+                "warning",
+                "strategy.jupiter.unexpected_status",
+                "Jupiter pre-check unexpected HTTP status; allowing token",
+                symbol=symbol,
+                token_address=token_address,
+                status=response.status_code,
+            )
             return True
             
     except Exception as e:
-        print(f"⚠️ Jupiter pre-check failed for {symbol}: {e}")
-        # Let it pass for exceptions (might be temporary)
+        _emit(
+            "warning",
+            "strategy.jupiter.exception",
+            "Jupiter pre-check failed due to exception; allowing token",
+            symbol=symbol,
+            token_address=token_address,
+            error=str(e),
+        )
         return True
 
 def check_buy_signal(token: dict) -> bool:
@@ -618,7 +1042,13 @@ def check_buy_signal(token: dict) -> bool:
     chain_id = token.get("chainId", "ethereum").lower()
 
     if not address or price <= config['MIN_PRICE_USD']:
-        print("📉 No address or price too low; skipping buy signal.")
+        _log_trace(
+            "📉 No address or price too low; skipping buy signal.",
+            level="info",
+            event="strategy.buy.skip_low_price",
+            address=address,
+            price=price,
+        )
         return False
 
     # Jupiter tradeability pre-check for Solana tokens (PRE-TRADE SAFETY CHECK)
@@ -627,12 +1057,24 @@ def check_buy_signal(token: dict) -> bool:
         jupiter_result = _check_jupiter_tradeable(address, token.get("symbol", "UNKNOWN"))
         if not jupiter_result:
             if config.get('JUPITER_PRE_CHECK_STRICT', False):
-                print("❌ Token not tradeable on Jupiter; skipping buy signal.")
+                _log_trace(
+                    "❌ Token not tradeable on Jupiter; skipping buy signal.",
+                    level="error",
+                    event="strategy.buy.jupiter_not_tradeable",
+                    symbol=token.get("symbol", "UNKNOWN"),
+                    address=address,
+                )
                 return False
             else:
                 # Instead of rejecting, allow the token to proceed and let the actual swap attempt determine tradeability
                 # Many new tokens are not immediately available on Jupiter but may be tradeable on other DEXs
-                print("⚠️ Jupiter pre-check failed - allowing token to proceed (will attempt actual swap)")
+                _log_trace(
+                    "⚠️ Jupiter pre-check failed - allowing token to proceed (will attempt actual swap)",
+                    level="warning",
+                    event="strategy.buy.jupiter_failed_allow",
+                    symbol=token.get("symbol", "UNKNOWN"),
+                    address=address,
+                )
                 # Don't return False - let it continue to the actual swap attempt
 
     # Pre-buy delisting check (DISABLED - causes too many false positives)
@@ -643,7 +1085,11 @@ def check_buy_signal(token: dict) -> bool:
     #         print("🚨 Token appears delisted/inactive; skipping buy signal.")
     #         return False
     # else:
-    print("🔓 Pre-buy delisting check disabled - relying on trade execution and other safety checks")
+    _log_trace(
+        "🔓 Pre-buy delisting check disabled - relying on trade execution and other safety checks",
+        level="info",
+        event="strategy.buy.delisting_disabled",
+    )
 
     # For trusted tokens, require milder depth floors
     min_vol = config['MIN_VOL_24H_BUY'] if not is_trusted else max(2000.0, config['MIN_VOL_24H_BUY'] * 0.5)
@@ -655,8 +1101,16 @@ def check_buy_signal(token: dict) -> bool:
         min_liq = max(500.0, min_liq * 0.3)  # 30% of normal requirement (was 10%)
 
     if vol24h < min_vol or liq_usd < min_liq:
-        print(f"🪫 Fails market depth: vol ${vol24h:,.0f} (need ≥ {min_vol:,.0f}), "
-              f"liq ${liq_usd:,.0f} (need ≥ {min_liq:,.0f})")
+        _log_trace(
+            f"🪫 Fails market depth: vol ${vol24h:,.0f} (need ≥ {min_vol:,.0f}), liq ${liq_usd:,.0f} (need ≥ {min_liq:,.0f})",
+            level="info",
+            event="strategy.buy.market_depth_fail",
+            volume_24h=vol24h,
+            required_volume=min_vol,
+            liquidity_usd=liq_usd,
+            required_liquidity=min_liq,
+            symbol=token.get("symbol"),
+        )
         return False
 
     mem = _load_price_mem()
@@ -671,31 +1125,74 @@ def check_buy_signal(token: dict) -> bool:
     # Multi-chain tokens: even easier momentum threshold
     if chain_id != "ethereum":
         momentum_need = max(0.0001, momentum_need * 0.05)  # 5% of normal requirement for multi-chain (0.02% * 0.05 = 0.001% = 0.01%)
-        print(f"🔓 Multi-chain momentum threshold: {momentum_need*100:.4f}%")
+        _log_trace(
+            f"🔓 Multi-chain momentum threshold: {momentum_need*100:.4f}%",
+            level="info",
+            event="strategy.buy.multichain_momentum_threshold",
+            symbol=token.get("symbol"),
+            chain=chain_id,
+            momentum_threshold=momentum_need,
+        )
 
     # WETH is handled specially in executor.py - skip here
     if address == "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2":  # WETH
-        print("🔓 WETH detected - will be handled in executor")
+        _log_trace(
+            "🔓 WETH detected - will be handled in executor",
+            level="info",
+            event="strategy.buy.weth_special_case",
+        )
         return True
 
     # Try external momentum first (DexScreener price change data)
     ext_momentum, ext_source = _get_external_momentum(token, config)
     if ext_momentum is not None:
-        print(f"📈 Momentum from {ext_source}: {ext_momentum*100:.4f}% (need ≥ {momentum_need*100:.4f}%)")
+        _log_trace(
+            f"📈 Momentum from {ext_source}: {ext_momentum*100:.4f}% (need ≥ {momentum_need*100:.4f}%)",
+            level="info",
+            event="strategy.buy.external_momentum",
+            source=ext_source,
+            momentum=ext_momentum,
+            required_momentum=momentum_need,
+            symbol=token.get("symbol"),
+        )
         if ext_momentum >= momentum_need:
-            print("✅ External momentum buy signal → TRUE")
+            _log_trace(
+                "✅ External momentum buy signal → TRUE",
+                level="info",
+                event="strategy.buy.external_momentum_pass",
+                symbol=token.get("symbol"),
+            )
             return True
         else:
             # External momentum insufficient, but check if token has good metrics bypass
             # Special case for Solana tokens with good volume/liquidity
             if chain_id == "solana" and vol24h >= 10000 and liq_usd >= 50000:
-                print("🔓 Solana token with good metrics - allowing despite insufficient external momentum")
+                _log_trace(
+                    "🔓 Solana token with good metrics - allowing despite insufficient external momentum",
+                    level="info",
+                    event="strategy.buy.solana_metrics_override",
+                    symbol=token.get("symbol"),
+                    volume_24h=vol24h,
+                    liquidity_usd=liq_usd,
+                )
                 return True
             # Special case for Base tokens with good volume/liquidity
             if chain_id == "base" and vol24h >= 10000 and liq_usd >= 50000:
-                print("🔓 Base token with good metrics - allowing despite insufficient external momentum")
+                _log_trace(
+                    "🔓 Base token with good metrics - allowing despite insufficient external momentum",
+                    level="info",
+                    event="strategy.buy.base_metrics_override",
+                    symbol=token.get("symbol"),
+                    volume_24h=vol24h,
+                    liquidity_usd=liq_usd,
+                )
                 return True
-            print("❌ External momentum insufficient.")
+            _log_trace(
+                "❌ External momentum insufficient.",
+                level="error",
+                event="strategy.buy.external_momentum_fail",
+                symbol=token.get("symbol"),
+            )
             return False
 
     # Fallback to bot's price memory if external momentum unavailable
@@ -706,25 +1203,67 @@ def check_buy_signal(token: dict) -> bool:
 
         if prev_price > 0 and age <= config['PRICE_MEM_TTL_SECS']:
             mom = _pct_change(price, prev_price)
-            print(f"📈 Momentum from price memory ({age}s ago): {mom*100:.4f}% (need ≥ {momentum_need*100:.4f}%)")
+            _log_trace(
+                f"📈 Momentum from price memory ({age}s ago): {mom*100:.4f}% (need ≥ {momentum_need*100:.4f}%)",
+                level="info",
+                event="strategy.buy.price_memory_momentum",
+                symbol=token.get("symbol"),
+                age_seconds=age,
+                momentum=mom,
+                required_momentum=momentum_need,
+            )
             if mom >= momentum_need:
-                print("✅ Price memory momentum buy signal → TRUE")
+                _log_trace(
+                    "✅ Price memory momentum buy signal → TRUE",
+                    level="info",
+                    event="strategy.buy.price_memory_pass",
+                    symbol=token.get("symbol"),
+                )
                 return True
             else:
                 # Special case for Solana tokens with good volume/liquidity
                 if chain_id == "solana" and vol24h >= 10000 and liq_usd >= 50000:
-                    print("🔓 Solana token with good metrics - allowing despite insufficient price memory momentum")
+                    _log_trace(
+                        "🔓 Solana token with good metrics - allowing despite insufficient price memory momentum",
+                        level="info",
+                        event="strategy.buy.solana_metrics_override_price_memory",
+                        symbol=token.get("symbol"),
+                        volume_24h=vol24h,
+                        liquidity_usd=liq_usd,
+                    )
                     return True
                 # Special case for Base tokens with good volume/liquidity
                 if chain_id == "base" and vol24h >= 10000 and liq_usd >= 50000:
-                    print("🔓 Base token with good metrics - allowing despite insufficient price memory momentum")
+                    _log_trace(
+                        "🔓 Base token with good metrics - allowing despite insufficient price memory momentum",
+                        level="info",
+                        event="strategy.buy.base_metrics_override_price_memory",
+                        symbol=token.get("symbol"),
+                        volume_24h=vol24h,
+                        liquidity_usd=liq_usd,
+                    )
                     return True
-            print("❌ Price memory momentum insufficient.")
+            _log_trace(
+                "❌ Price memory momentum insufficient.",
+                level="error",
+                event="strategy.buy.price_memory_fail",
+                symbol=token.get("symbol"),
+            )
             return False
         else:
-            print("ℹ️ Snapshot stale or missing, evaluating fast-path…")
+            _log_trace(
+                "ℹ️ Snapshot stale or missing, evaluating fast-path…",
+                level="info",
+                event="strategy.buy.price_memory_stale",
+                symbol=token.get("symbol"),
+            )
     else:
-        print("ℹ️ No price memory available, evaluated external momentum and fast-path only")
+        _log_trace(
+            "ℹ️ No price memory available, evaluated external momentum and fast-path only",
+            level="info",
+            event="strategy.buy.no_price_memory",
+            symbol=token.get("symbol"),
+        )
 
     # Fast-path: for trusted tokens ignore sentiment; for others require sentiment
     sent_score    = int(token.get("sent_score") or 0)
@@ -737,7 +1276,14 @@ def check_buy_signal(token: dict) -> bool:
         fast_vol_ok = (vol24h >= config['FASTPATH_VOL'] * 0.01)   # 1% of Ethereum requirement (was 0.1%)
         fast_liq_ok = (liq_usd >= config['FASTPATH_LIQ'] * 0.02)  # 2% of Ethereum requirement (was 0.2%)
         fast_sent_ok = True  # Skip sentiment for non-Ethereum
-        print(f"🔓 Multi-chain fast-path: vol ${vol24h:,.0f} (need ≥ {config['FASTPATH_VOL'] * 0.01:,.0f}), liq ${liq_usd:,.0f} (need ≥ {config['FASTPATH_LIQ'] * 0.02:,.0f})")
+        _log_trace(
+            f"🔓 Multi-chain fast-path: vol ${vol24h:,.0f} (need ≥ {config['FASTPATH_VOL'] * 0.01:,.0f}), liq ${liq_usd:,.0f} (need ≥ {config['FASTPATH_LIQ'] * 0.02:,.0f})",
+            level="info",
+            event="strategy.buy.multichain_fastpath_requirements",
+            symbol=token.get("symbol"),
+            volume_24h=vol24h,
+            liquidity_usd=liq_usd,
+        )
     else:
         # Original Ethereum requirements
         fast_vol_ok = (vol24h >= config['FASTPATH_VOL'])
@@ -746,14 +1292,29 @@ def check_buy_signal(token: dict) -> bool:
 
     if is_trusted:
         if fast_vol_ok and fast_liq_ok:
-            print("🚀 Trusted fast-path (liq/vol only) → TRUE")
+            _log_trace(
+                "🚀 Trusted fast-path (liq/vol only) → TRUE",
+                level="info",
+                event="strategy.buy.fastpath_trusted_pass",
+                symbol=token.get("symbol"),
+            )
             return True
     else:
         if fast_vol_ok and fast_liq_ok and fast_sent_ok:
-            print("🚀 Fast-path conditions met (liquidity/volume + sentiment) → TRUE")
+            _log_trace(
+                "🚀 Fast-path conditions met (liquidity/volume + sentiment) → TRUE",
+                level="info",
+                event="strategy.buy.fastpath_pass",
+                symbol=token.get("symbol"),
+            )
             return True
 
-    print("❌ No buy signal (no momentum yet and fast-path not met).")
+    _log_trace(
+        "❌ No buy signal (no momentum yet and fast-path not met).",
+        level="error",
+        event="strategy.buy.no_signal",
+        symbol=token.get("symbol"),
+    )
     return False
 
 def get_dynamic_take_profit(token: dict) -> float:
@@ -774,5 +1335,12 @@ def get_dynamic_take_profit(token: dict) -> float:
         tp -= 0.10
 
     tp = max(config['TP_MIN'], min(config['TP_MAX'], tp))
-    print(f"🎯 Dynamic TP computed: {tp*100:.0f}% (base {config['BASE_TP']*100:.0f}%)")
+    _log_trace(
+        f"🎯 Dynamic TP computed: {tp*100:.0f}% (base {config['BASE_TP']*100:.0f}%)",
+        level="info",
+        event="strategy.take_profit.dynamic",
+        symbol=token.get("symbol"),
+        base_tp=config['BASE_TP'],
+        computed_tp=tp,
+    )
     return tp

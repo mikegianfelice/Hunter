@@ -7,6 +7,7 @@ import os
 # Add src to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 from src.config.secrets import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+from src.monitoring.structured_logger import log_info, log_warning, log_error
 import threading
 from datetime import datetime
 
@@ -79,12 +80,19 @@ def send_telegram_message(message: str, markdown: bool = False, disable_preview:
     - message_type: category for rate limiting (e.g., "error", "trade", "status")
     """
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("⚠️ Telegram not configured (missing TELEGRAM_BOT_TOKEN/CHAT_ID).")
+        log_warning(
+            "telegram.config.missing",
+            "Telegram not configured (missing TELEGRAM_BOT_TOKEN/CHAT_ID).",
+        )
         return False
 
     # Check rate limiting
     if not _check_rate_limit(message_type):
-        print(f"📨 Rate limited: {message_type} messages (max {_max_messages_per_window}/min)")
+        log_warning(
+            "telegram.rate_limited",
+            "Telegram message rate limited",
+            context={"message_type": message_type, "window": _rate_limit_window, "max_messages": _max_messages_per_window},
+        )
         return False
 
     # Deduplication logic
@@ -95,7 +103,11 @@ def send_telegram_message(message: str, markdown: bool = False, disable_preview:
         # Check if this message type was sent recently (using fingerprint)
         fingerprint = _get_message_fingerprint(message)
         if fingerprint in _sent_messages:
-            print(f"📨 Skipping duplicate Telegram message: {message_type}")
+            log_info(
+                "telegram.duplicate_skipped",
+                "Skipping duplicate Telegram message",
+                context={"message_type": message_type},
+            )
             return True  # Return True since we "handled" it
         
         # Add to cache
@@ -119,34 +131,74 @@ def send_telegram_message(message: str, markdown: bool = False, disable_preview:
                 and "can't parse entities" in resp.text.lower()
                 and payload.get("parse_mode")
             ):
-                print(f"⚠️ Telegram parse error detected, retrying without formatting...")
+                log_warning(
+                    "telegram.parse_error",
+                    "Telegram parse error detected, retrying without formatting",
+                    context={"status": resp.status_code, "response": resp.text[:120]},
+                )
                 payload_retry = {k: v for k, v in payload.items() if k != "parse_mode"}
                 resp2 = requests.post(url, json=payload_retry, timeout=12)
                 if resp2.status_code == 200:
-                    print("📨 Telegram alert sent without formatting (parse error fallback).")
+                    log_info(
+                        "telegram.sent_without_formatting",
+                        "Telegram alert sent without formatting after parse error fallback",
+                        context={"message_type": message_type},
+                    )
                     return True
                 else:
-                    print(f"❌ Telegram failed even without formatting: {resp2.text}")
+                    log_error(
+                        "telegram.send_failed_without_formatting",
+                        "Telegram send failed after removing formatting",
+                        context={"status": resp2.status_code, "response": resp2.text[:200]},
+                    )
                     return False
             
-            print(f"❌ Telegram failed: {resp.text}")
+            log_error(
+                "telegram.send_failed",
+                "Telegram send failed",
+                context={"status": resp.status_code, "response": resp.text[:200]},
+            )
             return False
-        print("📨 Telegram alert sent!")
+        log_info(
+            "telegram.sent",
+            "Telegram alert sent",
+            context={"message_type": message_type},
+        )
         return True
     except requests.RequestException as e:
         if hasattr(e, 'errno') and e.errno == 32:  # Broken pipe
-            print(f"⚠️ Telegram broken pipe error (connection closed): {e}")
+            log_warning(
+                "telegram.broken_pipe_request",
+                "Telegram broken pipe error (connection closed)",
+                context={"error": str(e), "message_type": message_type},
+            )
         else:
-            print(f"❌ Telegram request error: {e}")
+            log_error(
+                "telegram.request_exception",
+                "Telegram request error",
+                context={"error": str(e), "message_type": message_type},
+            )
         return False
     except OSError as e:
         if e.errno == 32:  # Broken pipe
-            print(f"⚠️ Telegram broken pipe error (OS): {e}")
+            log_warning(
+                "telegram.broken_pipe_os",
+                "Telegram broken pipe error (OS)",
+                context={"error": str(e), "message_type": message_type},
+            )
         else:
-            print(f"❌ Telegram OS error: {e}")
+            log_error(
+                "telegram.os_error",
+                "Telegram OS error",
+                context={"error": str(e), "message_type": message_type},
+            )
         return False
     except Exception as e:
-        print(f"❌ Telegram unexpected error: {e}")
+        log_error(
+            "telegram.unexpected_error",
+            "Telegram unexpected error",
+            context={"error": str(e), "message_type": message_type},
+        )
         return False
 
 def send_periodic_status_report():
@@ -186,7 +238,11 @@ def send_periodic_status_report():
         # Send the message
         return send_telegram_message(status_msg, markdown=True, deduplicate=False)
     except Exception as e:
-        print(f"⚠️ Could not send periodic status report: {e}")
+        log_warning(
+            "telegram.periodic_status_failed",
+            "Could not send periodic status report",
+            context={"error": str(e)},
+        )
         return False
 
 def format_status_message(risk_summary, recent_summary, open_trades, market_regime=None):

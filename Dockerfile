@@ -49,7 +49,7 @@ EXPOSE 8765
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD python3 -c "import requests; requests.get('http://localhost:8765/health', timeout=5)" || exit 1
+    CMD python3 -c "import requests; requests.get('http://localhost:8081/ready', timeout=5)" || exit 1
 
 # Default command
 CMD ["python3", "src/deployment/production_manager.py"]

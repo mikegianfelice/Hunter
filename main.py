@@ -24,10 +24,40 @@ from src.monitoring.realtime_dashboard import start_realtime_dashboard
 from src.analytics.backtesting_engine import run_comprehensive_backtest, optimize_strategy
 from src.monitoring.telegram_bot import send_telegram_message
 from src.utils.preflight_check import run_preflight_checks
+from src.monitoring.metrics import init_metrics_server, record_preflight_failure
+from src.monitoring.health_server import start_health_server, HealthServer
 
 # Global variables for graceful shutdown
 shutdown_event = asyncio.Event()
 production_manager = None
+health_server: Optional[HealthServer] = None
+
+
+async def readiness_check() -> Dict[str, Any]:
+    """
+    Readiness probe used by the health server.
+    """
+    config_ok = validate_config()
+    shutting_down = shutdown_event.is_set()
+    production_active = bool(production_manager)
+    latest_health = None
+
+    if production_manager and getattr(production_manager, "status_history", None):
+        latest_health = (
+            production_manager.status_history[-1].overall_health
+            if production_manager.status_history
+            else None
+        )
+
+    ready = config_ok and not shutting_down
+
+    return {
+        "ready": ready,
+        "config_valid": config_ok,
+        "production_active": production_active,
+        "shutdown_requested": shutting_down,
+        "latest_health": latest_health,
+    }
 
 def signal_handler(signum, frame):
     """Handle shutdown signals gracefully"""
@@ -114,6 +144,7 @@ async def run_production_mode():
         preflight_result = await run_preflight_checks(chains=supported_chains)
         
         if not preflight_result["overall_ready"]:
+            record_preflight_failure("production")
             log_error("main.preflight_failed", 
                      "❌ Preflight checks failed. Please fix errors before starting production mode.")
             return False
@@ -141,6 +172,7 @@ async def run_enhanced_trading_mode():
         preflight_result = await run_preflight_checks(chains=supported_chains)
         
         if not preflight_result["overall_ready"]:
+            record_preflight_failure("trading")
             log_error("main.preflight_failed", 
                      "❌ Preflight checks failed. Please fix errors before starting trading.")
             return False
@@ -277,6 +309,20 @@ async def main():
     
     # Start logging session
     start_logging_session()
+
+    # Initialize observability endpoints
+    metrics_host = os.getenv("METRICS_HOST", "0.0.0.0")
+    metrics_port = int(os.getenv("METRICS_PORT", "9100"))
+    init_metrics_server(port=metrics_port, host=metrics_host)
+
+    global health_server
+    health_host = os.getenv("HEALTH_HOST", "0.0.0.0")
+    health_port = int(os.getenv("HEALTH_PORT", "8081"))
+    health_server = await start_health_server(
+        host=health_host,
+        port=health_port,
+        readiness_check=readiness_check,
+    )
     
     # Send Telegram notification on startup
     try:
@@ -333,6 +379,12 @@ async def main():
             send_telegram_message("🛑 Hunter Trading Bot Stopped\n\nBot has been shut down.", deduplicate=False, message_type="status")
         except Exception as e:
             log_info("main.telegram", f"Could not send shutdown Telegram notification: {e}")
+        
+        if health_server:
+            try:
+                await health_server.stop()
+            except Exception as err:
+                log_error("main.health_server_stop", f"Failed to stop health server: {err}")
         
         log_info("main.shutdown", "👋 Hunter Trading Bot shutdown complete")
 
