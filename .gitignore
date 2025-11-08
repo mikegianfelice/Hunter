@@ -57,6 +57,12 @@ cover/
 
 # Django stuff:
 *.log
+
+# Test scripts (do not commit)
+test_*.py
+*/test_*.py
+tests/
+*/tests/
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
