@@ -69,7 +69,7 @@ solana_min_sol_for_fees: 0.05  # Minimum SOL needed for transaction fees (separa
 
 # === Risk Management ===
 max_concurrent_positions: 6  # Increased for $100 start strategy
-daily_loss_limit_usd: 5.0  # $5 daily loss limit for $100 start (scales with equity)
+daily_loss_limit_usd: 10.0  # $10 daily loss limit for $100 start (scales with equity)
 max_losing_streak: 3  # Stop after 3 losses
 circuit_breaker_minutes: 60  # 60 minute cooldown after losses
 per_trade_max_usd: 25  # $25 max per trade for $100 start
