@@ -36,8 +36,7 @@ import requests
 logger = logging.getLogger(__name__)
 
 
-COINGECKO_PUBLIC_BASE = "https://api.coingecko.com/api/v3"
-COINGECKO_PRO_BASE = "https://pro-api.coingecko.com/api/v3"
+COINGECKO_PUBLIC_BASE = "https://api.coingecko.com/api/v3/"
 COINCAP_BASE = "https://api.coincap.io/v2"
 DEXSCREENER_BASE = "https://api.dexscreener.com/latest/dex"
 
@@ -96,9 +95,7 @@ class RealMarketDataProvider:
         
         # Load CoinGecko API key from environment
         self._coingecko_api_key = (os.getenv("COINGECKO_API_KEY") or "").strip()
-        self._coingecko_base = (
-            COINGECKO_PRO_BASE if self._coingecko_api_key else COINGECKO_PUBLIC_BASE
-        )
+        self._coingecko_base = COINGECKO_PUBLIC_BASE
 
         # Simple TTLs – can be tuned as needed.
         self._default_ttl = 300.0  # 5 minutes
@@ -119,7 +116,7 @@ class RealMarketDataProvider:
             return cached
 
         try:
-            query_url = f"{self._coingecko_base}/search"
+            query_url = f"{self._coingecko_base}search"
             response = self._request_json(query_url, params={"query": symbol})
             if not response:
                 return None
@@ -154,7 +151,7 @@ class RealMarketDataProvider:
         if cache_key in self._coingecko_cache and time.time() < self._coingecko_expiry.get(cache_key, 0):
             return self._coingecko_cache[cache_key]
 
-        url = f"{self._coingecko_base}/coins/{asset_id}"
+        url = f"{self._coingecko_base}coins/{asset_id}"
         try:
             data = self._request_json(url, params={"localization": "false", "tickers": "false", "market_data": "true", "community_data": "true", "developer_data": "false", "sparkline": "false"})
             if not data:
@@ -316,7 +313,7 @@ class RealMarketDataProvider:
         # Add CoinGecko API key if available
         headers = {}
         if self._coingecko_api_key and "coingecko.com" in url:
-            headers["x-cg-pro-api-key"] = self._coingecko_api_key
+            headers["x-cg-demo-api-key"] = self._coingecko_api_key
 
         attempt = 0
         while attempt < 3:

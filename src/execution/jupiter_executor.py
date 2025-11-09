@@ -113,15 +113,11 @@ class JupiterCustomExecutor:
                 import os
                 coingecko_id = token_mapping[token_address]
                 coingecko_key = os.getenv("COINGECKO_API_KEY", "").strip()
-                base_url = (
-                    "https://pro-api.coingecko.com/api/v3"
-                    if coingecko_key
-                    else "https://api.coingecko.com/api/v3"
-                )
-                url = f"{base_url}/simple/price?ids={coingecko_id}&vs_currencies=usd"
+                base_url = "https://api.coingecko.com/api/v3/"
+                url = f"{base_url}simple/price?ids={coingecko_id}&vs_currencies=usd"
                 headers = {}
                 if coingecko_key:
-                    headers["x-cg-pro-api-key"] = coingecko_key
+                    headers["x-cg-demo-api-key"] = coingecko_key
                 data = get_json(url, headers=headers if headers else None, timeout=8, retries=1)
                 if data and coingecko_id in data and "usd" in data[coingecko_id]:
                     price = float(data[coingecko_id]["usd"])

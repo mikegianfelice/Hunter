@@ -26,11 +26,7 @@ class MarketDataFetcher:
         self.max_retries = 3
         # Load CoinGecko API key from environment
         self.coingecko_api_key = (os.getenv("COINGECKO_API_KEY") or "").strip()
-        self._coingecko_base_url = (
-            "https://pro-api.coingecko.com/api/v3"
-            if self.coingecko_api_key
-            else "https://api.coingecko.com/api/v3"
-        )
+        self._coingecko_base_url = "https://api.coingecko.com/api/v3/"
         
     def get_btc_price(self) -> Optional[float]:
         """Get current BTC price in USD"""
@@ -42,7 +38,7 @@ class MarketDataFetcher:
                     return cached_data['price']
             
             # Try CoinGecko API
-            url = f"{self._coingecko_base_url}/simple/price?ids=bitcoin&vs_currencies=usd"
+            url = f"{self._coingecko_base_url}simple/price?ids=bitcoin&vs_currencies=usd"
             data = self._fetch_json(url)
             if data and 'bitcoin' in data:
                 price = float(data['bitcoin']['usd'])
@@ -51,7 +47,7 @@ class MarketDataFetcher:
                 return price
             
             # Fallback to CoinGecko alternative endpoint
-            url = f"{self._coingecko_base_url}/coins/bitcoin"
+            url = f"{self._coingecko_base_url}coins/bitcoin"
             data = self._fetch_json(url)
             if data and 'market_data' in data:
                 price = float(data['market_data']['current_price']['usd'])
@@ -74,7 +70,7 @@ class MarketDataFetcher:
                     return cached_data['price']
             
             # Try CoinGecko API
-            url = f"{self._coingecko_base_url}/simple/price?ids=ethereum&vs_currencies=usd"
+            url = f"{self._coingecko_base_url}simple/price?ids=ethereum&vs_currencies=usd"
             data = self._fetch_json(url)
             if data and 'ethereum' in data:
                 price = float(data['ethereum']['usd'])
@@ -83,7 +79,7 @@ class MarketDataFetcher:
                 return price
             
             # Fallback to CoinGecko alternative endpoint
-            url = f"{self._coingecko_base_url}/coins/ethereum"
+            url = f"{self._coingecko_base_url}coins/ethereum"
             data = self._fetch_json(url)
             if data and 'market_data' in data:
                 price = float(data['market_data']['current_price']['usd'])
@@ -103,7 +99,7 @@ class MarketDataFetcher:
             now = int(time.time())
             from_timestamp = now - (hours * 3600)
             
-            url = f"{self._coingecko_base_url}/coins/bitcoin/market_chart/range?vs_currency=usd&from={from_timestamp}&to={now}"
+            url = f"{self._coingecko_base_url}coins/bitcoin/market_chart/range?vs_currency=usd&from={from_timestamp}&to={now}"
             data = self._fetch_json(url)
             
             if data and 'prices' in data:
@@ -131,7 +127,7 @@ class MarketDataFetcher:
             now = int(time.time())
             from_timestamp = now - (hours * 3600)
             
-            url = f"{self._coingecko_base_url}/coins/ethereum/market_chart/range?vs_currency=usd&from={from_timestamp}&to={now}"
+            url = f"{self._coingecko_base_url}coins/ethereum/market_chart/range?vs_currency=usd&from={from_timestamp}&to={now}"
             data = self._fetch_json(url)
             
             if data and 'prices' in data:
@@ -159,7 +155,7 @@ class MarketDataFetcher:
             now = int(time.time())
             from_timestamp = now - (hours * 3600)
             
-            url = f"{self._coingecko_base_url}/coins/bitcoin/market_chart/range?vs_currency=usd&from={from_timestamp}&to={now}"
+            url = f"{self._coingecko_base_url}coins/bitcoin/market_chart/range?vs_currency=usd&from={from_timestamp}&to={now}"
             data = self._fetch_json(url)
             
             if data and 'prices' in data:
@@ -208,11 +204,11 @@ class MarketDataFetcher:
             from_timestamp = now - (hours * 3600)
             
             # Fetch BTC price history
-            btc_url = f"{self._coingecko_base_url}/coins/bitcoin/market_chart/range?vs_currency=usd&from={from_timestamp}&to={now}"
+            btc_url = f"{self._coingecko_base_url}coins/bitcoin/market_chart/range?vs_currency=usd&from={from_timestamp}&to={now}"
             btc_data = self._fetch_json(btc_url)
             
             # Fetch ETH price history
-            eth_url = f"{self._coingecko_base_url}/coins/ethereum/market_chart/range?vs_currency=usd&from={from_timestamp}&to={now}"
+            eth_url = f"{self._coingecko_base_url}coins/ethereum/market_chart/range?vs_currency=usd&from={from_timestamp}&to={now}"
             eth_data = self._fetch_json(eth_url)
             
             if not btc_data or 'prices' not in btc_data or not eth_data or 'prices' not in eth_data:
@@ -295,7 +291,7 @@ class MarketDataFetcher:
         """Get volume trends (0-1 scale) based on historical comparison"""
         try:
             # Get current total market volume
-            url = f"{self._coingecko_base_url}/global"
+            url = f"{self._coingecko_base_url}global"
             current_data = self._fetch_json(url)
             
             if not current_data or 'data' not in current_data:
@@ -316,7 +312,7 @@ class MarketDataFetcher:
             now = int(time.time())
             from_timestamp = now - (hours * 2 * 3600)  # Get 2x hours to compare
             
-            btc_url = f"{self._coingecko_base_url}/coins/bitcoin/market_chart/range?vs_currency=usd&from={from_timestamp}&to={now}"
+            btc_url = f"{self._coingecko_base_url}coins/bitcoin/market_chart/range?vs_currency=usd&from={from_timestamp}&to={now}"
             btc_data = self._fetch_json(btc_url)
             
             if not btc_data or 'total_volumes' not in btc_data or len(btc_data['total_volumes']) < 2:
@@ -374,7 +370,7 @@ class MarketDataFetcher:
         """Get market cap trend (0-1 scale) based on historical comparison"""
         try:
             # Get current total market cap
-            url = f"{self._coingecko_base_url}/global"
+            url = f"{self._coingecko_base_url}global"
             current_data = self._fetch_json(url)
             
             if not current_data or 'data' not in current_data:
@@ -394,7 +390,7 @@ class MarketDataFetcher:
             now = int(time.time())
             from_timestamp = now - (hours * 2 * 3600)  # Get 2x hours to compare
             
-            btc_url = f"{self._coingecko_base_url}/coins/bitcoin/market_chart/range?vs_currency=usd&from={from_timestamp}&to={now}"
+            btc_url = f"{self._coingecko_base_url}coins/bitcoin/market_chart/range?vs_currency=usd&from={from_timestamp}&to={now}"
             btc_data = self._fetch_json(btc_url)
             
             if not btc_data or 'market_caps' not in btc_data or len(btc_data['market_caps']) < 2:
@@ -467,7 +463,7 @@ class MarketDataFetcher:
         
         # Add CoinGecko API key if available
         if self.coingecko_api_key and "coingecko.com" in url:
-            headers["x-cg-pro-api-key"] = self.coingecko_api_key
+            headers["x-cg-demo-api-key"] = self.coingecko_api_key
         
         backoff = 1.0
         

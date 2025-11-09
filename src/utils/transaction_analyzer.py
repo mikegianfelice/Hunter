@@ -40,15 +40,11 @@ def get_eth_price_usd() -> float:
             import requests
             import os
             coingecko_key = os.getenv("COINGECKO_API_KEY", "").strip()
-            base_url = (
-                "https://pro-api.coingecko.com/api/v3"
-                if coingecko_key
-                else "https://api.coingecko.com/api/v3"
-            )
-            url = f"{base_url}/simple/price?ids=ethereum&vs_currencies=usd"
+            base_url = "https://api.coingecko.com/api/v3/"
+            url = f"{base_url}simple/price?ids=ethereum&vs_currencies=usd"
             headers = {}
             if coingecko_key:
-                headers["x-cg-pro-api-key"] = coingecko_key
+                headers["x-cg-demo-api-key"] = coingecko_key
             response = requests.get(url, headers=headers, timeout=5)
             if response.status_code == 200:
                 data = response.json()
