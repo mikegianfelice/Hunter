@@ -117,11 +117,15 @@ def get_eth_price_usd() -> float:
     # 3) CoinGecko fallback
     try:
         coingecko_key = os.getenv("COINGECKO_API_KEY", "").strip()
-        url = "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd"
+        base_url = (
+            "https://pro-api.coingecko.com/api/v3"
+            if coingecko_key
+            else "https://api.coingecko.com/api/v3"
+        )
+        url = f"{base_url}/simple/price?ids=ethereum&vs_currencies=usd"
         headers = {}
         if coingecko_key:
-            url += f"&api_key={coingecko_key}"
-            headers["x-cg-demo-api-key"] = coingecko_key
+            headers["x-cg-pro-api-key"] = coingecko_key
         data = get_json(url, headers=headers if headers else None, timeout=10, retries=1)
         if data:
             price = float(data.get("ethereum", {}).get("usd", 0))
@@ -168,13 +172,17 @@ def get_sol_price_usd() -> float:
     
     # Try CoinGecko first with retry
     coingecko_key = os.getenv("COINGECKO_API_KEY", "").strip()
+    coingecko_base = (
+        "https://pro-api.coingecko.com/api/v3"
+        if coingecko_key
+        else "https://api.coingecko.com/api/v3"
+    )
     for attempt in range(3):
         try:
-            url = "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd"
+            url = f"{coingecko_base}/simple/price?ids=solana&vs_currencies=usd"
             headers = {}
             if coingecko_key:
-                url += f"&api_key={coingecko_key}"
-                headers["x-cg-demo-api-key"] = coingecko_key
+                headers["x-cg-pro-api-key"] = coingecko_key
             data = get_json(url, headers=headers if headers else None, timeout=15, retries=1)
             if data:
                 # Check for rate limit error in response

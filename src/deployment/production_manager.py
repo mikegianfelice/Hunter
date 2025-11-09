@@ -219,11 +219,15 @@ class HealthChecker:
             try:
                 import os
                 coingecko_key = os.getenv("COINGECKO_API_KEY", "").strip()
-                url = "https://api.coingecko.com/api/v3/ping"
+                base_url = (
+                    "https://pro-api.coingecko.com/api/v3"
+                    if coingecko_key
+                    else "https://api.coingecko.com/api/v3"
+                )
+                url = f"{base_url}/ping"
                 headers = {}
                 if coingecko_key:
-                    url += f"?api_key={coingecko_key}"
-                    headers["x-cg-demo-api-key"] = coingecko_key
+                    headers["x-cg-pro-api-key"] = coingecko_key
                 requests.get(url, headers=headers, timeout=5)
             except:
                 network_ok = False
