@@ -1,0 +1,13 @@
+{
+  "oreou2p8bn6jkk3jbaivxyng1dcxcyxwhwyk9jsybcp": {
+    "entry_price": 511.7530001363,
+    "chain_id": "solana",
+    "symbol": "ORE",
+    "address": "oreoU2P8bN6jkk3jbaiVxYnG1dCXcYxwhwyK9jSybcp",
+    "timestamp": "2025-11-09T15:58:43",
+    "position_size_usd": 40.00651499999999,
+    "trade_id": "ORE_20251109_155843",
+    "entry_tx_hash": "3Wfjkrszwd2K3hQcmsZCKJKS7vDbPujMdu1Z5J6vsrvSZBFuGWjXiF7dVVyUP6eXxs577fqPPU1KJfbKgcpX1PLe",
+    "entry_amount_tokens": 0.07817543813
+  }
+}

@@ -237,9 +237,10 @@ def _check_solana_holder_concentration(token_address: str) -> Dict:
             result["error"] = "No holder accounts found"
             return result
         
-        # Calculate total balance of top 10 holders
+        # Calculate total balance of top 10 holders (RPC may return more than requested)
+        top_accounts = largest_accounts[:10]
         top_10_balance_raw = 0
-        for account in largest_accounts:
+        for account in top_accounts:
             balance_raw = int(account.get("amount", 0))
             top_10_balance_raw += balance_raw
         
