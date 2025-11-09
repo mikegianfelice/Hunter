@@ -18,6 +18,11 @@ USDC_ADDRESS      = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"  # 6 decimals
 # Web3 (no key needed; uses your RPC)
 _w3 = Web3(Web3.HTTPProvider(INFURA_URL))
 
+_ETH_PRICE_CACHE: Dict[str, float] = {
+    "timestamp": 0.0,
+    "price": 0.0,
+}
+
 # Lazy-load router ABI
 def _load_router_abi():
     # Try multiple locations for the ABI file
@@ -96,9 +101,14 @@ def get_eth_price_usd() -> float:
     3) Fallback: CoinGecko ETH price.
     4) Emergency fallback to avoid None.
     """
+    now = time.time()
+    if _ETH_PRICE_CACHE["price"] > 0 and (now - _ETH_PRICE_CACHE["timestamp"]) < 60:
+        return _ETH_PRICE_CACHE["price"]
     # 1) Graph route via WETH
     px = fetch_token_price_usd(WETH_ADDRESS)
     if px and px > 0:
+        _ETH_PRICE_CACHE["price"] = float(px)
+        _ETH_PRICE_CACHE["timestamp"] = time.time()
         return float(px)
 
     # 2) On-chain Uniswap V2 router quote
@@ -110,6 +120,8 @@ def get_eth_price_usd() -> float:
         usdc_out = float(amounts[-1])  # USDC has 6 decimals
         eth_usd = usdc_out / 1_000_000.0
         if eth_usd > 0:
+            _ETH_PRICE_CACHE["price"] = eth_usd
+            _ETH_PRICE_CACHE["timestamp"] = time.time()
             return eth_usd
     except Exception as e:
         print(f"❌ Uniswap V2 router quote failed: {e}")
@@ -126,12 +138,16 @@ def get_eth_price_usd() -> float:
         if data:
             price = float(data.get("ethereum", {}).get("usd", 0))
             if price > 0:
+                _ETH_PRICE_CACHE["price"] = price
+                _ETH_PRICE_CACHE["timestamp"] = time.time()
                 return price
     except Exception as e:
         print(f"⚠️ CoinGecko ETH price error: {e}")
 
     # 4) Emergency fallback
     print(f"⚠️ All ETH price sources failed - using emergency fallback of $3000")
+    _ETH_PRICE_CACHE["price"] = 3000.0
+    _ETH_PRICE_CACHE["timestamp"] = time.time()
     return 3000.0
 
 def _cache_sol_price(price: float):

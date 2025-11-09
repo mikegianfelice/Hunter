@@ -30,6 +30,11 @@ from src.config.config_validator import get_validated_config
 
 logger = logging.getLogger(__name__)
 
+_COINGECKO_PING_CACHE: Dict[str, Any] = {
+    "timestamp": 0.0,
+    "network_ok": True,
+}
+
 @dataclass
 class HealthCheck:
     """Health check result"""
@@ -216,17 +221,23 @@ class HealthChecker:
             
             # Network connectivity
             network_ok = True
-            try:
-                import os
-                coingecko_key = os.getenv("COINGECKO_API_KEY", "").strip()
-                base_url = "https://api.coingecko.com/api/v3/"
-                url = f"{base_url}ping"
-                headers = {}
-                if coingecko_key:
-                    headers["x-cg-demo-api-key"] = coingecko_key
-                requests.get(url, headers=headers, timeout=5)
-            except:
-                network_ok = False
+            now = time.time()
+            if now - _COINGECKO_PING_CACHE["timestamp"] > 60:
+                try:
+                    coingecko_key = os.getenv("COINGECKO_API_KEY", "").strip()
+                    base_url = "https://api.coingecko.com/api/v3/"
+                    url = f"{base_url}ping"
+                    headers = {}
+                    if coingecko_key:
+                        headers["x-cg-demo-api-key"] = coingecko_key
+                    requests.get(url, headers=headers, timeout=5)
+                    _COINGECKO_PING_CACHE["network_ok"] = True
+                except requests.RequestException:
+                    _COINGECKO_PING_CACHE["network_ok"] = False
+                finally:
+                    _COINGECKO_PING_CACHE["timestamp"] = now
+
+            network_ok = _COINGECKO_PING_CACHE["network_ok"]
             
             # Determine overall status
             if cpu_percent > 90 or memory_percent > 90 or disk_percent > 90:
@@ -448,7 +459,7 @@ class ProductionManager:
         await self.health_checker.register_check(
             "system_resources",
             self.health_checker.check_system_resources,
-            interval=30
+            interval=600
         )
         
         await self.health_checker.register_check(
