@@ -57,7 +57,13 @@ class AIAnalysisResult:
     sentiment_analysis: Dict[str, Any]
     prediction_analysis: Dict[str, Any]
     execution_analysis: Dict[str, Any]
-    processing_time: float
+    # New comprehensive analysis sections
+    market_context: Dict[str, Any] = None  # Regime, cycle, liquidity, anomaly
+    predictive_analytics: Dict[str, Any] = None  # Predictive, price, microstructure
+    risk_controls: Dict[str, Any] = None  # Drawdown, risk prediction, emergency stop
+    portfolio_analysis: Dict[str, Any] = None  # Portfolio optimization, rebalancing
+    execution_optimization: Dict[str, Any] = None  # Execution monitor, position validation
+    processing_time: float = 0.0
 
 class AIModuleConnector:
     """Connects and manages all AI modules"""
@@ -407,7 +413,7 @@ class AIIntegrationEngine:
         return True
     
     async def analyze_token(self, token_data: Dict[str, Any]) -> AIAnalysisResult:
-        """Perform comprehensive AI analysis on a token"""
+        """Perform comprehensive AI analysis on a token with all modules"""
         symbol = token_data.get("symbol", "UNKNOWN")
         start_time = time.time()
         
@@ -425,8 +431,11 @@ class AIIntegrationEngine:
             # Prepare features for ML pipeline
             features = await self.ml_pipeline.prepare_features(market_data)
             
-            # Run parallel AI analysis
-            analysis_tasks = [
+            # Get trade amount for modules that need it
+            trade_amount = float(token_data.get("position_size_usd", token_data.get("recommended_position_size", 10.0)))
+            
+            # Stage 1: Core Analysis (existing modules)
+            core_tasks = [
                 self._analyze_sentiment(market_data),
                 self._analyze_price_prediction(market_data, features),
                 self._analyze_risk(market_data),
@@ -435,9 +444,36 @@ class AIIntegrationEngine:
                 self._analyze_execution_optimization(market_data)
             ]
             
-            results = await asyncio.gather(*analysis_tasks, return_exceptions=True)
+            # Stage 2: Market Context Analysis (regime, cycle, liquidity, anomaly)
+            market_context_tasks = [
+                self._analyze_market_context(token_data, market_data, trade_amount)
+            ]
             
-            # Process results
+            # Stage 3: Predictive Analytics (predictive, price, microstructure)
+            predictive_tasks = [
+                self._analyze_predictive_analytics(token_data, market_data, trade_amount)
+            ]
+            
+            # Stage 4: Risk Controls (drawdown, risk prediction, emergency stop)
+            risk_control_tasks = [
+                self._analyze_risk_controls(token_data, market_data, trade_amount)
+            ]
+            
+            # Stage 5: Portfolio Analysis (optimization, rebalancing)
+            portfolio_tasks = [
+                self._analyze_portfolio(token_data, market_data, trade_amount)
+            ]
+            
+            # Stage 6: Execution Optimization (monitor, position validation)
+            execution_opt_tasks = [
+                self._analyze_execution_optimization_full(token_data, market_data, trade_amount)
+            ]
+            
+            # Run all analysis stages in parallel
+            all_tasks = core_tasks + market_context_tasks + predictive_tasks + risk_control_tasks + portfolio_tasks + execution_opt_tasks
+            results = await asyncio.gather(*all_tasks, return_exceptions=True)
+            
+            # Process core results
             sentiment_analysis = results[0] if not isinstance(results[0], Exception) else {}
             price_prediction = results[1] if not isinstance(results[1], Exception) else {}
             risk_assessment = results[2] if not isinstance(results[2], Exception) else {}
@@ -445,16 +481,25 @@ class AIIntegrationEngine:
             technical_analysis = results[4] if not isinstance(results[4], Exception) else {}
             execution_analysis = results[5] if not isinstance(results[5], Exception) else {}
             
-            # Calculate overall score
-            overall_score = self._calculate_overall_score(
+            # Process new stage results
+            market_context = results[6] if not isinstance(results[6], Exception) else {}
+            predictive_analytics = results[7] if not isinstance(results[7], Exception) else {}
+            risk_controls = results[8] if not isinstance(results[8], Exception) else {}
+            portfolio_analysis = results[9] if not isinstance(results[9], Exception) else {}
+            execution_optimization = results[10] if not isinstance(results[10], Exception) else {}
+            
+            # Calculate overall score with all modules
+            overall_score = self._calculate_overall_score_comprehensive(
                 sentiment_analysis, price_prediction, risk_assessment, 
-                market_analysis, technical_analysis
+                market_analysis, technical_analysis, market_context,
+                predictive_analytics, risk_controls, portfolio_analysis
             )
             
-            # Generate recommendations
-            recommendations = self._generate_recommendations(
+            # Generate recommendations with all modules
+            recommendations = self._generate_recommendations_comprehensive(
                 overall_score, sentiment_analysis, price_prediction, 
-                risk_assessment, market_analysis, technical_analysis
+                risk_assessment, market_analysis, technical_analysis,
+                market_context, predictive_analytics, risk_controls, portfolio_analysis
             )
             
             # Create comprehensive result
@@ -470,6 +515,11 @@ class AIIntegrationEngine:
                 sentiment_analysis=sentiment_analysis,
                 prediction_analysis=price_prediction,
                 execution_analysis=execution_analysis,
+                market_context=market_context,
+                predictive_analytics=predictive_analytics,
+                risk_controls=risk_controls,
+                portfolio_analysis=portfolio_analysis,
+                execution_optimization=execution_optimization,
                 processing_time=time.time() - start_time
             )
             
@@ -493,6 +543,11 @@ class AIIntegrationEngine:
                 sentiment_analysis={},
                 prediction_analysis={},
                 execution_analysis={},
+                market_context={},
+                predictive_analytics={},
+                risk_controls={},
+                portfolio_analysis={},
+                execution_optimization={},
                 processing_time=time.time() - start_time
             )
     
@@ -728,6 +783,217 @@ class AIIntegrationEngine:
             log_error(f"Error in execution analysis: {e}")
             return {"execution_score": 0.5, "recommended_slippage": 0.05, "optimal_timing": "wait"}
     
+    async def _analyze_market_context(self, token_data: Dict, market_data: MarketData, trade_amount: float) -> Dict[str, Any]:
+        """Analyze market context: regime, cycle, liquidity, anomaly"""
+        try:
+            context = {}
+            
+            # Market regime detection
+            if "market_regime_detector" in self.module_connector.modules:
+                try:
+                    module = self.module_connector.modules["market_regime_detector"]
+                    if hasattr(module, 'detect_market_regime'):
+                        regime_result = module.detect_market_regime() if not asyncio.iscoroutinefunction(module.detect_market_regime) else await module.detect_market_regime()
+                        context["regime"] = regime_result
+                except Exception as e:
+                    log_error(f"Error in market regime detector: {e}")
+            
+            # Market cycle prediction
+            if "market_cycle_predictor" in self.module_connector.modules:
+                try:
+                    module = self.module_connector.modules["market_cycle_predictor"]
+                    if hasattr(module, 'predict_market_cycle'):
+                        cycle_result = module.predict_market_cycle(token_data, trade_amount) if not asyncio.iscoroutinefunction(module.predict_market_cycle) else await module.predict_market_cycle(token_data, trade_amount)
+                        context["cycle"] = cycle_result
+                except Exception as e:
+                    log_error(f"Error in market cycle predictor: {e}")
+            
+            # Liquidity flow analysis
+            if "liquidity_flow_analyzer" in self.module_connector.modules:
+                try:
+                    module = self.module_connector.modules["liquidity_flow_analyzer"]
+                    if hasattr(module, 'analyze_liquidity_flow'):
+                        liquidity_result = module.analyze_liquidity_flow(token_data, trade_amount) if not asyncio.iscoroutinefunction(module.analyze_liquidity_flow) else await module.analyze_liquidity_flow(token_data, trade_amount)
+                        context["liquidity"] = liquidity_result
+                except Exception as e:
+                    log_error(f"Error in liquidity flow analyzer: {e}")
+            
+            # Market anomaly detection
+            if "market_anomaly_detector" in self.module_connector.modules:
+                try:
+                    module = self.module_connector.modules["market_anomaly_detector"]
+                    if hasattr(module, 'detect_market_anomalies'):
+                        anomaly_result = module.detect_market_anomalies(token_data, {"timestamp": market_data.timestamp}, {}) if not asyncio.iscoroutinefunction(module.detect_market_anomalies) else await module.detect_market_anomalies(token_data, {"timestamp": market_data.timestamp}, {})
+                        context["anomaly"] = anomaly_result
+                except Exception as e:
+                    log_error(f"Error in market anomaly detector: {e}")
+            
+            # Regime transition detection
+            if "regime_transition_detector" in self.module_connector.modules:
+                try:
+                    module = self.module_connector.modules["regime_transition_detector"]
+                    if hasattr(module, 'detect_regime_transition'):
+                        transition_result = module.detect_regime_transition(token_data, trade_amount) if not asyncio.iscoroutinefunction(module.detect_regime_transition) else await module.detect_regime_transition(token_data, trade_amount)
+                        context["regime_transition"] = transition_result
+                except Exception as e:
+                    log_error(f"Error in regime transition detector: {e}")
+            
+            return context
+            
+        except Exception as e:
+            log_error(f"Error in market context analysis: {e}")
+            return {}
+    
+    async def _analyze_predictive_analytics(self, token_data: Dict, market_data: MarketData, trade_amount: float) -> Dict[str, Any]:
+        """Analyze predictive analytics: predictive engine, price predictor, microstructure"""
+        try:
+            analytics = {}
+            
+            # Predictive analytics engine
+            if "predictive_analytics" in self.module_connector.modules:
+                try:
+                    module = self.module_connector.modules["predictive_analytics"]
+                    if hasattr(module, 'predict_price_movement'):
+                        pred_result = module.predict_price_movement(token_data, trade_amount) if not asyncio.iscoroutinefunction(module.predict_price_movement) else await module.predict_price_movement(token_data, trade_amount)
+                        analytics["predictive"] = pred_result
+                except Exception as e:
+                    log_error(f"Error in predictive analytics engine: {e}")
+            
+            # Market microstructure analysis
+            if "microstructure_analyzer" in self.module_connector.modules:
+                try:
+                    module = self.module_connector.modules["microstructure_analyzer"]
+                    if hasattr(module, 'analyze_market_microstructure'):
+                        micro_result = module.analyze_market_microstructure(token_data, trade_amount) if not asyncio.iscoroutinefunction(module.analyze_market_microstructure) else await module.analyze_market_microstructure(token_data, trade_amount)
+                        analytics["microstructure"] = micro_result
+                except Exception as e:
+                    log_error(f"Error in microstructure analyzer: {e}")
+            
+            # Multi-timeframe analysis
+            if "multi_timeframe_analyzer" in self.module_connector.modules:
+                try:
+                    module = self.module_connector.modules["multi_timeframe_analyzer"]
+                    if hasattr(module, 'analyze_multi_timeframe'):
+                        timeframe_result = module.analyze_multi_timeframe(token_data, trade_amount) if not asyncio.iscoroutinefunction(module.analyze_multi_timeframe) else await module.analyze_multi_timeframe(token_data, trade_amount)
+                        analytics["multi_timeframe"] = timeframe_result
+                except Exception as e:
+                    log_error(f"Error in multi-timeframe analyzer: {e}")
+            
+            return analytics
+            
+        except Exception as e:
+            log_error(f"Error in predictive analytics: {e}")
+            return {}
+    
+    async def _analyze_risk_controls(self, token_data: Dict, market_data: MarketData, trade_amount: float) -> Dict[str, Any]:
+        """Analyze risk controls: drawdown protection, risk prediction prevention, emergency stop"""
+        try:
+            controls = {}
+            
+            # Drawdown protection
+            if "drawdown_protection" in self.module_connector.modules:
+                try:
+                    module = self.module_connector.modules["drawdown_protection"]
+                    if hasattr(module, 'analyze_drawdown_protection'):
+                        portfolio_data = {"total_value": trade_amount * 10, "initial_value": trade_amount * 10}
+                        drawdown_result = module.analyze_drawdown_protection(portfolio_data, [], {}) if not asyncio.iscoroutinefunction(module.analyze_drawdown_protection) else await module.analyze_drawdown_protection(portfolio_data, [], {})
+                        controls["drawdown"] = drawdown_result
+                except Exception as e:
+                    log_error(f"Error in drawdown protection: {e}")
+            
+            # Risk prediction prevention
+            if "risk_prediction_prevention" in self.module_connector.modules:
+                try:
+                    module = self.module_connector.modules["risk_prediction_prevention"]
+                    if hasattr(module, 'predict_risk'):
+                        risk_pred_result = module.predict_risk(token_data, trade_amount) if not asyncio.iscoroutinefunction(module.predict_risk) else await module.predict_risk(token_data, trade_amount)
+                        controls["risk_prediction"] = risk_pred_result
+                except Exception as e:
+                    log_error(f"Error in risk prediction prevention: {e}")
+            
+            # Emergency stop system
+            if "emergency_stop" in self.module_connector.modules:
+                try:
+                    module = self.module_connector.modules["emergency_stop"]
+                    if hasattr(module, 'check_emergency_conditions'):
+                        portfolio_data = {"total_value": trade_amount * 10, "initial_value": trade_amount * 10, "timestamp": market_data.timestamp}
+                        emergency_result = module.check_emergency_conditions(portfolio_data, [], {}, []) if not asyncio.iscoroutinefunction(module.check_emergency_conditions) else await module.check_emergency_conditions(portfolio_data, [], {}, [])
+                        controls["emergency"] = emergency_result
+                except Exception as e:
+                    log_error(f"Error in emergency stop system: {e}")
+            
+            return controls
+            
+        except Exception as e:
+            log_error(f"Error in risk controls analysis: {e}")
+            return {}
+    
+    async def _analyze_portfolio(self, token_data: Dict, market_data: MarketData, trade_amount: float) -> Dict[str, Any]:
+        """Analyze portfolio: optimization, rebalancing"""
+        try:
+            portfolio = {}
+            
+            # Portfolio optimizer
+            if "portfolio_optimizer" in self.module_connector.modules:
+                try:
+                    module = self.module_connector.modules["portfolio_optimizer"]
+                    if hasattr(module, 'optimize_portfolio'):
+                        positions = [token_data] if token_data else []
+                        opt_result = module.optimize_portfolio(positions, trade_amount * 10) if not asyncio.iscoroutinefunction(module.optimize_portfolio) else await module.optimize_portfolio(positions, trade_amount * 10)
+                        portfolio["optimization"] = opt_result
+                except Exception as e:
+                    log_error(f"Error in portfolio optimizer: {e}")
+            
+            # Portfolio rebalancing
+            if "portfolio_rebalancing" in self.module_connector.modules:
+                try:
+                    module = self.module_connector.modules["portfolio_rebalancing"]
+                    if hasattr(module, 'optimize_portfolio_allocation'):
+                        positions = [token_data] if token_data else []
+                        rebalance_result = module.optimize_portfolio_allocation(positions, {}) if not asyncio.iscoroutinefunction(module.optimize_portfolio_allocation) else await module.optimize_portfolio_allocation(positions, {})
+                        portfolio["rebalancing"] = rebalance_result
+                except Exception as e:
+                    log_error(f"Error in portfolio rebalancing: {e}")
+            
+            return portfolio
+            
+        except Exception as e:
+            log_error(f"Error in portfolio analysis: {e}")
+            return {}
+    
+    async def _analyze_execution_optimization_full(self, token_data: Dict, market_data: MarketData, trade_amount: float) -> Dict[str, Any]:
+        """Analyze execution optimization: monitor, position validation"""
+        try:
+            optimization = {}
+            
+            # Trade execution monitor
+            if "trade_execution_monitor" in self.module_connector.modules:
+                try:
+                    module = self.module_connector.modules["trade_execution_monitor"]
+                    if hasattr(module, 'monitor_trade_execution'):
+                        trade_data = {"symbol": token_data.get("symbol"), "amount": trade_amount}
+                        monitor_result = module.monitor_trade_execution(trade_data, []) if not asyncio.iscoroutinefunction(module.monitor_trade_execution) else await module.monitor_trade_execution(trade_data, [])
+                        optimization["monitor"] = monitor_result
+                except Exception as e:
+                    log_error(f"Error in trade execution monitor: {e}")
+            
+            # Position size validator
+            if "position_size_validator" in self.module_connector.modules:
+                try:
+                    module = self.module_connector.modules["position_size_validator"]
+                    if hasattr(module, 'validate_position_size'):
+                        wallet_balance = trade_amount * 20  # Estimate
+                        validation_result = module.validate_position_size(token_data, trade_amount, wallet_balance, [], {}) if not asyncio.iscoroutinefunction(module.validate_position_size) else await module.validate_position_size(token_data, trade_amount, wallet_balance, [], {})
+                        optimization["position_validation"] = validation_result
+                except Exception as e:
+                    log_error(f"Error in position size validator: {e}")
+            
+            return optimization
+            
+        except Exception as e:
+            log_error(f"Error in execution optimization: {e}")
+            return {}
+    
     def _calculate_overall_score(self, sentiment: Dict, prediction: Dict, risk: Dict, 
                                 market: Dict, technical: Dict) -> float:
         """Calculate overall AI analysis score"""
@@ -847,6 +1113,185 @@ class AIIntegrationEngine:
                 "stop_loss": 0.08,
                 "reasoning": ["Analysis error"]
             }
+    
+    def _calculate_overall_score_comprehensive(self, sentiment: Dict, prediction: Dict, risk: Dict,
+                                             market: Dict, technical: Dict, market_context: Dict,
+                                             predictive_analytics: Dict, risk_controls: Dict,
+                                             portfolio_analysis: Dict) -> float:
+        """Calculate overall AI analysis score with all modules"""
+        try:
+            # Start with base score from core analysis
+            base_score = self._calculate_overall_score(sentiment, prediction, risk, market, technical)
+            
+            # Extract scores from new modules
+            context_score = 0.5
+            if market_context:
+                # Regime impact
+                regime = market_context.get("regime", {})
+                if isinstance(regime, dict):
+                    regime_type = regime.get("regime", "sideways_market")
+                    if regime_type == "bull_market":
+                        context_score += 0.1
+                    elif regime_type == "bear_market":
+                        context_score -= 0.15
+                    elif regime_type == "high_volatility":
+                        context_score -= 0.1
+                
+                # Liquidity impact
+                liquidity = market_context.get("liquidity", {})
+                if isinstance(liquidity, dict):
+                    flow_score = liquidity.get("liquidity_flow_score", 0.5)
+                    context_score = (context_score + flow_score) / 2
+                
+                # Anomaly impact
+                anomaly = market_context.get("anomaly", {})
+                if isinstance(anomaly, dict):
+                    anomaly_score = anomaly.get("anomaly_score", 0.5)
+                    if anomaly_score > 0.7:  # High anomaly = risk
+                        context_score -= 0.1
+            
+            # Predictive analytics impact
+            pred_score = 0.5
+            if predictive_analytics:
+                pred = predictive_analytics.get("predictive", {})
+                if isinstance(pred, dict):
+                    pred_score = pred.get("success_probability", 0.5)
+                
+                micro = predictive_analytics.get("microstructure", {})
+                if isinstance(micro, dict):
+                    micro_score = micro.get("microstructure_score", 0.5)
+                    pred_score = (pred_score + micro_score) / 2
+            
+            # Risk controls impact (inverse - lower risk = higher score)
+            risk_control_score = 0.5
+            if risk_controls:
+                drawdown = risk_controls.get("drawdown", {})
+                if isinstance(drawdown, dict):
+                    drawdown_risk = drawdown.get("drawdown_risk_score", 0.5)
+                    risk_control_score = 1.0 - drawdown_risk
+                
+                emergency = risk_controls.get("emergency", {})
+                if isinstance(emergency, dict):
+                    emergency_level = emergency.get("emergency_level", "normal")
+                    if emergency_level in ["urgent", "critical", "emergency"]:
+                        risk_control_score -= 0.3
+            
+            # Portfolio analysis impact
+            portfolio_score = 0.5
+            if portfolio_analysis:
+                opt = portfolio_analysis.get("optimization", {})
+                if isinstance(opt, dict):
+                    metrics = opt.get("portfolio_metrics", {})
+                    if isinstance(metrics, dict):
+                        sharpe = metrics.get("sharpe_ratio", 0.0)
+                        portfolio_score = min(1.0, max(0.0, (sharpe + 1.0) / 2.0))
+            
+            # Weighted combination
+            weights = {
+                "base": 0.4,
+                "context": 0.15,
+                "predictive": 0.2,
+                "risk_control": 0.15,
+                "portfolio": 0.1
+            }
+            
+            overall_score = (
+                base_score * weights["base"] +
+                context_score * weights["context"] +
+                pred_score * weights["predictive"] +
+                risk_control_score * weights["risk_control"] +
+                portfolio_score * weights["portfolio"]
+            )
+            
+            return max(0.0, min(1.0, overall_score))
+            
+        except Exception as e:
+            log_error(f"Error calculating comprehensive overall score: {e}")
+            return self._calculate_overall_score(sentiment, prediction, risk, market, technical)
+    
+    def _generate_recommendations_comprehensive(self, overall_score: float, sentiment: Dict,
+                                              prediction: Dict, risk: Dict, market: Dict,
+                                              technical: Dict, market_context: Dict,
+                                              predictive_analytics: Dict, risk_controls: Dict,
+                                              portfolio_analysis: Dict) -> Dict[str, Any]:
+        """Generate comprehensive trading recommendations with all modules"""
+        try:
+            # Start with base recommendations
+            recommendations = self._generate_recommendations(
+                overall_score, sentiment, prediction, risk, market, technical
+            )
+            
+            # Adjust based on market context
+            if market_context:
+                regime = market_context.get("regime", {})
+                if isinstance(regime, dict):
+                    regime_type = regime.get("regime", "sideways_market")
+                    position_multiplier = regime.get("position_multiplier", 1.0)
+                    recommendations["position_size"] *= position_multiplier
+                    recommendations["reasoning"].append(f"Market regime: {regime_type}")
+                
+                liquidity = market_context.get("liquidity", {})
+                if isinstance(liquidity, dict):
+                    flow_type = liquidity.get("liquidity_flow_type", "stable")
+                    if flow_type == "trap":
+                        recommendations["action"] = "avoid"
+                        recommendations["reasoning"].append("Liquidity trap detected")
+                    elif flow_type == "increasing":
+                        recommendations["position_size"] *= 1.1
+                        recommendations["reasoning"].append("Increasing liquidity")
+                
+                anomaly = market_context.get("anomaly", {})
+                if isinstance(anomaly, dict):
+                    severity = anomaly.get("anomaly_severity", "minor")
+                    if severity in ["major", "extreme"]:
+                        recommendations["action"] = "avoid"
+                        recommendations["reasoning"].append(f"Major anomaly detected: {severity}")
+            
+            # Adjust based on risk controls
+            if risk_controls:
+                emergency = risk_controls.get("emergency", {})
+                if isinstance(emergency, dict):
+                    emergency_level = emergency.get("emergency_level", "normal")
+                    if emergency_level in ["urgent", "critical", "emergency"]:
+                        recommendations["action"] = "avoid"
+                        recommendations["position_size"] = 0.0
+                        recommendations["reasoning"].append(f"Emergency stop: {emergency_level}")
+                
+                drawdown = risk_controls.get("drawdown", {})
+                if isinstance(drawdown, dict):
+                    drawdown_risk = drawdown.get("drawdown_risk_score", 0.5)
+                    if drawdown_risk > 0.7:
+                        recommendations["position_size"] *= 0.5
+                        recommendations["stop_loss"] = 0.05
+                        recommendations["reasoning"].append("High drawdown risk")
+            
+            # Adjust based on portfolio analysis
+            if portfolio_analysis:
+                opt = portfolio_analysis.get("optimization", {})
+                if isinstance(opt, dict):
+                    allocation = opt.get("optimized_allocation", {})
+                    if isinstance(allocation, dict):
+                        # Use portfolio-optimized position size if available
+                        recommended_actions = opt.get("recommended_actions", [])
+                        if recommended_actions:
+                            recommendations["reasoning"].extend(recommended_actions[:2])
+            
+            # Adjust based on execution optimization
+            if predictive_analytics:
+                micro = predictive_analytics.get("microstructure", {})
+                if isinstance(micro, dict):
+                    exec_recs = micro.get("execution_recommendations", {})
+                    if isinstance(exec_recs, dict):
+                        optimal_timing = exec_recs.get("optimal_timing", "wait")
+                        if optimal_timing == "wait":
+                            recommendations["action"] = "hold"
+                            recommendations["reasoning"].append("Suboptimal execution timing")
+            
+            return recommendations
+            
+        except Exception as e:
+            log_error(f"Error generating comprehensive recommendations: {e}")
+            return self._generate_recommendations(overall_score, sentiment, prediction, risk, market, technical)
 
 # Global AI integration engine instance
 _ai_engine: Optional[AIIntegrationEngine] = None
