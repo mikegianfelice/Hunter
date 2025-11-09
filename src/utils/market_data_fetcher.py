@@ -209,6 +209,10 @@ class MarketDataFetcher:
             eth_data = self._fetch_json(eth_url)
             
             if not btc_data or 'prices' not in btc_data or not eth_data or 'prices' not in eth_data:
+                # Try fallback with shorter time window if initial request failed
+                if hours > 6:
+                    logger.info(f"Retrying correlation with shorter time window ({hours}h -> 6h)")
+                    return self.get_market_correlation(hours=6)
                 logger.warning("Insufficient data for correlation calculation")
                 return 0.5
             
@@ -291,7 +295,14 @@ class MarketDataFetcher:
                 logger.warning("Failed to fetch current volume data")
                 return 0.5
             
-            current_volume = float(current_data['data']['total_24h']['usd'])
+            # CoinGecko API returns 'total_volume', not 'total_24h'
+            data_dict = current_data.get('data', {})
+            volume_data = data_dict.get('total_volume', {})
+            if not volume_data or 'usd' not in volume_data:
+                logger.warning("Missing 'total_volume.usd' in CoinGecko response")
+                return 0.5
+            
+            current_volume = float(volume_data['usd'])
             
             # Get historical volume data using BTC as proxy (most liquid asset)
             # We'll use BTC's volume history to estimate overall market trend
@@ -363,7 +374,14 @@ class MarketDataFetcher:
                 logger.warning("Failed to fetch current market cap data")
                 return 0.5
             
-            current_market_cap = float(current_data['data']['total_market_cap']['usd'])
+            # Safely extract market cap data
+            data_dict = current_data.get('data', {})
+            market_cap_data = data_dict.get('total_market_cap', {})
+            if not market_cap_data or 'usd' not in market_cap_data:
+                logger.warning("Missing 'total_market_cap.usd' in CoinGecko response")
+                return 0.5
+            
+            current_market_cap = float(market_cap_data['usd'])
             
             # Get historical market cap data using BTC as proxy
             now = int(time.time())
@@ -434,16 +452,50 @@ class MarketDataFetcher:
         return 0.5
     
     def _fetch_json(self, url: str) -> Optional[Dict]:
-        """Fetch JSON data with retry logic"""
+        """Fetch JSON data with retry logic, rate limit handling, and proper headers"""
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": "HunterBot/1.0"
+        }
+        backoff = 1.0
+        
         for attempt in range(self.max_retries):
             try:
-                response = requests.get(url, timeout=self.api_timeout)
+                response = requests.get(url, timeout=self.api_timeout, headers=headers)
+                
                 if response.status_code == 200:
                     return response.json()
-            except Exception as e:
-                logger.warning(f"Attempt {attempt + 1}/{self.max_retries} failed: {e}")
+                elif response.status_code == 429:
+                    # Rate limited - exponential backoff
+                    logger.warning(f"Rate limited (429) on {url[:60]}... Backing off {backoff:.1f}s")
+                    if attempt < self.max_retries - 1:
+                        time.sleep(backoff)
+                        backoff = min(backoff * 2, 60)  # Cap at 60 seconds
+                    continue
+                elif response.status_code == 403:
+                    logger.warning(f"Access forbidden (403) on {url[:60]}...")
+                    return None
+                else:
+                    logger.warning(f"Non-200 status {response.status_code} on {url[:60]}... Response: {response.text[:200]}")
+                    if attempt < self.max_retries - 1:
+                        time.sleep(backoff)
+                        backoff = min(backoff * 2, 60)
+                    
+            except requests.exceptions.Timeout:
+                logger.warning(f"Timeout on attempt {attempt + 1}/{self.max_retries} for {url[:60]}...")
                 if attempt < self.max_retries - 1:
-                    time.sleep(1)
+                    time.sleep(backoff)
+                    backoff = min(backoff * 2, 60)
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"Request error on attempt {attempt + 1}/{self.max_retries}: {e}")
+                if attempt < self.max_retries - 1:
+                    time.sleep(backoff)
+                    backoff = min(backoff * 2, 60)
+            except Exception as e:
+                logger.warning(f"Unexpected error on attempt {attempt + 1}/{self.max_retries}: {e}")
+                if attempt < self.max_retries - 1:
+                    time.sleep(backoff)
+                    backoff = min(backoff * 2, 60)
         
         return None
 
