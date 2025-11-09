@@ -474,12 +474,11 @@ class MarketDataFetcher:
                 if response.status_code == 200:
                     return response.json()
                 elif response.status_code == 429:
-                    # Rate limited - exponential backoff
-                    logger.warning(f"Rate limited (429) on {url[:60]}... Backing off {backoff:.1f}s")
-                    if attempt < self.max_retries - 1:
-                        time.sleep(backoff)
-                        backoff = min(backoff * 2, 60)  # Cap at 60 seconds
-                    continue
+                    # Rate limited – log once and move on instead of retrying
+                    logger.warning(
+                        f"Rate limited (429) on {url[:60]}... Skipping retries to continue quickly"
+                    )
+                    return None
                 elif response.status_code == 403:
                     logger.warning(f"Access forbidden (403) on {url[:60]}...")
                     return None
