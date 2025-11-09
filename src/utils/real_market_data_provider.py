@@ -28,10 +28,11 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
-from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 import pandas as pd
 import requests
+
+from src.utils.coingecko_helpers import ensure_vs_currency
 
 logger = logging.getLogger(__name__)
 
@@ -314,6 +315,8 @@ class RealMarketDataProvider:
         headers = {}
         if self._coingecko_api_key and "coingecko.com" in url:
             headers["x-cg-demo-api-key"] = self._coingecko_api_key
+
+        url, params = ensure_vs_currency(url, params)
 
         attempt = 0
         while attempt < 3:

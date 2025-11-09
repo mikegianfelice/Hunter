@@ -5,6 +5,8 @@ from typing import Optional, Dict, Any
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from src.utils.coingecko_helpers import ensure_vs_currency
+
 DEFAULT_TIMEOUT = 15  # Increased from 10 to 15 seconds
 DEFAULT_RETRIES = 4  # Increased from 3 to 4 retries
 DEFAULT_BACKOFF = 0.8  # Increased from 0.6 for better rate limiting
@@ -89,6 +91,8 @@ def get_json(url, headers=None, timeout=DEFAULT_TIMEOUT, retries=DEFAULT_RETRIES
     Returns None if circuit breaker is open or all retries fail
     """
     # Check circuit breaker
+    url, _ = ensure_vs_currency(url)
+
     if not _check_circuit_breaker(url):
         return None
     

@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 import statistics
 
 from src.config.secrets import GRAPH_API_KEY, UNISWAP_V3_DEPLOYMENT_ID
+from src.utils.coingecko_helpers import ensure_vs_currency
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -566,6 +567,7 @@ class MarketDataFetcher:
         
         for attempt in range(self.max_retries):
             try:
+                url, _ = ensure_vs_currency(url)
                 response = requests.get(url, timeout=self.api_timeout, headers=headers)
                 
                 if response.status_code == 200:
