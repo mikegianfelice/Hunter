@@ -25,7 +25,7 @@ class HeliusClient:
     unreachable) and an empty list/dict as "no data for this query".
     """
 
-    DEFAULT_BASE_URL = "https://api.helius.xyz"
+    DEFAULT_BASE_URL = "https://api-mainnet.helius-rpc.com"
 
     def __init__(self, api_key: str, base_url: Optional[str] = None) -> None:
         if not api_key:
