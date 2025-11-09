@@ -462,12 +462,82 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
                         ok = False
                         tx_hash = None
             
-            # Track successful slices
-            if ok and tx_hash:
+            # Verify fill using AI Fill Verifier (for Solana trades)
+            if ok and tx_hash and chain_id == "solana":
+                try:
+                    from src.ai.ai_fill_verifier import get_fill_verifier
+                    from src.execution.jupiter_executor import JupiterCustomExecutor
+                    from src.execution.raydium_executor import RaydiumExecutor
+                    
+                    fill_verifier = get_fill_verifier()
+                    executor = JupiterCustomExecutor()
+                    
+                    # Get tokens received from transaction
+                    tokens_received = None
+                    amount_usd_actual = slice_amount  # Default assumption
+                    
+                    try:
+                        # Try to get actual tokens received from balance check
+                        time.sleep(2)  # Wait for transaction to settle
+                        balance_before = executor.get_token_raw_balance(token_address)
+                        if balance_before is not None:
+                            time.sleep(1)
+                            balance_after = executor.get_token_raw_balance(token_address)
+                            if balance_after is not None and balance_after > balance_before:
+                                tokens_received = balance_after - balance_before
+                                # Estimate USD value
+                                price = executor.get_token_price_usd(token_address)
+                                if price and price > 0:
+                                    amount_usd_actual = tokens_received * price
+                    except Exception as e:
+                        log_event("trade.fill_check_error", level="WARNING", error=str(e))
+                    
+                    # Verify fill
+                    intent = {
+                        "token_address": token_address,
+                        "symbol": symbol,
+                        "amount_usd": slice_amount
+                    }
+                    initial_attempt = {
+                        "tx_hash": tx_hash,
+                        "tokens_received": tokens_received,
+                        "amount_usd_actual": amount_usd_actual,
+                        "route": "jupiter"
+                    }
+                    executors = {
+                        "jupiter": executor,
+                        "raydium": RaydiumExecutor() if chain_id == "solana" else None
+                    }
+                    
+                    fill_result = fill_verifier.verify_and_finalize_entry(
+                        intent, initial_attempt, executors, chain_id
+                    )
+                    
+                    if fill_result.status == "accepted" or fill_result.status == "rerouted":
+                        # Fill verified - proceed
+                        successful_txs.append(fill_result.tx_hash or tx_hash)
+                        total_successful_amount += fill_result.amount_usd_actual or slice_amount
+                        log_event("trade.slice.success", index=i+1, tx_hash=fill_result.tx_hash or tx_hash, fill_verified=True)
+                    else:
+                        # Fill verification failed - abort this slice
+                        log_event("trade.slice.fill_verification_failed", level="WARNING", index=i+1, reason=fill_result.error_message)
+                        ok = False
+                        tx_hash = None
+                except Exception as e:
+                    log_event("trade.fill_verifier_error", level="WARNING", error=str(e))
+                    # On error, proceed with original result
+                    if ok and tx_hash:
+                        successful_txs.append(tx_hash)
+                        total_successful_amount += slice_amount
+                        log_event("trade.slice.success", index=i+1, tx_hash=tx_hash)
+            
+            # Track successful slices (for non-Solana or if fill verifier not used)
+            elif ok and tx_hash:
                 successful_txs.append(tx_hash)
                 total_successful_amount += slice_amount
                 log_event("trade.slice.success", index=i+1, tx_hash=tx_hash)
-            else:
+            
+            if not ok or not tx_hash:
                 log_event("trade.slice.failure", level="WARNING", index=i+1)
                 
                 # For ExactOut trades, continue with remaining slices even if some fail

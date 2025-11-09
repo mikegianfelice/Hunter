@@ -3,7 +3,7 @@ test_mode: false  # LIVE TRADING ENABLED - Realistic Scaling
 
 # === Trading Parameters ===
 trade_amount_usd: 10  # REALISTIC SCALING - $10 trades for meaningful returns
-slippage: 0.1  # 10% slippage 
+slippage: 0.03  # 3% slippage (tightened for better execution)
 take_profit: 0.12  # 12%
 stop_loss: 0.07  # 7%
 use_dynamic_tp: true  # Enable dynamic take profit
@@ -19,8 +19,8 @@ max_slices_per_trade: 5  # Maximum number of slices per trade
 # Dynamic slippage based on price impact
 enable_dynamic_slippage: true
 dynamic_slippage_multiplier: 2.0  # Multiply predicted impact by this factor
-max_dynamic_slippage: 0.2  # Maximum 20% slippage
-min_dynamic_slippage: 0.02  # Minimum 2% slippage
+max_dynamic_slippage: 0.08  # Maximum 8% slippage (tightened)
+min_dynamic_slippage: 0.01  # Minimum 1% slippage
 
 # ExactOut trades for sketchy tokens
 enable_exactout_trades: true
@@ -31,7 +31,7 @@ exactout_max_attempts: 3  # Maximum attempts for ExactOut trades
 # Route restrictions and direct pool swaps
 enable_route_restrictions: true
 prefer_direct_routes: true  # Prefer single-hop routes over multi-hop
-max_route_hops: 2  # Maximum number of hops in a route
+max_route_hops: 1  # Maximum number of hops in a route (tightened for better execution)
 enable_direct_pool_swaps: true  # Bypass aggregators for known pools
 
 # Enhanced preflight checks
@@ -45,8 +45,8 @@ min_pool_reserves_multiplier: 2.0  # Pool reserves must be 2x trade amount
 
 # === Strategy Thresholds ===
 min_momentum_pct: 0.001  # Increased momentum requirement for quality
-min_volume_24h_for_buy: 5000   # More aggressive - reduced to $5k volume for more opportunities
-min_liquidity_usd_for_buy: 15000  # More aggressive - reduced to $15k liquidity for more opportunities
+min_volume_24h_for_buy: 100000   # Quality-first: $100k volume minimum for reliability
+min_liquidity_usd_for_buy: 100000  # Quality-first: $100k liquidity minimum for reliability
 min_price_usd: 0.000001  # MICRO TESTING - reduced minimum price for more opportunities
 
 # Fast-path thresholds for first-seen tokens
@@ -68,11 +68,11 @@ solana_usdc_mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"  # USDC mint ad
 solana_min_sol_for_fees: 0.05  # Minimum SOL needed for transaction fees (separate from trading balance)
 
 # === Risk Management ===
-max_concurrent_positions: 4  # REALISTIC SCALING - 3 positions for diversification
-daily_loss_limit_usd: 50.0  # REALISTIC SCALING - $50 daily loss limit
+max_concurrent_positions: 6  # Increased for $100 start strategy
+daily_loss_limit_usd: 5.0  # $5 daily loss limit for $100 start (scales with equity)
 max_losing_streak: 3  # Stop after 3 losses
-circuit_breaker_minutes: 120  # Longer cooldown after losses
-per_trade_max_usd: 50  # REALISTIC SCALING - $25 max per trade
+circuit_breaker_minutes: 60  # 60 minute cooldown after losses
+per_trade_max_usd: 25  # $25 max per trade for $100 start
 min_wallet_balance_buffer: 0.05  # Higher buffer for safety
 
 # === Reconciliation Settings ===
@@ -109,8 +109,8 @@ holder_concentration_block_on_high_risk: true  # If false, adds to risk score in
 holder_concentration_fail_closed: true  # Treat data fetch failures as high risk (recommended)
 
 # === Jupiter API Settings ===
-enable_jupiter_pre_check: false  # Allow tokens to proceed even if Jupiter pre-check fails
-jupiter_pre_check_strict: false  # Don't reject tokens based on Jupiter pre-check alone
+enable_jupiter_pre_check: true  # Enable Jupiter pre-check for quality
+jupiter_pre_check_strict: true  # Reject tokens if Jupiter pre-check fails
 
 # === Raydium Fallback Settings ===
 enable_raydium_fallback: true  # Enable Raydium fallback when Jupiter fails
@@ -134,7 +134,7 @@ requote_delay_seconds: 10
 requote_slippage_buffer: 0.005
 
 # === Monitoring ===
-trailing_stop_percent: 0.1
+trailing_stop_percent: 0.06  # 6% trailing stop (tighter for faster profit capture)
 
 # === Price Memory ===
 price_memory_ttl_minutes: 15
@@ -169,8 +169,8 @@ volume_tp_bonus: 0.02  # +2% for high volume tokens
 liquidity_tp_bonus: 0.02  # +2% for high liquidity tokens
 
 # Sustainable trading limits
-max_sustainable_trades_per_day: 5  # Maximum sustainable trades per day
-sustainable_trade_cooldown_minutes: 30  # Cooldown between sustainable trades
+max_sustainable_trades_per_day: 12  # Increased for $100 start strategy (8-12 trades/day)
+sustainable_trade_cooldown_minutes: 10  # Reduced cooldown for higher frequency
 
 # === Dynamic Position Sizing ===
 # Position sizing based on token quality
@@ -189,11 +189,11 @@ wallet_tiers: {
   "tier_1": {
     "min_balance": 100,
     "max_balance": 999,
-    "base_position_size_usd": 5.0,
+    "base_position_size_usd": 10.0,
     "max_position_size_usd": 25.0,
     "max_total_exposure_usd": 500.0,
-    "max_wallet_usage_percent": 0.10,
-    "description": "Learning Phase - Conservative"
+    "max_wallet_usage_percent": 0.25,
+    "description": "Learning Phase - Conservative but faster compounding"
   },
   "tier_2": {
     "min_balance": 1000,
@@ -1456,7 +1456,7 @@ position_validation_max_retries: 3  # Maximum retries for position validation
 # Position size limits
 max_position_size_usd: 25.0  # $25 maximum position size (realistic scaling)
 min_position_size_usd: 2.0  # $2 minimum position size (more flexible)
-max_wallet_usage_percent: 0.10  # 10% maximum wallet usage per trade (more flexible)
+max_wallet_usage_percent: 0.25  # 25% maximum wallet usage per trade (increased for $100 start)
 max_total_exposure_usd: 100.0  # $100 maximum total exposure (realistic scaling)
 
 # Risk-based position sizing
@@ -1540,3 +1540,33 @@ enable_market_guardian_insights: true  # Show market guardian insights in tradin
 enable_market_guardian_reporting: true  # Include market guardian metrics in notifications
 enable_market_guardian_analytics: true  # Track market guardian performance over time
 market_guardian_analytics_retention_days: 90  # Days to retain market guardian analytics
+
+# === AI FILL VERIFIER ===
+# Enable AI-powered fill verification to prevent ghost entries
+enable_ai_fill_verifier: true  # Enable fill verification
+fill_verifier:
+  max_retry_attempts: 2  # Maximum reroute attempts
+  reroute_order: ["direct_pool", "jupiter"]  # Route order for retries
+  reduce_slice_factor: 0.5  # Reduce slice size by 50% on retry
+  blacklist_minutes_on_fail: 30  # Blacklist token for 30 minutes on complete failure
+  min_tokens_received_threshold: 0.000001  # Minimum tokens to consider valid fill
+
+# === AI PARTIAL TAKE PROFIT MANAGER ===
+# Enable AI-powered partial take-profit management
+enable_ai_partial_tp_manager: true  # Enable partial TP manager
+partial_tp_manager:
+  first_take_pct: 0.50  # Take 50% at first TP trigger
+  first_take_trigger_pct: 0.10  # Trigger at +10% gain
+  trailing_stop_initial: 0.06  # 6% trailing stop after partial
+  trail_tighten_trigger_pct: 0.15  # Tighten trail at +15% gain
+  trailing_stop_tightened: 0.05  # 5% trailing stop when tightened
+  hard_stop_loss_pct: 0.07  # Hard stop loss at -7%
+
+# === AI TIME WINDOW SCHEDULER ===
+# Enable AI-powered time window scheduling for optimal entry timing
+enable_ai_time_window_scheduler: true  # Enable time window scheduler
+time_window_scheduler:
+  min_window_score_to_trade: 0.60  # Minimum window quality score to allow trading
+  pause_on_volatility_spike: true  # Pause trading on volatility spikes
+  volatility_spike_threshold: 0.70  # Volatility threshold to trigger pause
+  review_interval_seconds: 300  # Review window quality every 5 minutes

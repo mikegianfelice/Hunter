@@ -862,7 +862,76 @@ def monitor_all_positions():
         if dyn_stop:
             print(f"🧵 Trailing stop @ ${dyn_stop:.6f} (peak-based)")
 
-        # Take-profit
+        # AI Partial Take-Profit Manager
+        try:
+            from src.ai.ai_partial_take_profit_manager import get_partial_tp_manager
+            partial_tp_manager = get_partial_tp_manager()
+            
+            # Prepare position dict for partial TP manager
+            position_dict = {
+                "address": token_address,
+                "token_address": token_address,
+                "symbol": symbol,
+                "entry_price": entry_price,
+                "position_size_usd": position_data.get("position_size_usd", 0) if isinstance(position_data, dict) else 0,
+                "chain_id": chain_id
+            }
+            
+            # Get volatility score (simplified - can be enhanced)
+            volatility_score = abs(gain) * 2.0  # Simple volatility proxy
+            volatility_score = min(1.0, volatility_score)  # Cap at 1.0
+            
+            # Evaluate partial TP actions
+            partial_tp_actions = partial_tp_manager.evaluate_and_manage(
+                position_dict,
+                current_price,
+                volatility_score
+            )
+            
+            # Execute partial TP actions
+            for action in partial_tp_actions:
+                if action.type == "sell" and action.size_pct > 0:
+                    # Partial sell
+                    sell_amount_usd = (position_data.get("position_size_usd", 0) if isinstance(position_data, dict) else 0) * action.size_pct
+                    print(f"📊 [PARTIAL TP] Executing partial sell: {action.size_pct*100:.0f}% ({action.reason})")
+                    
+                    # For partial sells, we need to sell a percentage of the position
+                    # This is a simplified implementation - full implementation would need
+                    # to track remaining position size and handle partial sells properly
+                    if action.size_pct >= 1.0:
+                        # Full sell - use existing logic
+                        tx = _sell_token_multi_chain(token_address, chain_id, symbol)
+                        if tx:
+                            log_trade(token_address, entry_price, current_price, action.reason)
+                            if trade:
+                                position_size = trade.get('position_size_usd', 0)
+                                pnl_usd = gain * position_size
+                                from src.core.performance_tracker import performance_tracker
+                                performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, action.reason)
+                            closed_positions.append(position_key)
+                            updated_positions.pop(position_key, None)
+                            continue
+                    else:
+                        # Partial sell - log action but don't execute yet
+                        # (Full implementation would require tracking partial position sizes)
+                        print(f"⚠️ Partial sell ({action.size_pct*100:.0f}%) not yet fully implemented - logging action")
+                        log_info("partial_tp.action", 
+                                symbol=symbol,
+                                action_type=action.type,
+                                size_pct=action.size_pct,
+                                reason=action.reason)
+                
+                elif action.type == "move_stop" and action.new_stop_price:
+                    # Update trailing stop
+                    print(f"📊 [PARTIAL TP] Moving stop to ${action.new_stop_price:.6f} ({action.reason})")
+                    trail_state[f"{token_address}_peak"] = current_price
+                    trail_state[f"{token_address}_stop"] = action.new_stop_price
+        except Exception as e:
+            print(f"⚠️ Partial TP manager error: {e}")
+            import traceback
+            traceback.print_exc()
+
+        # Take-profit (full position)
         if gain >= take_profit_threshold:
             print(f"💰 [TAKE PROFIT] Take-profit hit! Gain: {gain*100:.2f}% >= Threshold: {take_profit_threshold*100:.2f}%")
             print(f"🔍 [DEBUG] Calling _sell_token_multi_chain for {symbol} ({token_address}) on {chain_id}")

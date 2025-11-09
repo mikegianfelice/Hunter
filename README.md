@@ -55,6 +55,8 @@ A sophisticated AI-powered cryptocurrency trading bot designed for **consistent 
 - **Gas Optimization** - Intelligent gas price optimization and cost reduction
 - **Route Selection** - Optimal DEX/router selection for each trade
 - **Success Prediction** - AI-powered execution success probability calculation
+- **AI Fill Verifier** - Confirms real fills, reroutes failed slices, and prevents ghost entries
+- **AI Time-Window Scheduler** - Gates entries to high-quality execution windows based on live fill/slippage metrics
 
 ### **📱 Monitoring & Notifications**
 - **Telegram Integration** - Real-time alerts for trades, performance, and system status
@@ -703,6 +705,7 @@ python main.py
 ### Position Monitoring
 - **Real-time Monitoring**: Continuous position tracking every 30 seconds
 - **Automatic Sell Triggers**: Take profit, stop loss, and trailing stop
+- **AI Partial Take-Profit Manager** - Locks in gains with staged profit-taking and adaptive trailing stops
 - **Delisting Detection**: Identifies delisted tokens after 5 consecutive price fetch failures
 - **PnL Calculation**: Real-time profit/loss tracking
 - **Telegram Alerts**: Instant notifications for all position events

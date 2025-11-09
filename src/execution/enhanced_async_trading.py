@@ -333,6 +333,48 @@ class EnhancedAsyncTradingEngine:
             return []
     
     async def _execute_real_trade(self, token: Dict, position_size: float, chain: str) -> Dict[str, Any]:
+        """
+        Execute real trade with time window scheduler gate
+        """
+        # Check time window scheduler before executing
+        try:
+            from src.ai.ai_time_window_scheduler import get_time_window_scheduler
+            scheduler = get_time_window_scheduler()
+            
+            # Get recent execution metrics
+            recent_metrics = {
+                "fill_success_rate": self._get_recent_fill_rate(),
+                "avg_slippage": self._get_recent_avg_slippage(),
+                "avg_latency_ms": self._get_recent_avg_latency()
+            }
+            
+            # Get market quality metrics
+            market_metrics = {
+                "volatility": abs(float(token.get("priceChange24h", 0)) / 100.0) if token.get("priceChange24h") else 0.5,
+                "liquidity_score": min(1.0, float(token.get("liquidity", 0)) / 1_000_000.0) if token.get("liquidity") else 0.5
+            }
+            
+            # Check if we should trade now
+            window_decision = scheduler.should_trade_now(recent_metrics, market_metrics)
+            
+            if not window_decision.should_trade:
+                log_info("trading.window_blocked",
+                        symbol=token.get("symbol", "?"),
+                        score=window_decision.score,
+                        reason=window_decision.reason)
+                return {
+                    "success": False,
+                    "error": f"Time window blocked: {window_decision.reason}",
+                    "window_score": window_decision.score
+                }
+        except Exception as e:
+            log_error("trading.scheduler_error", error=str(e))
+            # On error, proceed with trade (fail open)
+        
+        # Proceed with original trade execution
+        return await self._execute_real_trade_internal(token, position_size, chain)
+    
+    async def _execute_real_trade_internal(self, token: Dict, position_size: float, chain: str) -> Dict[str, Any]:
         """Execute real trade using DEX integrations"""
         try:
             symbol = token.get("symbol", "")
@@ -852,6 +894,28 @@ class EnhancedAsyncTradingEngine:
                     "execution_time": execution_time,
                     "chain": chain
                 }
+    
+    def _get_recent_fill_rate(self) -> float:
+        """Get recent fill success rate from execution history"""
+        if len(self.performance_window) == 0:
+            return 0.85  # Default assumption
+        recent = list(self.performance_window)[-20:]  # Last 20 trades
+        successful = sum(1 for t in recent if t.get("success", False))
+        return successful / len(recent) if recent else 0.85
+    
+    def _get_recent_avg_slippage(self) -> float:
+        """Get recent average slippage"""
+        if len(self.performance_window) == 0:
+            return 0.02  # Default 2%
+        recent = [t.get("slippage", 0.02) for t in list(self.performance_window)[-20:] if t.get("slippage") is not None]
+        return sum(recent) / len(recent) if recent else 0.02
+    
+    def _get_recent_avg_latency(self) -> float:
+        """Get recent average execution latency in ms"""
+        if len(self.performance_window) == 0:
+            return 2000.0  # Default 2s
+        recent = [t.get("latency_ms", 2000.0) for t in list(self.performance_window)[-20:] if t.get("latency_ms") is not None]
+        return sum(recent) / len(recent) if recent else 2000.0
     
     async def _update_metrics(self, trade_result: Dict[str, Any]):
         """Update trading metrics with new trade result"""
