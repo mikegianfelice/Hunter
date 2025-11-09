@@ -190,7 +190,7 @@ def get_sol_price_usd() -> float:
             url = f"{coingecko_base}simple/price?ids=solana&vs_currencies=usd"
             headers = {}
             if coingecko_key:
-            headers["x-cg-demo-api-key"] = coingecko_key
+                headers["x-cg-demo-api-key"] = coingecko_key
             data = get_json(url, headers=headers if headers else None, timeout=15, retries=1)
             if data:
                 # Check for rate limit error in response
