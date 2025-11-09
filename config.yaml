@@ -106,6 +106,7 @@ holder_concentration_threshold: 60.0  # Block if top 10 holders own >60% (modera
 holder_concentration_risk_weight: 0.15  # 15% weight in token risk assessment
 holder_concentration_cache_minutes: 10  # Cache holder data for 10 minutes
 holder_concentration_block_on_high_risk: true  # If false, adds to risk score instead of hard blocking
+holder_concentration_fail_closed: true  # Treat data fetch failures as high risk (recommended)
 
 # === Jupiter API Settings ===
 enable_jupiter_pre_check: false  # Allow tokens to proceed even if Jupiter pre-check fails

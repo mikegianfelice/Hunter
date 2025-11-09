@@ -278,3 +278,4 @@ tmp/
 .Trashes
 ehthumbs.db
 Thumbs.db
+data/trade_intents.json

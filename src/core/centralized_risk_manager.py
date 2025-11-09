@@ -184,6 +184,7 @@ class CentralizedRiskManager:
             )
         
         # Check holder concentration (optional hard block)
+        fail_closed = get_config_bool("holder_concentration_fail_closed", True)
         if get_config_bool("holder_concentration_block_on_high_risk", False):
             try:
                 from src.utils.holder_concentration_checker import check_holder_concentration
@@ -194,6 +195,22 @@ class CentralizedRiskManager:
                 if token_address and get_config_bool("enable_holder_concentration_check", True):
                     holder_check = check_holder_concentration(token_address, chain_id)
                     
+                    if holder_check and holder_check.get("error"):
+                        if fail_closed:
+                            logger.warning(f"Holder concentration check error (fail-closed) for {token_address} on {chain_id}: {holder_check['error']}")
+                            return RiskAssessment(
+                                overall_risk_score=0.95,
+                                risk_level=RiskLevel.CRITICAL,
+                                approved=False,
+                                reason=f"Holder concentration check failed: {holder_check['error']}",
+                                position_adjustment=0.0,
+                                risk_factors={
+                                    'holder_concentration_error': holder_check['error'],
+                                    'holder_concentration_blocked': True
+                                },
+                                recommendations=["Retry later; holder concentration data unavailable"],
+                                timestamp=datetime.now().isoformat()
+                            )
                     if holder_check and not holder_check.get("error"):
                         threshold = get_config_float("holder_concentration_threshold", 60.0)
                         percentage = holder_check.get("top_10_percentage", 0)
@@ -243,6 +260,12 @@ class CentralizedRiskManager:
             if token_address and get_config_bool("enable_holder_concentration_check", True):
                 holder_check = check_holder_concentration(token_address, chain_id)
                 
+                if holder_check and holder_check.get("error"):
+                    if fail_closed:
+                        holder_concentration_risk = 1.0
+                        holder_concentration_pct = 0.0
+                        logger.warning(f"Holder concentration risk weighting hit error (fail-closed) for {token_address} on {chain_id}: {holder_check['error']}")
+                        overall_risk += holder_concentration_risk * risk_weight
                 if holder_check and not holder_check.get("error"):
                     threshold = get_config_float("holder_concentration_threshold", 60.0)
                     percentage = holder_check.get("top_10_percentage", 0)

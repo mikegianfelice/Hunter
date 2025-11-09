@@ -8,6 +8,7 @@ import time
 from typing import Dict, Optional
 from src.config.secrets import SOLANA_RPC_URL
 from src.config.config_loader import get_config, get_config_int, get_config_float, get_config_bool
+from src.monitoring.structured_logger import log_warning, log_info
 from src.utils.advanced_cache import cache_get, cache_set
 
 _PUBLIC_SOLANA_RPC = "https://api.mainnet-beta.solana.com"
@@ -93,10 +94,21 @@ def check_holder_concentration(token_address: str, chain_id: str = "solana") -> 
         # Determine risk level
         threshold = get_config_float("holder_concentration_threshold", 60.0)
         
+        fail_closed = get_config_bool("holder_concentration_fail_closed", True)
         if result.get("error"):
-            # If there was an error, fail-safe (allow trading)
-            result["is_safe"] = True
+            log_warning(
+                "holder_concentration.error",
+                f"Holder concentration check failed for {token_address} on {chain_id}",
+                {
+                    "token": token_address,
+                    "chain": chain_id,
+                    "error": result["error"],
+                    "fail_closed": fail_closed,
+                },
+            )
+            result["is_safe"] = not fail_closed
             result["risk_level"] = "unknown"
+            return result
         else:
             percentage = result["top_10_percentage"]
             
@@ -113,8 +125,18 @@ def check_holder_concentration(token_address: str, chain_id: str = "solana") -> 
                 result["is_safe"] = True
                 result["risk_level"] = "low"
         
-        # Cache the result
+        # Cache successful result
         cache_set(cache_key, result, ttl=cache_ttl)
+        log_info(
+            "holder_concentration.checked",
+            f"Holder concentration evaluated for {token_address} on {chain_id}",
+            {
+                "token": token_address,
+                "chain": chain_id,
+                "top_10_percentage": result["top_10_percentage"],
+                "risk_level": result["risk_level"],
+            },
+        )
         
         return result
         
