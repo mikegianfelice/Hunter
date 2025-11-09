@@ -23,12 +23,13 @@ class MarketDataFetcher:
         self.cache = {}
         self.cache_duration = 300  # 5 minutes cache
         self.api_timeout = 15
-        self.max_retries = 3
+        self.max_retries = 1
         # Load CoinGecko API key from environment
         self.coingecko_api_key = (os.getenv("COINGECKO_API_KEY") or "").strip()
         self._coingecko_base_url = "https://api.coingecko.com/api/v3/"
         self._coincap_base_url = "https://api.coincap.io/v2/"
         self._binance_base_url = "https://api.binance.com/api/"
+        self._coincap_available = True
         
     def get_btc_price(self) -> Optional[float]:
         """Get current BTC price in USD"""
@@ -591,6 +592,10 @@ class MarketDataFetcher:
                     backoff = min(backoff * 2, 60)
             except requests.exceptions.RequestException as e:
                 logger.warning(f"Request error on attempt {attempt + 1}/{self.max_retries}: {e}")
+                if "api.coincap.io" in url:
+                    if self._coincap_available:
+                        logger.warning("Disabling CoinCap data source for this session due to network failures.")
+                    self._coincap_available = False
                 if attempt < self.max_retries - 1:
                     time.sleep(backoff)
                     backoff = min(backoff * 2, 60)
@@ -604,6 +609,8 @@ class MarketDataFetcher:
 
     def _get_price_from_coincap(self, asset_id: str) -> Optional[float]:
         """Fetch current price from CoinCap."""
+        if not self._coincap_available:
+            return None
         try:
             url = f"{self._coincap_base_url}assets/{asset_id}"
             data = self._fetch_json(url)
@@ -632,6 +639,8 @@ class MarketDataFetcher:
 
     def _get_history_from_coincap(self, asset_id: str, start_ts: int, end_ts: int, interval: str = "h1") -> Optional[List[Dict]]:
         """Fetch historical price data from CoinCap."""
+        if not self._coincap_available:
+            return None
         try:
             # CoinCap expects millisecond timestamps
             start_ms = start_ts * 1000
@@ -650,6 +659,8 @@ class MarketDataFetcher:
 
     def _get_global_from_coincap(self) -> Optional[Dict]:
         """Fetch global market metrics from CoinCap."""
+        if not self._coincap_available:
+            return None
         try:
             url = f"{self._coincap_base_url}global"
             data = self._fetch_json(url)
