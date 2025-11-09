@@ -235,6 +235,23 @@ class AIPortfolioRebalancingEngine:
                     'correlation_risk': 0
                 }
             
+            # Calculate position metrics needed for risk calculations
+            total_value = sum(pos.get('position_size_usd', 0) for pos in positions)
+            position_sizes = [pos.get('position_size_usd', 0) for pos in positions]
+            largest_position = max(position_sizes) if position_sizes else 0
+            position_concentration = largest_position / total_value if total_value > 0 else 0
+            
+            # Calculate portfolio volatility
+            if len(position_sizes) > 1:
+                mean_size = sum(position_sizes) / len(position_sizes)
+                variance = sum((s - mean_size) ** 2 for s in position_sizes) / (len(position_sizes) - 1)
+                portfolio_volatility = min(0.5, max(0.0, (variance ** 0.5) / (mean_size + 1e-9)))
+            else:
+                portfolio_volatility = 0.2
+            
+            # Calculate portfolio beta from concentration
+            portfolio_beta = 0.8 + min(0.4, position_concentration * 0.8)
+            
             # Calculate Value at Risk (VaR) deterministically from volatility
             base_vol = 0.2
             portfolio_var = max(0.05, min(0.15, base_vol))
@@ -278,6 +295,12 @@ class AIPortfolioRebalancingEngine:
                     'geographic_diversification': 0,
                     'asset_class_diversification': 0
                 }
+            
+            # Calculate position concentration
+            total_value = sum(pos.get('position_size_usd', 0) for pos in positions)
+            position_sizes = [pos.get('position_size_usd', 0) for pos in positions]
+            largest_position = max(position_sizes) if position_sizes else 0
+            position_concentration = largest_position / total_value if total_value > 0 else 0
             
             # Diversification score inversely related to concentration
             diversification_score = max(0.4, min(0.9, 1.0 - position_concentration))
@@ -537,6 +560,14 @@ class AIPortfolioRebalancingEngine:
             # Calculate expected return from quality and liquidity
             avg_quality = sum(float(p.get('quality_score', 50)) for p in optimal_allocation.get('allocations', {}).values()) if False else 60
             expected_return = max(0.08, min(0.25, 0.08 + (avg_quality - 50) / 500))
+            
+            # Calculate portfolio beta based on risk tolerance (fallback if not available from portfolio analysis)
+            beta_by_risk = {
+                'conservative': 0.9,
+                'moderate': 1.0,
+                'aggressive': 1.1
+            }
+            portfolio_beta = beta_by_risk.get(risk_tolerance, 1.0)
             
             expected_volatility = max(0.15, min(0.35, 0.20 + (portfolio_beta - 1.0) * 0.1))
             

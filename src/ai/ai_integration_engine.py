@@ -972,7 +972,8 @@ class AIIntegrationEngine:
                     module = self.module_connector.modules["trade_execution_monitor"]
                     if hasattr(module, 'monitor_trade_execution'):
                         trade_data = {"symbol": token_data.get("symbol"), "amount": trade_amount}
-                        monitor_result = module.monitor_trade_execution(trade_data, []) if not asyncio.iscoroutinefunction(module.monitor_trade_execution) else await module.monitor_trade_execution(trade_data, [])
+                        market_conditions = {}  # Empty dict for market conditions
+                        monitor_result = module.monitor_trade_execution(trade_data, [], market_conditions) if not asyncio.iscoroutinefunction(module.monitor_trade_execution) else await module.monitor_trade_execution(trade_data, [], market_conditions)
                         optimization["monitor"] = monitor_result
                 except Exception as e:
                     log_error(f"Error in trade execution monitor: {e}")

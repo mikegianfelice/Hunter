@@ -135,7 +135,7 @@ class AIMarketCyclePredictor:
         self.long_cycle_threshold = 180  # 180 days long cycle
         self.extended_cycle_threshold = 365  # 365 days extended cycle
     
-    def predict_market_cycle(self, token: Dict, trade_amount: float, market_data: Dict = None) -> Dict:
+    def predict_market_cycle(self, token: Dict, trade_amount: float, market_data: Dict = None, historical_data: Dict = None) -> Dict:
         """
         Predict current market cycle phase and upcoming transitions
         Returns comprehensive cycle analysis with trading recommendations
@@ -147,6 +147,32 @@ class AIMarketCyclePredictor:
                 'price': float(token.get('priceUsd', 0)),
                 'volume': float(token.get('volume24h', 0)),
                 'liquidity': float(token.get('liquidity', 0))
+            }
+        
+        # Provide default historical_data if not provided
+        if historical_data is None:
+            price_now = market_data.get('price', float(token.get('priceUsd', 0)))
+            vol_now = market_data.get('volume', float(token.get('volume24h', 0)))
+            mcap_now = float(token.get('marketCap', 0))
+            sent_default = 0.5
+            
+            historical_data = {
+                'price_30d_ago': price_now,
+                'price_90d_ago': price_now,
+                'price_180d_ago': price_now,
+                'price_365d_ago': price_now,
+                'volume_30d_ago': vol_now,
+                'volume_90d_ago': vol_now,
+                'volume_180d_ago': vol_now,
+                'volume_365d_ago': vol_now,
+                'sentiment_30d_ago': sent_default,
+                'sentiment_90d_ago': sent_default,
+                'sentiment_180d_ago': sent_default,
+                'sentiment_365d_ago': sent_default,
+                'market_cap_30d_ago': mcap_now,
+                'market_cap_90d_ago': mcap_now,
+                'market_cap_180d_ago': mcap_now,
+                'market_cap_365d_ago': mcap_now,
             }
             
         try:
