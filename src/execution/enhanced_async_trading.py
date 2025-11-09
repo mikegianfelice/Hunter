@@ -90,6 +90,10 @@ class EnhancedAsyncTradingEngine:
         self.ai_health_cache = {}
         self.ai_health_ttl = 60  # 1 minute
         
+        # Cached AI engine instance for better performance
+        self.ai_engine = None
+        self._ai_engine_lock = asyncio.Lock()
+        
     async def __aenter__(self):
         """Async context manager entry"""
         connector = aiohttp.TCPConnector(
@@ -518,17 +522,25 @@ class EnhancedAsyncTradingEngine:
             log_error("trading.ai_health_error", f"Error checking AI health: {e}")
             return {"overall_healthy": False, "unhealthy_modules": ["unknown"]}
     
+    async def _get_ai_engine(self):
+        """Get or initialize cached AI engine instance"""
+        if self.ai_engine is None:
+            async with self._ai_engine_lock:
+                # Double-check after acquiring lock
+                if self.ai_engine is None:
+                    from src.ai.ai_integration_engine import AIIntegrationEngine
+                    self.ai_engine = AIIntegrationEngine()
+                    await self.ai_engine.initialize()
+                    log_info("trading.ai_engine_cached", "AI engine initialized and cached")
+        return self.ai_engine
+    
     async def _analyze_token_ai(self, token: Dict) -> Dict:
         """Perform AI analysis on a single token"""
         symbol = token.get("symbol", "UNKNOWN")
         
         try:
-            # Use real AI integration engine for analysis
-            from src.ai.ai_integration_engine import AIIntegrationEngine
-            
-            # Initialize AI engine
-            ai_engine = AIIntegrationEngine()
-            await ai_engine.initialize()
+            # Use cached AI integration engine for analysis
+            ai_engine = await self._get_ai_engine()
             
             # Perform real AI analysis
             ai_result = await ai_engine.analyze_token(token)
