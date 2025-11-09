@@ -23,10 +23,12 @@ excessive rate-limit pressure on upstream services.
 from __future__ import annotations
 
 import logging
+import os
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 import pandas as pd
 import requests
@@ -90,6 +92,9 @@ class RealMarketDataProvider:
         self._dex_expiry: Dict[str, float] = {}
         self._coingecko_cache: Dict[str, Dict[str, float]] = {}
         self._coingecko_expiry: Dict[str, float] = {}
+        
+        # Load CoinGecko API key from environment
+        self._coingecko_api_key = (os.getenv("COINGECKO_API_KEY") or "").strip()
 
         # Simple TTLs – can be tuned as needed.
         self._default_ttl = 300.0  # 5 minutes
@@ -303,11 +308,23 @@ class RealMarketDataProvider:
     # ------------------------------------------------------------------
     def _request_json(self, url: str, params: Optional[Dict[str, str]] = None) -> Optional[Dict]:
         """HTTP GET with retry and timeout handling."""
+        
+        # Add CoinGecko API key if available
+        headers = {}
+        if self._coingecko_api_key and "api.coingecko.com" in url:
+            # Add API key as query parameter (primary method)
+            if params is None:
+                params = {}
+            if "api_key" not in params:
+                params["api_key"] = self._coingecko_api_key
+            
+            # Also add header as backup (demo API key header works with api.coingecko.com)
+            headers["x-cg-demo-api-key"] = self._coingecko_api_key
 
         attempt = 0
         while attempt < 3:
             try:
-                response = self._session.get(url, params=params, timeout=20)
+                response = self._session.get(url, params=params, headers=headers, timeout=20)
                 if response.status_code == 200:
                     return response.json()
 

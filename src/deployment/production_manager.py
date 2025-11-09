@@ -217,7 +217,14 @@ class HealthChecker:
             # Network connectivity
             network_ok = True
             try:
-                requests.get('https://api.coingecko.com/api/v3/ping', timeout=5)
+                import os
+                coingecko_key = os.getenv("COINGECKO_API_KEY", "").strip()
+                url = "https://api.coingecko.com/api/v3/ping"
+                headers = {}
+                if coingecko_key:
+                    url += f"?api_key={coingecko_key}"
+                    headers["x-cg-demo-api-key"] = coingecko_key
+                requests.get(url, headers=headers, timeout=5)
             except:
                 network_ok = False
             

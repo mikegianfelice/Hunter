@@ -116,7 +116,13 @@ def get_eth_price_usd() -> float:
 
     # 3) CoinGecko fallback
     try:
-        data = get_json("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd", timeout=10, retries=1)
+        coingecko_key = os.getenv("COINGECKO_API_KEY", "").strip()
+        url = "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd"
+        headers = {}
+        if coingecko_key:
+            url += f"&api_key={coingecko_key}"
+            headers["x-cg-demo-api-key"] = coingecko_key
+        data = get_json(url, headers=headers if headers else None, timeout=10, retries=1)
         if data:
             price = float(data.get("ethereum", {}).get("usd", 0))
             if price > 0:
@@ -161,10 +167,15 @@ def get_sol_price_usd() -> float:
         pass  # If cache fails, continue with API calls
     
     # Try CoinGecko first with retry
+    coingecko_key = os.getenv("COINGECKO_API_KEY", "").strip()
     for attempt in range(3):
         try:
             url = "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd"
-            data = get_json(url, timeout=15, retries=1)
+            headers = {}
+            if coingecko_key:
+                url += f"&api_key={coingecko_key}"
+                headers["x-cg-demo-api-key"] = coingecko_key
+            data = get_json(url, headers=headers if headers else None, timeout=15, retries=1)
             if data:
                 # Check for rate limit error in response
                 if "status" in data and data["status"].get("error_code") == 429:

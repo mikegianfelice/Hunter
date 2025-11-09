@@ -99,12 +99,18 @@ class SimpleSolanaExecutor:
         }
         
         if token_address in token_mapping:
+            import os
+            coingecko_key = os.getenv("COINGECKO_API_KEY", "").strip()
             for attempt in range(2):
                 try:
                     coingecko_id = token_mapping[token_address]
                     url = f"https://api.coingecko.com/api/v3/simple/price?ids={coingecko_id}&vs_currencies=usd"
+                    headers = {}
+                    if coingecko_key:
+                        url += f"&api_key={coingecko_key}"
+                        headers["x-cg-demo-api-key"] = coingecko_key
                     
-                    response = requests.get(url, timeout=15)
+                    response = requests.get(url, headers=headers, timeout=15)
                     if response.status_code == 200:
                         data = response.json()
                         if coingecko_id in data and "usd" in data[coingecko_id]:

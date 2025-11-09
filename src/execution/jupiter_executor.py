@@ -110,9 +110,15 @@ class JupiterCustomExecutor:
         
         if token_address in token_mapping:
             try:
+                import os
                 coingecko_id = token_mapping[token_address]
+                coingecko_key = os.getenv("COINGECKO_API_KEY", "").strip()
                 url = f"https://api.coingecko.com/api/v3/simple/price?ids={coingecko_id}&vs_currencies=usd"
-                data = get_json(url, timeout=8, retries=1)
+                headers = {}
+                if coingecko_key:
+                    url += f"&api_key={coingecko_key}"
+                    headers["x-cg-demo-api-key"] = coingecko_key
+                data = get_json(url, headers=headers if headers else None, timeout=8, retries=1)
                 if data and coingecko_id in data and "usd" in data[coingecko_id]:
                     price = float(data[coingecko_id]["usd"])
                     log_info("solana.price.coingecko", token=token_address, price=price)

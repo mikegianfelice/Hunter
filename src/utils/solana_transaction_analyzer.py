@@ -20,10 +20,14 @@ def get_sol_price_usd() -> float:
     except Exception:
         # Fallback to CoinGecko
         try:
-            response = requests.get(
-                "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
-                timeout=5
-            )
+            import os
+            coingecko_key = os.getenv("COINGECKO_API_KEY", "").strip()
+            url = "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd"
+            headers = {}
+            if coingecko_key:
+                url += f"&api_key={coingecko_key}"
+                headers["x-cg-demo-api-key"] = coingecko_key
+            response = requests.get(url, headers=headers, timeout=5)
             if response.status_code == 200:
                 data = response.json()
                 return float(data['solana']['usd'])

@@ -11,6 +11,7 @@ import requests
 from typing import Dict, Optional, List
 from datetime import datetime, timedelta
 import statistics
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 from src.config.secrets import GRAPH_API_KEY, UNISWAP_V3_DEPLOYMENT_ID
 
@@ -24,6 +25,8 @@ class MarketDataFetcher:
         self.cache_duration = 300  # 5 minutes cache
         self.api_timeout = 15
         self.max_retries = 3
+        # Load CoinGecko API key from environment
+        self.coingecko_api_key = (os.getenv("COINGECKO_API_KEY") or "").strip()
         
     def get_btc_price(self) -> Optional[float]:
         """Get current BTC price in USD"""
@@ -457,6 +460,21 @@ class MarketDataFetcher:
             "Accept": "application/json",
             "User-Agent": "HunterBot/1.0"
         }
+        
+        # Add CoinGecko API key if available
+        if self.coingecko_api_key and "api.coingecko.com" in url:
+            # Add API key as query parameter (primary method)
+            parsed = urlparse(url)
+            query_params = parse_qs(parsed.query)
+            if "api_key" not in query_params:
+                query_params["api_key"] = [self.coingecko_api_key]
+                # Reconstruct URL with API key
+                new_query = urlencode(query_params, doseq=True)
+                url = urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment))
+            
+            # Also add header as backup (demo API key header works with api.coingecko.com)
+            headers["x-cg-demo-api-key"] = self.coingecko_api_key
+        
         backoff = 1.0
         
         for attempt in range(self.max_retries):
