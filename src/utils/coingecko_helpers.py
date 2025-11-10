@@ -29,6 +29,28 @@ def _pick_param_name(path: str) -> str:
     return "vs_currency"
 
 
+def _normalize_currency_value(value) -> str:
+    """
+    Normalise a currency query parameter value:
+      * accepts the first non-empty item from any iterable
+      * strips whitespace
+      * lowercases the value for consistency
+    Returns an empty string when a usable value is not present.
+    """
+    if value is None:
+        return ""
+
+    if isinstance(value, (list, tuple, set)):
+        for item in value:
+            normalised = _normalize_currency_value(item)
+            if normalised:
+                return normalised
+        return ""
+
+    text_value = str(value).strip().lower()
+    return text_value
+
+
 def ensure_vs_currency(
     url: str, params: Optional[Dict[str, str]] = None
 ) -> Tuple[str, Optional[Dict[str, str]]]:
@@ -48,17 +70,47 @@ def ensure_vs_currency(
     # Quickly exit (or normalise) if the parameter already exists in params.
     if params:
         if param_name in params:
-            return url, params
-        if alt_name in params:
+            raw_value = params[param_name]
+            current = _normalize_currency_value(raw_value)
+            if current:
+                if (
+                    isinstance(raw_value, str)
+                    and raw_value.strip() == raw_value
+                    and raw_value.lower() == raw_value
+                ):
+                    return url, params
+                updated = dict(params)
+                updated[param_name] = current
+                return url, updated
             updated = dict(params)
-            updated[param_name] = updated.pop(alt_name)
+            updated[param_name] = DEFAULT_FIAT
+            return url, updated
+        if alt_name in params:
+            raw_value = params[alt_name]
+            current = _normalize_currency_value(raw_value)
+            updated = dict(params)
+            updated.pop(alt_name, None)
+            updated[param_name] = current or DEFAULT_FIAT
             return url, updated
 
     query = parse_qs(parsed.query, keep_blank_values=True)
     if param_name in query:
-        return url, params
+        current = _normalize_currency_value(query[param_name])
+        if current:
+            # Ensure the stored list contains the normalised value
+            if query[param_name] != [current]:
+                query[param_name] = [current]
+                new_query = urlencode(query, doseq=True)
+                updated_url = urlunparse(parsed._replace(query=new_query))
+                return updated_url, params
+            return url, params
+        query[param_name] = [DEFAULT_FIAT]
+        new_query = urlencode(query, doseq=True)
+        updated_url = urlunparse(parsed._replace(query=new_query))
+        return updated_url, params
     if alt_name in query:
-        query[param_name] = query.pop(alt_name)
+        current = _normalize_currency_value(query.pop(alt_name))
+        query[param_name] = [current or DEFAULT_FIAT]
         new_query = urlencode(query, doseq=True)
         updated_url = urlunparse(parsed._replace(query=new_query))
         return updated_url, params
