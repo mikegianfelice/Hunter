@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 import statistics
 
 from src.config.secrets import GRAPH_API_KEY, UNISWAP_V3_DEPLOYMENT_ID
-from src.utils.coingecko_helpers import ensure_vs_currency
+from src.utils.coingecko_helpers import ensure_vs_currency, DEFAULT_FIAT
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -51,7 +51,7 @@ class MarketDataFetcher:
                 return price
             
             # Fallback to CoinGecko alternative endpoint
-            url = f"{self._coingecko_base_url}coins/bitcoin"
+            url = f"{self._coingecko_base_url}coins/bitcoin?vs_currency={DEFAULT_FIAT}"
             data = self._fetch_json(url)
             if data and 'market_data' in data:
                 price = float(data['market_data']['current_price']['usd'])
@@ -95,7 +95,7 @@ class MarketDataFetcher:
                 return price
             
             # Fallback to CoinGecko alternative endpoint
-            url = f"{self._coingecko_base_url}coins/ethereum"
+            url = f"{self._coingecko_base_url}coins/ethereum?vs_currency={DEFAULT_FIAT}"
             data = self._fetch_json(url)
             if data and 'market_data' in data:
                 price = float(data['market_data']['current_price']['usd'])
@@ -367,7 +367,7 @@ class MarketDataFetcher:
         """Get volume trends (0-1 scale) based on historical comparison"""
         try:
             # Get current total market volume
-            url = f"{self._coingecko_base_url}global"
+            url = f"{self._coingecko_base_url}global?vs_currency={DEFAULT_FIAT}"
             current_data = self._fetch_json(url)
 
             data_dict = current_data.get('data', {}) if current_data and 'data' in current_data else {}
@@ -461,7 +461,7 @@ class MarketDataFetcher:
         """Get market cap trend (0-1 scale) based on historical comparison"""
         try:
             # Get current total market cap
-            url = f"{self._coingecko_base_url}global"
+            url = f"{self._coingecko_base_url}global?vs_currency={DEFAULT_FIAT}"
             current_data = self._fetch_json(url)
 
             data_dict = current_data.get('data', {}) if current_data and 'data' in current_data else {}

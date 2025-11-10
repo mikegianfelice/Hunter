@@ -32,7 +32,7 @@ from typing import Dict, List, Optional, Tuple
 import pandas as pd
 import requests
 
-from src.utils.coingecko_helpers import ensure_vs_currency
+from src.utils.coingecko_helpers import ensure_vs_currency, DEFAULT_FIAT
 
 logger = logging.getLogger(__name__)
 
@@ -154,7 +154,18 @@ class RealMarketDataProvider:
 
         url = f"{self._coingecko_base}coins/{asset_id}"
         try:
-            data = self._request_json(url, params={"localization": "false", "tickers": "false", "market_data": "true", "community_data": "true", "developer_data": "false", "sparkline": "false"})
+            data = self._request_json(
+                url,
+                params={
+                    "localization": "false",
+                    "tickers": "false",
+                    "market_data": "true",
+                    "community_data": "true",
+                    "developer_data": "false",
+                    "sparkline": "false",
+                    "vs_currency": DEFAULT_FIAT,
+                },
+            )
             if not data:
                 return None
 
