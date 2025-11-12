@@ -78,7 +78,7 @@ min_wallet_balance_buffer: 0.05  # Higher buffer for safety
 # === Reconciliation Settings ===
 enable_helius_reconciliation: true  # Periodically sync Solana positions using Helius
 helius_reconciliation_interval_minutes: 5  # How often to run reconciliation
-helius_reconciliation_tx_limit: 200  # Max transactions to request per reconciliation run
+helius_reconciliation_tx_limit: 100  # Max transactions to request per reconciliation run (Helius caps at 100)
 
 # === Balance Cache Settings ===
 balance_cache_enabled: true  # Enable balance caching as fallback during RPC failures
