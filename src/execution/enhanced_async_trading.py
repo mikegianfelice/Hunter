@@ -30,6 +30,7 @@ from src.ai.ai_circuit_breaker import circuit_breaker_manager, check_ai_module_h
 from src.monitoring.telegram_bot import send_periodic_status_report
 from src.execution.multi_chain_executor import _launch_monitor_detached
 from src.core.helius_reconciliation import reconcile_positions_and_pnl
+from src.ai.ai_market_regime_detector import ai_market_regime_detector
 
 logger = logging.getLogger(__name__)
 
@@ -534,7 +535,7 @@ class EnhancedAsyncTradingEngine:
                     log_info("trading.ai_engine_cached", "AI engine initialized and cached")
         return self.ai_engine
     
-    async def _analyze_token_ai(self, token: Dict) -> Dict:
+    async def _analyze_token_ai(self, token: Dict, regime_data: Optional[Dict[str, Any]] = None) -> Dict:
         """Perform AI analysis on a single token"""
         symbol = token.get("symbol", "UNKNOWN")
         
@@ -543,7 +544,7 @@ class EnhancedAsyncTradingEngine:
             ai_engine = await self._get_ai_engine()
             
             # Perform real AI analysis
-            ai_result = await ai_engine.analyze_token(token)
+            ai_result = await ai_engine.analyze_token(token, regime_data=regime_data)
             
             # Extract results from AI analysis
             # AIAnalysisResult uses overall_score, not quality_score, and attributes are Dict objects
@@ -675,12 +676,12 @@ class EnhancedAsyncTradingEngine:
             return {}
         return {}
     
-    async def _process_token_batch(self, batch: List[Dict]) -> List[Dict]:
+    async def _process_token_batch(self, batch: List[Dict], regime_data: Optional[Dict[str, Any]] = None) -> List[Dict]:
         """Process a batch of tokens with parallel AI analysis"""
         log_info("trading.batch", f"Processing batch of {len(batch)} tokens")
         
         # Create tasks for parallel AI analysis
-        analysis_tasks = [self._analyze_token_ai(token) for token in batch]
+        analysis_tasks = [self._analyze_token_ai(token, regime_data) for token in batch]
         analyses = await asyncio.gather(*analysis_tasks, return_exceptions=True)
         
         results = []
@@ -983,6 +984,22 @@ class EnhancedAsyncTradingEngine:
             log_info("trading.circuit_breaker", "⏸️ Circuit breaker active - skipping cycle")
             return {"success": False, "error": "Circuit breaker active"}
         
+        # Capture market regime once per cycle for downstream consumers
+        regime_data: Optional[Dict[str, Any]] = None
+        try:
+            regime_data = ai_market_regime_detector.detect_market_regime()
+            log_info(
+                "trading.regime_snapshot",
+                "📊 Captured market regime for cycle",
+                {
+                    "regime": regime_data.get("regime") if isinstance(regime_data, dict) else None,
+                    "confidence": regime_data.get("confidence") if isinstance(regime_data, dict) else None,
+                },
+            )
+        except Exception as exc:
+            log_error("trading.regime_error", f"Failed to capture market regime: {exc}")
+            regime_data = None
+        
         # Fetch tokens from all supported chains
         all_tokens = []
         fetch_tasks = []
@@ -1016,7 +1033,7 @@ class EnhancedAsyncTradingEngine:
         
         for i in range(0, len(all_tokens), self.batch_size):
             batch = all_tokens[i:i + self.batch_size]
-            batch_result = await self._process_token_batch(batch)
+            batch_result = await self._process_token_batch(batch, regime_data)
             batch_results.extend(batch_result)
             
             # Filter approved tokens

@@ -412,7 +412,11 @@ class AIIntegrationEngine:
         
         return True
     
-    async def analyze_token(self, token_data: Dict[str, Any]) -> AIAnalysisResult:
+    async def analyze_token(
+        self,
+        token_data: Dict[str, Any],
+        regime_data: Optional[Dict[str, Any]] = None
+    ) -> AIAnalysisResult:
         """Perform comprehensive AI analysis on a token with all modules"""
         symbol = token_data.get("symbol", "UNKNOWN")
         start_time = time.time()
@@ -446,7 +450,12 @@ class AIIntegrationEngine:
             
             # Stage 2: Market Context Analysis (regime, cycle, liquidity, anomaly)
             market_context_tasks = [
-                self._analyze_market_context(token_data, market_data, trade_amount)
+                self._analyze_market_context(
+                    token_data,
+                    market_data,
+                    trade_amount,
+                    precomputed_regime=regime_data
+                )
             ]
             
             # Stage 3: Predictive Analytics (predictive, price, microstructure)
@@ -783,13 +792,21 @@ class AIIntegrationEngine:
             log_error(f"Error in execution analysis: {e}")
             return {"execution_score": 0.5, "recommended_slippage": 0.05, "optimal_timing": "wait"}
     
-    async def _analyze_market_context(self, token_data: Dict, market_data: MarketData, trade_amount: float) -> Dict[str, Any]:
+    async def _analyze_market_context(
+        self,
+        token_data: Dict,
+        market_data: MarketData,
+        trade_amount: float,
+        precomputed_regime: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """Analyze market context: regime, cycle, liquidity, anomaly"""
         try:
             context = {}
             
             # Market regime detection
-            if "market_regime_detector" in self.module_connector.modules:
+            if precomputed_regime:
+                context["regime"] = precomputed_regime
+            elif "market_regime_detector" in self.module_connector.modules:
                 try:
                     module = self.module_connector.modules["market_regime_detector"]
                     if hasattr(module, 'detect_market_regime'):
@@ -1305,7 +1322,10 @@ async def get_ai_engine() -> AIIntegrationEngine:
         await _ai_engine.initialize()
     return _ai_engine
 
-async def analyze_token_ai(token_data: Dict[str, Any]) -> AIAnalysisResult:
+async def analyze_token_ai(
+    token_data: Dict[str, Any],
+    regime_data: Optional[Dict[str, Any]] = None
+) -> AIAnalysisResult:
     """Analyze token using AI integration engine"""
     engine = await get_ai_engine()
-    return await engine.analyze_token(token_data)
+    return await engine.analyze_token(token_data, regime_data=regime_data)

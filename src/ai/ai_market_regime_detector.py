@@ -79,6 +79,13 @@ class AIMarketRegimeDetector:
         Detect current market regime using AI analysis
         Returns regime information and trading adjustments
         """
+        now = time.time()
+        cached = self.regime_cache.get('latest')
+        if cached:
+            cached_ts = cached.get('timestamp', 0)
+            if now - cached_ts < self.cache_duration:
+                return cached.get('data', self._get_default_regime())
+
         try:
             # Get market indicators
             indicators = self._collect_market_indicators()
@@ -104,6 +111,10 @@ class AIMarketRegimeDetector:
             }
             
             # Removed duplicate logging - regime detection is logged in main loop
+            self.regime_cache['latest'] = {
+                'timestamp': now,
+                'data': result
+            }
             return result
             
         except Exception as e:

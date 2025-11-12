@@ -8,7 +8,7 @@ import json
 import time
 import logging
 import requests
-from typing import Dict, Optional, List
+from typing import Any, Dict, Optional, List, Tuple
 from datetime import datetime, timedelta
 import statistics
 
@@ -25,6 +25,12 @@ class MarketDataFetcher:
         self.cache_duration = 300  # 5 minutes cache
         self.api_timeout = 15
         self.max_retries = 1
+        self.global_snapshot_ttl = 300  # 5 minutes
+        self._global_market_snapshot: Optional[Dict[str, Any]] = None
+        self._global_snapshot_failure: Optional[float] = None
+        self.market_chart_cache: Dict[str, Dict[str, Any]] = {}
+        self.market_chart_cache_duration = 60  # seconds
+        self._market_chart_bucket_seconds = 60  # align range queries to minute buckets
         # Load CoinGecko API key from environment
         self.coingecko_api_key = (os.getenv("COINGECKO_API_KEY") or "").strip()
         self._coingecko_base_url = "https://api.coingecko.com/api/v3/"
@@ -123,12 +129,7 @@ class MarketDataFetcher:
     def get_btc_trend(self, hours: int = 24) -> float:
         """Get BTC trend over last N hours (0-1 scale)"""
         try:
-            # Get historical prices
-            now = int(time.time())
-            from_timestamp = now - (hours * 3600)
-            
-            url = f"{self._coingecko_base_url}coins/bitcoin/market_chart/range?vs_currency=usd&from={from_timestamp}&to={now}"
-            data = self._fetch_json(url)
+            data, from_timestamp, now = self._get_market_chart_range("bitcoin", hours)
 
             price_points: List[float] = []
             if data and 'prices' in data:
@@ -160,12 +161,7 @@ class MarketDataFetcher:
     def get_eth_trend(self, hours: int = 24) -> float:
         """Get ETH trend over last N hours (0-1 scale)"""
         try:
-            # Get historical prices
-            now = int(time.time())
-            from_timestamp = now - (hours * 3600)
-            
-            url = f"{self._coingecko_base_url}coins/ethereum/market_chart/range?vs_currency=usd&from={from_timestamp}&to={now}"
-            data = self._fetch_json(url)
+            data, from_timestamp, now = self._get_market_chart_range("ethereum", hours)
 
             price_points: List[float] = []
             if data and 'prices' in data:
@@ -197,12 +193,7 @@ class MarketDataFetcher:
     def get_market_volatility(self, hours: int = 24) -> float:
         """Get market volatility index (0-1 scale)"""
         try:
-            # Get BTC price history
-            now = int(time.time())
-            from_timestamp = now - (hours * 3600)
-            
-            url = f"{self._coingecko_base_url}coins/bitcoin/market_chart/range?vs_currency=usd&from={from_timestamp}&to={now}"
-            data = self._fetch_json(url)
+            data, from_timestamp, now = self._get_market_chart_range("bitcoin", hours)
 
             prices: List[float] = []
             if data and 'prices' in data:
@@ -253,16 +244,8 @@ class MarketDataFetcher:
     def get_market_correlation(self, hours: int = 24) -> float:
         """Get market correlation between BTC and ETH (0-1 scale)"""
         try:
-            # Get historical price data for both BTC and ETH
-            now = int(time.time())
-            from_timestamp = now - (hours * 3600)
-            
-            # Fetch BTC price history
-            btc_url = f"{self._coingecko_base_url}coins/bitcoin/market_chart/range?vs_currency=usd&from={from_timestamp}&to={now}"
-            btc_data = self._fetch_json(btc_url)
-            
-            eth_url = f"{self._coingecko_base_url}coins/ethereum/market_chart/range?vs_currency=usd&from={from_timestamp}&to={now}"
-            eth_data = self._fetch_json(eth_url)
+            btc_data, btc_from_timestamp, btc_now = self._get_market_chart_range("bitcoin", hours)
+            eth_data, eth_from_timestamp, eth_now = self._get_market_chart_range("ethereum", hours)
 
             btc_prices: Dict[int, float] = {}
             eth_prices: Dict[int, float] = {}
@@ -271,7 +254,7 @@ class MarketDataFetcher:
                 btc_prices = {int(p[0] / 1000): float(p[1]) for p in btc_data['prices']}
             else:
                 interval = self._select_coincap_interval(hours)
-                history = self._get_history_from_coincap("bitcoin", from_timestamp, now, interval)
+                history = self._get_history_from_coincap("bitcoin", btc_from_timestamp, btc_now, interval)
                 if history:
                     btc_prices = {
                         int(point["time"] / 1000): float(point["priceUsd"])
@@ -283,7 +266,7 @@ class MarketDataFetcher:
                 eth_prices = {int(p[0] / 1000): float(p[1]) for p in eth_data['prices']}
             else:
                 interval = self._select_coincap_interval(hours)
-                history = self._get_history_from_coincap("ethereum", from_timestamp, now, interval)
+                history = self._get_history_from_coincap("ethereum", eth_from_timestamp, eth_now, interval)
                 if history:
                     eth_prices = {
                         int(point["time"] / 1000): float(point["priceUsd"])
@@ -366,11 +349,9 @@ class MarketDataFetcher:
     def get_volume_trends(self, hours: int = 24) -> float:
         """Get volume trends (0-1 scale) based on historical comparison"""
         try:
-            # Get current total market volume
-            url = f"{self._coingecko_base_url}global?vs_currency={DEFAULT_FIAT}"
-            current_data = self._fetch_json(url)
-
-            data_dict = current_data.get('data', {}) if current_data and 'data' in current_data else {}
+            # Get current total market volume with caching
+            snapshot = self._get_global_market_snapshot()
+            data_dict = snapshot.get('data', {}) if snapshot else {}
             current_volume: Optional[float] = None
 
             if data_dict:
@@ -379,21 +360,13 @@ class MarketDataFetcher:
                     current_volume = float(volume_data['usd'])
 
             if current_volume is None:
-                coincap_global = self._get_global_from_coincap()
-                if coincap_global and coincap_global.get('volumeUsd24Hr'):
-                    current_volume = float(coincap_global['volumeUsd24Hr'])
-                else:
-                    logger.warning("Failed to fetch current volume data from all providers")
-                    return 0.5
+                logger.warning("Failed to fetch current volume data from all providers")
+                return 0.5
 
             
             # Get historical volume data using BTC as proxy (most liquid asset)
             # We'll use BTC's volume history to estimate overall market trend
-            now = int(time.time())
-            from_timestamp = now - (hours * 2 * 3600)  # Get 2x hours to compare
-            
-            btc_url = f"{self._coingecko_base_url}coins/bitcoin/market_chart/range?vs_currency=usd&from={from_timestamp}&to={now}"
-            btc_data = self._fetch_json(btc_url)
+            btc_data, from_timestamp, now = self._get_market_chart_range("bitcoin", hours * 2)
 
             volumes: List[float] = []
             if btc_data and 'total_volumes' in btc_data:
@@ -460,11 +433,9 @@ class MarketDataFetcher:
     def get_market_cap_trend(self, hours: int = 24) -> float:
         """Get market cap trend (0-1 scale) based on historical comparison"""
         try:
-            # Get current total market cap
-            url = f"{self._coingecko_base_url}global?vs_currency={DEFAULT_FIAT}"
-            current_data = self._fetch_json(url)
-
-            data_dict = current_data.get('data', {}) if current_data and 'data' in current_data else {}
+            # Get current total market cap with caching
+            snapshot = self._get_global_market_snapshot()
+            data_dict = snapshot.get('data', {}) if snapshot else {}
             current_market_cap: Optional[float] = None
 
             if data_dict:
@@ -473,19 +444,11 @@ class MarketDataFetcher:
                     current_market_cap = float(market_cap_data['usd'])
 
             if current_market_cap is None:
-                coincap_global = self._get_global_from_coincap()
-                if coincap_global and coincap_global.get('marketCapUsd'):
-                    current_market_cap = float(coincap_global['marketCapUsd'])
-                else:
-                    logger.warning("Failed to fetch current market cap data from all providers")
-                    return 0.5
+                logger.warning("Failed to fetch current market cap data from all providers")
+                return 0.5
             
             # Get historical market cap data using BTC as proxy
-            now = int(time.time())
-            from_timestamp = now - (hours * 2 * 3600)  # Get 2x hours to compare
-            
-            btc_url = f"{self._coingecko_base_url}coins/bitcoin/market_chart/range?vs_currency=usd&from={from_timestamp}&to={now}"
-            btc_data = self._fetch_json(btc_url)
+            btc_data, from_timestamp, now = self._get_market_chart_range("bitcoin", hours * 2)
 
             market_caps: List[float] = []
             if btc_data and 'market_caps' in btc_data:
@@ -551,6 +514,41 @@ class MarketDataFetcher:
             logger.error(f"❌ Failed to fetch market cap trend: {e}")
         
         return 0.5
+    
+    def _get_market_chart_range(self, asset_id: str, hours: int) -> Tuple[Optional[Dict], int, int]:
+        """
+        Retrieve and cache CoinGecko market_chart/range data for the requested asset.
+        Returns a tuple of (data, from_timestamp, to_timestamp).
+        """
+        if hours <= 0:
+            hours = 1
+
+        bucket_now = int(time.time() // self._market_chart_bucket_seconds) * self._market_chart_bucket_seconds
+        from_timestamp = bucket_now - (hours * 3600)
+        cache_key = f"market_chart:{asset_id}:{hours}:{bucket_now}"
+
+        cached = self.market_chart_cache.get(cache_key)
+        current_time = time.time()
+        if cached and current_time - cached["timestamp"] < self.market_chart_cache_duration:
+            return cached["data"], from_timestamp, bucket_now
+
+        # Prune stale cache entries opportunistically
+        stale_keys = [
+            key for key, entry in self.market_chart_cache.items()
+            if current_time - entry["timestamp"] >= self.market_chart_cache_duration
+        ]
+        for key in stale_keys:
+            self.market_chart_cache.pop(key, None)
+
+        url = (
+            f"{self._coingecko_base_url}coins/{asset_id}/market_chart/range"
+            f"?vs_currency=usd&from={from_timestamp}&to={bucket_now}"
+        )
+        data = self._fetch_json(url)
+        if data is not None:
+            self.market_chart_cache[cache_key] = {"data": data, "timestamp": current_time}
+
+        return data, from_timestamp, bucket_now
     
     def _fetch_json(self, url: str) -> Optional[Dict]:
         """Fetch JSON data with retry logic, rate limit handling, and proper headers"""
@@ -670,6 +668,50 @@ class MarketDataFetcher:
                 return data["data"]
         except Exception as exc:
             logger.warning(f"CoinCap global metrics fetch failed: {exc}")
+        return None
+
+    def _get_global_market_snapshot(self) -> Optional[Dict]:
+        """Return cached CoinGecko global snapshot or fetch a fresh one."""
+        now = time.time()
+
+        # Respect recent failure window to avoid hammering the API
+        if self._global_snapshot_failure and now - self._global_snapshot_failure < 60:
+            cached = self._global_market_snapshot
+            if cached and now - cached.get("timestamp", 0) < self.global_snapshot_ttl:
+                return cached.get("data")
+            return cached.get("data") if cached else None
+
+        cached_snapshot = self._global_market_snapshot
+        if cached_snapshot and now - cached_snapshot.get("timestamp", 0) < self.global_snapshot_ttl:
+            return cached_snapshot.get("data")
+
+        url = f"{self._coingecko_base_url}global?vs_currency={DEFAULT_FIAT}"
+        data = self._fetch_json(url)
+        if data and isinstance(data, Dict):
+            self._global_market_snapshot = {"timestamp": now, "data": data}
+            self._global_snapshot_failure = None
+            return data
+
+        # Fallback to CoinCap; normalize structure to match CoinGecko response
+        coincap_data = self._get_global_from_coincap()
+        if coincap_data:
+            normalized = {
+                "data": {
+                    "total_market_cap": {
+                        "usd": float(coincap_data.get("marketCapUsd")) if coincap_data.get("marketCapUsd") else None
+                    },
+                    "total_volume": {
+                        "usd": float(coincap_data.get("volumeUsd24Hr")) if coincap_data.get("volumeUsd24Hr") else None
+                    }
+                }
+            }
+            self._global_market_snapshot = {"timestamp": now, "data": normalized}
+            self._global_snapshot_failure = None
+            return normalized
+
+        # Record failure to slow down repeated attempts
+        self._global_snapshot_failure = now
+        self._global_market_snapshot = {"timestamp": now, "data": None}
         return None
 
     @staticmethod
