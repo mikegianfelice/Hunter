@@ -384,7 +384,7 @@ def format_status_message(risk_summary, recent_summary, open_trades, market_regi
         """Load open positions from file and calculate unrealized PnL"""
         positions = load_positions_store()
         if not positions:
-            return []
+            return [], 0.0
         
         pnl_lines = []
         total_unrealized_usd = 0.0
