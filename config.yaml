@@ -72,7 +72,7 @@ max_concurrent_positions: 6  # Increased for $100 start strategy
 daily_loss_limit_usd: 10.0  # $10 daily loss limit for $100 start (scales with equity)
 max_losing_streak: 3  # Stop after 3 losses
 circuit_breaker_minutes: 60  # 60 minute cooldown after losses
-per_trade_max_usd: 15  # $15 max per trade for current balance
+per_trade_max_usd: 25  # $25 max per trade for accelerated growth
 min_wallet_balance_buffer: 0.02  # Reduced buffer for limited capital
 
 # === Reconciliation Settings ===
@@ -105,7 +105,7 @@ enable_holder_concentration_check: true  # Enable holder concentration analysis
 holder_concentration_threshold: 60.0  # Block if top 10 holders own >60% (moderate threshold)
 holder_concentration_risk_weight: 0.15  # 15% weight in token risk assessment
 holder_concentration_cache_minutes: 10  # Cache holder data for 10 minutes
-holder_concentration_block_on_high_risk: false  # Allow high concentration to inform risk score instead of hard blocking
+holder_concentration_block_on_high_risk: true  # Hard block tokens when concentration exceeds threshold
 holder_concentration_fail_closed: false  # Treat data fetch failures as added risk instead of hard block
 
 # === Jupiter API Settings ===
@@ -188,15 +188,15 @@ tiered_position_scaling: true  # Enable automatic scaling with wallet growth
 wallet_tiers: {
   "tier_1": {
     "min_balance": 100,
-    "max_balance": 999,
-    "base_position_size_usd": 10.0,
+    "max_balance": 499,
+    "base_position_size_usd": 15.0,
     "max_position_size_usd": 25.0,
-    "max_total_exposure_usd": 500.0,
-    "max_wallet_usage_percent": 0.25,
-    "description": "Learning Phase - Conservative but faster compounding"
+    "max_total_exposure_usd": 200.0,
+    "max_wallet_usage_percent": 0.4,
+    "description": "Learning Phase - Higher leverage for rapid compounding"
   },
   "tier_2": {
-    "min_balance": 1000,
+    "min_balance": 500,
     "max_balance": 4999,
     "base_position_size_usd": 25.0,
     "max_position_size_usd": 50.0,
