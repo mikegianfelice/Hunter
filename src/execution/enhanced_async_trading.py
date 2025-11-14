@@ -242,6 +242,7 @@ class EnhancedAsyncTradingEngine:
                 ]
             
             all_tokens = []
+            seen_pairs = set()
             
             async with aiohttp.ClientSession() as session:
                 for url in trending_urls:
@@ -286,6 +287,12 @@ class EnhancedAsyncTradingEngine:
                                             log_info("trading.filter", f"Skipping native token: {symbol}")
                                             continue
                                             
+                                        pair_id = pair.get("pairAddress") or base_token.get("address")
+                                        if not pair_id:
+                                            continue
+                                        if pair_id in seen_pairs:
+                                            continue
+                                        
                                         # Calculate metrics
                                         price_usd = float(pair.get("priceUsd", 0))
                                         volume_24h = float(pair.get("volume", {}).get("h24", 0))
@@ -314,6 +321,7 @@ class EnhancedAsyncTradingEngine:
                                         }
                                         
                                         all_tokens.append(token)
+                                        seen_pairs.add(pair_id)
                                         
                                         if len(all_tokens) >= limit * 2:  # Get more than needed for filtering
                                             break
@@ -328,6 +336,9 @@ class EnhancedAsyncTradingEngine:
                         except:
                             pass
                         continue
+                    
+                    if len(all_tokens) >= limit * 2:
+                        break
                         
             # Sort by volume and take the top tokens
             all_tokens.sort(key=lambda x: x["volume24h"], reverse=True)

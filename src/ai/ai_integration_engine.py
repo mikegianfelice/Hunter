@@ -1298,12 +1298,36 @@ class AIIntegrationEngine:
             if predictive_analytics:
                 micro = predictive_analytics.get("microstructure", {})
                 if isinstance(micro, dict):
-                    exec_recs = micro.get("execution_recommendations", {})
+                    exec_recs = micro.get("execution_recommendations", {}) or {}
+                    timing_data = micro.get("optimal_timing", {}) or {}
+
+                    optimal_timing = "wait"
+                    if isinstance(timing_data, dict):
+                        optimal_timing = timing_data.get("optimal_timing", optimal_timing)
                     if isinstance(exec_recs, dict):
-                        optimal_timing = exec_recs.get("optimal_timing", "wait")
-                        if optimal_timing == "wait":
-                            recommendations["action"] = "hold"
-                            recommendations["reasoning"].append("Suboptimal execution timing")
+                        optimal_timing = exec_recs.get("optimal_timing", optimal_timing)
+
+                    execution_recommendation = exec_recs.get("execution_recommendation") if isinstance(exec_recs, dict) else None
+
+                    # Normalize values for easier comparisons
+                    if isinstance(optimal_timing, str):
+                        optimal_timing = optimal_timing.lower()
+                    if isinstance(execution_recommendation, str):
+                        execution_recommendation = execution_recommendation.lower()
+
+                    if optimal_timing in {"avoid", "avoid_execution"} or execution_recommendation in {"avoid_execution"}:
+                        recommendations["action"] = "avoid"
+                        recommendations["position_size"] = 0.0
+                        recommendations["reasoning"].append("Microstructure timing: avoid execution")
+                    elif optimal_timing in {"wait"} or execution_recommendation in {"execute_cautious"}:
+                        recommendations["action"] = "hold"
+                        recommendations["reasoning"].append("Microstructure timing suggests waiting")
+                    elif execution_recommendation in {"execute_immediately", "execute_optimal"}:
+                        # Reinforce buy signal if microstructure strongly supports execution
+                        if recommendations["action"] in {"hold", "weak_buy"}:
+                            recommendations["action"] = "buy"
+                        recommendations["confidence"] = max(recommendations.get("confidence", 0.5), 0.75)
+                        recommendations["reasoning"].append("Microstructure favors execution now")
             
             return recommendations
             
