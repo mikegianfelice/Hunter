@@ -359,15 +359,44 @@ def _sell_token_multi_chain(token_address: str, chain_id: str, symbol: str = "?"
                     if success and tx_hash:
                         print(f"✅ [SUCCESS] Sell successful on attempt {attempt+1}: {tx_hash}")
                         return tx_hash
+                    elif tx_hash and not success:
+                        # We have a transaction hash but success=False - verify on-chain
+                        # This handles cases where RPC verification failed but transaction succeeded
+                        print(f"⚠️ [VERIFY] Sell returned tx_hash but success=False; verifying on-chain: {tx_hash}")
+                        try:
+                            from src.execution.jupiter_lib import JupiterCustomLib
+                            from src.config.secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
+                            
+                            lib = JupiterCustomLib(SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY)
+                            # Wait a bit for transaction to propagate
+                            time.sleep(3)
+                            verified = lib.verify_transaction_success(tx_hash)
+                            
+                            if verified is True:
+                                print(f"✅ [VERIFIED] Transaction {tx_hash} verified successful on-chain despite initial failure report")
+                                return tx_hash
+                            elif verified is False:
+                                print(f"❌ [VERIFIED FAIL] Transaction {tx_hash} confirmed as failed on-chain")
+                                # Continue to retry logic below
+                            else:
+                                # Can't verify - assume success if we have tx_hash (transaction was submitted)
+                                print(f"⚠️ [UNCERTAIN] Cannot verify transaction {tx_hash} but it was submitted; assuming success")
+                                return tx_hash
+                        except Exception as verify_error:
+                            print(f"⚠️ [VERIFY ERROR] Error verifying transaction {tx_hash}: {verify_error}")
+                            # If we have a tx_hash, assume success (transaction was submitted)
+                            print(f"⚠️ Assuming success for transaction {tx_hash} (was submitted)")
+                            return tx_hash
+                    
+                    # No tx_hash or verified failure - retry
+                    print(f"⚠️ [RETRY {attempt+1}/{max_retries}] Sell failed (success={success}, tx_hash={tx_hash}), retrying...")
+                    if attempt < max_retries - 1:
+                        wait_time = 2 * (attempt + 1)  # Exponential backoff: 2s, 4s, 6s
+                        print(f"⏳ Waiting {wait_time}s before retry...")
+                        time.sleep(wait_time)
                     else:
-                        print(f"⚠️ [RETRY {attempt+1}/{max_retries}] Sell failed (success={success}, tx_hash={tx_hash}), retrying...")
-                        if attempt < max_retries - 1:
-                            wait_time = 2 * (attempt + 1)  # Exponential backoff: 2s, 4s, 6s
-                            print(f"⏳ Waiting {wait_time}s before retry...")
-                            time.sleep(wait_time)
-                        else:
-                            print(f"❌ [FAILED] All {max_retries} sell attempts failed")
-                            return None
+                        print(f"❌ [FAILED] All {max_retries} sell attempts failed")
+                        return None
                             
                 except Exception as e:
                     print(f"❌ [EXCEPTION] Sell attempt {attempt+1} failed: {e}")

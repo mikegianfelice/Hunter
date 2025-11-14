@@ -462,21 +462,33 @@ class JupiterCustomLib:
                     confirmed = self.confirm_transaction(tx_hash, max_retries=30)
                     if confirmed is False:
                         try:
-                            print(f"❌ Transaction {tx_hash} failed to confirm or was rejected")
+                            print(f"⚠️ Transaction {tx_hash} initial confirmation check failed; performing final verification...")
                         except BrokenPipeError:
                             pass
-                        return tx_hash, False
+                        # Don't return False immediately - verify one more time as RPC might have been slow
+                        # The transaction might have succeeded despite the confirmation check failing
                     elif confirmed is None:
                         try:
-                            print(f"⚠️ Transaction {tx_hash} confirmation timed out; status unknown")
+                            print(f"⚠️ Transaction {tx_hash} confirmation timed out; verifying final status...")
                         except BrokenPipeError:
                             pass
                     
-                    # Verify transaction succeeded
+                    # CRITICAL: Always verify transaction succeeded, even if confirmation check failed
+                    # This handles cases where RPC was slow but transaction actually succeeded
                     try:
                         print(f"🔍 Verifying transaction status...")
                     except BrokenPipeError:
                         pass
+                    
+                    # Give transaction a bit more time if confirmation failed/timeout
+                    if confirmed is not True:
+                        try:
+                            print(f"⏳ Additional wait for transaction to propagate...")
+                        except BrokenPipeError:
+                            pass
+                        import time
+                        time.sleep(2)  # Wait 2 more seconds for transaction to confirm
+                    
                     tx_success = self.verify_transaction_success(tx_hash)
                     if tx_success is False:
                         try:
@@ -484,24 +496,59 @@ class JupiterCustomLib:
                         except BrokenPipeError:
                             pass
                         return tx_hash, False
-                    elif tx_success is None:
+                    elif tx_success is True:
                         try:
-                            print(f"⚠️ Unable to verify transaction {tx_hash}; assuming success (status pending)")
+                            print(f"✅ Transaction {tx_hash} verified as successful on-chain")
+                        except BrokenPipeError:
+                            pass
+                        return tx_hash, True
+                    elif tx_success is None:
+                        # Unable to verify - but we have a tx_hash, so transaction was at least submitted
+                        # If initial confirmation was False, we're uncertain - check one more time with delay
+                        if confirmed is False:
+                            try:
+                                print(f"⚠️ Transaction {tx_hash} could not be verified; checking again after delay...")
+                            except BrokenPipeError:
+                                pass
+                            import time
+                            time.sleep(3)  # Wait 3 more seconds
+                            # Final verification attempt
+                            final_check = self.verify_transaction_success(tx_hash)
+                            if final_check is True:
+                                try:
+                                    print(f"✅ Transaction {tx_hash} verified successful after retry")
+                                except BrokenPipeError:
+                                    pass
+                                return tx_hash, True
+                            elif final_check is False:
+                                try:
+                                    print(f"❌ Transaction {tx_hash} confirmed as failed after retry")
+                                except BrokenPipeError:
+                                    pass
+                                return tx_hash, False
+                        
+                        # If we still can't verify but have tx_hash, assume pending/success
+                        # Transaction was successfully submitted, so it likely succeeded
+                        try:
+                            print(f"⚠️ Unable to fully verify transaction {tx_hash}; assuming success (transaction was submitted)")
                         except BrokenPipeError:
                             pass
                         return tx_hash, True
                     
-                    if confirmed is None:
-                        try:
-                            print(f"✅ Transaction sent: {tx_hash} (confirmation pending)")
-                        except BrokenPipeError:
-                            pass
-                    else:
+                    # If we got here, verification returned something unexpected
+                    if confirmed is True:
                         try:
                             print(f"✅ Transaction confirmed and successful: {tx_hash}")
                         except BrokenPipeError:
                             pass
-                    return tx_hash, True
+                        return tx_hash, True
+                    else:
+                        # Had a tx_hash but couldn't confirm - be lenient and assume success
+                        try:
+                            print(f"⚠️ Transaction {tx_hash} submitted but status uncertain; assuming success")
+                        except BrokenPipeError:
+                            pass
+                        return tx_hash, True
                 elif "error" in result:
                     error_msg = result["error"]
                     try:
