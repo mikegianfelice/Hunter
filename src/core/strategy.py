@@ -1238,12 +1238,13 @@ def check_buy_signal(token: dict) -> bool:
     
     # Adjust requirements for non-Ethereum chains
     if chain_id != "ethereum":
-        # Lower requirements for multi-chain tokens but not too aggressive
-        fast_vol_ok = (vol24h >= config['FASTPATH_VOL'] * 0.01)   # 1% of Ethereum requirement (was 0.1%)
-        fast_liq_ok = (liq_usd >= config['FASTPATH_LIQ'] * 0.02)  # 2% of Ethereum requirement (was 0.2%)
+        # Use 50% of Ethereum requirement for Solana/Base (was too aggressive at 1-2%)
+        # This prevents weak tokens from passing while still allowing quality opportunities
+        fast_vol_ok = (vol24h >= config['FASTPATH_VOL'] * 0.5)   # 50% of Ethereum requirement (was 1% - too aggressive)
+        fast_liq_ok = (liq_usd >= config['FASTPATH_LIQ'] * 0.5)  # 50% of Ethereum requirement (was 2% - too aggressive)
         fast_sent_ok = True  # Skip sentiment for non-Ethereum
         _log_trace(
-            f"🔓 Multi-chain fast-path: vol ${vol24h:,.0f} (need ≥ {config['FASTPATH_VOL'] * 0.01:,.0f}), liq ${liq_usd:,.0f} (need ≥ {config['FASTPATH_LIQ'] * 0.02:,.0f})",
+            f"🔓 Multi-chain fast-path: vol ${vol24h:,.0f} (need ≥ {config['FASTPATH_VOL'] * 0.5:,.0f}), liq ${liq_usd:,.0f} (need ≥ {config['FASTPATH_LIQ'] * 0.5:,.0f})",
             level="info",
             event="strategy.buy.multichain_fastpath_requirements",
             symbol=token.get("symbol"),
