@@ -567,6 +567,28 @@ def sell_token_solana(token_address: str, amount_usd: float, symbol: str = "", t
 
     if success:
         return succeed(tx_hash)
+    
+    # CRITICAL FIX: If we have a tx_hash but success=False, verify on-chain before aborting
+    # The transaction might have succeeded even if verification failed initially due to RPC delays
+    if tx_hash:
+        print(f"⚠️ Executor returned failure but we have tx_hash {tx_hash}; verifying on-chain...")
+        time.sleep(2)  # Wait a bit for transaction to propagate
+        
+        verified = executor.jupiter_lib.verify_transaction_success(tx_hash)
+        if verified is True:
+            print(f"✅ Transaction {tx_hash} verified as successful on-chain despite initial failure report")
+            return succeed(tx_hash)
+        elif verified is False:
+            print(f"❌ Transaction {tx_hash} confirmed as failed on-chain")
+            return abort("execution_failed", "Transaction confirmed as failed on-chain", 
+                        token=token_address, amount_usd=amount_usd, tx_hash=tx_hash)
+        else:
+            # Can't verify (RPC timeout/missing data) - transaction was submitted, so it might have succeeded
+            # Be conservative and assume success to avoid false negatives
+            print(f"⚠️ Cannot verify transaction {tx_hash} but it was submitted; assuming success")
+            return succeed(tx_hash)
+    
+    # No tx_hash available, abort normally
     return abort("execution_failed", "Executor returned failure", token=token_address, amount_usd=amount_usd)
 
 def get_solana_executor():
