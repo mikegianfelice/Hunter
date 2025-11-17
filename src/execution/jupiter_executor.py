@@ -468,7 +468,7 @@ def buy_token_solana(token_address: str, amount_usd: float, symbol: str = "", te
             CHAIN_NAME,
             "buy",
             latency_ms=latency_ms,
-            slippage_bps=effective_slippage * 10000.0,
+            slippage_bps_value=effective_slippage * 10000.0,
         )
         log_info("solana.trade.completed", token=token_address, symbol=symbol, tx_hash=tx_hash)
         return tx_hash or "", True
@@ -544,7 +544,7 @@ def sell_token_solana(token_address: str, amount_usd: float, symbol: str = "", t
             CHAIN_NAME,
             "sell",
             latency_ms=latency_ms,
-            slippage_bps=effective_slippage * 10000.0,
+            slippage_bps_value=effective_slippage * 10000.0,
         )
         log_info("solana.sell.completed", token=token_address, symbol=symbol, tx_hash=tx_hash)
         return tx_hash or "", True

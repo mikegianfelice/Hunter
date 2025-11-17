@@ -352,6 +352,13 @@ def _sell_token_multi_chain(token_address: str, chain_id: str, symbol: str = "?"
             max_retries = 3
             for attempt in range(max_retries):
                 try:
+                    # Get balance before sell attempt for verification fallback
+                    from src.execution.jupiter_lib import JupiterCustomLib
+                    from src.config.secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
+                    lib = JupiterCustomLib(SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY)
+                    original_balance = lib.get_token_balance(token_address)
+                    print(f"🔍 [DEBUG] Token balance before sell attempt: {original_balance}")
+                    
                     print(f"🔍 [DEBUG] Calling sell_token_solana (attempt {attempt+1}/{max_retries}) with amount_usd={amount_usd}...")
                     tx_hash, success = sell_token_solana(token_address, amount_usd, symbol)
                     print(f"🔍 [DEBUG] sell_token_solana result: tx_hash={tx_hash}, success={success}, type(tx_hash)={type(tx_hash)}")
@@ -364,26 +371,62 @@ def _sell_token_multi_chain(token_address: str, chain_id: str, symbol: str = "?"
                         # This handles cases where RPC verification failed but transaction succeeded
                         print(f"⚠️ [VERIFY] Sell returned tx_hash but success=False; verifying on-chain: {tx_hash}")
                         try:
-                            from src.execution.jupiter_lib import JupiterCustomLib
-                            from src.config.secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
+                            print(f"🔍 [VERIFY] Original token balance (before sell): {original_balance}")
                             
-                            lib = JupiterCustomLib(SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY)
-                            # Wait a bit for transaction to propagate
-                            time.sleep(3)
-                            verified = lib.verify_transaction_success(tx_hash)
+                            # Wait longer for transaction to propagate and be confirmed
+                            print(f"⏳ Waiting 5 seconds for transaction to propagate...")
+                            time.sleep(5)
                             
-                            if verified is True:
-                                print(f"✅ [VERIFIED] Transaction {tx_hash} verified successful on-chain despite initial failure report")
+                            # Retry verification multiple times with exponential backoff
+                            verified = None
+                            for verify_attempt in range(3):
+                                verified = lib.verify_transaction_success(tx_hash)
+                                
+                                if verified is True:
+                                    print(f"✅ [VERIFIED] Transaction {tx_hash} verified successful on-chain (attempt {verify_attempt+1})")
+                                    return tx_hash
+                                elif verified is False:
+                                    print(f"❌ [VERIFIED FAIL] Transaction {tx_hash} confirmed as failed on-chain (attempt {verify_attempt+1})")
+                                    break  # Confirmed failure, don't retry
+                                else:
+                                    # Can't verify yet - wait and retry
+                                    if verify_attempt < 2:
+                                        wait_time = 3 * (verify_attempt + 1)  # 3s, 6s
+                                        print(f"⏳ Verification uncertain, waiting {wait_time}s before retry...")
+                                        time.sleep(wait_time)
+                            
+                            # If verification is still uncertain, check wallet balance as fallback
+                            if verified is None:
+                                print(f"🔍 [FALLBACK] Verification uncertain, checking wallet balance...")
+                                time.sleep(3)  # Wait a bit more
+                                new_balance = lib.get_token_balance(token_address)
+                                print(f"🔍 [FALLBACK] New token balance: {new_balance}")
+                                
+                                if new_balance is not None and original_balance is not None:
+                                    if new_balance < original_balance * 0.9:  # Balance decreased by at least 10%
+                                        print(f"✅ [BALANCE CHECK] Token balance decreased from {original_balance} to {new_balance} - sell likely succeeded")
+                                        return tx_hash
+                                    elif new_balance == 0 or new_balance < 0.000001:
+                                        print(f"✅ [BALANCE CHECK] Token balance is zero/dust - sell succeeded")
+                                        return tx_hash
+                                    else:
+                                        print(f"⚠️ [BALANCE CHECK] Token balance unchanged ({original_balance} -> {new_balance}) - sell may have failed")
+                                else:
+                                    print(f"⚠️ [BALANCE CHECK] Could not compare balances (original={original_balance}, new={new_balance})")
+                            
+                            # If we still can't verify but have a tx_hash, assume success
+                            # (transaction was submitted, so it's better to assume success than fail)
+                            if verified is None:
+                                print(f"⚠️ [UNCERTAIN] Cannot verify transaction {tx_hash} but it was submitted; assuming success")
                                 return tx_hash
                             elif verified is False:
                                 print(f"❌ [VERIFIED FAIL] Transaction {tx_hash} confirmed as failed on-chain")
                                 # Continue to retry logic below
-                            else:
-                                # Can't verify - assume success if we have tx_hash (transaction was submitted)
-                                print(f"⚠️ [UNCERTAIN] Cannot verify transaction {tx_hash} but it was submitted; assuming success")
-                                return tx_hash
+                                
                         except Exception as verify_error:
                             print(f"⚠️ [VERIFY ERROR] Error verifying transaction {tx_hash}: {verify_error}")
+                            import traceback
+                            print(f"🔍 [DEBUG] Verification error traceback:\n{traceback.format_exc()}")
                             # If we have a tx_hash, assume success (transaction was submitted)
                             print(f"⚠️ Assuming success for transaction {tx_hash} (was submitted)")
                             return tx_hash
@@ -1133,9 +1176,16 @@ def monitor_all_positions():
         else:
             print("⏳ Holding position...")
 
-    # Save only failure counts (do not modify open_positions.json from monitor)
+    # Save failure counts
     delisted_tokens["failure_counts"] = failure_counts
     save_delisted_tokens(delisted_tokens)
+    
+    # Save updated positions (with closed positions removed)
+    # This ensures positions are properly removed when sells succeed
+    if closed_positions:
+        print(f"💾 Saving positions after closing {len(closed_positions)} position(s)...")
+        save_positions(updated_positions)
+        print(f"✅ Positions saved. Removed: {len(closed_positions)} position(s)")
 
     if closed_positions and not updated_positions:
         closed_list = "\n".join([f"• {addr}" for addr in closed_positions])
