@@ -93,8 +93,32 @@ def get_tier_based_risk_limits(wallet_balance_usd: float = None):
         tier_name = tier_info['tier_name']
         
         # Calculate tier-based limits
-        max_total_exposure = tier_config.get('max_total_exposure_usd', 100.0)
-        max_position_size = tier_config.get('max_position_size_usd', 10.0)
+        # Support percentage-based exposure for dynamic scaling
+        max_total_exposure_percent = tier_config.get('max_total_exposure_percent', None)
+        if max_total_exposure_percent is not None:
+            # Calculate exposure as percentage of wallet balance
+            max_total_exposure = wallet_balance_usd * max_total_exposure_percent
+        else:
+            # Fall back to fixed dollar amount
+            max_total_exposure = tier_config.get('max_total_exposure_usd', 100.0)
+        
+        # Support percentage-based position sizing for dynamic scaling
+        max_position_size_percent = tier_config.get('max_position_size_percent', None)
+        if max_position_size_percent is not None:
+            # Calculate max position size as percentage of wallet balance
+            max_position_size = wallet_balance_usd * max_position_size_percent
+        else:
+            # Fall back to fixed dollar amount
+            max_position_size = tier_config.get('max_position_size_usd', 10.0)
+        
+        # Support percentage-based base position size for dynamic scaling
+        base_position_size_percent = tier_config.get('base_position_size_percent', None)
+        if base_position_size_percent is not None:
+            # Calculate base position size as percentage of wallet balance
+            base_position_size = wallet_balance_usd * base_position_size_percent
+        else:
+            # Fall back to fixed dollar amount
+            base_position_size = tier_config.get('base_position_size_usd', 5.0)
         
         # Scale daily loss limit based on wallet size (5% of wallet)
         daily_loss_limit = wallet_balance_usd * 0.05
@@ -115,6 +139,7 @@ def get_tier_based_risk_limits(wallet_balance_usd: float = None):
             'MAX_LOSING_STREAK': 3,  # Keep consistent
             'CIRCUIT_BREAK_MIN': 60,  # Keep consistent
             'PER_TRADE_MAX_USD': max_position_size,
+            'BASE_POSITION_SIZE_USD': base_position_size,
             'MAX_TOTAL_EXPOSURE_USD': max_total_exposure,
             'MIN_WALLET_BALANCE_BUFFER': 0.05,  # 5% buffer
             'TIER_NAME': tier_name,

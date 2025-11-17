@@ -189,11 +189,11 @@ wallet_tiers: {
   "tier_1": {
     "min_balance": 100,
     "max_balance": 499,
-    "base_position_size_usd": 15.0,
-    "max_position_size_usd": 25.0,
-    "max_total_exposure_usd": 200.0,
+    "base_position_size_percent": 0.05,
+    "max_position_size_percent": 0.08,
+    "max_total_exposure_percent": 0.8,
     "max_wallet_usage_percent": 0.4,
-    "description": "Learning Phase - Higher leverage for rapid compounding"
+    "description": "Learning Phase - Higher leverage for rapid compounding (position sizes and exposure scale dynamically with wallet balance)"
   },
   "tier_2": {
     "min_balance": 500,
@@ -1457,7 +1457,7 @@ position_validation_max_retries: 3  # Maximum retries for position validation
 max_position_size_usd: 25.0  # $25 maximum position size (realistic scaling)
 min_position_size_usd: 2.0  # $2 minimum position size (more flexible)
 max_wallet_usage_percent: 0.25  # 25% maximum wallet usage per trade (increased for $100 start)
-max_total_exposure_usd: 100.0  # $100 maximum total exposure (realistic scaling)
+max_total_exposure_usd: 240.0  # Fallback max exposure (tier system overrides this dynamically based on wallet balance)
 
 # Risk-based position sizing
 high_risk_position_multiplier: 0.5  # 50% reduction for high risk
