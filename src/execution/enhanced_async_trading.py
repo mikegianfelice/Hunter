@@ -348,6 +348,63 @@ class EnhancedAsyncTradingEngine:
             log_error("trading.fetch_error", f"Error fetching real tokens: {e}")
             return []
     
+    def _categorize_error(self, error_msg: str, token: Dict) -> Tuple[str, str]:
+        """
+        Categorize error type for proper handling
+        
+        Returns:
+            (error_type, token_address) tuple
+            error_type: "gate", "token", or "systemic"
+        """
+        error_lower = error_msg.lower()
+        token_address = token.get("address", "").lower()
+        
+        # Gate failures - protective mechanisms that prevent trading
+        gate_indicators = [
+            "time window blocked",
+            "window_score",
+            "risk gate blocked",
+            "circuit breaker active",
+            "risk assessment failed"
+        ]
+        if any(indicator in error_lower for indicator in gate_indicators):
+            return ("gate", token_address)
+        
+        # Token-specific failures - issues with this specific token
+        token_indicators = [
+            "jupiter execution failed",
+            "jupiter execution exception",
+            "not tradeable",
+            "not tradable",
+            "token not found",
+            "insufficient liquidity",
+            "pool not found",
+            "invalid token",
+            "token delisted",
+            "raydium execution failed",
+            "uniswap execution failed"
+        ]
+        if any(indicator in error_lower for indicator in token_indicators):
+            return ("token", token_address)
+        
+        # Systemic failures - network, wallet, RPC issues
+        systemic_indicators = [
+            "network error",
+            "connection error",
+            "timeout",
+            "rpc error",
+            "wallet error",
+            "insufficient funds",
+            "gas estimation failed",
+            "transaction failed",
+            "unknown error"
+        ]
+        if any(indicator in error_lower for indicator in systemic_indicators):
+            return ("systemic", token_address)
+        
+        # Default to systemic for unknown errors (fail safe)
+        return ("systemic", token_address)
+    
     async def _execute_real_trade(self, token: Dict, position_size: float, chain: str) -> Dict[str, Any]:
         """
         Execute real trade with time window scheduler gate
@@ -381,7 +438,8 @@ class EnhancedAsyncTradingEngine:
                 return {
                     "success": False,
                     "error": f"Time window blocked: {window_decision.reason}",
-                    "window_score": window_decision.score
+                    "window_score": window_decision.score,
+                    "error_type": "gate"  # Mark as gate failure
                 }
         except Exception as e:
             log_error("trading.scheduler_error", error=str(e))
@@ -746,6 +804,7 @@ class EnhancedAsyncTradingEngine:
                             "success": False,
                             "symbol": symbol,
                             "error": f"Risk gate blocked: {reason}",
+                            "error_type": "gate",  # Mark as gate failure
                             "chain": chain
                         }
                 except Exception as e:
@@ -758,6 +817,7 @@ class EnhancedAsyncTradingEngine:
                     return {
                         "success": False,
                         "error": f"Risk assessment failed: {risk_result.reason}",
+                        "error_type": "gate",  # Mark as gate failure
                         "symbol": symbol
                     }
                 
@@ -766,6 +826,18 @@ class EnhancedAsyncTradingEngine:
                 
                 # Log the trade result for debugging
                 log_info("trading.debug", f"Trade result for {symbol}: {trade_result}")
+                
+                # Handle gate failures early - don't count them as trade attempts
+                if not trade_result.get("success", False) and trade_result.get("error_type") == "gate":
+                    error_msg = trade_result.get("error", "Gate failure")
+                    log_info("trading.gate_blocked", f"🚫 Gate blocked trade for {symbol}: {error_msg} (not counting as failure)")
+                    return {
+                        "success": False,
+                        "symbol": symbol,
+                        "error": error_msg,
+                        "error_type": "gate",
+                        "chain": chain
+                    }
                 
                 if trade_result.get("success", False):
                     # Successful real trade
@@ -866,10 +938,12 @@ class EnhancedAsyncTradingEngine:
                 else:
                     # Failed real trade
                     error_msg = trade_result.get("error", "Unknown error")
+                    error_type = trade_result.get("error_type") or self._categorize_error(error_msg, token)[0]
+                    token_address = token.get("address", "")
                     execution_time = (time.time() - start_time) * 1000
                     
                     log_trade("buy", symbol, position_size, False, 0.0, execution_time, error_msg)
-                    log_error("trading.trade_failed", f"❌ Real trade failed: {symbol} - {error_msg}")
+                    log_error("trading.trade_failed", f"❌ Real trade failed: {symbol} - {error_msg} (type: {error_type})")
                     
                     # Record metrics
                     record_trade_metrics(
@@ -883,19 +957,23 @@ class EnhancedAsyncTradingEngine:
                         risk_score=risk_result.overall_risk_score,
                         error_message=error_msg
                     )
-                    update_trade_result(False, 0)
+                    # Pass error type and token address for proper handling
+                    update_trade_result(False, 0, error_type=error_type, token_address=token_address)
                     
                     return {
                         "success": False,
                         "symbol": symbol,
                         "error": error_msg,
+                        "error_type": error_type,
                         "execution_time": execution_time,
                         "chain": chain
                     }
                     
             except Exception as e:
                 execution_time = (time.time() - start_time) * 1000
-                log_error("trading.execution_error", f"Trade execution error for {symbol}: {e}")
+                error_msg = str(e)
+                error_type, token_address = self._categorize_error(error_msg, token)
+                log_error("trading.execution_error", f"Trade execution error for {symbol}: {e} (type: {error_type})")
                 
                 # Record error metrics
                 record_trade_metrics(
@@ -907,14 +985,16 @@ class EnhancedAsyncTradingEngine:
                     profit_loss_usd=0,
                     quality_score=0,
                     risk_score=1.0,
-                    error_message=str(e)
+                    error_message=error_msg
                 )
-                update_trade_result(False, 0)
+                # Pass error type and token address for proper handling
+                update_trade_result(False, 0, error_type=error_type, token_address=token_address)
                 
                 return {
                     "success": False,
                     "symbol": symbol,
-                    "error": str(e),
+                    "error": error_msg,
+                    "error_type": error_type,
                     "execution_time": execution_time,
                     "chain": chain
                 }

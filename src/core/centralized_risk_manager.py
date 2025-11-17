@@ -660,16 +660,48 @@ class CentralizedRiskManager:
         
         return recommendations
     
-    def update_trade_result(self, success: bool, profit_loss: float):
-        """Update risk state with trade result"""
+    def update_trade_result(self, success: bool, profit_loss: float, error_type: Optional[str] = None, token_address: Optional[str] = None):
+        """
+        Update risk state with trade result
+        
+        Args:
+            success: Whether the trade was successful
+            profit_loss: Profit/loss from the trade
+            error_type: Type of error if failed. Categories:
+                - "gate": Protective gates (time window, risk checks) - don't count as failures
+                - "token": Token-specific issues (should blacklist token, not count toward circuit breaker)
+                - "systemic": Systemic issues (network, wallet, RPC) - count toward circuit breaker
+                - None: Unknown/legacy - count as systemic for safety
+            token_address: Token address for blacklisting token-specific failures
+        """
         self._reset_daily_metrics()
         
+        # Gate failures (time window, risk checks) don't count as trade attempts
+        if not success and error_type == "gate":
+            logger.info(f"Gate failure ignored (not counting as trade failure): {error_type}")
+            return  # Don't update any metrics for gate failures
+        
+        # Only count actual trade attempts
         self.risk_state['trades_today'] += 1
         
         if success:
             self.risk_state['successful_trades_today'] += 1
             self.risk_state['losing_streak'] = 0
         else:
+            # Token-specific failures: blacklist the token but don't count toward circuit breaker
+            if error_type == "token" and token_address:
+                try:
+                    from src.storage.blacklist import load_blacklist, save_blacklist
+                    blacklist = load_blacklist()
+                    blacklist.add(token_address.lower())
+                    save_blacklist(blacklist)
+                    logger.warning(f"Token-specific failure: blacklisted {token_address[:8]}... (not counting toward circuit breaker)")
+                except Exception as e:
+                    logger.error(f"Failed to blacklist token {token_address}: {e}")
+                # Don't increment losing streak for token-specific failures
+                return
+            
+            # Systemic failures: count toward circuit breaker
             self.risk_state['losing_streak'] += 1
         
         if profit_loss < 0:
@@ -679,7 +711,7 @@ class CentralizedRiskManager:
                 -self.risk_state['daily_loss']
             )
         
-        # Check circuit breaker conditions
+        # Check circuit breaker conditions (only for systemic failures)
         if (self.risk_state['losing_streak'] >= self.risk_thresholds['losing_streak_limit'] or
             self.risk_state['daily_loss'] > self.config.trading.daily_loss_limit_usd):
             self.risk_state['circuit_breaker_active'] = True
@@ -735,9 +767,9 @@ async def assess_trade_risk(token: Dict[str, Any], position_size: float,
     """Convenience function for trade risk assessment"""
     return await centralized_risk_manager.assess_trade_risk(token, position_size, market_data)
 
-def update_trade_result(success: bool, profit_loss: float):
+def update_trade_result(success: bool, profit_loss: float, error_type: Optional[str] = None, token_address: Optional[str] = None):
     """Convenience function to update trade result"""
-    centralized_risk_manager.update_trade_result(success, profit_loss)
+    centralized_risk_manager.update_trade_result(success, profit_loss, error_type, token_address)
 
 def is_circuit_breaker_active() -> bool:
     """Convenience function to check circuit breaker status"""
