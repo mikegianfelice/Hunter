@@ -27,7 +27,7 @@ from src.utils.position_sync import (
     resolve_token_address,
     is_native_gas_token,
 )
-from src.storage.positions import load_positions as load_positions_store
+from src.storage.positions import load_positions as load_positions_store, replace_positions
 from src.storage.performance import load_performance_data, replace_performance_data
 from src.storage.delist import load_delisted_state, save_delisted_state
 
@@ -157,6 +157,10 @@ def load_positions(validate_balances: bool = False):
     return validated_positions
 
 def save_positions(positions):
+    """
+    Save positions to both database and JSON file.
+    This ensures positions are properly removed from the database when sells complete.
+    """
     # Re-key entries to the canonical mint-only format before persisting.
     canonical_positions = {}
     for key, value in positions.items():
@@ -168,9 +172,19 @@ def save_positions(positions):
             canonical_positions[canonical_key] = value
         else:
             canonical_positions[key] = value
-    POSITIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(POSITIONS_FILE, "w") as f:
-        json.dump(canonical_positions, f, indent=2)
+    
+    # CRITICAL: Use replace_positions to update both database and JSON file
+    # This ensures positions are properly removed from the database when sells complete
+    try:
+        replace_positions(canonical_positions)
+        print(f"✅ Positions saved to database and JSON ({len(canonical_positions)} position(s))")
+    except Exception as e:
+        print(f"⚠️ Error saving positions to database: {e}")
+        # Fallback to JSON-only save if database update fails
+        POSITIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(POSITIONS_FILE, "w") as f:
+            json.dump(canonical_positions, f, indent=2)
+        print(f"⚠️ Positions saved to JSON only (database update failed)")
 
 def load_delisted_tokens():
     return load_delisted_state()

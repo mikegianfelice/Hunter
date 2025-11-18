@@ -1,4 +1,5 @@
 # risk_manager.py
+import os
 import time
 from datetime import datetime, timezone
 from web3 import Web3
@@ -472,15 +473,39 @@ def _open_positions_count():
 
 def _is_token_already_held(token_address: str) -> bool:
     """Check if a specific token is already held in open positions"""
+    if not token_address:
+        return False
+    
     positions = load_positions_store()
-    token_address_lower = token_address.lower()
+    token_address_lower = token_address.lower().strip()
+    
+    # Debug logging (can be enabled via environment variable for troubleshooting)
+    debug_enabled = os.getenv("DEBUG_TOKEN_HELD_CHECK", "false").lower() == "true"
+    
+    if debug_enabled:
+        print(f"🔍 Checking if token {token_address_lower} is already held. Current positions: {list(positions.keys())}")
+    
     for position_key, payload in positions.items():
         try:
-            resolved = resolve_token_address(position_key, payload).lower()
-        except Exception:
-            resolved = position_key.lower()
+            resolved = resolve_token_address(position_key, payload).lower().strip()
+        except Exception as e:
+            if debug_enabled:
+                print(f"⚠️ Error resolving address for position_key {position_key}: {e}")
+            resolved = position_key.lower().strip()
+        
+        if debug_enabled:
+            print(f"  - Position key: {position_key}, Resolved address: {resolved}, Match: {resolved == token_address_lower}")
+        
         if resolved == token_address_lower:
+            if debug_enabled:
+                print(f"✅ Token {token_address_lower} found in position {position_key}")
+            else:
+                # Always log when a match is found (even without debug mode) to help diagnose false positives
+                print(f"⚠️ Token {token_address_lower} marked as already held (position key: {position_key}, resolved: {resolved})")
             return True
+    
+    if debug_enabled:
+        print(f"❌ Token {token_address_lower} not found in any positions")
     return False
 
 
