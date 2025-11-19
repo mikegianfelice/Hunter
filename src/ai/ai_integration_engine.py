@@ -1059,16 +1059,17 @@ class AIIntegrationEngine:
                 # Higher ratio = more trading activity = better prediction
                 prediction_score = min(0.9, max(0.1, 0.5 + (vol_liq_ratio * 0.3)))
             
-            # Risk: Calculate from actual metrics
+            # Risk: Calculate from actual metrics (aligned with config thresholds)
             risk_raw = risk.get("risk_score", 0.5)
             if risk_raw == 0.5 and market_data:  # Likely defaulted
-                # Calculate risk from volume and liquidity
-                if market_data.volume_24h < 10000 or market_data.liquidity < 50000:
-                    risk_raw = 0.7  # High risk
-                elif market_data.volume_24h > 500000 and market_data.liquidity > 500000:
-                    risk_raw = 0.2  # Low risk
+                # Calculate risk from volume and liquidity (aligned with config.yaml trading thresholds)
+                # Config: min_volume_24h_for_buy: 100000, min_liquidity_usd_for_buy: 100000
+                if market_data.volume_24h < 100000 or market_data.liquidity < 100000:
+                    risk_raw = 0.7  # High risk - below trading thresholds
+                elif market_data.volume_24h > 2000000 and market_data.liquidity > 2000000:
+                    risk_raw = 0.2  # Low risk - exceptional quality
                 else:
-                    risk_raw = 0.5  # Medium risk
+                    risk_raw = 0.5  # Medium risk - meets trading thresholds
             risk_score = 1.0 - risk_raw  # Invert (lower risk = higher score)
             
             # Market: Use actual calculated scores, don't default
@@ -1134,20 +1135,22 @@ class AIIntegrationEngine:
                     # Poor components exist, reduce score
                     overall_score = overall_score - (overall_score - min_component) * 0.3
             
-            # Fix 5: Add minimum quality threshold enforcement
+            # Fix 5: Add minimum quality threshold enforcement (aligned with config.yaml)
             if market_data:
-                # Check if token meets minimum quality standards
-                min_volume = 10000  # $10k minimum
-                min_liquidity = 50000  # $50k minimum
+                # Align with config.yaml trading thresholds
+                # Config: min_volume_24h_for_buy: 100000, min_liquidity_usd_for_buy: 100000
+                min_volume = 100000  # $100k - matches min_volume_24h_for_buy
+                min_liquidity = 100000  # $100k - matches min_liquidity_usd_for_buy
                 
                 if market_data.volume_24h < min_volume or market_data.liquidity < min_liquidity:
-                    # Penalize score for low quality tokens
+                    # Penalize score for tokens below trading thresholds
                     quality_penalty = 0.2
                     overall_score = overall_score - quality_penalty
                     overall_score = max(0.0, overall_score)  # Don't go below 0
                 
-                # Bonus for high quality tokens
-                if market_data.volume_24h > 500000 and market_data.liquidity > 500000:
+                # Bonus for exceptional quality tokens (top tier - above typical trades)
+                # Based on actual trade data: trades are $2.6M-$9.9M, so $2M+ is top tier
+                if market_data.volume_24h > 2000000 and market_data.liquidity > 2000000:  # $2M+ both
                     quality_bonus = 0.1
                     overall_score = overall_score + quality_bonus
                     overall_score = min(1.0, overall_score)  # Don't go above 1
