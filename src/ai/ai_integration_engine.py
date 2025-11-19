@@ -9,6 +9,7 @@ import json
 import time
 import numpy as np
 import pandas as pd
+import math
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Tuple, Union
 from dataclasses import dataclass, asdict
@@ -497,11 +498,12 @@ class AIIntegrationEngine:
             portfolio_analysis = results[9] if not isinstance(results[9], Exception) else {}
             execution_optimization = results[10] if not isinstance(results[10], Exception) else {}
             
-            # Calculate overall score with all modules
+            # Calculate overall score with all modules (pass market_data for Fix 1)
             overall_score = self._calculate_overall_score_comprehensive(
                 sentiment_analysis, price_prediction, risk_assessment, 
                 market_analysis, technical_analysis, market_context,
-                predictive_analytics, risk_controls, portfolio_analysis
+                predictive_analytics, risk_controls, portfolio_analysis,
+                market_data=market_data, token_data=token_data
             )
             
             # Generate recommendations with all modules
@@ -697,10 +699,25 @@ class AIIntegrationEngine:
                 except Exception as e:
                     log_error(f"Error in market condition guardian module: {e}")
             
+            # Use logarithmic scaling for better differentiation (Fix 4)
+            # Log scale: $10k = 0.3, $100k = 0.5, $1M = 0.8, $10M = 1.0
+            
+            # Liquidity score with logarithmic scaling
+            if market_data.liquidity > 0:
+                liquidity_score = min(1.0, 0.3 + (math.log10(max(market_data.liquidity, 10000) / 10000) * 0.2))
+            else:
+                liquidity_score = 0.1  # Very low, not 0.5 default
+            
+            # Volume score with logarithmic scaling
+            if market_data.volume_24h > 0:
+                volume_score = min(1.0, 0.3 + (math.log10(max(market_data.volume_24h, 10000) / 10000) * 0.2))
+            else:
+                volume_score = 0.1  # Very low, not 0.5 default
+            
             return {
                 "market_health": market_health,
-                "liquidity_score": min(1.0, market_data.liquidity / 1000000),
-                "volume_score": min(1.0, market_data.volume_24h / 1000000),
+                "liquidity_score": liquidity_score,
+                "volume_score": volume_score,
                 "market_trend": "bullish" if market_data.price_change_24h > 0 else "bearish"
             }
             
@@ -1013,8 +1030,8 @@ class AIIntegrationEngine:
             return {}
     
     def _calculate_overall_score(self, sentiment: Dict, prediction: Dict, risk: Dict, 
-                                market: Dict, technical: Dict) -> float:
-        """Calculate overall AI analysis score"""
+                                market: Dict, technical: Dict, market_data: Optional[MarketData] = None) -> float:
+        """Calculate overall AI analysis score with actual token metrics (Fix 1)"""
         try:
             # Weighted combination of all analysis components
             weights = {
@@ -1025,11 +1042,63 @@ class AIIntegrationEngine:
                 "technical": 0.15
             }
             
+            # Fix 1: Use actual token metrics instead of defaults
+            # Sentiment: Use actual sentiment or calculate from volume/price action
             sentiment_score = sentiment.get("score", 0.5)
+            if sentiment_score == 0.5 and market_data:  # Likely defaulted
+                # Calculate from price momentum
+                price_change = getattr(market_data, 'price_change_24h', 0)
+                sentiment_score = 0.5 + (price_change * 2)  # Scale price change to sentiment
+                sentiment_score = max(0.0, min(1.0, sentiment_score))
+            
+            # Prediction: Use actual prediction or calculate from volume/liquidity
             prediction_score = prediction.get("price_movement_probability", 0.5)
-            risk_score = 1.0 - risk.get("risk_score", 0.5)  # Invert risk (lower risk = higher score)
-            market_score = market.get("liquidity_score", 0.5) * 0.5 + market.get("volume_score", 0.5) * 0.5
+            if prediction_score == 0.5 and market_data:  # Likely defaulted
+                # Calculate from volume/liquidity ratio
+                vol_liq_ratio = market_data.volume_24h / max(market_data.liquidity, 1)
+                # Higher ratio = more trading activity = better prediction
+                prediction_score = min(0.9, max(0.1, 0.5 + (vol_liq_ratio * 0.3)))
+            
+            # Risk: Calculate from actual metrics
+            risk_raw = risk.get("risk_score", 0.5)
+            if risk_raw == 0.5 and market_data:  # Likely defaulted
+                # Calculate risk from volume and liquidity
+                if market_data.volume_24h < 10000 or market_data.liquidity < 50000:
+                    risk_raw = 0.7  # High risk
+                elif market_data.volume_24h > 500000 and market_data.liquidity > 500000:
+                    risk_raw = 0.2  # Low risk
+                else:
+                    risk_raw = 0.5  # Medium risk
+            risk_score = 1.0 - risk_raw  # Invert (lower risk = higher score)
+            
+            # Market: Use actual calculated scores, don't default
+            liquidity_score = market.get("liquidity_score")
+            volume_score = market.get("volume_score")
+            if (liquidity_score is None or liquidity_score == 0.5) and market_data:
+                # Calculate from actual liquidity
+                liquidity_score = min(1.0, market_data.liquidity / 1000000)  # Normalize to $1M
+            if (volume_score is None or volume_score == 0.5) and market_data:
+                # Calculate from actual volume
+                volume_score = min(1.0, market_data.volume_24h / 1000000)  # Normalize to $1M
+            # Fallback to defaults if market_data not available
+            if liquidity_score is None:
+                liquidity_score = 0.5
+            if volume_score is None:
+                volume_score = 0.5
+            market_score = (liquidity_score * 0.5) + (volume_score * 0.5)
+            
+            # Technical: Use actual technical or calculate from price action
             technical_score = technical.get("technical_score", 0.5)
+            if technical_score == 0.5 and market_data:  # Likely defaulted
+                # Calculate from price momentum and volatility
+                price_change = abs(getattr(market_data, 'price_change_24h', 0))
+                # Moderate positive momentum = good technical
+                if 0.02 < price_change < 0.15:  # 2-15% movement
+                    technical_score = 0.6
+                elif price_change > 0.15:  # Too volatile
+                    technical_score = 0.4
+                else:
+                    technical_score = 0.5
             
             overall_score = (
                 sentiment_score * weights["sentiment"] +
@@ -1038,6 +1107,50 @@ class AIIntegrationEngine:
                 market_score * weights["market"] +
                 technical_score * weights["technical"]
             )
+            
+            # Fix 2: Expand score range with dynamic scaling
+            component_scores = [
+                sentiment_score,
+                prediction_score,
+                risk_score,
+                market_score,
+                technical_score
+            ]
+            
+            # Calculate variance to determine if scores are clustered
+            score_variance = sum((s - overall_score) ** 2 for s in component_scores) / len(component_scores)
+            
+            # If scores are too clustered (low variance), apply expansion
+            if score_variance < 0.01:  # Scores are very similar
+                # Expand based on best component
+                max_component = max(component_scores)
+                min_component = min(component_scores)
+                
+                # Shift score toward the best component
+                if max_component > 0.6:
+                    # Good components exist, boost score
+                    overall_score = overall_score + (max_component - overall_score) * 0.3
+                elif min_component < 0.4:
+                    # Poor components exist, reduce score
+                    overall_score = overall_score - (overall_score - min_component) * 0.3
+            
+            # Fix 5: Add minimum quality threshold enforcement
+            if market_data:
+                # Check if token meets minimum quality standards
+                min_volume = 10000  # $10k minimum
+                min_liquidity = 50000  # $50k minimum
+                
+                if market_data.volume_24h < min_volume or market_data.liquidity < min_liquidity:
+                    # Penalize score for low quality tokens
+                    quality_penalty = 0.2
+                    overall_score = overall_score - quality_penalty
+                    overall_score = max(0.0, overall_score)  # Don't go below 0
+                
+                # Bonus for high quality tokens
+                if market_data.volume_24h > 500000 and market_data.liquidity > 500000:
+                    quality_bonus = 0.1
+                    overall_score = overall_score + quality_bonus
+                    overall_score = min(1.0, overall_score)  # Don't go above 1
             
             return max(0.0, min(1.0, overall_score))
             
@@ -1063,6 +1176,53 @@ class AIIntegrationEngine:
         except Exception as e:
             log_error(f"Error calculating confidence: {e}")
             return 0.5
+    
+    def _apply_performance_calibration(self, overall_score: float, token_data: Dict) -> float:
+        """
+        Apply performance-based calibration to quality score (Fix 3).
+        Adjusts score based on historical performance of similar tokens.
+        """
+        try:
+            # Load historical performance data
+            from src.storage.performance import load_performance_data
+            perf_data = load_performance_data()
+            
+            if not perf_data or not perf_data.get('trades'):
+                return overall_score  # No historical data, return as-is
+            
+            # Find similar tokens (similar volume/liquidity)
+            volume = float(token_data.get('volume24h', 0))
+            liquidity = float(token_data.get('liquidity', 0))
+            
+            similar_trades = []
+            for trade in perf_data['trades']:
+                trade_vol = float(trade.get('volume_24h', 0))
+                trade_liq = float(trade.get('liquidity', 0))
+                
+                # Similar if within 50% of volume/liquidity
+                if volume > 0 and liquidity > 0:
+                    vol_ratio = trade_vol / volume
+                    liq_ratio = trade_liq / liquidity
+                    if (0.5 <= vol_ratio <= 2.0 and 0.5 <= liq_ratio <= 2.0):
+                        similar_trades.append(trade)
+            
+            if len(similar_trades) >= 3:  # Need at least 3 similar trades
+                # Calculate average PnL for similar trades
+                pnls = [t.get('pnl_percent', 0) for t in similar_trades if t.get('pnl_percent') is not None]
+                if pnls:
+                    avg_pnl = sum(pnls) / len(pnls)
+                    
+                    # Adjust score based on historical performance
+                    # Positive PnL = boost score, negative PnL = reduce score
+                    pnl_adjustment = (avg_pnl / 100) * 0.2  # Scale PnL to score adjustment
+                    overall_score = overall_score + pnl_adjustment
+                    overall_score = max(0.0, min(1.0, overall_score))
+            
+            return overall_score
+            
+        except Exception as e:
+            log_error(f"Error in performance calibration: {e}")
+            return overall_score
     
     def _generate_recommendations(self, overall_score: float, sentiment: Dict, 
                                  prediction: Dict, risk: Dict, market: Dict, 
@@ -1135,11 +1295,12 @@ class AIIntegrationEngine:
     def _calculate_overall_score_comprehensive(self, sentiment: Dict, prediction: Dict, risk: Dict,
                                              market: Dict, technical: Dict, market_context: Dict,
                                              predictive_analytics: Dict, risk_controls: Dict,
-                                             portfolio_analysis: Dict) -> float:
+                                             portfolio_analysis: Dict, market_data: Optional[MarketData] = None,
+                                             token_data: Optional[Dict] = None) -> float:
         """Calculate overall AI analysis score with all modules"""
         try:
-            # Start with base score from core analysis
-            base_score = self._calculate_overall_score(sentiment, prediction, risk, market, technical)
+            # Start with base score from core analysis (pass market_data for Fix 1)
+            base_score = self._calculate_overall_score(sentiment, prediction, risk, market, technical, market_data)
             
             # Extract scores from new modules
             context_score = 0.5
@@ -1221,11 +1382,17 @@ class AIIntegrationEngine:
                 portfolio_score * weights["portfolio"]
             )
             
+            overall_score = max(0.0, min(1.0, overall_score))
+            
+            # Fix 3: Apply performance-based calibration
+            if token_data:
+                overall_score = self._apply_performance_calibration(overall_score, token_data)
+            
             return max(0.0, min(1.0, overall_score))
             
         except Exception as e:
             log_error(f"Error calculating comprehensive overall score: {e}")
-            return self._calculate_overall_score(sentiment, prediction, risk, market, technical)
+            return self._calculate_overall_score(sentiment, prediction, risk, market, technical, market_data)
     
     def _generate_recommendations_comprehensive(self, overall_score: float, sentiment: Dict,
                                               prediction: Dict, risk: Dict, market: Dict,
