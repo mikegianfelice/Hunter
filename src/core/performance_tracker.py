@@ -91,7 +91,7 @@ class PerformanceTracker:
         self.save_data()
         
         # After saving to performance_data, ensure it's synced to open_positions.json
-        # This is critical to ensure the monitor can track the position
+        # ONLY if the trade actually succeeded (tokens were received)
         try:
             from src.utils.position_sync import sync_position_from_performance_data
             address = trade.get('address')
@@ -99,8 +99,23 @@ class PerformanceTracker:
             chain = trade.get('chain', 'ethereum').lower()
             entry_price = float(trade.get('entry_price', 0))
             
+            # Verify trade actually succeeded before syncing
+            entry_amount = trade.get('entry_amount_usd_actual', 0) or 0
+            tokens_received = trade.get('entry_tokens_received')
+            
             if address and entry_price > 0:
-                sync_position_from_performance_data(address, symbol, chain, entry_price, position_size)
+                # Only sync if we have verified tokens received
+                if entry_amount > 0 or (tokens_received is not None and tokens_received > 0):
+                    sync_position_from_performance_data(address, symbol, chain, entry_price, position_size)
+                else:
+                    # Trade failed - mark as closed immediately
+                    trade['status'] = 'manual_close'
+                    trade['exit_time'] = trade.get('entry_time')
+                    trade['exit_price'] = trade.get('entry_price', 0)
+                    trade['pnl_usd'] = 0.0
+                    trade['pnl_percent'] = 0.0
+                    self.save_data()
+                    print(f"⚠️ Trade {symbol} failed - no tokens received, marked as closed")
         except Exception as e:
             # Don't fail the whole operation if sync fails, but log it
             print(f"⚠️ Failed to sync position after logging: {e}")

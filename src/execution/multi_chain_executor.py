@@ -463,6 +463,8 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
                         tx_hash = None
             
             # Verify fill using AI Fill Verifier (for Solana trades)
+            fill_result = None
+            tokens_received = None
             if ok and tx_hash and chain_id == "solana":
                 try:
                     from src.ai.ai_fill_verifier import get_fill_verifier
@@ -514,22 +516,52 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
                     )
                     
                     if fill_result.status == "accepted" or fill_result.status == "rerouted":
-                        # Fill verified - proceed
-                        successful_txs.append(fill_result.tx_hash or tx_hash)
-                        total_successful_amount += fill_result.amount_usd_actual or slice_amount
-                        log_event("trade.slice.success", index=i+1, tx_hash=fill_result.tx_hash or tx_hash, fill_verified=True)
+                        # ENHANCED: Ensure we have actual token receipt confirmation
+                        if fill_result.tokens_received is None or fill_result.tokens_received <= 0:
+                            # Try to verify balance one more time
+                            try:
+                                time.sleep(2)  # Wait for transaction to settle
+                                balance_after = executor.get_token_raw_balance(token_address)
+                                if balance_after is not None:
+                                    balance_before = executor.get_token_raw_balance(token_address)  # This should be cached
+                                    if balance_after > (balance_before or 0):
+                                        fill_result.tokens_received = balance_after - (balance_before or 0)
+                                        # Recalculate USD amount
+                                        price = executor.get_token_price_usd(token_address)
+                                        if price and price > 0:
+                                            fill_result.amount_usd_actual = fill_result.tokens_received * price
+                            except Exception as e:
+                                log_event("trade.balance_verification_error", level="WARNING", error=str(e))
+                        
+                        # Only proceed if we have confirmed tokens
+                        if fill_result.tokens_received and fill_result.tokens_received > 0:
+                            successful_txs.append(fill_result.tx_hash or tx_hash)
+                            total_successful_amount += fill_result.amount_usd_actual or slice_amount
+                            log_event("trade.slice.success", index=i+1, tx_hash=fill_result.tx_hash or tx_hash, fill_verified=True, tokens_received=fill_result.tokens_received)
+                        else:
+                            # Fill verification failed - no tokens received
+                            log_event("trade.slice.no_tokens_received", level="WARNING", index=i+1, reason="No tokens received despite tx hash")
+                            ok = False
+                            tx_hash = None
+                            fill_result = None
                     else:
                         # Fill verification failed - abort this slice
                         log_event("trade.slice.fill_verification_failed", level="WARNING", index=i+1, reason=fill_result.error_message)
                         ok = False
                         tx_hash = None
+                        fill_result = None
                 except Exception as e:
                     log_event("trade.fill_verifier_error", level="WARNING", error=str(e))
-                    # On error, proceed with original result
+                    # On error, proceed with original result only if we have tokens_received
                     if ok and tx_hash:
-                        successful_txs.append(tx_hash)
-                        total_successful_amount += slice_amount
-                        log_event("trade.slice.success", index=i+1, tx_hash=tx_hash)
+                        if tokens_received and tokens_received > 0:
+                            successful_txs.append(tx_hash)
+                            total_successful_amount += slice_amount
+                            log_event("trade.slice.success", index=i+1, tx_hash=tx_hash)
+                        else:
+                            log_event("trade.slice.no_verification", level="WARNING", index=i+1, reason="Cannot verify tokens received")
+                            ok = False
+                            tx_hash = None
             
             # Track successful slices (for non-Solana or if fill verifier not used)
             elif ok and tx_hash:
@@ -592,8 +624,67 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
                 )
 
             # Log position for monitoring (use canonical key schema)
+            # ONLY log if we have verified that tokens were actually received
             try:
-                upsert_position(token_for_logging, trade_id=trade_id)
+                # Check if we have verification data indicating successful trade
+                should_log_position = False
+                verification_reason = None
+                
+                # Option 1: Check performance tracker data for actual tokens received
+                if trade_id:
+                    try:
+                        from src.core.performance_tracker import performance_tracker
+                        # Find the trade we just logged
+                        for trade in performance_tracker.trades:
+                            if trade.get('id') == trade_id:
+                                entry_amount = trade.get('entry_amount_usd_actual', 0) or 0
+                                tokens_received = trade.get('entry_tokens_received')
+                                # Only log if we have actual tokens or confirmed USD amount
+                                if entry_amount > 0 or (tokens_received is not None and tokens_received > 0):
+                                    should_log_position = True
+                                    verification_reason = f"performance_tracker: entry_amount={entry_amount}, tokens={tokens_received}"
+                                break
+                    except Exception as e:
+                        log_event("trading.position_verification_error", level="WARNING", error=str(e))
+                
+                # Option 2: Check if we have tokens_received from balance check (for non-Solana or fallback)
+                if not should_log_position and total_successful_amount > 0:
+                    # If we have successful amount, assume trade succeeded (for non-Solana chains)
+                    # This is a fallback for chains without fill verification
+                    if chain_id != "solana":
+                        should_log_position = True
+                        verification_reason = f"successful_amount: {total_successful_amount}"
+                    else:
+                        # For Solana, we need more verification
+                        log_event("trading.position_verification_needed", level="WARNING", symbol=symbol, reason="Solana trade needs token verification")
+                
+                if should_log_position:
+                    upsert_position(token_for_logging, trade_id=trade_id)
+                    log_event("trading.position_logged", symbol=symbol, reason=verification_reason)
+                else:
+                    log_event(
+                        "trading.position_not_logged",
+                        level="WARNING",
+                        symbol=symbol,
+                        reason="No verified tokens received - trade may have failed"
+                    )
+                    # Mark trade as failed in performance tracker if we can
+                    if trade_id:
+                        try:
+                            from src.core.performance_tracker import performance_tracker
+                            for trade in performance_tracker.trades:
+                                if trade.get('id') == trade_id:
+                                    if (trade.get('entry_amount_usd_actual', 0) or 0) == 0:
+                                        trade['status'] = 'manual_close'
+                                        trade['exit_time'] = trade.get('entry_time')
+                                        trade['exit_price'] = trade.get('entry_price', 0)
+                                        trade['pnl_usd'] = 0.0
+                                        trade['pnl_percent'] = 0.0
+                                        performance_tracker.save_data()
+                                        log_event("trading.trade_marked_failed", trade_id=trade_id)
+                                    break
+                        except Exception as e:
+                            log_event("trading.mark_failed_error", level="WARNING", error=str(e))
             except Exception as e:
                 log_event(
                     "trading.position_log_error",
