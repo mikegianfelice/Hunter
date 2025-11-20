@@ -36,7 +36,11 @@ class JupiterCustomLib:
             if self.private_key:
                 secret_key_bytes = base58.b58decode(self.private_key)
                 self.keypair = Keypair.from_bytes(secret_key_bytes)
-                print(f"✅ Custom Jupiter lib initialized with wallet: {self.keypair.pubkey()}...{str(self.keypair.pubkey())[-8:]}")
+                wallet_pubkey = str(self.keypair.pubkey())
+                print(f"✅ Custom Jupiter lib initialized with wallet: {wallet_pubkey}")
+                print(f"   ⚠️  NOTE: This bot uses its own wallet (from SOLANA_PRIVATE_KEY), NOT Phantom wallet")
+                print(f"   ⚠️  Transactions execute on wallet: {wallet_pubkey[:8]}...{wallet_pubkey[-8:]}")
+                print(f"   ⚠️  If you're checking Phantom wallet, you won't see these transactions there")
             else:
                 print("⚠️ No Solana private key provided")
                 self.keypair = None
@@ -492,7 +496,7 @@ class JupiterCustomLib:
                     tx_success = self.verify_transaction_success(tx_hash)
                     if tx_success is False:
                         try:
-                            print(f"❌ Transaction {tx_hash} failed on-chain")
+                            print(f"❌ Transaction {tx_hash} failed on-chain - NOT marking as completed")
                         except BrokenPipeError:
                             pass
                         return tx_hash, False
@@ -522,18 +526,39 @@ class JupiterCustomLib:
                                 return tx_hash, True
                             elif final_check is False:
                                 try:
-                                    print(f"❌ Transaction {tx_hash} confirmed as failed after retry")
+                                    print(f"❌ Transaction {tx_hash} confirmed as failed after retry - NOT marking as completed")
+                                except BrokenPipeError:
+                                    pass
+                                return tx_hash, False
+                            else:
+                                # Still can't verify after retry - this is suspicious
+                                try:
+                                    print(f"⚠️ WARNING: Transaction {tx_hash} cannot be verified after multiple attempts")
+                                    print(f"   This may indicate the transaction failed or was not submitted properly")
+                                    print(f"   Check the transaction on Solscan: https://solscan.io/tx/{tx_hash}")
+                                    print(f"   NOT marking as completed due to verification failure")
                                 except BrokenPipeError:
                                     pass
                                 return tx_hash, False
                         
-                        # If we still can't verify but have tx_hash, assume pending/success
-                        # Transaction was successfully submitted, so it likely succeeded
-                        try:
-                            print(f"⚠️ Unable to fully verify transaction {tx_hash}; assuming success (transaction was submitted)")
-                        except BrokenPipeError:
-                            pass
-                        return tx_hash, True
+                        # If we still can't verify but have tx_hash, be more conservative
+                        # Only assume success if we got a tx_hash AND initial confirmation was True/None
+                        if confirmed is True:
+                            try:
+                                print(f"⚠️ Transaction {tx_hash} submitted and initially confirmed, but final verification unclear")
+                                print(f"   Marking as completed (transaction was confirmed earlier)")
+                            except BrokenPipeError:
+                                pass
+                            return tx_hash, True
+                        else:
+                            # Can't verify and wasn't confirmed - don't assume success
+                            try:
+                                print(f"⚠️ WARNING: Transaction {tx_hash} cannot be verified")
+                                print(f"   Check the transaction on Solscan: https://solscan.io/tx/{tx_hash}")
+                                print(f"   NOT marking as completed - verification failed")
+                            except BrokenPipeError:
+                                pass
+                            return tx_hash, False
                     
                     # If we got here, verification returned something unexpected
                     if confirmed is True:
@@ -543,12 +568,14 @@ class JupiterCustomLib:
                             pass
                         return tx_hash, True
                     else:
-                        # Had a tx_hash but couldn't confirm - be lenient and assume success
+                        # Had a tx_hash but couldn't confirm - don't assume success
                         try:
-                            print(f"⚠️ Transaction {tx_hash} submitted but status uncertain; assuming success")
+                            print(f"⚠️ WARNING: Transaction {tx_hash} submitted but cannot be verified")
+                            print(f"   Check the transaction on Solscan: https://solscan.io/tx/{tx_hash}")
+                            print(f"   NOT marking as completed - verification failed")
                         except BrokenPipeError:
                             pass
-                        return tx_hash, True
+                        return tx_hash, False
                 elif "error" in result:
                     error_msg = result["error"]
                     try:

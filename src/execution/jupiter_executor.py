@@ -497,8 +497,34 @@ def buy_token_solana(token_address: str, amount_usd: float, symbol: str = "", te
     except Exception as exc:
         return abort("execution_exception", "Executor raised exception", error=str(exc))
 
-    if success:
-        return succeed(tx_hash)
+    # CRITICAL: Always verify on-chain before marking as completed, even if success=True
+    # This ensures we don't mark transactions as completed if they actually failed
+    if tx_hash:
+        print(f"🔍 Verifying buy transaction {tx_hash} on-chain before marking as completed...")
+        time.sleep(2)  # Wait a bit for transaction to propagate
+        
+        verified = executor.jupiter_lib.verify_transaction_success(tx_hash)
+        if verified is True:
+            print(f"✅ Buy transaction {tx_hash} verified as successful on-chain")
+            return succeed(tx_hash)
+        elif verified is False:
+            print(f"❌ Buy transaction {tx_hash} confirmed as failed on-chain")
+            print(f"   Check transaction on Solscan: https://solscan.io/tx/{tx_hash}")
+            return abort("execution_failed", "Buy transaction confirmed as failed on-chain", 
+                        token=token_address, amount_usd=amount_usd, tx_hash=tx_hash)
+        else:
+            # Can't verify (RPC timeout/missing data) - be conservative and don't mark as completed
+            print(f"⚠️ WARNING: Cannot verify buy transaction {tx_hash} after submission")
+            print(f"   Check transaction on Solscan: https://solscan.io/tx/{tx_hash}")
+            print(f"   NOT marking as completed - verification failed")
+            return abort("execution_failed", "Buy transaction cannot be verified on-chain", 
+                        token=token_address, amount_usd=amount_usd, tx_hash=tx_hash)
+    elif success:
+        # Got success=True but no tx_hash - this shouldn't happen, but handle it
+        print(f"⚠️ WARNING: Executor reported success but no tx_hash provided")
+        return abort("execution_failed", "No transaction hash provided despite success report", 
+                    token=token_address, amount_usd=amount_usd)
+    
     return abort("execution_failed", "Executor returned failure", token=token_address, amount_usd=amount_usd)
 
 def sell_token_solana(token_address: str, amount_usd: float, symbol: str = "", test_mode: bool = False) -> Tuple[str, bool]:
@@ -560,33 +586,51 @@ def sell_token_solana(token_address: str, amount_usd: float, symbol: str = "", t
         except Exception as exc:
             return abort("test_mode_exception", "Test mode validation failed", error=str(exc))
 
+    # CRITICAL: Before selling, verify token balance exists in wallet
+    try:
+        print(f"🔍 Checking token balance before sell for {symbol or token_address[:8]}...")
+        raw_balance = executor.get_token_raw_balance(token_address)
+        if raw_balance is None:
+            return abort("balance_check_failed", "Cannot check token balance - RPC error", token=token_address)
+        elif raw_balance <= 0:
+            return abort("insufficient_balance", f"No token balance to sell (balance: {raw_balance})", token=token_address)
+        print(f"✅ Token balance verified: {raw_balance} raw units available for sale")
+    except Exception as e:
+        log_error("solana.sell.balance_check_error", error=str(e), token=token_address)
+        return abort("balance_check_exception", f"Error checking balance: {e}", token=token_address)
+
     try:
         tx_hash, success = executor.execute_trade(token_address, amount_usd, is_buy=False)
     except Exception as exc:
         return abort("execution_exception", "Executor raised exception", error=str(exc))
 
-    if success:
-        return succeed(tx_hash)
-    
-    # CRITICAL FIX: If we have a tx_hash but success=False, verify on-chain before aborting
-    # The transaction might have succeeded even if verification failed initially due to RPC delays
+    # CRITICAL: Always verify on-chain before marking as completed, even if success=True
+    # This ensures we don't mark transactions as completed if they actually failed
     if tx_hash:
-        print(f"⚠️ Executor returned failure but we have tx_hash {tx_hash}; verifying on-chain...")
+        print(f"🔍 Verifying sell transaction {tx_hash} on-chain before marking as completed...")
         time.sleep(2)  # Wait a bit for transaction to propagate
         
         verified = executor.jupiter_lib.verify_transaction_success(tx_hash)
         if verified is True:
-            print(f"✅ Transaction {tx_hash} verified as successful on-chain despite initial failure report")
+            print(f"✅ Sell transaction {tx_hash} verified as successful on-chain")
             return succeed(tx_hash)
         elif verified is False:
-            print(f"❌ Transaction {tx_hash} confirmed as failed on-chain")
-            return abort("execution_failed", "Transaction confirmed as failed on-chain", 
+            print(f"❌ Sell transaction {tx_hash} confirmed as failed on-chain")
+            print(f"   Check transaction on Solscan: https://solscan.io/tx/{tx_hash}")
+            return abort("execution_failed", "Sell transaction confirmed as failed on-chain", 
                         token=token_address, amount_usd=amount_usd, tx_hash=tx_hash)
         else:
-            # Can't verify (RPC timeout/missing data) - transaction was submitted, so it might have succeeded
-            # Be conservative and assume success to avoid false negatives
-            print(f"⚠️ Cannot verify transaction {tx_hash} but it was submitted; assuming success")
-            return succeed(tx_hash)
+            # Can't verify (RPC timeout/missing data) - be conservative and don't mark as completed
+            print(f"⚠️ WARNING: Cannot verify sell transaction {tx_hash} after submission")
+            print(f"   Check transaction on Solscan: https://solscan.io/tx/{tx_hash}")
+            print(f"   NOT marking as completed - verification failed")
+            return abort("execution_failed", "Sell transaction cannot be verified on-chain", 
+                        token=token_address, amount_usd=amount_usd, tx_hash=tx_hash)
+    elif success:
+        # Got success=True but no tx_hash - this shouldn't happen, but handle it
+        print(f"⚠️ WARNING: Executor reported success but no tx_hash provided")
+        return abort("execution_failed", "No transaction hash provided despite success report", 
+                    token=token_address, amount_usd=amount_usd)
     
     # No tx_hash available, abort normally
     return abort("execution_failed", "Executor returned failure", token=token_address, amount_usd=amount_usd)
