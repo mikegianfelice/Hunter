@@ -642,12 +642,18 @@ class JupiterCustomLib:
 
     def verify_transaction_success(self, tx_hash: str) -> Optional[bool]:
         """Verify transaction actually succeeded by checking transaction details.
+        
+        Uses multiple verification methods:
+        1. getTransaction (most detailed)
+        2. getSignatureStatuses (more reliable for confirmation status)
+        3. Solscan API (external verification as fallback)
 
         Returns:
             True if the transaction is confirmed without errors.
             False if the transaction is confirmed with an on-chain error.
             None if the status cannot be determined (RPC timeout or missing data).
         """
+        # Method 1: Try getTransaction first (most detailed)
         try:
             rpc_payload = {
                 "jsonrpc": "2.0",
@@ -677,16 +683,90 @@ class JupiterCustomLib:
                         return False
                     
                     return True
-                return None
-            
-            return None
         except Exception as e:
             try:
-                print(f"⚠️ Error verifying transaction: {e}")
+                print(f"⚠️ Error in getTransaction verification: {e}")
             except BrokenPipeError:
                 pass
-            # If we can't verify, return None to indicate unknown status
-            return None
+        
+        # Method 2: Try getSignatureStatuses (more reliable for confirmation)
+        try:
+            rpc_payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getSignatureStatuses",
+                "params": [[tx_hash], {"searchTransactionHistory": True}]
+            }
+            
+            response = requests.post(self.rpc_url, json=rpc_payload, timeout=10)
+            if response.status_code == 200:
+                result = response.json()
+                if "result" in result and result["result"]["value"]:
+                    status = result["result"]["value"][0]
+                    if status:
+                        err = status.get("err")
+                        if err is None:
+                            try:
+                                print(f"✅ Transaction confirmed via signature status check")
+                            except BrokenPipeError:
+                                pass
+                            return True
+                        else:
+                            try:
+                                print(f"❌ Transaction failed via signature status: {err}")
+                            except BrokenPipeError:
+                                pass
+                            return False
+        except Exception as e:
+            try:
+                print(f"⚠️ Error in getSignatureStatuses verification: {e}")
+            except BrokenPipeError:
+                pass
+        
+        # Method 3: Try Solscan API as external verification fallback
+        try:
+            # Try public API endpoint (may require API key for some endpoints)
+            solscan_url = f"https://public-api.solscan.io/transaction/{tx_hash}"
+            response = requests.get(solscan_url, timeout=5, headers={"Accept": "application/json"})
+            if response.status_code == 200:
+                data = response.json()
+                # Solscan returns status in various formats, check for success indicators
+                status = data.get("status") or data.get("success")
+                err = data.get("err") or data.get("error")
+                
+                # Check for success indicators
+                if status == "Success" or status == "success" or status is True:
+                    try:
+                        print(f"✅ Transaction verified via Solscan API (status: {status})")
+                    except BrokenPipeError:
+                        pass
+                    return True
+                # Check for failure indicators
+                elif err is not None or (status and ("fail" in str(status).lower() or "error" in str(status).lower())):
+                    try:
+                        print(f"❌ Transaction failed via Solscan API: status={status}, err={err}")
+                    except BrokenPipeError:
+                        pass
+                    return False
+                # If transaction exists in Solscan but no clear status, check other fields
+                elif "timestamp" in data or "blockTime" in data:
+                    # Transaction exists in Solscan - likely successful (Solscan doesn't index failed txs well)
+                    try:
+                        print(f"✅ Transaction found in Solscan (exists in blockchain)")
+                    except BrokenPipeError:
+                        pass
+                    return True
+        except requests.exceptions.RequestException:
+            # API might be unavailable, but don't treat as failure
+            pass
+        except Exception as e:
+            try:
+                print(f"⚠️ Error in Solscan verification: {e}")
+            except BrokenPipeError:
+                pass
+        
+        # All methods failed - return None to indicate unknown status
+        return None
 
     def execute_swap(self, input_mint: str, output_mint: str, amount: int, slippage: float = 0.10) -> Tuple[str, bool]:
         """Execute complete swap process with enhanced error handling"""
