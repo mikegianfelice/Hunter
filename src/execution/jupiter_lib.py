@@ -38,9 +38,8 @@ class JupiterCustomLib:
                 self.keypair = Keypair.from_bytes(secret_key_bytes)
                 wallet_pubkey = str(self.keypair.pubkey())
                 print(f"✅ Custom Jupiter lib initialized with wallet: {wallet_pubkey}")
-                print(f"   ⚠️  NOTE: This bot uses its own wallet (from SOLANA_PRIVATE_KEY), NOT Phantom wallet")
-                print(f"   ⚠️  Transactions execute on wallet: {wallet_pubkey[:8]}...{wallet_pubkey[-8:]}")
-                print(f"   ⚠️  If you're checking Phantom wallet, you won't see these transactions there")
+                print(f"   ℹ️  Transactions execute on wallet: {wallet_pubkey[:8]}...{wallet_pubkey[-8:]}")
+                print(f"   ℹ️  This wallet is configured from SOLANA_PRIVATE_KEY environment variable")
             else:
                 print("⚠️ No Solana private key provided")
                 self.keypair = None
