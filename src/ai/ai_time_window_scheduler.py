@@ -42,7 +42,9 @@ class AITimeWindowScheduler:
         self.window_size_seconds = 300  # 5 minute windows
         self.execution_history: deque = deque(maxlen=100)
         self.last_review_time = 0.0
-        self.current_window_score = 0.0
+        # Initialize to a good default score instead of 0.0 to avoid blocking trades on startup
+        # This will be recalculated on first call or after review_interval_seconds
+        self.current_window_score = 0.75  # Default to 75% - optimistic but safe
         self.is_paused = False
         self.pause_until = 0.0
         
@@ -81,8 +83,12 @@ class AITimeWindowScheduler:
                 reason=f"paused_until_{remaining_pause}s"
             )
         
-        # Update window score periodically
-        if current_time - self.last_review_time >= self.review_interval_seconds:
+        # Force recalculation on first call (when last_review_time is 0.0) or if score is still at default
+        # This ensures we get a proper score calculation even if we haven't hit the review interval yet
+        force_recalculate = (self.last_review_time == 0.0) or (self.current_window_score == 0.0)
+        
+        # Update window score periodically or on first call
+        if force_recalculate or current_time - self.last_review_time >= self.review_interval_seconds:
             self.current_window_score = self._calculate_window_score(
                 recent_exec_metrics,
                 market_quality_metrics
@@ -164,6 +170,17 @@ class AITimeWindowScheduler:
             weighted_score = sum(s * w for s, w in zip(score_components, weights)) / sum(weights)
         else:
             weighted_score = 0.5  # Default neutral score
+        
+        # If we have no recent execution history and no metrics provided, default to optimistic score
+        # This prevents blocking trades when there's insufficient data (e.g., after position closes)
+        has_recent_data = (
+            len(self.execution_history) > 0 or
+            (recent_exec_metrics and recent_exec_metrics.get("fill_success_rate") is not None)
+        )
+        if not has_recent_data:
+            # No recent data - use optimistic default to avoid blocking trades unnecessarily
+            # This handles the case where positions just closed and we don't have recent buy execution data
+            weighted_score = max(weighted_score, 0.70)  # At least 70% if no recent data
         
         return max(0.0, min(1.0, weighted_score))
     
