@@ -156,6 +156,51 @@ def load_positions(validate_balances: bool = False):
 
     return validated_positions
 
+def _cleanup_closed_position(position_key: str, token_address: str, chain_id: str):
+    """
+    Comprehensive cleanup function to remove a position from ALL storage locations:
+    1. open_positions.json (via remove_position)
+    2. hunter_state.db (via remove_position)
+    3. performance_data.json (mark trade as closed)
+    
+    This ensures positions are completely removed when sells complete.
+    """
+    try:
+        from src.storage.positions import remove_position as remove_position_from_db
+        
+        # Remove from open_positions.json and hunter_state.db
+        remove_position_from_db(position_key)
+        print(f"✅ Removed position {position_key} from open_positions.json and hunter_state.db")
+        
+        # Also try to find and mark as closed in performance_data.json
+        # (We don't remove from performance_data to preserve historical records)
+        try:
+            perf_data = load_performance_data()
+            trades = perf_data.get("trades", [])
+            token_address_lower = token_address.lower()
+            chain_id_lower = chain_id.lower()
+            
+            updated = False
+            for trade in trades:
+                if (trade.get("status") == "open" and 
+                    trade.get("address", "").lower() == token_address_lower and
+                    trade.get("chain", "").lower() == chain_id_lower):
+                    trade["status"] = "closed"
+                    if not trade.get("exit_time"):
+                        trade["exit_time"] = datetime.now().isoformat()
+                    updated = True
+                    print(f"✅ Marked trade {trade.get('id', '?')} as closed in performance_data.json")
+            
+            if updated:
+                replace_performance_data(perf_data)
+        except Exception as e:
+            print(f"⚠️ Error updating performance_data.json: {e}")
+            
+    except Exception as e:
+        print(f"⚠️ Error in _cleanup_closed_position: {e}")
+        import traceback
+        traceback.print_exc()
+
 def save_positions(positions):
     """
     Save positions to both database and JSON file.
@@ -940,6 +985,17 @@ def monitor_all_positions():
                         f"⚠️ Token no longer tradeable"
                     )
                     
+                    # CRITICAL: Remove position from ALL storage locations (open_positions.json, hunter_state.db, performance_data.json)
+                    _cleanup_closed_position(position_key, token_address, chain_id)
+                    
+                    # Also update performance tracker if we have a trade record
+                    trade = _find_open_trade_by_address(token_address, chain_id)
+                    if trade:
+                        position_size = trade.get('position_size_usd', 0)
+                        pnl_usd = -position_size  # 100% loss
+                        from src.core.performance_tracker import performance_tracker
+                        performance_tracker.log_trade_exit(trade['id'], 0.0, pnl_usd, "delisted")
+                    
                     # Remove from active positions (use position_key)
                     closed_positions.append(position_key)
                     updated_positions.pop(position_key, None)
@@ -1018,6 +1074,10 @@ def monitor_all_positions():
                                 pnl_usd = gain * position_size
                                 from src.core.performance_tracker import performance_tracker
                                 performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, action.reason)
+                            
+                            # CRITICAL: Remove position from ALL storage locations (open_positions.json, hunter_state.db, performance_data.json)
+                            _cleanup_closed_position(position_key, token_address, chain_id)
+                            
                             closed_positions.append(position_key)
                             updated_positions.pop(position_key, None)
                             continue
@@ -1070,6 +1130,9 @@ def monitor_all_positions():
                     performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, "take_profit",
                                                        additional_data=sell_fee_data)
                     print(f"📊 Updated performance tracker for take profit: {trade.get('symbol', '?')}")
+                
+                # CRITICAL: Remove position from ALL storage locations (open_positions.json, hunter_state.db, performance_data.json)
+                _cleanup_closed_position(position_key, token_address, chain_id)
                 
                 send_telegram_message(
                     f"💰 Take-profit triggered!\n"
@@ -1131,6 +1194,9 @@ def monitor_all_positions():
                                                        additional_data=sell_fee_data)
                     print(f"📊 Updated performance tracker for stop loss: {trade.get('symbol', '?')}")
                 
+                # CRITICAL: Remove position from ALL storage locations (open_positions.json, hunter_state.db, performance_data.json)
+                _cleanup_closed_position(position_key, token_address, chain_id)
+                
                 send_telegram_message(
                     f"🛑 Stop-loss triggered!\n"
                     f"Token: {symbol} ({token_address})\n"
@@ -1190,6 +1256,9 @@ def monitor_all_positions():
                     performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, "trailing_stop",
                                                        additional_data=sell_fee_data)
                     print(f"📊 Updated performance tracker for trailing stop: {trade.get('symbol', '?')}")
+                
+                # CRITICAL: Remove position from ALL storage locations (open_positions.json, hunter_state.db, performance_data.json)
+                _cleanup_closed_position(position_key, token_address, chain_id)
                 
                 send_telegram_message(
                     f"🧵 Trailing stop-loss triggered!\n"
