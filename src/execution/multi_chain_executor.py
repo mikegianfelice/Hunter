@@ -106,6 +106,138 @@ MONITOR_SCRIPT = Path(__file__).resolve().parents[2] / "src" / "monitoring" / "m
 WATCHDOG_SCRIPT = Path(__file__).resolve().parents[2] / "src" / "monitoring" / "monitor_watchdog.py"
 
 
+def _validate_and_update_position_size(token: dict, chain_id: str, token_address: str = None):
+    """
+    Validate position_size_usd against actual wallet balance and update if there's a discrepancy.
+    This fixes the issue where a buy fails and retries with smaller amount, but position was
+    logged with the original intended amount.
+    """
+    try:
+        # Get token address from token dict if not provided
+        if not token_address:
+            token_address = token.get("address") or token.get("token_address")
+            if not token_address:
+                log_event("trading.position_validation_skipped", level="WARNING",
+                         symbol=token.get("symbol", "?"), reason="Token address not found")
+                return
+        
+        # Get actual wallet balance
+        balance = _get_token_balance_for_validation(token_address, chain_id)
+        if balance is None or balance <= 0:
+            log_event("trading.position_validation_skipped", level="WARNING", 
+                     symbol=token.get("symbol", "?"), reason="Could not get wallet balance")
+            return
+        
+        # Get current price - fallback to entry price if current price unavailable
+        current_price = _get_token_price_for_validation(token_address, chain_id)
+        if current_price <= 0:
+            # Use entry price as fallback (should be close to buy price)
+            current_price = float(token.get("priceUsd") or token.get("entry_price") or 0.0)
+            if current_price <= 0:
+                log_event("trading.position_validation_skipped", level="WARNING",
+                         symbol=token.get("symbol", "?"), reason="Could not get price (current or entry)")
+                return
+        
+        # Calculate actual position value
+        actual_position_size_usd = balance * current_price
+        
+        # Get logged position size
+        logged_position_size_usd = float(token.get("position_size_usd", 0))
+        
+        if logged_position_size_usd <= 0:
+            log_event("trading.position_validation_skipped", level="WARNING",
+                     symbol=token.get("symbol", "?"), reason="Logged position size is zero")
+            return
+        
+        # Check if there's a significant discrepancy (>10%)
+        discrepancy_ratio = abs(actual_position_size_usd - logged_position_size_usd) / logged_position_size_usd
+        if discrepancy_ratio > 0.1:  # More than 10% difference
+            log_event("trading.position_size_discrepancy", level="WARNING",
+                     symbol=token.get("symbol", "?"),
+                     logged_amount=logged_position_size_usd,
+                     actual_amount=actual_position_size_usd,
+                     discrepancy_pct=discrepancy_ratio * 100)
+            
+            # Update the position with actual value
+            position_key = create_position_key(token_address)
+            from src.storage.positions import load_positions, upsert_position
+            positions = load_positions()
+            if position_key in positions:
+                position_data = positions[position_key]
+                position_data["position_size_usd"] = actual_position_size_usd
+                upsert_position(position_key, position_data)
+                
+                # Also update performance tracker if we have trade_id
+                if token.get("trade_id"):
+                    try:
+                        from src.core.performance_tracker import performance_tracker
+                        for trade in performance_tracker.trades:
+                            if trade.get('id') == token.get("trade_id"):
+                                trade['position_size_usd'] = actual_position_size_usd
+                                trade['entry_amount_usd_actual'] = actual_position_size_usd
+                                performance_tracker.save_data()
+                                break
+                    except Exception as e:
+                        log_event("trading.position_validation_perf_update_error", level="WARNING", error=str(e))
+                
+                print(f"✅ Updated position size for {token.get('symbol', '?')}: ${logged_position_size_usd:.2f} -> ${actual_position_size_usd:.2f}")
+                log_event("trading.position_size_updated",
+                         symbol=token.get("symbol", "?"),
+                         old_amount=logged_position_size_usd,
+                         new_amount=actual_position_size_usd)
+        else:
+            log_event("trading.position_size_validated",
+                     symbol=token.get("symbol", "?"),
+                     logged_amount=logged_position_size_usd,
+                     actual_amount=actual_position_size_usd)
+    
+    except Exception as e:
+        log_event("trading.position_validation_error", level="WARNING", error=str(e))
+        # Don't raise - validation failure shouldn't break position logging
+
+
+def _get_token_balance_for_validation(token_address: str, chain_id: str) -> Optional[float]:
+    """Get token balance for validation purposes"""
+    try:
+        chain_lower = chain_id.lower()
+        
+        if chain_lower == "solana":
+            from src.execution.jupiter_lib import JupiterCustomLib
+            from src.config.secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
+            lib = JupiterCustomLib(SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY)
+            balance = lib.get_token_balance(token_address)
+            return float(balance) if balance is not None else None
+            
+        elif chain_lower in ["base", "ethereum"]:
+            from src.execution.base_executor import get_token_balance
+            balance = get_token_balance(token_address)
+            return float(balance) if balance is not None else None
+        
+        return None
+    except Exception:
+        return None
+
+
+def _get_token_price_for_validation(token_address: str, chain_id: str) -> float:
+    """Get token price for validation purposes"""
+    try:
+        chain_lower = chain_id.lower()
+        
+        if chain_lower == "solana":
+            from src.execution.solana_executor import get_token_price_usd
+            price = get_token_price_usd(token_address)
+            return float(price) if price and price > 0 else 0.0
+        elif chain_lower in ["base", "ethereum"]:
+            # For EVM chains, try to get price from token data or use a price API
+            # For now, return 0.0 if we can't get it easily
+            # This could be enhanced to use price APIs
+            return 0.0
+        
+        return 0.0
+    except Exception:
+        return 0.0
+
+
 def _log_position(token: dict, *, trade_id: Optional[str] = None, entry_time: Optional[str] = None):
     addr = token["address"]
     entry = float(token.get("priceUsd") or 0.0)
@@ -659,8 +791,26 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
                         log_event("trading.position_verification_needed", level="WARNING", symbol=symbol, reason="Solana trade needs token verification")
                 
                 if should_log_position:
-                    upsert_position(token_for_logging, trade_id=trade_id)
+                    # Ensure token_for_logging has priceUsd for _log_position
+                    if "priceUsd" not in token_for_logging:
+                        # Try to get price from token data
+                        token_for_logging["priceUsd"] = token.get("priceUsd") or token.get("entry_price") or token.get("price") or 0.0
+                    
+                    # Log position using the helper function (creates proper position_key and position_data)
+                    _log_position(token_for_logging, trade_id=trade_id)
                     log_event("trading.position_logged", symbol=symbol, reason=verification_reason)
+                    
+                    # CRITICAL: Validate position size against actual wallet balance
+                    # This fixes the issue where a buy fails and retries with smaller amount,
+                    # but the position was logged with the original intended amount
+                    # Wait a brief moment for blockchain state to update
+                    import time
+                    time.sleep(1)
+                    try:
+                        _validate_and_update_position_size(token_for_logging, chain_id, token_address)
+                    except Exception as e:
+                        log_event("trading.position_validation_error", level="WARNING", symbol=symbol, error=str(e))
+                        # Don't fail the position logging if validation fails
                 else:
                     log_event(
                         "trading.position_not_logged",
