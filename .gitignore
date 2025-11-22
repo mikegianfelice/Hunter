@@ -270,6 +270,12 @@ tmp/
 *.backup
 *.old
 
+# Generated plots and images
+*.png
+*.jpg
+*.jpeg
+*.gif
+
 # OS generated files
 .DS_Store
 .DS_Store?
