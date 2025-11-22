@@ -89,8 +89,40 @@ def analyze_last_5_days():
         except Exception as e:
             continue
     
-    # Separate closed and open trades
-    closed_trades = [t for t in recent_trades if t.get('status') in ['closed', 'manual_close', 'stopped_out'] and t.get('pnl_usd') is not None]
+    # Helper function to identify failed entry attempts
+    def is_failed_entry_attempt(trade):
+        """Check if a trade represents a failed entry attempt (not an actual completed trade)."""
+        entry_amount = trade.get('entry_amount_usd_actual', 0) or 0
+        tokens_received = trade.get('entry_tokens_received')
+        
+        # If no entry amount or no tokens received, it's a failed entry
+        if entry_amount == 0 or (tokens_received is None or (isinstance(tokens_received, (int, float)) and tokens_received == 0)):
+            # Double-check: if exit_time is very close to entry_time, it was closed immediately
+            try:
+                entry_time_str = trade.get('entry_time', '')
+                exit_time_str = trade.get('exit_time', '')
+                if entry_time_str and exit_time_str:
+                    entry_time = datetime.fromisoformat(entry_time_str.replace('Z', '+00:00').split('.')[0])
+                    exit_time = datetime.fromisoformat(exit_time_str.replace('Z', '+00:00').split('.')[0])
+                    time_diff = abs((exit_time - entry_time).total_seconds())
+                    
+                    # If closed within 2 seconds and exit_price = entry_price, it's a failed entry
+                    if time_diff < 2.0:
+                        exit_price = trade.get('exit_price', 0)
+                        entry_price = trade.get('entry_price', 0)
+                        if exit_price == entry_price or exit_price == 0:
+                            return True
+            except:
+                pass
+            
+            return True
+        
+        return False
+    
+    # Separate closed and open trades, excluding failed entry attempts
+    all_closed_trades = [t for t in recent_trades if t.get('status') in ['closed', 'manual_close', 'stopped_out'] and t.get('pnl_usd') is not None]
+    closed_trades = [t for t in all_closed_trades if not is_failed_entry_attempt(t)]
+    failed_entry_attempts = [t for t in all_closed_trades if is_failed_entry_attempt(t)]
     open_trades = [t for t in recent_trades if t.get('status') == 'open']
     
     # Overall statistics
@@ -234,7 +266,7 @@ def analyze_last_5_days():
                     else:
                         daily_breakdown[date]['losing'] += 1
     
-    # Quality tier analysis
+    # Quality tier analysis (only for completed trades, excluding failed entry attempts)
     quality_tiers = {
         "excellent": (80, 100),
         "high": (70, 79),
@@ -245,7 +277,9 @@ def analyze_last_5_days():
     
     quality_analysis = {}
     for tier, (min_score, max_score) in quality_tiers.items():
-        tier_trades = [t for t in closed_trades if min_score <= (t.get('quality_score', 0) * 100) <= max_score]
+        # Filter tier trades to exclude failed entry attempts
+        tier_trades_raw = [t for t in closed_trades if min_score <= (t.get('quality_score', 0) * 100) <= max_score]
+        tier_trades = [t for t in tier_trades_raw if not is_failed_entry_attempt(t)]
         if tier_trades:
             tier_pnl = [t['pnl_usd'] for t in tier_trades if t.get('pnl_usd') is not None]
             tier_wins = len([t for t in tier_trades if t.get('pnl_usd', 0) > 0])
@@ -278,6 +312,7 @@ def analyze_last_5_days():
             'total_trades': total_trades,
             'closed_trades': closed_count,
             'open_trades': open_count,
+            'failed_entry_attempts': len(failed_entry_attempts),  # Track separately
             'win_rate': round(win_rate, 2),
             'total_pnl': round(total_pnl, 2),
             'avg_pnl': round(avg_pnl, 2),
@@ -328,6 +363,8 @@ def print_analysis(analysis):
     print(f"   • Total Trades: {overall['total_trades']}")
     print(f"   • Closed Trades: {overall['closed_trades']}")
     print(f"   • Open Trades: {overall['open_trades']}")
+    if overall.get('failed_entry_attempts', 0) > 0:
+        print(f"   • Failed Entry Attempts: {overall['failed_entry_attempts']} (excluded from win rate)")
     print(f"   • Win Rate: {overall['win_rate']:.1f}%")
     print(f"   • Total PnL: ${overall['total_pnl']:.2f}")
     if overall.get('total_pnl_pct'):

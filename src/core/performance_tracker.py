@@ -222,6 +222,43 @@ class PerformanceTracker:
                 return tier
         return 'low'
     
+    def _is_failed_entry_attempt(self, trade: Dict) -> bool:
+        """Check if a trade represents a failed entry attempt (not an actual completed trade).
+        
+        Failed entry attempts are identified by:
+        - entry_amount_usd_actual is 0 or null
+        - entry_tokens_received is null or 0
+        - status is manual_close with exit_time very close to entry_time
+        - exit_price equals entry_price (no actual trade occurred)
+        """
+        # Check if entry actually executed
+        entry_amount = trade.get('entry_amount_usd_actual', 0) or 0
+        tokens_received = trade.get('entry_tokens_received')
+        
+        # If no entry amount or no tokens received, it's a failed entry
+        if entry_amount == 0 or (tokens_received is None or (isinstance(tokens_received, (int, float)) and tokens_received == 0)):
+            # Double-check: if exit_time is very close to entry_time (within 1 second),
+            # this confirms it was closed immediately after failed entry
+            try:
+                entry_time = datetime.fromisoformat(trade.get('entry_time', '').replace('Z', '+00:00'))
+                exit_time_str = trade.get('exit_time')
+                if exit_time_str:
+                    exit_time = datetime.fromisoformat(exit_time_str.replace('Z', '+00:00'))
+                    time_diff = abs((exit_time - entry_time).total_seconds())
+                    
+                    # If closed within 1 second and exit_price = entry_price, it's a failed entry
+                    if time_diff < 2.0:
+                        exit_price = trade.get('exit_price', 0)
+                        entry_price = trade.get('entry_price', 0)
+                        if exit_price == entry_price or exit_price == 0:
+                            return True
+            except:
+                pass
+            
+            return True
+        
+        return False
+    
     def get_performance_summary(self, days: int = 30) -> Dict:
         """Get performance summary for the last N days"""
         cutoff_date = datetime.now() - timedelta(days=days)
@@ -239,22 +276,26 @@ class PerformanceTracker:
                 'quality_analysis': {}
             }
         
-        # Overall stats
-        total_trades = len(recent_trades)
-        winning_trades = len([t for t in recent_trades if t['pnl_usd'] and t['pnl_usd'] > 0])
+        # Filter out failed entry attempts (only count actual completed trades)
+        completed_trades = [t for t in recent_trades if not self._is_failed_entry_attempt(t)]
+        failed_entry_attempts = [t for t in recent_trades if self._is_failed_entry_attempt(t)]
+        
+        # Overall stats (only for completed trades, excluding failed entry attempts)
+        total_trades = len(completed_trades)
+        winning_trades = len([t for t in completed_trades if t.get('pnl_usd') and t['pnl_usd'] > 0])
         win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
         
-        pnl_values = [t['pnl_usd'] for t in recent_trades if t['pnl_usd'] is not None]
+        pnl_values = [t['pnl_usd'] for t in completed_trades if t.get('pnl_usd') is not None]
         avg_pnl = statistics.mean(pnl_values) if pnl_values else 0
         total_pnl = sum(pnl_values) if pnl_values else 0
         
-        # Quality tier analysis
+        # Quality tier analysis (only for completed trades)
         quality_analysis = {}
         for tier in self.quality_tiers.keys():
-            tier_trades = [t for t in recent_trades if self._get_quality_tier(t['quality_score']) == tier]
+            tier_trades = [t for t in completed_trades if self._get_quality_tier(t['quality_score']) == tier]
             if tier_trades:
-                tier_wins = len([t for t in tier_trades if t['pnl_usd'] and t['pnl_usd'] > 0])
-                tier_pnl = [t['pnl_usd'] for t in tier_trades if t['pnl_usd'] is not None]
+                tier_wins = len([t for t in tier_trades if t.get('pnl_usd') and t['pnl_usd'] > 0])
+                tier_pnl = [t['pnl_usd'] for t in tier_trades if t.get('pnl_usd') is not None]
                 
                 quality_analysis[tier] = {
                     'trades': len(tier_trades),
@@ -269,6 +310,7 @@ class PerformanceTracker:
             'avg_pnl': avg_pnl,
             'total_pnl': total_pnl,
             'quality_analysis': quality_analysis,
+            'failed_entry_attempts': len(failed_entry_attempts),  # Track separately for visibility
             'period_days': days
         }
     
