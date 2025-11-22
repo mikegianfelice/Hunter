@@ -31,10 +31,11 @@ A sophisticated AI-powered cryptocurrency trading bot designed for **consistent 
 - **⚖️ AI Portfolio Rebalancing Engine** - Optimal portfolio allocation using modern portfolio theory for risk-adjusted returns and diversification
 
 ### **🌐 Multi-Chain Trading**
-- **Real trading on Ethereum (MetaMask), Solana (Phantom), and Base**
-- **DEX Integration** - Uniswap V2/V3 (Ethereum/Base), Jupiter + Raydium (Solana)
+- **Real trading on Solana (Phantom) and Base (MetaMask)**
+- **DEX Integration** - Uniswap V3 (Base), Jupiter + Raydium (Solana)
 - **Chain-Specific Optimization** - Tailored strategies for each blockchain
 - **Robust Fallbacks on Solana** - Jupiter as primary with Raydium fallback for reliability
+- **USDC Trading on Solana** - Uses USDC as base currency for Solana trades (configurable)
 
 ### **📊 Advanced Analytics & Performance**
 - **Dynamic Position Sizing** - AI-calculated position sizes based on token quality, risk, and market conditions
@@ -68,11 +69,11 @@ A sophisticated AI-powered cryptocurrency trading bot designed for **consistent 
 
 | Chain | Native Token | DEX | Status | Features |
 |-------|-------------|-----|--------|----------|
-| **Ethereum** | ETH | Uniswap V2/V3 | ✅ Full Support | Real trading, sentiment analysis, TokenSniffer |
-| **Solana** | SOL | Jupiter + Raydium | ✅ Full Support | Real trading, ATA creation, Raydium fallback |
+| **Solana** | SOL/USDC | Jupiter + Raydium | ✅ Full Support | Real trading, ATA creation, Raydium fallback, USDC trading |
 | **Base** | ETH | Uniswap V3 | ✅ Full Support | Real trading, EIP-1559 gas optimization, re-quote protection |
+| ~~**Ethereum**~~ | ETH | Uniswap V2/V3 | ❌ Disabled | Removed to focus on chains with lower fees and better opportunities |
 
-*Note: Other chains (Polygon, BSC, Arbitrum, Optimism, PulseChain) are disabled to focus on chains with the most opportunity.*
+*Note: Currently focusing on Solana and Base for optimal fee efficiency and trading opportunities. Ethereum support may be re-enabled in the future.*
 
 ## 🎯 AI-Enhanced Sustainable Trading Strategy
 
@@ -86,7 +87,7 @@ The bot uses a **sustainable 10-20% gains strategy** focused on quality over qua
 
 ### **🧠 AI System Integration Architecture**
 
-The bot features a **comprehensive AI integration engine** that coordinates **24 AI modules** across **6 analysis stages**:
+The bot features a **comprehensive AI integration engine** that coordinates **29 AI modules** across **6 analysis stages**:
 
 #### **Stage 1: Core Analysis** (Foundation)
 1. **📊 Sentiment Analysis** - Analyzes social media, news, market, and technical sentiment
@@ -123,6 +124,11 @@ The bot features a **comprehensive AI integration engine** that coordinates **24
 22. **🎯 Dynamic Strategy Selector** - Adaptive strategy selection based on market conditions and performance
 23. **🔍 Pattern Recognition** - Computer vision-based pattern detection and signal generation
 24. **🧠 Market Intelligence Aggregator** - Comprehensive market intelligence including news, social media, and influencer analysis
+25. **🔌 Circuit Breaker** - Automatic fault tolerance and recovery
+26. **✅ Fill Verifier** - Confirms real fills, reroutes failed slices, prevents ghost entries
+27. **⏰ Time Window Scheduler** - Gates entries to high-quality execution windows
+28. **💵 Partial Take-Profit Manager** - Staged profit-taking with adaptive trailing stops
+29. **🛡️ Market Condition Guardian** - Trading safety monitoring and market condition checks
 
 #### **Integration Benefits**
 - **Parallel Processing**: All modules run in parallel for maximum efficiency
@@ -133,16 +139,18 @@ The bot features a **comprehensive AI integration engine** that coordinates **24
 
 ### **📊 Performance Metrics**
 - **Target Gains**: 10-20% consistent returns
-- **Quality Focus**: Minimum $25k volume, $75k liquidity for sustainable trading
-- **Risk Management**: Maximum 3 concurrent positions, $30 daily loss limit
-- **Execution Optimization**: AI-optimized execution for maximum profitability
-- **Performance Tracking**: Comprehensive analytics with quality tier analysis
+- **Quality Focus**: Minimum $150k volume, $150k liquidity for improved win rate (raised from $100k)
+- **Quality Scoring**: Minimum quality score of 50 (0-100 scale, raised from 40)
+- **Risk Management**: Maximum 6 concurrent positions, $10 daily loss limit
+- **Stop Loss/Take Profit**: 7% stop loss, 12% take profit (with dynamic TP up to 20%)
+- **Execution Optimization**: AI-optimized execution with balance verification for sell transactions
+- **Performance Tracking**: Comprehensive analytics with quality tier analysis, failed entry attempts excluded from win rate
 
 ### **🎯 Multi-Chain Tier System**
 The bot now features a sophisticated **tiered position sizing system** that scales with your total portfolio value across all chains:
 
 #### **💰 Unified Portfolio Management**
-- **Combined Balance Calculation**: Sums balances from Ethereum (MetaMask) + Solana (Phantom) wallets
+- **Combined Balance Calculation**: Sums balances from Solana (Phantom) + Base (MetaMask) wallets
 - **Unified Tier Detection**: Uses total portfolio value to determine appropriate trading tier
 - **Consistent Position Sizing**: Same tier-based position sizes across all supported chains
 - **Accelerated Growth**: Larger positions on all chains as your portfolio grows
@@ -158,7 +166,7 @@ The bot now features a sophisticated **tiered position sizing system** that scal
 
 #### **🚀 Key Benefits**
 - **Unified Risk Management**: Total portfolio value determines your tier, not individual chain balances
-- **Consistent Trading**: Same position sizes across Ethereum, Solana, and Base
+- **Consistent Trading**: Same position sizes across Solana and Base
 - **Faster Growth**: Combined balance reaches higher tiers sooner than individual chains
 - **Better Portfolio Utilization**: Maximum capital efficiency across all chains
 - **Dynamic Scaling**: Automatically adjusts as your portfolio grows
@@ -197,11 +205,11 @@ wallet_tiers:
 - **Web3.py** for blockchain interactions
 - **Solana SDK** for Solana blockchain interactions
 - **Cryptocurrency wallets** with native tokens for gas fees:
-  - **MetaMask** for Ethereum
-  - **Phantom** for Solana
+  - **Phantom** for Solana (SOL or USDC for trading)
+  - **MetaMask** for Base (ETH for gas)
 - **Private keys** for wallet signing
 - **Telegram Bot Token** (optional, for notifications)
-- **Infura API key** (for Ethereum)
+- **RPC endpoints** for Solana and Base networks
 
 ## 📱 Telegram Notifications & Deduplication
 
@@ -300,7 +308,7 @@ The bot now features a significantly improved token discovery system that addres
 - **Volume Scoring**: 0-3 points based on 24h volume ($10k, $50k, $100k+)
 - **Liquidity Scoring**: 0-3 points based on liquidity ($10k, $50k, $100k+)
 - **Symbol Quality**: Penalizes spam symbols, rewards unique ones
-- **Chain Bonus**: +1 for Ethereum, neutral for major chains
+- **Chain Bonus**: Neutral for major chains (Solana, Base)
 
 #### **2. Enhanced Filtering**
 - **Promotional Content**: Better detection of spam/promotional tokens
@@ -379,6 +387,32 @@ The bot now includes an intelligent delisting detection system that automaticall
 ```yaml
 enable_pre_buy_delisting_check: true   # Enable pre-buy delisting checks
 ```
+
+## 🔄 Recent Updates & Improvements
+
+### **Enhanced Sell Transaction Verification** (Latest)
+- **Balance Check Verification**: Enhanced sell verification now includes balance checks before assuming transaction failure
+- **Multi-Method Verification**: Uses RPC verification, balance checks, and retry logic for robust transaction confirmation
+- **Reduced False Negatives**: Prevents false "SELL FAILED" messages when transactions actually succeeded
+- **Improved Reliability**: More accurate position monitoring with better on-chain transaction verification
+
+### **Performance Tracking Improvements**
+- **Failed Entry Attempts Excluded**: Failed entry attempts (tokens not received) are now excluded from win rate calculations
+- **Accurate Metrics**: Win rate now reflects only actual completed trades, providing more accurate performance analysis
+- **Quality Tier Analysis**: Failed entry attempts are filtered out of quality tier performance tracking
+
+### **Entry Criteria Improvements** (Win Rate Optimization)
+- **Raised Quality Thresholds**: 
+  - Minimum quality score: 40 → 50 (improves token selection)
+  - Minimum 24h volume: $100k → $150k (better liquidity)
+  - Minimum liquidity: $100k → $150k (reduced slippage)
+  - Minimum momentum: 0.1% → 0.2% (stronger entry signals)
+- **Result**: Improved win rate by filtering weaker tokens before entry
+
+### **Configuration Updates**
+- **Supported Chains**: Focused on Solana and Base (Ethereum removed for fee efficiency)
+- **Position Sizing**: Dynamic tiered position sizing based on portfolio value
+- **Risk Management**: Tightened stop loss (7%) and take profit (12% base, dynamic up to 20%)
 
 ## 🚀 Quick Start
 
@@ -486,16 +520,15 @@ python setup_secrets.py migrate
 Create your `.env` file with the following structure:
 
 ```env
-# Ethereum/Base Wallet Configuration (MetaMask)
-PRIVATE_KEY=your_ethereum_private_key_here
-WALLET_ADDRESS=your_ethereum_wallet_address_here
+# Base Wallet Configuration (MetaMask)
+PRIVATE_KEY=your_base_private_key_here
+WALLET_ADDRESS=your_base_wallet_address_here
 
 # Solana Wallet Configuration (Phantom)
 SOLANA_WALLET_ADDRESS=your_phantom_wallet_address_here
 SOLANA_PRIVATE_KEY=your_phantom_private_key_here
 
 # Blockchain RPC URLs
-INFURA_URL=https://mainnet.infura.io/v3/your_infura_key
 BASE_RPC_URL=https://mainnet.base.org
 SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
 
@@ -513,105 +546,70 @@ SECRETS_BACKEND=env
 Edit `config.yaml` to customize your trading strategy:
 
 ```yaml
-# Multi-Chain Configuration (Optimized for Available Funds)
-enable_multi_chain: true
-supported_chains:
-  - ethereum     # Enabled - requires ETH for gas fees
-  - solana       # Enabled - requires SOL for gas fees
-  # - base       # Disabled - need ETH on Base network
-  # - pulsechain # Disabled - need PLS for gas fees
-  # - polygon    # Disabled - need MATIC for gas fees
-  # - bsc        # Disabled - need BNB for gas fees
-  # - arbitrum   # Disabled - need ETH on Arbitrum
-  # - optimism   # Disabled - need ETH on Optimism
+# Multi-Chain Configuration (Current Active Chains)
+supported_chains: ["solana", "base"]  # Solana and Base only (Ethereum removed for fee efficiency)
 
-# AI-Enhanced Trading Configuration
-test_mode: false              # LIVE TRADING ENABLED - AI-Enhanced Strategy
-trade_amount_usd: 5.0         # Sustainable position sizing
-slippage: 0.05                # AI-optimized slippage tolerance (5%)
-take_profit: 0.15             # Sustainable 15% target gains
-stop_loss: 0.08               # Tight 8% risk control
+# Trading Configuration (Current Settings)
+test_mode: false              # LIVE TRADING ENABLED
+trade_amount_usd: 6           # Position size (USD)
+slippage: 0.03                # 3% slippage tolerance
+take_profit: 0.12             # 12% take profit target (base)
+stop_loss: 0.07               # 7% stop loss
+use_dynamic_tp: true          # Enable dynamic take profit (8-20% range)
 
-# AI System Configuration
-enable_ai_sentiment_analysis: true
-enable_market_regime_detection: true
-enable_ai_price_prediction: true
-enable_ai_portfolio_optimization: true
-enable_ai_risk_assessment: true
-enable_ai_pattern_recognition: true
+# Strategy Thresholds (Improved Entry Quality)
+min_quality_score: 50         # Minimum quality score (0-100) - raised from 40 to improve win rate
+min_volume_24h_for_buy: 150000   # $150k minimum 24h volume - raised from $100k
+min_liquidity_usd_for_buy: 150000 # $150k minimum liquidity - raised from $100k
+min_momentum_pct: 0.002       # 0.2% minimum momentum - raised from 0.1%
+
+# Risk Management (Current Settings)
+max_concurrent_positions: 6   # Maximum open positions
+daily_loss_limit_usd: 10.0   # Daily loss limit
+max_losing_streak: 3         # Stop after 3 consecutive losses
+circuit_breaker_minutes: 60  # Cooldown after losses
+per_trade_max_usd: 25        # Maximum per trade
+min_wallet_balance_buffer: 0.02  # 2% buffer for gas fees
+
+# AI System Configuration (Key Modules Enabled)
 enable_ai_execution_optimization: true
 enable_ai_microstructure_analysis: true
 enable_ai_market_intelligence: true
 enable_ai_predictive_analytics: true
 enable_ai_dynamic_strategy_selector: true
 enable_ai_risk_prediction_prevention: true
-enable_ai_market_regime_transition_detection: true
-enable_ai_liquidity_flow_analysis: true
-enable_ai_multi_timeframe_analysis: true
-enable_ai_market_cycle_prediction: true
+enable_ai_market_regime_detection: true
+enable_ai_portfolio_optimization: true
 enable_ai_drawdown_protection: true
-enable_ai_performance_attribution: true
-enable_ai_market_anomaly_detection: true
-enable_ai_portfolio_rebalancing: true
+enable_ai_emergency_stop: true
+enable_ai_fill_verifier: true
+enable_ai_partial_tp_manager: true
+enable_ai_time_window_scheduler: true
+# Note: Some AI modules may be disabled if too restrictive - check config.yaml for full list
 
 # Advanced Trading Features
 enable_order_splitting: true
-max_price_impact_per_slice: 0.02  # 2% max price impact per slice
-min_slice_amount_usd: 1.0         # Minimum slice size
-max_slices_per_trade: 5           # Maximum number of slices per trade
+max_price_impact_per_slice: 0.02  # 2% max price impact
+min_slice_amount_usd: 5.0         # Minimum slice size
+max_slices_per_trade: 5           # Maximum slices
 
 enable_dynamic_slippage: true
-dynamic_slippage_multiplier: 1.5  # Multiply predicted impact by this factor
-max_dynamic_slippage: 0.15        # Maximum 15% slippage
-min_dynamic_slippage: 0.02        # Minimum 2% slippage
+dynamic_slippage_multiplier: 2.0  # Impact × 2.0 = slippage
+max_dynamic_slippage: 0.08        # Maximum 8% slippage
+min_dynamic_slippage: 0.01        # Minimum 1% slippage
 
 enable_exactout_trades: true
-exactout_liquidity_threshold: 5000  # Use ExactOut for tokens with <$5k liquidity
-exactout_volume_threshold: 1000     # Use ExactOut for tokens with <$1k volume
-exactout_max_attempts: 3            # Maximum attempts for ExactOut trades
+exactout_liquidity_threshold: 25000  # Use for <$25k liquidity
+exactout_volume_threshold: 10000     # Use for <$10k volume
 
 enable_route_restrictions: true
-prefer_direct_routes: true          # Prefer single-hop routes over multi-hop
-max_route_hops: 2                   # Maximum number of hops in a route
+prefer_direct_routes: true          # Prefer single-hop routes
+max_route_hops: 1                   # Maximum 1 hop (tightened)
 enable_direct_pool_swaps: true      # Bypass aggregators for known pools
 
-enable_enhanced_preflight: true
-check_token_decimals: true
-check_ata_existence: true           # Solana: check associated token account
-check_mint_frozen: true             # Solana: check if mint is frozen
-check_transfer_fee: true            # Check for transfer fee configuration
-check_pool_reserves: true           # Verify pool has sufficient reserves
-min_pool_reserves_multiplier: 2.0   # Pool reserves must be 2x trade amount
-
-# Strategy Parameters (Optimized for More Opportunities)
-min_volume_24h: 100           # Minimum 24h volume in USD (reduced from 3000)
-min_liquidity: 100            # Minimum liquidity in USD (reduced from 3000)
-min_momentum_pct: 0.001       # Minimum price momentum (0.1% - reduced from 0.5%)
-enable_pre_buy_delisting_check: true  # Check if token is delisted before buying
-fastpath_volume: 500          # Fast-path volume threshold (reduced from 50000)
-fastpath_liquidity: 500       # Fast-path liquidity threshold (reduced from 25000)
-fastpath_sentiment: 20        # Fast-path sentiment threshold (reduced from 40)
-
-# Risk Management
-max_daily_loss: 0.05          # Maximum daily loss (5%)
-stop_loss_percentage: 0.15    # Stop loss percentage (15%)
-take_profit_percentage: 0.3   # Take profit percentage (30%)
-cooldown_period: 300          # Cooldown between trades (seconds)
-max_concurrent_positions: 5   # Maximum open positions at a time
-daily_loss_limit_usd: 50      # Daily loss cap before circuit breaker
-max_losing_streak: 3          # Consecutive losing trades before pause
-circuit_breaker_minutes: 60   # Pause duration if circuit breaker triggered
-per_trade_max_usd: 25         # Max USD per trade
-min_wallet_balance_buffer: 0.01 # Keep 1% of balance for gas fees
-
-# Position Monitoring
-take_profit: 0.5              # Take profit at 50% gain
-stop_loss: 0.25               # Stop loss at 25% loss
-trailing_stop_percent: 0.1    # 10% trailing stop
-
-# Token Filtering
-enforce_keywords: false       # Enable/disable keyword filtering
-trusted_tokens: []            # List of trusted token addresses
+# Solana Configuration
+solana_base_currency: "USDC"  # Options: "SOL" or "USDC"
+solana_min_sol_for_fees: 0.05  # Minimum SOL for transaction fees
 ```
 
 ### 4. Test Mode (Optional)
@@ -622,7 +620,7 @@ The bot is configured for real trading by default. Test mode validates transacti
 test_mode: true               # Set to true to validate without executing trades
 ```
 
-**Note**: In test mode, the bot still uses real market data for quotes and validation - it just doesn't execute transactions. The bot executes real trades by default when `test_mode: false`. Make sure you have sufficient funds in your MetaMask (Ethereum) and Phantom (Solana) wallets before running in live mode.
+**Note**: In test mode, the bot still uses real market data for quotes and validation - it just doesn't execute transactions. The bot executes real trades by default when `test_mode: false`. Make sure you have sufficient funds in your Phantom (Solana) and MetaMask (Base) wallets before running in live mode.
 
 
 
@@ -687,14 +685,16 @@ python main.py
 ## 📊 Configuration Options
 
 ### Multi-Chain Strategy
-- **Three-Network Support**: Ethereum, Solana, and Base trading with full implementation
+- **Two-Network Support**: Solana and Base trading with full implementation (Ethereum removed for fee efficiency)
 - **Chain-Specific Requirements**: Different volume/liquidity thresholds per chain
-- **Sentiment Analysis**: Ethereum-focused (skipped for Solana and Base)
-- **TokenSniffer Integration**: Ethereum token safety checks
-- **DEX-Specific Execution**: Optimized for each blockchain's DEX (Uniswap V2/V3, Raydium, Uniswap V3 on Base)
-- **Wallet Integration**: MetaMask for Ethereum and Base, Phantom for Solana
+- **DEX-Specific Execution**: Optimized for each blockchain's DEX (Jupiter + Raydium on Solana, Uniswap V3 on Base)
+- **Wallet Integration**: Phantom for Solana, MetaMask for Base
 - **Multi-Chain Price Fetching**: Chain-specific price monitoring for accurate PnL
-- **Solana Features**: Multi-DEX integration (Raydium, PumpSwap, Meteora, Heaven), automatic token account creation, priority-based pool discovery
+- **Solana Features**: 
+  - Multi-DEX integration (Jupiter primary, Raydium fallback)
+  - USDC or SOL base currency (configurable)
+  - Automatic token account creation (ATA)
+  - Priority-based pool discovery
 - **Base Features**: Uniswap V3 integration, EIP-1559 gas optimization, re-quote protection, multiple fee tier support
 - **Smart Blacklist Management**: Automatic cleanup every 6 hours to maintain trading opportunities
 
@@ -704,7 +704,7 @@ python main.py
 - **Dynamic Position Sizing**: AI-calculated position sizes based on quality and risk
 - **Market Regime Adaptation**: Strategy adapts to bull, bear, sideways, and volatile markets
 - **Comprehensive Risk Management**: Multi-layered risk assessment with AI-powered loss prevention
-- **Sentiment Analysis**: Analyzes Reddit and Twitter sentiment (Ethereum)
+- **Sentiment Analysis**: Sentiment analysis available when enabled (currently disabled by default to avoid being too restrictive)
 - **Liquidity Analysis**: Ensures sufficient liquidity for trades
 - **Volume Analysis**: Tracks trading volume patterns
 - **Promotional Filtering**: Automatically filters spam and promotional content
@@ -830,10 +830,17 @@ Configure chain-specific settings in `multi_chain_executor.py`:
 
 ```python
 CHAIN_CONFIGS = {
-    "ethereum": {
-        "rpc_url": INFURA_URL,
+    "solana": {
+        "rpc_url": SOLANA_RPC_URL,
+        "native_token": "SOL",
+        "base_currency": "USDC",  # or "SOL"
+        "dex": "jupiter",  # with raydium fallback
+        # ... more config
+    },
+    "base": {
+        "rpc_url": BASE_RPC_URL,
         "native_token": "ETH",
-        "dex": "uniswap",
+        "dex": "uniswap_v3",
         # ... more config
     }
 }
@@ -960,6 +967,13 @@ def _detect_delisted_token(token_address: str, consecutive_failures: int) -> boo
     - **Solution**: Implemented dynamic configuration loading with `config_loader.py`
     - **Result**: Changes to `config.yaml` now take effect immediately without restart
     - **Status**: ✅ Resolved with automatic cache clearing
+
+16. **"Stop-loss triggered but SELL FAILED!"**
+    - **FIXED**: This issue has been resolved with enhanced sell verification
+    - **Cause**: RPC verification could return false negatives, causing valid sells to be marked as failed
+    - **Solution**: Implemented multi-method verification (RPC + balance checks + retries) before assuming failure
+    - **Result**: More accurate sell verification with reduced false negatives
+    - **Status**: ✅ Resolved with balance verification fallback
 
 ### Debug Mode
 Enable debug logging in `config.yaml`:
@@ -1100,7 +1114,7 @@ The bot now includes sophisticated AI-powered trading strategies for optimal exe
 
 ### ⚡ **Priority Fees & Performance**
 - **Compute Unit Pricing**: Enhanced priority fees for faster execution
-- **EIP-1559 Support**: Dynamic gas pricing on Ethereum
+- **EIP-1559 Support**: Dynamic gas pricing on Base (Ethereum L2)
 - **Fresh Quote Retry**: Re-fetch quotes immediately before execution
 - **Stale Price Protection**: Reject quotes older than 2-3 seconds
 
@@ -1113,7 +1127,7 @@ The bot now includes sophisticated AI-powered trading strategies for optimal exe
 ## 🛡️ Safety Features
 
 ### Multi-Network Support
-- **Three-Network Trading**: Ethereum, Base, and Solana
+- **Two-Network Trading**: Solana and Base
 - **Wallet Integration**: MetaMask for ETH/Base, Phantom for Solana
 - **Cross-Chain Safety**: Prevents trading on unsupported networks
 - **Network-Specific Balance Checking**: Verifies funds on each network
@@ -1144,7 +1158,7 @@ The bot now includes sophisticated AI-powered trading strategies for optimal exe
 
 ### Pre-Buy Delisting Check
 - **Pre-Purchase Validation**: Checks if tokens are delisted before buying
-- **Chain-Specific Logic**: Different validation rules for Ethereum vs Solana tokens
+- **Chain-Specific Logic**: Different validation rules for Solana vs Base tokens
 - **Conservative Approach**: Skips tokens that can't be verified
 - **DexScreener Protection**: Prevents buying tokens with stale/inactive data
 - **Configurable**: Can be enabled/disabled via `enable_pre_buy_delisting_check`
@@ -1174,14 +1188,15 @@ The bot now includes sophisticated AI-powered trading strategies for optimal exe
 9. **Monitor position concentration** - The bot prevents duplicate buys, but monitor overall portfolio diversity
 10. **Understand delisting risks** - Meme tokens can be delisted quickly, resulting in 100% loss
 11. **Monitor position alerts** - Pay attention to Telegram notifications for position updates
+12. **Verify sell transactions** - Enhanced verification prevents false "SELL FAILED" messages
 
 ### 🔧 Infrastructure Security
-12. **Regularly update dependencies** - Keep all packages updated
-13. **Test on testnets first** - Validate functionality before mainnet
-14. **Use hardware wallets for large amounts** - Consider hardware wallets for significant funds
-15. **Secure wallet setup** - Use separate wallets for different networks (MetaMask for ETH/Base, Phantom for Solana)
-16. **Backup secrets securely** - Store backup credentials in secure locations
-17. **Monitor access logs** - Track who has access to your secrets
+13. **Regularly update dependencies** - Keep all packages updated
+14. **Test on testnets first** - Validate functionality before mainnet
+15. **Use hardware wallets for large amounts** - Consider hardware wallets for significant funds
+16. **Secure wallet setup** - Use separate wallets for different networks (Phantom for Solana, MetaMask for Base)
+17. **Backup secrets securely** - Store backup credentials in secure locations
+18. **Monitor access logs** - Track who has access to your secrets
 
 ## 🔧 Troubleshooting
 
