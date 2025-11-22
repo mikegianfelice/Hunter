@@ -44,9 +44,9 @@ check_pool_reserves: true  # Verify pool has sufficient reserves
 min_pool_reserves_multiplier: 2.0  # Pool reserves must be 2x trade amount
 
 # === Strategy Thresholds ===
-min_momentum_pct: 0.001  # Increased momentum requirement for quality
-min_volume_24h_for_buy: 100000   # Quality-first: $100k volume minimum for reliability
-min_liquidity_usd_for_buy: 100000  # Quality-first: $100k liquidity minimum for reliability
+min_momentum_pct: 0.002  # Increased momentum requirement for quality (raised from 0.001 to 0.002 - 0.2% minimum)
+min_volume_24h_for_buy: 150000   # Quality-first: $150k volume minimum for reliability (raised from $100k to improve win rate)
+min_liquidity_usd_for_buy: 150000  # Quality-first: $150k liquidity minimum for reliability (raised from $100k to improve win rate)
 min_price_usd: 0.000001  # MICRO TESTING - reduced minimum price for more opportunities
 
 # Fast-path thresholds for first-seen tokens
@@ -155,7 +155,7 @@ reset_state_now: false
 
 # === Sustainable Trading Settings ===
 # Quality scoring thresholds
-min_quality_score: 40  # Minimum quality score (0-100) - increased from 25 to filter weak tokens
+min_quality_score: 50  # Minimum quality score (0-100) - increased from 40 to 50 to improve win rate (filter weaker tokens)
 quality_volume_weight: 0.4  # 40% weight for volume in quality score
 quality_liquidity_weight: 0.4  # 40% weight for liquidity in quality score
 quality_price_weight: 0.2  # 20% weight for price stability in quality score
