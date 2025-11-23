@@ -11,7 +11,7 @@ A sophisticated AI-powered cryptocurrency trading bot designed for **consistent 
 <table>
   <tr>
     <td width="50%">
-      <img src="data/wallet_value_plot.png" alt="Wallet Value Chart" width="100%" />
+      <img src="data/wallet_value_plot.png" width="100%" />
     </td>
     <td width="50%">
       <img src="docs/performance_chart.png" alt="30-Day Performance" width="100%" />
