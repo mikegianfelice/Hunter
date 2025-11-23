@@ -271,13 +271,9 @@ tmp/
 *.old
 
 # Generated plots and images
-*.png
 *.jpg
 *.jpeg
 *.gif
-
-# Exception: Allow performance charts in docs/ for GitHub display
-!docs/*.png
 
 # OS generated files
 .DS_Store
