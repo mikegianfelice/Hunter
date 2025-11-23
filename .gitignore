@@ -244,14 +244,15 @@ delisted_tokens_backup.json
 data/balance_cache.json
 performance_data.json
 
-# Allow performance_data.json and trade_log.csv for chart generation
-# These files are needed by GitHub Actions workflow
-!data/performance_data.json
+# Runtime data files - CSV files (but allow trade_log.csv for charts)
+trending_tokens.csv
+*.csv
+# Exception: Allow trade_log.csv for chart generation
 !data/trade_log.csv
 
-# Runtime data files
-trending_tokens.csv
-# Allow trade_log.csv (see exception above)
+# Exception: Allow performance_data.json for chart generation
+# These files are needed by GitHub Actions workflow
+!data/performance_data.json
 
 # Trading logs and archives
 archives/
