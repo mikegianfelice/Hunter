@@ -306,8 +306,8 @@ Total Trades: {data['total_trades']}
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"Plot saved to: {save_path}")
     else:
-        plt.savefig(PROJECT_ROOT / 'data' / 'wallet_value_plot.png', dpi=300, bbox_inches='tight')
-        print(f"Plot saved to: {PROJECT_ROOT / 'data' / 'wallet_value_plot.png'}")
+        plt.savefig(PROJECT_ROOT / 'docs' / 'wallet_value_plot.png', dpi=300, bbox_inches='tight')
+        print(f"Plot saved to: {PROJECT_ROOT / 'docs' / 'wallet_value_plot.png'}")
     
     plt.close()
 

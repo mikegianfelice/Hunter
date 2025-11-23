@@ -9,14 +9,18 @@ A sophisticated AI-powered cryptocurrency trading bot designed for **consistent 
 ## 📊 Live Performance
 
 <table>
-  <tr>
-    <td width="50%">
-      <img src="data/wallet_value_plot.png" width="100%" />
-    </td>
-    <td width="50%">
-      <img src="docs/performance_chart.png" alt="30-Day Performance" width="100%" />
-    </td>
-  </tr>
+<tr>
+<td>
+
+![Wallet Value Chart](docs/wallet_value_plot.png)
+
+</td>
+<td>
+
+![30-Day Performance](docs/performance_chart.png)
+
+</td>
+</tr>
 </table>
 
 *Performance charts updated daily. Past performance does not guarantee future results.*
