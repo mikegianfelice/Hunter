@@ -467,8 +467,23 @@ def _save_state(state):
         print(f"⚠️ Failed to persist risk state: {e}")
 
 def _open_positions_count():
-    positions = load_positions_store()
-    return len(positions)
+    """
+    Get current count of open positions.
+    This function always loads fresh data from the store to ensure accuracy
+    after positions are closed/sold.
+    """
+    try:
+        positions = load_positions_store()
+        count = len(positions)
+        # Debug logging to help troubleshoot position count issues
+        debug_enabled = os.getenv("DEBUG_POSITION_COUNT", "false").lower() == "true"
+        if debug_enabled:
+            print(f"🔍 [DEBUG] Position count: {count}, Position keys: {list(positions.keys())}")
+        return count
+    except Exception as e:
+        print(f"⚠️ Error loading positions for count: {e}")
+        # Return 0 on error to allow trading (fail open)
+        return 0
 
 
 def _is_token_already_held(token_address: str) -> bool:
@@ -584,8 +599,21 @@ def allow_new_trade(trade_amount_usd: float, token_address: str = None, chain_id
         return False, "token_already_held"
 
     # concurrent positions guard
-    if _open_positions_count() >= config['MAX_CONCURRENT_POS']:
-        return False, "max_concurrent_positions_reached"
+    # CRITICAL: Always get fresh position count to ensure we see positions that were just closed
+    open_count = _open_positions_count()
+    max_concurrent = config['MAX_CONCURRENT_POS']
+    
+    if open_count >= max_concurrent:
+        # Log detailed info to help debug why trades are blocked
+        print(f"🚫 Trade blocked: {open_count} open positions >= max {max_concurrent}")
+        try:
+            positions = load_positions_store()
+            if positions:
+                position_keys = list(positions.keys())[:5]  # Show first 5
+                print(f"📊 Current positions: {position_keys}...")
+        except Exception:
+            pass
+        return False, f"max_concurrent_positions_reached_{open_count}_{max_concurrent}"
     
     # total exposure guard (tier-based) - uses combined balance for tier calculation
     max_total_exposure = config.get('MAX_TOTAL_EXPOSURE_USD', 100.0)

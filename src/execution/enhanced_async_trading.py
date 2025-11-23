@@ -1062,6 +1062,15 @@ class EnhancedAsyncTradingEngine:
         cycle_start = time.time()
         log_info("trading.cycle_start", "🚀 Starting enhanced async trading cycle")
         
+        # CRITICAL: Force refresh position count at start of each cycle
+        # This ensures we have accurate counts after sells complete
+        try:
+            from src.core.risk_manager import _open_positions_count
+            current_positions = _open_positions_count()
+            log_info("trading.position_count", f"📊 Current open positions: {current_positions}")
+        except Exception as e:
+            log_error("trading.position_count_error", f"Error checking position count: {e}")
+        
         await self._maybe_run_helius_reconciliation()
         
         # Check AI module health
@@ -1212,9 +1221,22 @@ async def run_enhanced_async_trading():
                     result = await engine.run_enhanced_trading_cycle()
                     
                     if not result.get("success", False):
-                        log_error("trading.cycle_failed", f"Cycle #{cycle_count} failed: {result.get('error', 'Unknown error')}")
+                        error_msg = result.get('error', 'Unknown error')
+                        log_error("trading.cycle_failed", f"Cycle #{cycle_count} failed: {error_msg}")
+                        
+                        # CRITICAL: Check if failure is due to max positions - log current count
+                        if "max_concurrent_positions" in str(error_msg).lower():
+                            try:
+                                from src.core.risk_manager import _open_positions_count
+                                current_count = _open_positions_count()
+                                log_info("trading.max_positions_check", 
+                                        f"⚠️ Cycle blocked by max positions. Current count: {current_count}. "
+                                        f"This should refresh after positions are closed.")
+                            except Exception:
+                                pass
+                        
                         await asyncio.sleep(30)  # Wait before retry
-                        continue
+                        continue  # Continue to next cycle - don't stop
                     
                     # Send periodic status report (throttled to every 1 hour)
                     try:
@@ -1222,15 +1244,35 @@ async def run_enhanced_async_trading():
                     except Exception as e:
                         log_error("trading.status_report", f"Periodic status report failed: {e}")
                     
+                    # CRITICAL: Log position count after cycle to verify positions were properly closed
+                    try:
+                        from src.core.risk_manager import _open_positions_count
+                        positions_after = _open_positions_count()
+                        log_info("trading.position_count_after", 
+                                f"📊 Open positions after cycle: {positions_after} "
+                                f"(tokens_processed: {result.get('tokens_processed', 0)}, "
+                                f"trades_executed: {result.get('trades_executed', 0)})")
+                    except Exception as e:
+                        log_error("trading.position_count_error_after", f"Error checking position count after cycle: {e}")
+                    
                     # Wait between cycles
                     wait_time = 300  # 5 minutes
                     wait_minutes = wait_time / 60
                     log_info("trading.wait", f"⏰ Waiting {wait_minutes:.1f} minutes before next cycle...")
                     await asyncio.sleep(wait_time)
                     
+                except KeyboardInterrupt:
+                    # Allow keyboard interrupt to stop the loop
+                    raise
                 except Exception as e:
                     log_error("trading.cycle_error", f"Error in trading cycle #{cycle_count}: {e}")
+                    import traceback
+                    log_error("trading.cycle_error_trace", f"Traceback: {traceback.format_exc()}")
+                    # CRITICAL: Ensure we continue the loop even after exceptions
+                    # Don't let exceptions stop the trading loop - this is why bot stops after sells
+                    log_info("trading.cycle_recover", f"🔄 Recovering from error, continuing to next cycle...")
                     await asyncio.sleep(60)  # Wait before retry
+                    continue  # Explicitly continue to next cycle - this ensures loop never stops
                     
     except KeyboardInterrupt:
         log_info("trading.stop", "🛑 Enhanced async trading stopped by user")
