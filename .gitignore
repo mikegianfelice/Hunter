@@ -241,13 +241,17 @@ cacert.pem
 # Runtime data files
 delisted_tokens.json
 delisted_tokens_backup.json
-data/performance_data.json
 data/balance_cache.json
 performance_data.json
 
+# Allow performance_data.json and trade_log.csv for chart generation
+# These files are needed by GitHub Actions workflow
+!data/performance_data.json
+!data/trade_log.csv
+
 # Runtime data files
 trending_tokens.csv
-*.csv
+# Allow trade_log.csv (see exception above)
 
 # Trading logs and archives
 archives/
