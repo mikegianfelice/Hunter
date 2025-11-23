@@ -65,9 +65,8 @@ class PerformanceTracker:
             # Check config if available
             auto_sync_config = False
             try:
-                from src.config.config_loader import get_config
-                config = get_config()
-                auto_sync_config = config.get('auto_sync_chart_data', False)
+                from src.config.config_loader import get_config_bool
+                auto_sync_config = get_config_bool('auto_sync_chart_data', False)
             except:
                 pass
             
@@ -79,18 +78,49 @@ class PerformanceTracker:
             import subprocess
             from pathlib import Path
             
-            script_path = Path(__file__).parent.parent.parent / 'scripts' / 'sync_chart_data.sh'
-            if script_path.exists():
-                # Run in background, don't wait for completion
-                subprocess.Popen(
-                    ['bash', str(script_path)],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    start_new_session=True  # Detach from parent process
-                )
+            # Get project root directory (where script should run from)
+            project_root = Path(__file__).parent.parent.parent
+            script_path = project_root / 'scripts' / 'sync_chart_data.sh'
+            
+            if not script_path.exists():
+                print(f"⚠️ Sync script not found at {script_path}")
+                return
+            
+            # Ensure script is executable
+            os.chmod(script_path, 0o755)
+            
+            # Run in background, but log to file for debugging
+            log_file = project_root / 'logs' / 'sync_chart_data.log'
+            log_file.parent.mkdir(exist_ok=True)
+            
+            with open(log_file, 'a') as log:
+                log.write(f"\n[{datetime.now().isoformat()}] Starting sync...\n")
+            
+            # Run script with proper working directory
+            process = subprocess.Popen(
+                ['bash', str(script_path)],
+                cwd=str(project_root),  # Set working directory
+                stdout=open(log_file, 'a'),
+                stderr=subprocess.STDOUT,  # Redirect stderr to stdout
+                start_new_session=True  # Detach from parent process
+            )
+            
+            # Log that we started the process
+            with open(log_file, 'a') as log:
+                log.write(f"Sync process started with PID {process.pid}\n")
+                
         except Exception as e:
-            # Silently fail - don't interrupt trading if sync fails
-            pass
+            # Log error but don't interrupt trading
+            try:
+                from pathlib import Path
+                project_root = Path(__file__).parent.parent.parent
+                log_file = project_root / 'logs' / 'sync_chart_data.log'
+                log_file.parent.mkdir(exist_ok=True)
+                with open(log_file, 'a') as log:
+                    log.write(f"[{datetime.now().isoformat()}] ERROR: {e}\n")
+            except:
+                pass
+            print(f"⚠️ Failed to start sync script: {e}")
     
     def log_trade_entry(self, token: Dict, position_size: float, quality_score: float, 
                        additional_data: Dict = None):
