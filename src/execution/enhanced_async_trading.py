@@ -10,6 +10,7 @@ import aiofiles
 import time
 import json
 import random
+import math
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
@@ -1000,26 +1001,93 @@ class EnhancedAsyncTradingEngine:
                 }
     
     def _get_recent_fill_rate(self) -> float:
-        """Get recent fill success rate from execution history"""
+        """Get recent fill success rate from execution history with time-based weighting"""
         if len(self.performance_window) == 0:
             return 0.85  # Default assumption
+        
+        current_time = time.time()
         recent = list(self.performance_window)[-20:]  # Last 20 trades
-        successful = sum(1 for t in recent if t.get("success", False))
-        return successful / len(recent) if recent else 0.85
+        
+        if not recent:
+            return 0.85
+        
+        # Time-based weighting: more recent trades count more
+        # Half-life of 15 minutes (900 seconds) - trades older than 15 min have <50% weight
+        total_weight = 0.0
+        weighted_successes = 0.0
+        
+        for trade in recent:
+            trade_time = trade.get("timestamp", current_time)
+            age_seconds = current_time - trade_time
+            
+            # Exponential decay: weight = e^(-age / half_life)
+            # For 15 min half-life, weight drops to 50% after 15 min, 25% after 30 min
+            half_life_seconds = 900  # 15 minutes
+            weight = math.exp(-age_seconds / half_life_seconds)
+            
+            if trade.get("success", False):
+                weighted_successes += weight
+            total_weight += weight
+        
+        if total_weight > 0:
+            return weighted_successes / total_weight
+        return 0.85
     
     def _get_recent_avg_slippage(self) -> float:
-        """Get recent average slippage"""
+        """Get recent average slippage with time-based weighting"""
         if len(self.performance_window) == 0:
             return 0.02  # Default 2%
-        recent = [t.get("slippage", 0.02) for t in list(self.performance_window)[-20:] if t.get("slippage") is not None]
-        return sum(recent) / len(recent) if recent else 0.02
+        
+        current_time = time.time()
+        recent = [t for t in list(self.performance_window)[-20:] if t.get("slippage") is not None]
+        
+        if not recent:
+            return 0.02
+        
+        # Time-based weighting: more recent trades count more
+        half_life_seconds = 900  # 15 minutes
+        total_weight = 0.0
+        weighted_slippage = 0.0
+        
+        for trade in recent:
+            trade_time = trade.get("timestamp", current_time)
+            age_seconds = current_time - trade_time
+            weight = math.exp(-age_seconds / half_life_seconds)
+            
+            weighted_slippage += trade.get("slippage", 0.02) * weight
+            total_weight += weight
+        
+        if total_weight > 0:
+            return weighted_slippage / total_weight
+        return 0.02
     
     def _get_recent_avg_latency(self) -> float:
-        """Get recent average execution latency in ms"""
+        """Get recent average execution latency in ms with time-based weighting"""
         if len(self.performance_window) == 0:
             return 2000.0  # Default 2s
-        recent = [t.get("latency_ms", 2000.0) for t in list(self.performance_window)[-20:] if t.get("latency_ms") is not None]
-        return sum(recent) / len(recent) if recent else 2000.0
+        
+        current_time = time.time()
+        recent = [t for t in list(self.performance_window)[-20:] if t.get("latency_ms") is not None]
+        
+        if not recent:
+            return 2000.0
+        
+        # Time-based weighting: more recent trades count more
+        half_life_seconds = 900  # 15 minutes
+        total_weight = 0.0
+        weighted_latency = 0.0
+        
+        for trade in recent:
+            trade_time = trade.get("timestamp", current_time)
+            age_seconds = current_time - trade_time
+            weight = math.exp(-age_seconds / half_life_seconds)
+            
+            weighted_latency += trade.get("latency_ms", 2000.0) * weight
+            total_weight += weight
+        
+        if total_weight > 0:
+            return weighted_latency / total_weight
+        return 2000.0
     
     async def _update_metrics(self, trade_result: Dict[str, Any]):
         """Update trading metrics with new trade result"""

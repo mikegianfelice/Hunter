@@ -139,6 +139,7 @@ class AITimeWindowScheduler:
     ) -> float:
         """
         Calculate window quality score (0.0-1.0) based on execution metrics
+        with automatic recovery mechanism
         """
         score_components = []
         weights = []
@@ -171,16 +172,43 @@ class AITimeWindowScheduler:
         else:
             weighted_score = 0.5  # Default neutral score
         
+        # Automatic recovery mechanism: if no recent bad data, gradually improve score
+        current_time = time.time()
+        time_since_last_review = current_time - self.last_review_time if self.last_review_time > 0 else 0
+        
         # If we have no recent execution history and no metrics provided, default to optimistic score
         # This prevents blocking trades when there's insufficient data (e.g., after position closes)
         has_recent_data = (
             len(self.execution_history) > 0 or
             (recent_exec_metrics and recent_exec_metrics.get("fill_success_rate") is not None)
         )
+        
         if not has_recent_data:
             # No recent data - use optimistic default to avoid blocking trades unnecessarily
             # This handles the case where positions just closed and we don't have recent buy execution data
             weighted_score = max(weighted_score, 0.70)  # At least 70% if no recent data
+        else:
+            # Automatic recovery: if score is low but no recent failures, gradually improve
+            # Recovery rate: 0.01 (1%) per 5 minutes of good behavior
+            recovery_rate = 0.01  # 1% per review interval
+            recovery_intervals = max(0, int(time_since_last_review / self.review_interval_seconds))
+            
+            # Only apply recovery if current score is below threshold and we have recent good data
+            if weighted_score < self.min_window_score_to_trade and recovery_intervals > 0:
+                # Check if recent metrics are actually good (no recent failures)
+                recent_fill_rate = fill_success_rate
+                recent_slippage = avg_slippage
+                recent_latency = avg_latency
+                
+                # If recent metrics are good, apply recovery
+                if (recent_fill_rate >= 0.8 and recent_slippage <= 0.03 and recent_latency <= 3000):
+                    recovery_bonus = min(0.10, recovery_intervals * recovery_rate)  # Cap at 10% recovery
+                    weighted_score = min(1.0, weighted_score + recovery_bonus)
+        
+        # Minimum score floor: prevent score from getting stuck below a reasonable threshold
+        # This ensures the system can always recover eventually
+        min_score_floor = 0.50  # Never go below 50%
+        weighted_score = max(min_score_floor, weighted_score)
         
         return max(0.0, min(1.0, weighted_score))
     
