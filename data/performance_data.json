@@ -437,6 +437,56 @@
       "total_fees_usd": 0.1223696145,
       "pnl_after_fees_usd": -12.239458614500021,
       "pnl_after_fees_percent": -61.81544754797987
+    },
+    {
+      "id": "pippin_20251123_111023",
+      "symbol": "pippin",
+      "address": "Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump",
+      "chain": "solana",
+      "entry_time": "2025-11-23T11:10:23.501327",
+      "entry_price": 0.02986,
+      "position_size_usd": 19.8,
+      "quality_score": 0.7236706502130372,
+      "volume_24h": 64774049.09,
+      "liquidity": 3041014.51,
+      "exit_time": "2025-11-23T11:10:23.501327",
+      "exit_price": 0.02986,
+      "pnl_usd": 0.0,
+      "pnl_percent": 0.0,
+      "status": "manual_close",
+      "take_profit_target": null,
+      "stop_loss_target": null,
+      "buy_tx_hash": "K78kMiUKeWETiw3Z4Y2sFPLkMdSSiZa5TUs337WFFMbafzckGAeurszDZ1k9X3NbUVBxEXLL7SRFy1aj9RTzQFU",
+      "entry_amount_usd_quoted": 19.8,
+      "entry_amount_usd_actual": 0,
+      "entry_tokens_received": null,
+      "entry_gas_fee_usd": 0,
+      "buy_slippage_actual": null
+    },
+    {
+      "id": "FWOG_20251123_111031",
+      "symbol": "FWOG",
+      "address": "A8C3xuqscfmyLrte3VmTqrAq8kgMASius9AFNANwpump",
+      "chain": "solana",
+      "entry_time": "2025-11-23T11:10:31.576845",
+      "entry_price": 0.009939,
+      "position_size_usd": 19.8,
+      "quality_score": 0.7168902060515197,
+      "volume_24h": 2269987.69,
+      "liquidity": 2145916.93,
+      "exit_time": "2025-11-23T11:10:31.576845",
+      "exit_price": 0.009939,
+      "pnl_usd": 0.0,
+      "pnl_percent": 0.0,
+      "status": "manual_close",
+      "take_profit_target": null,
+      "stop_loss_target": null,
+      "buy_tx_hash": "5WZ6UrvvzHyY2AV5byaqJHZD8c3sw26QNhPe9NxLtyx2j19Bc1bRHVM7YGp7LuuKXyykpkzhLVzPNmF1VLpgLVeu",
+      "entry_amount_usd_quoted": 19.8,
+      "entry_amount_usd_actual": 0,
+      "entry_tokens_received": null,
+      "entry_gas_fee_usd": 0,
+      "buy_slippage_actual": null
     }
   ],
   "daily_stats": {
@@ -480,5 +530,5 @@
       }
     }
   },
-  "last_updated": "2025-11-23T09:10:24.575527"
+  "last_updated": "2025-11-23T11:10:31.589471"
 }
