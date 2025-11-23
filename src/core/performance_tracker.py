@@ -50,8 +50,47 @@ class PerformanceTracker:
                 'last_updated': datetime.now().isoformat()
             }
             replace_performance_data(data)
+            # Optionally sync to git for chart generation (non-blocking)
+            self._maybe_sync_to_git()
         except Exception as e:
             print(f"⚠️ Could not save performance data: {e}")
+    
+    def _maybe_sync_to_git(self):
+        """Optionally sync performance data to git for chart generation"""
+        try:
+            import os
+            # Check if auto-sync is enabled via environment variable
+            auto_sync_env = os.getenv('AUTO_SYNC_CHART_DATA', '').lower() == 'true'
+            
+            # Check config if available
+            auto_sync_config = False
+            try:
+                from src.config.config_loader import get_config
+                config = get_config()
+                auto_sync_config = config.get('auto_sync_chart_data', False)
+            except:
+                pass
+            
+            # Enable if either is set
+            if not (auto_sync_env or auto_sync_config):
+                return
+            
+            # Use subprocess to run sync script in background (non-blocking)
+            import subprocess
+            from pathlib import Path
+            
+            script_path = Path(__file__).parent.parent.parent / 'scripts' / 'sync_chart_data.sh'
+            if script_path.exists():
+                # Run in background, don't wait for completion
+                subprocess.Popen(
+                    ['bash', str(script_path)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True  # Detach from parent process
+                )
+        except Exception as e:
+            # Silently fail - don't interrupt trading if sync fails
+            pass
     
     def log_trade_entry(self, token: Dict, position_size: float, quality_score: float, 
                        additional_data: Dict = None):
