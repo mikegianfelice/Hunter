@@ -1,0 +1,55 @@
+name: Update Performance Charts
+
+on:
+  schedule:
+    # Run daily at 00:00 UTC (adjust timezone as needed)
+    - cron: '0 0 * * *'
+  workflow_dispatch:  # Allow manual triggers from GitHub UI
+
+jobs:
+  update-charts:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Required to commit charts
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install matplotlib
+
+      - name: Create docs directory
+        run: |
+          mkdir -p docs
+
+      - name: Generate 30-day performance chart
+        run: |
+          python scripts/plot_wallet_value.py --days 30 --type percentage --save docs/performance_chart.png
+
+      - name: Generate 7-day performance chart
+        run: |
+          python scripts/plot_wallet_value.py --days 7 --type percentage --save docs/performance_7d.png
+
+      - name: Generate 90-day performance chart
+        run: |
+          python scripts/plot_wallet_value.py --days 90 --type percentage --save docs/performance_90d.png
+
+      - name: Commit and push charts
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add docs/*.png
+          git diff --staged --quiet || (git commit -m "📊 Update performance charts [skip ci]" && git push)
+

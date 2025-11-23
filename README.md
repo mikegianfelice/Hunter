@@ -6,6 +6,18 @@ A sophisticated AI-powered cryptocurrency trading bot designed for **consistent 
 
 **Cryptocurrency trading involves significant risk of loss. Never invest more than you can afford to lose. The developers are not responsible for any financial losses incurred from using this bot.**
 
+## 📊 Live Performance
+
+![30-Day Performance](docs/performance_chart.png)
+
+*Performance charts updated daily. Past performance does not guarantee future results.*
+
+**Quick Stats:**
+- [7-Day Performance](docs/performance_7d.png)
+- [90-Day Performance](docs/performance_90d.png)
+
+---
+
 ## 🎯 AI-Enhanced Features
 
 ### **🧠 Core AI Systems**

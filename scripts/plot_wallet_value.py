@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Plot Wallet Value Over Time
-Visualizes PnL by plotting wallet value over the last 5 days
+Visualizes PnL by plotting wallet value over time
+Includes percentage-based charts optimized for marketing
 """
 
 import json
@@ -308,17 +309,155 @@ Total Trades: {data['total_trades']}
         plt.savefig(PROJECT_ROOT / 'data' / 'wallet_value_plot.png', dpi=300, bbox_inches='tight')
         print(f"Plot saved to: {PROJECT_ROOT / 'data' / 'wallet_value_plot.png'}")
     
-    plt.show()
+    plt.close()
+
+def plot_percentage_pnl(days=30, initial_wallet_usd=None, save_path=None):
+    """
+    Plot PnL as percentage returns - optimized for marketing and GitHub display
+    Clean, professional chart showing percentage returns over time
+    """
+    data = calculate_wallet_value_over_time(days, initial_wallet_usd)
+    
+    if not data:
+        print("No data to plot")
+        return
+    
+    # Calculate percentage returns
+    initial = data['initial_wallet']
+    if initial <= 0:
+        print("Invalid initial wallet value")
+        return
+    
+    percentage_returns = [
+        ((val - initial) / initial * 100) if initial > 0 else 0
+        for val in data['detailed_wallet_values']
+    ]
+    
+    # Calculate win rate from events
+    winning_trades = len([e for e in data['events'] if e['pnl_usd'] > 0])
+    total_trades = data['total_trades']
+    win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+    
+    # Create professional figure with modern styling
+    try:
+        plt.style.use('seaborn-v0_8-darkgrid')
+    except:
+        try:
+            plt.style.use('seaborn-darkgrid')
+        except:
+            plt.style.use('default')
+    
+    fig, ax = plt.subplots(figsize=(14, 7), facecolor='white')
+    
+    # Color scheme
+    positive_color = '#10B981'  # Green
+    negative_color = '#EF4444'    # Red
+    line_color = '#2563EB'      # Blue
+    grid_color = '#E5E7EB'      # Light gray
+    
+    # Plot percentage returns with smooth line
+    ax.plot(data['detailed_time_points'], percentage_returns, 
+             linewidth=3, color=line_color, label='Total Return', zorder=3)
+    
+    # Zero line (break-even)
+    ax.axhline(y=0, color='#6B7280', linestyle='--', linewidth=1.5, alpha=0.7, zorder=1)
+    
+    # Fill positive/negative areas
+    ax.fill_between(data['detailed_time_points'], 0, percentage_returns,
+                     where=[p >= 0 for p in percentage_returns],
+                     alpha=0.2, color=positive_color, label='Profit Zone', zorder=2)
+    ax.fill_between(data['detailed_time_points'], 0, percentage_returns,
+                     where=[p < 0 for p in percentage_returns],
+                     alpha=0.2, color=negative_color, label='Loss Zone', zorder=2)
+    
+    # Formatting for readability
+    ax.set_xlabel('Date', fontsize=13, fontweight='bold', color='#1F2937')
+    ax.set_ylabel('Return (%)', fontsize=13, fontweight='bold', color='#1F2937')
+    
+    # Title with key metric
+    total_return = percentage_returns[-1] if percentage_returns else 0
+    title_color = positive_color if total_return >= 0 else negative_color
+    ax.set_title(f'Hunter Bot Performance: {total_return:+.2f}% over {days} days', 
+                 fontsize=16, fontweight='bold', color=title_color, pad=20)
+    
+    # Grid styling
+    ax.grid(True, alpha=0.3, color=grid_color, linestyle='-', linewidth=0.5)
+    ax.set_axisbelow(True)
+    
+    # Format x-axis dates
+    if days <= 7:
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
+        ax.xaxis.set_major_locator(mdates.DayLocator(interval=1))
+    elif days <= 30:
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
+        ax.xaxis.set_major_locator(mdates.DayLocator(interval=max(1, days // 7)))
+    else:
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
+        ax.xaxis.set_major_locator(mdates.WeekdayLocator(interval=1))
+    
+    plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right', fontsize=10)
+    plt.setp(ax.yaxis.get_majorticklabels(), fontsize=10)
+    
+    # Add percentage sign to y-axis
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:+.0f}%'))
+    
+    # Stats box with key metrics
+    total_return = percentage_returns[-1] if percentage_returns else 0
+    avg_daily_return = total_return / days if days > 0 else 0
+    
+    stats_text = f"""Key Metrics
+━━━━━━━━━━━━━━━━━━━━
+Total Return: {total_return:+.2f}%
+Avg Daily: {avg_daily_return:+.2f}%
+Win Rate: {win_rate:.1f}%
+Trades: {total_trades}
+Period: {days} days"""
+    
+    # Position stats box in upper right
+    ax.text(0.98, 0.98, stats_text, transform=ax.transAxes,
+            fontsize=11, verticalalignment='top', horizontalalignment='right',
+            family='monospace', fontweight='bold',
+            bbox=dict(boxstyle='round,pad=0.8', facecolor='#F9FAFB', 
+                     edgecolor='#E5E7EB', linewidth=1.5, alpha=0.95),
+            color='#1F2937')
+    
+    # Remove top and right spines for cleaner look
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_color('#D1D5DB')
+    ax.spines['bottom'].set_color('#D1D5DB')
+    
+    plt.tight_layout()
+    
+    # Save with high quality
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight', facecolor='white', 
+                   edgecolor='none', format='png')
+        print(f"✅ Chart saved to: {save_path}")
+    else:
+        default_path = PROJECT_ROOT / 'docs' / 'performance_chart.png'
+        default_path.parent.mkdir(exist_ok=True)
+        plt.savefig(default_path, dpi=150, bbox_inches='tight', facecolor='white',
+                   edgecolor='none', format='png')
+        print(f"✅ Chart saved to: {default_path}")
+    
+    plt.close()  # Important: close to free memory
+    return total_return, total_trades, win_rate
 
 if __name__ == "__main__":
     import argparse
     
     parser = argparse.ArgumentParser(description='Plot wallet value over time')
-    parser.add_argument('--days', type=int, default=5, help='Number of days to plot (default: 5)')
+    parser.add_argument('--days', type=int, default=30, help='Number of days to plot (default: 30)')
     parser.add_argument('--initial', type=float, default=None, help='Initial wallet value in USD (default: estimated)')
-    parser.add_argument('--save', type=str, default=None, help='Path to save plot (default: data/wallet_value_plot.png)')
+    parser.add_argument('--save', type=str, default=None, help='Path to save plot (default: docs/performance_chart.png)')
+    parser.add_argument('--type', type=str, choices=['percentage', 'value'], default='percentage',
+                       help='Chart type: percentage (marketing) or value (detailed)')
     
     args = parser.parse_args()
     
-    plot_wallet_value(days=args.days, initial_wallet_usd=args.initial, save_path=args.save)
+    if args.type == 'percentage':
+        plot_percentage_pnl(days=args.days, initial_wallet_usd=args.initial, save_path=args.save)
+    else:
+        plot_wallet_value(days=args.days, initial_wallet_usd=args.initial, save_path=args.save)
 
