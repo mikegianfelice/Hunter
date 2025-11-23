@@ -12,11 +12,6 @@ A sophisticated AI-powered cryptocurrency trading bot designed for **consistent 
 <tr>
 <td>
 
-![Wallet Value Chart](docs/wallet_value_plot.png)
-
-</td>
-<td>
-
 ![30-Day Performance](docs/performance_chart.png)
 
 </td>
