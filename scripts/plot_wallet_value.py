@@ -9,6 +9,8 @@ import json
 import csv
 from datetime import datetime, timedelta
 from pathlib import Path
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend for CI/headless environments
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from collections import defaultdict
@@ -215,7 +217,7 @@ def plot_wallet_value(days=5, initial_wallet_usd=None, save_path=None):
     
     if not data:
         print("No data to plot")
-        return
+        return None
     
     # Create figure
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 10))
@@ -320,7 +322,7 @@ def plot_percentage_pnl(days=30, initial_wallet_usd=None, save_path=None):
     
     if not data:
         print("No data to plot")
-        return
+        return None
     
     # Calculate percentage returns
     initial = data['initial_wallet']
@@ -456,8 +458,18 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
-    if args.type == 'percentage':
-        plot_percentage_pnl(days=args.days, initial_wallet_usd=args.initial, save_path=args.save)
-    else:
-        plot_wallet_value(days=args.days, initial_wallet_usd=args.initial, save_path=args.save)
+    try:
+        if args.type == 'percentage':
+            result = plot_percentage_pnl(days=args.days, initial_wallet_usd=args.initial, save_path=args.save)
+        else:
+            result = plot_wallet_value(days=args.days, initial_wallet_usd=args.initial, save_path=args.save)
+        
+        if result is None:
+            print("Warning: No data available to generate chart")
+            sys.exit(0)  # Exit successfully even if no data
+    except Exception as e:
+        print(f"Error generating chart: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
