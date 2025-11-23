@@ -413,9 +413,9 @@ Win Rate: {win_rate:.1f}%
 Trades: {total_trades}
 Period: {days} days"""
     
-    # Position stats box in upper right
-    ax.text(0.98, 0.98, stats_text, transform=ax.transAxes,
-            fontsize=11, verticalalignment='top', horizontalalignment='right',
+    # Position stats box in upper left
+    ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
+            fontsize=11, verticalalignment='top', horizontalalignment='left',
             family='monospace', fontweight='bold',
             bbox=dict(boxstyle='round,pad=0.8', facecolor='#F9FAFB', 
                      edgecolor='#E5E7EB', linewidth=1.5, alpha=0.95),
