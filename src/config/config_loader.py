@@ -3,6 +3,9 @@ import yaml
 import os
 from typing import Any, Dict
 
+# Sentinel object to distinguish between "key not found" and "key exists but is None"
+_NOT_FOUND = object()
+
 class ConfigLoader:
     """Dynamic configuration loader that can reload config when needed"""
     
@@ -27,9 +30,36 @@ class ConfigLoader:
             if self._config is None:
                 self._config = {}
     
+    def _get_nested(self, config: Dict, key: str, default: Any = None) -> Any:
+        """Get a nested configuration value using dot notation (e.g., 'time_window_scheduler.pause_on_volatility_spike')
+        
+        Returns a special sentinel object if the key path doesn't exist, so we can distinguish
+        between 'key not found' (return default) and 'key exists but value is None' (return None).
+        """
+        keys = key.split('.')
+        value = config
+        for i, k in enumerate(keys):
+            if isinstance(value, dict):
+                if k not in value:
+                    # Key path doesn't exist - return sentinel
+                    return _NOT_FOUND
+                value = value[k]
+            else:
+                # Intermediate value is not a dict - path doesn't exist
+                return _NOT_FOUND
+        return value
+    
     def get(self, key: str, default: Any = None) -> Any:
-        """Get a configuration value, reloading config if needed"""
+        """Get a configuration value, reloading config if needed. Supports dot notation for nested keys."""
         self._load_config()
+        # Try dot notation first (for nested keys)
+        if '.' in key:
+            result = self._get_nested(self._config, key, default)
+            if result is not _NOT_FOUND:
+                # Key path exists (even if value is None)
+                return result if result is not None else default
+            # Key path doesn't exist, fall through to direct key access for backward compatibility
+        # Fall back to direct key access (for backward compatibility)
         return self._config.get(key, default)
     
     def get_bool(self, key: str, default: bool = False) -> bool:
