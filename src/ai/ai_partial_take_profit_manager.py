@@ -82,10 +82,12 @@ class AIPartialTPManager:
         
         # Check hard stop loss first
         if pnl_pct <= -self.hard_stop_loss_pct:
+            # Log the threshold, not the actual loss (which may be worse due to slippage/delays)
+            threshold_pct = self.hard_stop_loss_pct * 100
             actions.append(PartialTPAction(
                 type="sell",
                 size_pct=1.0,
-                reason=f"hard_stop_loss_{pnl_pct:.2%}"
+                reason=f"hard_stop_loss_{threshold_pct:.1f}%_triggered_at_{pnl_pct:.2%}"
             ))
             log_info("partial_tp.hard_stop",
                     symbol=position.get("symbol", "?"),
