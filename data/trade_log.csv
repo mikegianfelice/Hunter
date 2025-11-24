@@ -35,3 +35,5 @@ timestamp,token,entry_price,exit_price,pnl_pct,reason
 2025-11-23 11:24:09,Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump,0.02986,0.02759,-7.6,hard_stop_loss_-7.60%
 # Test comment
 2025-11-23 12:33:12,Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump,0.03503,0.03193,-8.85,hard_stop_loss_-8.85%
+2025-11-23 23:25:51,9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump,0.217,0.2453,13.04,take_profit
+2025-11-24 01:05:20,Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump,0.02839,0.03663,29.02,take_profit
