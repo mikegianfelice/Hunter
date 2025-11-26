@@ -958,6 +958,31 @@
       "entry_tokens_received": null,
       "entry_gas_fee_usd": 0,
       "buy_slippage_actual": null
+    },
+    {
+      "id": "SHREPE_20251126_074247",
+      "symbol": "SHREPE",
+      "address": "BiGwCbrNetFGJYZMRJiPMEo3vf5XnLp7ibc1CtmuQGW4",
+      "chain": "solana",
+      "entry_time": "2025-11-26T07:42:47.015852",
+      "entry_price": 0.7659,
+      "position_size_usd": 13.200000000000001,
+      "quality_score": 0.662251407078003,
+      "volume_24h": 3796043.92,
+      "liquidity": 646990.97,
+      "exit_time": "2025-11-26T07:42:47.015852",
+      "exit_price": 0.7659,
+      "pnl_usd": 0.0,
+      "pnl_percent": 0.0,
+      "status": "manual_close",
+      "take_profit_target": null,
+      "stop_loss_target": null,
+      "buy_tx_hash": "3uF9m2NLWXJC3ERDw3afPzTcTNhD5sFJTop5N1kLSmedESTEoZG9wsdVtVGM2dEhqL7U9hNnTUDtJHg7D8c8WAhV",
+      "entry_amount_usd_quoted": 13.200000000000001,
+      "entry_amount_usd_actual": 0,
+      "entry_tokens_received": null,
+      "entry_gas_fee_usd": 0,
+      "buy_slippage_actual": null
     }
   ],
   "daily_stats": {
@@ -1001,5 +1026,5 @@
       }
     }
   },
-  "last_updated": "2025-11-26T07:42:40.519054"
+  "last_updated": "2025-11-26T07:42:47.035230"
 }
