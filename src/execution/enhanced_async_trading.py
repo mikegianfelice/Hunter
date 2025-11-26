@@ -767,7 +767,35 @@ class EnhancedAsyncTradingEngine:
             recommendation = analysis.get("trading_recommendation", {})
             if recommendation.get("action") == "buy" and recommendation.get("confidence", 0) > 0.7:
                 enhanced_token["approved_for_trading"] = True
-                enhanced_token["recommended_position_size"] = recommendation.get("position_size", 5)
+                
+                # Get AI-recommended position size
+                ai_recommended_size = recommendation.get("position_size", 5)
+                
+                # Cap position size to tier-based maximum to prevent risk gate blocks
+                try:
+                    from src.core.risk_manager import get_tier_based_risk_limits
+                    tier_limits = get_tier_based_risk_limits()
+                    tier_max_size = tier_limits.get("PER_TRADE_MAX_USD", 25.0)
+                    
+                    # Cap the position size to the tier maximum
+                    capped_size = min(ai_recommended_size, tier_max_size)
+                    
+                    if capped_size < ai_recommended_size:
+                        log_info("trading.position_size_capped",
+                                f"Position size capped for {token.get('symbol', 'UNKNOWN')}: "
+                                f"${ai_recommended_size:.2f} → ${capped_size:.2f} (tier max: ${tier_max_size:.2f})",
+                                symbol=token.get("symbol"),
+                                ai_recommended=ai_recommended_size,
+                                capped=capped_size,
+                                tier_max=tier_max_size)
+                    
+                    enhanced_token["recommended_position_size"] = capped_size
+                except Exception as e:
+                    log_error("trading.position_size_cap_error", 
+                            f"Error capping position size for {token.get('symbol', 'UNKNOWN')}: {e}")
+                    # Fallback to AI recommendation if tier check fails
+                    enhanced_token["recommended_position_size"] = ai_recommended_size
+                
                 enhanced_token["recommended_tp"] = recommendation.get("take_profit", 0.15)
             else:
                 enhanced_token["approved_for_trading"] = False
@@ -784,6 +812,25 @@ class EnhancedAsyncTradingEngine:
         chain = token.get("chain", "ethereum")
         position_size = token.get("recommended_position_size", 5)
         take_profit = token.get("recommended_tp", 0.15)
+        
+        # Safety cap: Ensure position size doesn't exceed tier-based maximum
+        # (This is a safety measure in case position size wasn't capped earlier)
+        try:
+            from src.core.risk_manager import get_tier_based_risk_limits
+            tier_limits = get_tier_based_risk_limits()
+            tier_max_size = tier_limits.get("PER_TRADE_MAX_USD", 25.0)
+            
+            if position_size > tier_max_size:
+                log_info("trading.position_size_safety_cap",
+                        f"Safety cap applied for {symbol}: ${position_size:.2f} → ${tier_max_size:.2f}",
+                        symbol=symbol,
+                        original_size=position_size,
+                        capped_size=tier_max_size)
+                position_size = tier_max_size
+        except Exception as e:
+            log_error("trading.position_size_safety_cap_error", 
+                    f"Error applying safety cap for {symbol}: {e}")
+            # Continue with original position size if cap check fails
         
         # DEBUG: Log that we're entering the trade execution
         log_info("trading.debug", f"🔍 DEBUG: Entering _execute_trade_async for {symbol} on {chain}")
