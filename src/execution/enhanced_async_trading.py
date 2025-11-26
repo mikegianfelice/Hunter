@@ -75,7 +75,9 @@ class EnhancedAsyncTradingEngine:
         self.token_cache: Dict[str, Any] = {}
         self.cache_ttl = 300  # 5 minutes
         self.batch_size = 5
-        self.max_concurrent_trades = 3
+        # Make max_concurrent_trades configurable, default to max_concurrent_positions or 3
+        max_positions = get_config_int("max_concurrent_positions", 6)
+        self.max_concurrent_trades = get_config_int("max_concurrent_trades", min(max_positions, 5))
         self.performance_window = deque(maxlen=100)  # Last 100 trades
         self.helius_reconciliation_enabled = get_config_bool("enable_helius_reconciliation", True)
         self.helius_reconciliation_interval = max(1, get_config_int("helius_reconciliation_interval_minutes", 10))
@@ -1288,9 +1290,12 @@ class EnhancedAsyncTradingEngine:
         # Execute trades for approved tokens (limit concurrent trades)
         trade_results = []
         if approved_tokens:
-            # Sort by AI confidence for best execution order
+            # Sort by AI confidence, then by quality_score as tiebreaker for best execution order
             approved_tokens.sort(
-                key=lambda x: x.get("ai_analysis", {}).get("trading_recommendation", {}).get("confidence", 0),
+                key=lambda x: (
+                    x.get("ai_analysis", {}).get("trading_recommendation", {}).get("confidence", 0),
+                    x.get("ai_analysis", {}).get("quality_score", 0)
+                ),
                 reverse=True
             )
             
