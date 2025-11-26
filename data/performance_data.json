@@ -883,6 +883,31 @@
       "entry_tokens_received": null,
       "entry_gas_fee_usd": 0,
       "buy_slippage_actual": null
+    },
+    {
+      "id": "1_20251125_213558",
+      "symbol": "1",
+      "address": "GMvCfcZg8YvkkQmwDaAzCtHDrrEtgE74nQpQ7xNabonk",
+      "chain": "solana",
+      "entry_time": "2025-11-25T21:35:58.369929",
+      "entry_price": 0.01398,
+      "position_size_usd": 13.200000000000001,
+      "quality_score": 0.6382399605663452,
+      "volume_24h": 1443375.33,
+      "liquidity": 735315.74,
+      "exit_time": "2025-11-25T21:35:58.369929",
+      "exit_price": 0.01398,
+      "pnl_usd": 0.0,
+      "pnl_percent": 0.0,
+      "status": "manual_close",
+      "take_profit_target": null,
+      "stop_loss_target": null,
+      "buy_tx_hash": "DXfx3JxzAYE4NAuo1MeU8qa8vr12dPXKLLDz4gi2Ywugrdn4fETD57EUqSAT4KjBEJKSAn2yC3X7KoecrXtaBSa",
+      "entry_amount_usd_quoted": 13.200000000000001,
+      "entry_amount_usd_actual": 0,
+      "entry_tokens_received": null,
+      "entry_gas_fee_usd": 0,
+      "buy_slippage_actual": null
     }
   ],
   "daily_stats": {
@@ -926,5 +951,5 @@
       }
     }
   },
-  "last_updated": "2025-11-25T21:35:48.114404"
+  "last_updated": "2025-11-25T21:35:58.400890"
 }
