@@ -821,7 +821,10 @@ class EnhancedAsyncTradingEngine:
         """Execute a single trade asynchronously"""
         symbol = token.get("symbol", "UNKNOWN")
         address = token.get("address", "")
-        chain = token.get("chain", "ethereum")
+        # Default to first supported chain if chain is not specified
+        supported_chains = getattr(self.config.chains, 'supported_chains', ['solana', 'base'])
+        default_chain = supported_chains[0] if supported_chains else "solana"
+        chain = token.get("chain", default_chain)
         position_size = token.get("recommended_position_size", 5)
         take_profit = token.get("recommended_tp", 0.15)
         

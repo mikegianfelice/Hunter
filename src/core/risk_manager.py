@@ -340,31 +340,29 @@ def _get_wallet_balance_usd(chain_id="ethereum", use_cache_fallback=True):
 
 
 def _get_combined_wallet_balance_usd():
-    """Get combined wallet balance in USD from all supported chains (Ethereum + Solana)"""
+    """Get combined wallet balance in USD from all supported chains"""
     try:
         total_balance = 0.0
         
-        # Get Ethereum balance
-        try:
-            eth_balance = _get_wallet_balance_usd("ethereum")
-            if eth_balance is not None:
-                total_balance += eth_balance
-                print(f"💰 Ethereum balance: ${eth_balance:.2f}")
-            else:
-                print(f"⚠️ Ethereum balance unavailable (None returned)")
-        except Exception as e:
-            print(f"⚠️ Failed to get Ethereum balance: {e}")
+        # Get supported chains from config
+        supported_chains = get_config("supported_chains", ["solana", "base"])
+        if not isinstance(supported_chains, list):
+            supported_chains = ["solana", "base"]  # Fallback
         
-        # Get Solana balance
-        try:
-            sol_balance = _get_wallet_balance_usd("solana")
-            if sol_balance is not None:
-                total_balance += sol_balance
-                print(f"💰 Solana balance: ${sol_balance:.2f}")
-            else:
-                print(f"⚠️ Solana balance unavailable (None returned)")
-        except Exception as e:
-            print(f"⚠️ Failed to get Solana balance: {e}")
+        # Only check balances for supported chains
+        for chain_id in supported_chains:
+            try:
+                chain_balance = _get_wallet_balance_usd(chain_id)
+                if chain_balance is not None:
+                    total_balance += chain_balance
+                    chain_name = chain_id.capitalize()
+                    print(f"💰 {chain_name} balance: ${chain_balance:.2f}")
+                else:
+                    chain_name = chain_id.capitalize()
+                    print(f"⚠️ {chain_name} balance unavailable (None returned)")
+            except Exception as e:
+                chain_name = chain_id.capitalize()
+                print(f"⚠️ Failed to get {chain_name} balance: {e}")
         
         print(f"💰 Combined wallet balance: ${total_balance:.2f}")
         return total_balance
