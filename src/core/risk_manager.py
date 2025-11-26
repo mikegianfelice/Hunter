@@ -124,8 +124,12 @@ def get_tier_based_risk_limits(wallet_balance_usd: float = None):
         # Scale daily loss limit based on wallet size (5% of wallet)
         daily_loss_limit = wallet_balance_usd * 0.05
         
-        # Scale concurrent positions based on wallet size
-        if wallet_balance_usd < 1000:
+        # Scale concurrent positions based on wallet size, but respect config.yaml override
+        config_max_concurrent = get_config_int("max_concurrent_positions", None)
+        if config_max_concurrent is not None:
+            # Use config value if explicitly set
+            max_concurrent_pos = config_max_concurrent
+        elif wallet_balance_usd < 1000:
             max_concurrent_pos = 3
         elif wallet_balance_usd < 5000:
             max_concurrent_pos = 5
@@ -475,10 +479,9 @@ def _open_positions_count():
     try:
         positions = load_positions_store()
         count = len(positions)
-        # Debug logging to help troubleshoot position count issues
-        debug_enabled = os.getenv("DEBUG_POSITION_COUNT", "false").lower() == "true"
-        if debug_enabled:
-            print(f"🔍 [DEBUG] Position count: {count}, Position keys: {list(positions.keys())}")
+        # Always log position count when checking (helps debug race conditions)
+        position_keys = list(positions.keys())[:5]  # Show first 5 for debugging
+        print(f"🔍 Position count check: {count} positions (keys: {position_keys}...)")
         return count
     except Exception as e:
         print(f"⚠️ Error loading positions for count: {e}")
@@ -609,10 +612,14 @@ def allow_new_trade(trade_amount_usd: float, token_address: str = None, chain_id
         try:
             positions = load_positions_store()
             if positions:
-                position_keys = list(positions.keys())[:5]  # Show first 5
-                print(f"📊 Current positions: {position_keys}...")
-        except Exception:
-            pass
+                position_keys = list(positions.keys())
+                print(f"📊 All current positions ({len(position_keys)}): {position_keys}")
+                # Also show position details
+                for key, payload in list(positions.items())[:5]:
+                    symbol = payload.get('symbol', 'N/A') if isinstance(payload, dict) else 'N/A'
+                    print(f"   - {key[:20]}... ({symbol})")
+        except Exception as e:
+            print(f"⚠️ Error loading position details: {e}")
         return False, f"max_concurrent_positions_reached_{open_count}_{max_concurrent}"
     
     # total exposure guard (tier-based) - uses combined balance for tier calculation

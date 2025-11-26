@@ -765,7 +765,19 @@ class EnhancedAsyncTradingEngine:
             
             # Apply trading recommendation
             recommendation = analysis.get("trading_recommendation", {})
-            if recommendation.get("action") == "buy" and recommendation.get("confidence", 0) > 0.7:
+            action = recommendation.get("action", "unknown")
+            confidence = recommendation.get("confidence", 0)
+            quality_score = analysis.get("quality_score", 0)
+            
+            # Log recommendation details for debugging
+            log_info("trading.recommendation_check",
+                    f"Token {token.get('symbol', 'UNKNOWN')}: action={action}, confidence={confidence:.2f}, quality_score={quality_score:.2f}",
+                    symbol=token.get("symbol"),
+                    action=action,
+                    confidence=confidence,
+                    quality_score=quality_score)
+            
+            if action == "buy" and confidence > 0.7:
                 enhanced_token["approved_for_trading"] = True
                 
                 # Get AI-recommended position size
