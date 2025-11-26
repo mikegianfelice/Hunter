@@ -875,8 +875,18 @@ class EnhancedAsyncTradingEngine:
                     # Continue if risk gate check fails (don't block on errors)
                 
                 # Risk assessment
+                log_info("trading.risk_assessment_start", f"Starting risk assessment for {symbol}")
                 risk_result = await assess_trade_risk(token, position_size)
+                log_info("trading.risk_assessment_complete", 
+                        f"Risk assessment complete for {symbol}: approved={risk_result.approved}, "
+                        f"risk_score={risk_result.overall_risk_score:.2f}, reason={risk_result.reason}")
                 if not risk_result.approved:
+                    log_error("trading.risk_assessment_blocked",
+                             f"Risk assessment blocked trade for {symbol}: {risk_result.reason}",
+                             symbol=symbol,
+                             risk_score=risk_result.overall_risk_score,
+                             reason=risk_result.reason,
+                             risk_level=risk_result.risk_level.value if hasattr(risk_result.risk_level, 'value') else str(risk_result.risk_level))
                     return {
                         "success": False,
                         "error": f"Risk assessment failed: {risk_result.reason}",
@@ -885,6 +895,7 @@ class EnhancedAsyncTradingEngine:
                     }
                 
                 # Execute real trade using DEX integrations
+                log_info("trading.trade_execution_start", f"Starting trade execution for {symbol} on {chain}")
                 trade_result = await self._execute_real_trade(token, position_size, chain)
                 
                 # Log the trade result for debugging

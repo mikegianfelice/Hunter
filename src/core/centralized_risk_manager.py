@@ -197,15 +197,23 @@ class CentralizedRiskManager:
                     
                     if holder_check and holder_check.get("error"):
                         if fail_closed:
-                            logger.warning(f"Holder concentration check error (fail-closed) for {token_address} on {chain_id}: {holder_check['error']}")
+                            error_msg = holder_check['error']
+                            logger.warning(f"Holder concentration check error (fail-closed) for {token_address} on {chain_id}: {error_msg}")
+                            from src.monitoring.structured_logger import log_error
+                            log_error("risk.holder_concentration_blocked",
+                                     f"Trade blocked: holder concentration check failed for {token.get('symbol', 'UNKNOWN')}: {error_msg}",
+                                     symbol=token.get('symbol', 'UNKNOWN'),
+                                     token_address=token_address,
+                                     chain_id=chain_id,
+                                     error=error_msg)
                             return RiskAssessment(
                                 overall_risk_score=0.95,
                                 risk_level=RiskLevel.CRITICAL,
                                 approved=False,
-                                reason=f"Holder concentration check failed: {holder_check['error']}",
+                                reason=f"Holder concentration check failed: {error_msg}",
                                 position_adjustment=0.0,
                                 risk_factors={
-                                    'holder_concentration_error': holder_check['error'],
+                                    'holder_concentration_error': error_msg,
                                     'holder_concentration_blocked': True
                                 },
                                 recommendations=["Retry later; holder concentration data unavailable"],
@@ -216,6 +224,14 @@ class CentralizedRiskManager:
                         percentage = holder_check.get("top_10_percentage", 0)
                         
                         if percentage >= threshold:
+                            from src.monitoring.structured_logger import log_error
+                            log_error("risk.holder_concentration_blocked",
+                                     f"Trade blocked: high holder concentration for {token.get('symbol', 'UNKNOWN')}: {percentage:.1f}% (threshold: {threshold:.1f}%)",
+                                     symbol=token.get('symbol', 'UNKNOWN'),
+                                     token_address=token_address,
+                                     chain_id=chain_id,
+                                     percentage=percentage,
+                                     threshold=threshold)
                             return RiskAssessment(
                                 overall_risk_score=0.9,
                                 risk_level=RiskLevel.CRITICAL,
