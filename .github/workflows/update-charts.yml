@@ -2,8 +2,8 @@ name: Update Performance Charts
 
 on:
   schedule:
-    # Run daily at 00:00 UTC (adjust timezone as needed)
-    - cron: '0 0 * * *'
+    # Run every hour at minute 0 (e.g., 00:00, 01:00, 02:00, etc. UTC)
+    - cron: '0 * * * *'
   workflow_dispatch:  # Allow manual triggers from GitHub UI
 
 jobs:
