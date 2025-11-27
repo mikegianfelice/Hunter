@@ -1,37 +1,6 @@
 {
   "trades": [
     {
-      "id": "aura_20251114_193501",
-      "symbol": "aura",
-      "address": "DtR4D9FtVoTX2569gaL837ZgrB6wNjj6tkmnX9Rdk9B2",
-      "chain": "solana",
-      "entry_time": "2025-11-14T19:35:01.473139",
-      "entry_price": 0.03899,
-      "position_size_usd": 13.200000000000001,
-      "quality_score": 0.6722326689146914,
-      "volume_24h": 4464811.83,
-      "liquidity": 3017782.24,
-      "exit_time": "2025-11-17T15:59:36.568900",
-      "exit_price": 0.03899,
-      "pnl_usd": 0.0,
-      "pnl_percent": 0.0,
-      "status": "manual_close",
-      "take_profit_target": null,
-      "stop_loss_target": null,
-      "buy_tx_hash": "dvLUysTkre2krhSsrayNQDYizHdx7hnpsv7HAvvaWBX7jucZq3pKF8HWrXZfBYEazVvLr62FLZo6juvA2aQAjqE",
-      "entry_amount_usd_quoted": 13.200000000000001,
-      "entry_amount_usd_actual": 13.200000000000045,
-      "entry_tokens_received": 337.346986,
-      "entry_gas_fee_usd": 0.29237291894999995,
-      "buy_slippage_actual": null,
-      "exit_gas_fee_usd": null,
-      "total_fees_usd": null,
-      "pnl_after_fees_usd": null,
-      "pnl_after_fees_percent": null,
-      "sell_tx_hash": null,
-      "sell_slippage_actual": null
-    },
-    {
       "id": "USELESS_20251117_085633",
       "symbol": "USELESS",
       "address": "Dz9mQ9NzkBcCsuGPFJ3r1bS4wgqKMHBPiVuniW8Mbonk",
@@ -975,7 +944,7 @@
       "exit_time": "2025-11-27T06:31:42.000000",
       "exit_price": 0.697,
       "pnl_usd": -1.2012,
-      "pnl_percent": -9.10,
+      "pnl_percent": -9.1,
       "status": "sold",
       "take_profit_target": null,
       "stop_loss_target": null,
@@ -1151,19 +1120,6 @@
         }
       }
     },
-    "2025-11-14": {
-      "total_trades": 2,
-      "winning_trades": 0,
-      "losing_trades": 2,
-      "total_pnl": 0.0,
-      "quality_tier_stats": {
-        "low": {
-          "trades": 2,
-          "wins": 0,
-          "pnl": 0.0
-        }
-      }
-    },
     "2025-11-18": {
       "total_trades": 1,
       "winning_trades": 0,
@@ -1178,5 +1134,5 @@
       }
     }
   },
-  "last_updated": "2025-11-27T06:40:00.500037"
+  "last_updated": "2025-11-27T09:12:48.041062"
 }
