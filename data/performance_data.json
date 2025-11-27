@@ -920,11 +920,11 @@
       "quality_score": 0.7072471989264317,
       "volume_24h": 6317192.54,
       "liquidity": 10681622.76,
-      "exit_time": "2025-11-26T07:42:33.726524",
-      "exit_price": 0.2833,
-      "pnl_usd": 0.0,
-      "pnl_percent": 0.0,
-      "status": "manual_close",
+      "exit_time": "2025-11-26T20:05:21.000000",
+      "exit_price": 0.35,
+      "pnl_usd": 4.66,
+      "pnl_percent": 23.54,
+      "status": "sold",
       "take_profit_target": null,
       "stop_loss_target": null,
       "buy_tx_hash": "54PZbSXCCFc3HzooQp2k58oubXeB9yQbn1ggu8E9emK3MGHqCy1eJBYM9DgmVaYF4s61m3S8oN6GcmZ8McqjHJbF",
@@ -932,7 +932,9 @@
       "entry_amount_usd_actual": 9.900000000000034,
       "entry_tokens_received": 34.967784,
       "entry_gas_fee_usd": 0.01832619,
-      "buy_slippage_actual": null
+      "buy_slippage_actual": null,
+      "sell_tx_hash": "GwiR4mLnPo7Mn8A4dBHgQjS3KTdZNoZ1nL7ofB9mpvaLQbuXMikLcG5nXrj2etrZC2zw4T8EpnGU1Lufe9KM4cm",
+      "exit_gas_fee_usd": 0.0114
     },
     {
       "id": "USELESS_20251126_074240",
