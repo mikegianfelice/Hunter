@@ -8,15 +8,7 @@ A sophisticated AI-powered cryptocurrency trading bot designed for **consistent 
 
 ## 📊 Live Performance
 
-<table>
-<tr>
-<td>
-
 ![30-Day Performance](docs/performance_chart.png)
-
-</td>
-</tr>
-</table>
 
 *Performance charts updated daily. Past performance does not guarantee future results.*
 
