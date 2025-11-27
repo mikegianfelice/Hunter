@@ -28,6 +28,9 @@ def get_project_root():
 
 PROJECT_ROOT = get_project_root()
 
+# Minimum date for chart display - bot started trading on this date
+MIN_CHART_DATE = datetime(2025, 11, 16, 0, 0, 0)
+
 def load_performance_data():
     """Load performance data from JSON file"""
     try:
@@ -86,8 +89,34 @@ def calculate_wallet_value_over_time(days=5, initial_wallet_usd=None):
     today = datetime.now()
     start_date = today - timedelta(days=days)
     
-    # Get all trades from performance data
+    # Find the earliest trade date to set a minimum start date
+    # This prevents showing empty days before trading actually started
+    earliest_trade_date = None
+    
+    # Check performance data
     all_trades = data.get('trades', []) if data else []
+    for trade in all_trades:
+        try:
+            entry_time_str = trade.get('entry_time', '')
+            if entry_time_str:
+                entry_time = datetime.fromisoformat(entry_time_str.replace('Z', '+00:00').split('.')[0])
+                if earliest_trade_date is None or entry_time < earliest_trade_date:
+                    earliest_trade_date = entry_time
+        except Exception:
+            continue
+    
+    # Check trade log
+    for trade in trade_log:
+        if trade.get('timestamp'):
+            if earliest_trade_date is None or trade['timestamp'] < earliest_trade_date:
+                earliest_trade_date = trade['timestamp']
+    
+    # Use the later of: calculated start_date, earliest trade date, or minimum chart date
+    # This ensures we don't show empty days before trading started
+    min_date = MIN_CHART_DATE
+    if earliest_trade_date:
+        min_date = max(MIN_CHART_DATE, earliest_trade_date.replace(hour=0, minute=0, second=0, microsecond=0))
+    start_date = max(start_date, min_date)
     
     # Filter trades within date range
     recent_trades = []
