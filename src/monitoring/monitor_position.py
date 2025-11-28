@@ -733,17 +733,17 @@ def _calculate_dynamic_take_profit_for_position(trade: Dict, config: Dict) -> fl
     quality_percent = quality_score * 100 if quality_score <= 1.0 else quality_score
     
     # High quality tokens get bonus
-    if quality_percent >= 70:
+    if quality_percent >= 65:  # Lowered from 70 to 65
         tp += config.get('QUALITY_TP_BONUS', 0.03)
         print(f"  📈 High quality token: +{config.get('QUALITY_TP_BONUS', 0.03)*100:.0f}% TP")
     
     # High volume tokens get bonus
-    if volume_24h >= 10_000_000:  # $10M+ volume
+    if volume_24h >= 2_000_000:  # Lowered from $10M to $2M
         tp += config.get('VOLUME_TP_BONUS', 0.02)
         print(f"  📊 High volume: +{config.get('VOLUME_TP_BONUS', 0.02)*100:.0f}% TP")
     
     # High liquidity tokens get bonus
-    if liquidity >= 5_000_000:  # $5M+ liquidity
+    if liquidity >= 2_000_000:  # Lowered from $5M to $2M
         tp += config.get('LIQUIDITY_TP_BONUS', 0.02)
         print(f"  💧 High liquidity: +{config.get('LIQUIDITY_TP_BONUS', 0.02)*100:.0f}% TP")
     

@@ -4,7 +4,7 @@ test_mode: false  # LIVE TRADING ENABLED - Realistic Scaling
 # === Trading Parameters ===
 trade_amount_usd: 6  # Adjusted to align with current USDC balance
 slippage: 0.03  # 3% slippage (tightened for better execution)
-take_profit: 0.12  # 12%
+take_profit: 0.13  # 13%
 stop_loss: 0.07  # 7%
 use_dynamic_tp: true  # Enable dynamic take profit
 min_trade_amount_usd: 10  # Minimum trade amount for realistic scaling
@@ -162,7 +162,7 @@ quality_liquidity_weight: 0.4  # 40% weight for liquidity in quality score
 quality_price_weight: 0.2  # 20% weight for price stability in quality score
 
 # Dynamic take profit settings
-base_take_profit: 0.12  # 12% base take profit
+base_take_profit: 0.13  # 13% base take profit
 max_take_profit: 0.20  # 20% maximum take profit
 min_take_profit: 0.08  # 8% minimum take profit
 quality_tp_bonus: 0.03  # +3% for high quality tokens
