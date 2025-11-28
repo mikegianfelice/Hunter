@@ -230,6 +230,7 @@ price_memory.json
 cooldown_log.json
 delisted_tokens.json
 sol_price_cache.json
+data/time_window_scheduler_state.json
 .monitor_heartbeat
 .monitor_lock
 .monitor_watchdog.pid
