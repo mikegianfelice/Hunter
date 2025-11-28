@@ -56,3 +56,8 @@ timestamp,token,entry_price,exit_price,pnl_pct,reason
 2025-11-28 09:52:18,Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump,0.06576,0.06111,-7.07,hard_stop_loss_7.0%_triggered_at_-7.07%
 2025-11-28 10:24:26,A8C3xuqscfmyLrte3VmTqrAq8kgMASius9AFNANwpump,0.01697,0.01901,12.02,take_profit
 2025-11-28 11:38:00,Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump,0.06085,0.05658,-7.02,hard_stop_loss_7.0%_triggered_at_-7.02%
+2025-11-28 12:10:31,Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump,0.05472,0.06138,12.17,take_profit
+2025-11-28 12:42:55,9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump,0.357,0.3317,-7.09,hard_stop_loss_7.0%_triggered_at_-7.09%
+2025-11-28 12:43:10,9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump,0.357,0.3317,-7.09,stop_loss
+2025-11-28 13:01:44,Dz9mQ9NzkBcCsuGPFJ3r1bS4wgqKMHBPiVuniW8Mbonk,0.132,0.1222,-7.42,hard_stop_loss_7.0%_triggered_at_-7.42%
+2025-11-28 13:36:02,A8C3xuqscfmyLrte3VmTqrAq8kgMASius9AFNANwpump,0.01836,0.01704,-7.19,hard_stop_loss_7.0%_triggered_at_-7.19%
