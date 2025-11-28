@@ -48,3 +48,4 @@ timestamp,token,entry_price,exit_price,pnl_pct,reason
 2025-11-27 06:31:42,BiGwCbrNetFGJYZMRJiPMEo3vf5XnLp7ibc1CtmuQGW4,0.7659,0.697,-9.10,hard_stop_loss_7.0%_triggered_at_-9.10%
 2025-11-27 06:31:48,9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump,0.3482,0.317,-8.96,hard_stop_loss_7.0%_triggered_at_-8.96%
 2025-11-27 08:59:57,A8C3xuqscfmyLrte3VmTqrAq8kgMASius9AFNANwpump,0.009732,0.009031,-7.2,hard_stop_loss_7.0%_triggered_at_-7.20%
+2025-11-27 12:37:12,Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump,0.05395,0.06052,12.18,take_profit
