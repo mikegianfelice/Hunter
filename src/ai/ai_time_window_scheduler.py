@@ -5,6 +5,8 @@ Uses real execution data to determine optimal trading windows
 """
 
 import time
+import json
+from pathlib import Path
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -25,6 +27,10 @@ class WindowDecision:
     reason: str
 
 
+# State persistence path
+SCHEDULER_STATE_PATH = Path("data/time_window_scheduler_state.json")
+
+
 class AITimeWindowScheduler:
     """
     Schedules trades based on execution quality metrics
@@ -41,12 +47,19 @@ class AITimeWindowScheduler:
         # Track execution metrics over time windows
         self.window_size_seconds = 300  # 5 minute windows
         self.execution_history: deque = deque(maxlen=100)
-        self.last_review_time = 0.0
-        # Initialize to a good default score instead of 0.0 to avoid blocking trades on startup
-        # This will be recalculated on first call or after review_interval_seconds
-        self.current_window_score = 0.75  # Default to 75% - optimistic but safe
-        self.is_paused = False
-        self.pause_until = 0.0
+        
+        # Load persisted state or use defaults
+        self._load_state()
+        
+        # Ensure minimum floor is at least equal to threshold to prevent blocking at floor
+        # This prevents the score from getting stuck at 0.50 when threshold is 0.55
+        min_score_floor = max(0.50, self.min_window_score_to_trade - 0.05)  # Floor is threshold - 5%
+        if self.current_window_score < min_score_floor:
+            log_info("time_window_scheduler.score_adjusted",
+                    old_score=self.current_window_score,
+                    new_score=min_score_floor,
+                    reason="below_minimum_floor")
+            self.current_window_score = min_score_floor
         
     def should_trade_now(
         self,
@@ -89,11 +102,22 @@ class AITimeWindowScheduler:
         
         # Update window score periodically or on first call
         if force_recalculate or current_time - self.last_review_time >= self.review_interval_seconds:
+            old_score = self.current_window_score
             self.current_window_score = self._calculate_window_score(
                 recent_exec_metrics,
                 market_quality_metrics
             )
             self.last_review_time = current_time
+            
+            # Persist state after score update
+            self._save_state()
+            
+            # Log score changes for debugging
+            if abs(old_score - self.current_window_score) > 0.05:
+                log_info("time_window_scheduler.score_changed",
+                        old_score=old_score,
+                        new_score=self.current_window_score,
+                        threshold=self.min_window_score_to_trade)
             
             # Check for volatility spike
             if self.pause_on_volatility_spike and market_quality_metrics:
@@ -105,6 +129,7 @@ class AITimeWindowScheduler:
                             volatility=volatility,
                             threshold=self.volatility_spike_threshold,
                             pause_until=self.pause_until)
+                    self._save_state()
                     return WindowDecision(
                         should_trade=False,
                         score=0.0,
@@ -116,6 +141,7 @@ class AITimeWindowScheduler:
             if self.is_paused and current_time >= self.pause_until:
                 self.is_paused = False
                 log_info("time_window_scheduler.resume", score=self.current_window_score)
+                self._save_state()
         
         # Make decision based on window score
         should_trade = self.current_window_score >= self.min_window_score_to_trade
@@ -205,10 +231,34 @@ class AITimeWindowScheduler:
                     recovery_bonus = min(0.10, recovery_intervals * recovery_rate)  # Cap at 10% recovery
                     weighted_score = min(1.0, weighted_score + recovery_bonus)
         
-        # Minimum score floor: prevent score from getting stuck below a reasonable threshold
-        # This ensures the system can always recover eventually
-        min_score_floor = 0.50  # Never go below 50%
+        # Minimum score floor: prevent score from getting stuck below threshold
+        # Floor should be at least threshold - 5% to allow some buffer
+        min_score_floor = max(0.50, self.min_window_score_to_trade - 0.05)
         weighted_score = max(min_score_floor, weighted_score)
+        
+        # Improved recovery mechanism: if score is stuck at floor, gradually recover
+        # This prevents permanent blocking when metrics are temporarily bad
+        if weighted_score <= min_score_floor + 0.01:  # Within 1% of floor
+            current_time = time.time()
+            time_since_last_review = current_time - self.last_review_time if self.last_review_time > 0 else 0
+            
+            # If we've been at the floor for a while, start gradual recovery
+            # Recovery rate: 0.02 (2%) per review interval when stuck at floor
+            recovery_intervals = max(0, int(time_since_last_review / self.review_interval_seconds))
+            if recovery_intervals > 0:
+                # More forgiving recovery - don't require perfect metrics
+                # Just check that we're not getting worse
+                recent_fill_rate = fill_success_rate
+                recent_slippage = avg_slippage
+                
+                # If metrics aren't catastrophically bad, allow recovery
+                if recent_fill_rate >= 0.5 and recent_slippage <= 0.10:  # More lenient thresholds
+                    recovery_bonus = min(0.15, recovery_intervals * 0.02)  # Cap at 15% recovery
+                    weighted_score = min(1.0, weighted_score + recovery_bonus)
+                    log_info("time_window_scheduler.floor_recovery",
+                            old_score=min_score_floor,
+                            new_score=weighted_score,
+                            recovery_intervals=recovery_intervals)
         
         return max(0.0, min(1.0, weighted_score))
     
@@ -285,6 +335,58 @@ class AITimeWindowScheduler:
             "slippage": slippage,
             "latency_ms": latency_ms
         })
+    
+    def _load_state(self) -> None:
+        """Load scheduler state from persistent storage"""
+        try:
+            if SCHEDULER_STATE_PATH.exists():
+                state = json.loads(SCHEDULER_STATE_PATH.read_text(encoding="utf-8"))
+                self.current_window_score = float(state.get("current_window_score", 0.75))
+                self.last_review_time = float(state.get("last_review_time", 0.0))
+                self.is_paused = bool(state.get("is_paused", False))
+                self.pause_until = float(state.get("pause_until", 0.0))
+                
+                # Load execution history (limited to recent entries)
+                history = state.get("execution_history", [])
+                # Only keep entries from last 24 hours
+                current_time = time.time()
+                day_ago = current_time - 86400
+                for entry in history:
+                    if entry.get("timestamp", 0) > day_ago:
+                        self.execution_history.append(entry)
+                
+                log_info("time_window_scheduler.state_loaded",
+                        score=self.current_window_score,
+                        history_size=len(self.execution_history))
+            else:
+                # First run - use defaults
+                self.last_review_time = 0.0
+                self.current_window_score = 0.75  # Default to 75% - optimistic but safe
+                self.is_paused = False
+                self.pause_until = 0.0
+        except Exception as e:
+            log_error("time_window_scheduler.load_state_error", error=str(e))
+            # On error, use defaults
+            self.last_review_time = 0.0
+            self.current_window_score = 0.75
+            self.is_paused = False
+            self.pause_until = 0.0
+    
+    def _save_state(self) -> None:
+        """Save scheduler state to persistent storage"""
+        try:
+            SCHEDULER_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            state = {
+                "current_window_score": self.current_window_score,
+                "last_review_time": self.last_review_time,
+                "is_paused": self.is_paused,
+                "pause_until": self.pause_until,
+                # Save recent execution history (last 50 entries)
+                "execution_history": list(self.execution_history)[-50:]
+            }
+            SCHEDULER_STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
+        except Exception as e:
+            log_error("time_window_scheduler.save_state_error", error=str(e))
     
     def get_metrics(self) -> Dict[str, Any]:
         """Get scheduler metrics"""
