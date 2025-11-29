@@ -464,7 +464,19 @@ class EnhancedAsyncTradingEngine:
                 # Try Jupiter first
                 try:
                     log_info("trading.jupiter", f"Executing Jupiter trade for {symbol} on Solana")
-                    tx_hash, success, quoted_output_amount = buy_token_solana(address, position_size, symbol, test_mode=False)
+                    result = buy_token_solana(address, position_size, symbol, test_mode=False)
+                    
+                    # Handle both 2-value (legacy) and 3-value return formats
+                    if len(result) == 3:
+                        tx_hash, success, quoted_output_amount = result
+                    elif len(result) == 2:
+                        tx_hash, success = result
+                        quoted_output_amount = None
+                        log_info("trading.jupiter_legacy_return", f"Jupiter returned 2 values for {symbol}, assuming no quoted amount")
+                    else:
+                        log_error("trading.jupiter_error", f"Jupiter returned unexpected number of values for {symbol}: {len(result)}")
+                        raise ValueError(f"Unexpected return format from buy_token_solana: {len(result)} values")
+                    
                     if success and tx_hash:
                         # Analyze transaction to get actual execution details including slippage
                         buy_fee_data = await self._analyze_buy_transaction(tx_hash, chain, "jupiter", quoted_output_amount)
@@ -473,7 +485,7 @@ class EnhancedAsyncTradingEngine:
                         # Real P&L = (exit_price - entry_price) / entry_price * position_size
                         profit_loss = 0.0  # No profit/loss until position is closed
                         
-                        result = {
+                        trade_result = {
                             "success": True,
                             "profit_loss": profit_loss,
                             "tx_hash": tx_hash,
@@ -483,15 +495,27 @@ class EnhancedAsyncTradingEngine:
                         
                         # Include actual slippage in trade result for metrics
                         if 'actual_slippage' in buy_fee_data:
-                            result['slippage'] = buy_fee_data['actual_slippage']
+                            trade_result['slippage'] = buy_fee_data['actual_slippage']
                         
-                        return result
+                        return trade_result
                     elif not success:
                         # Log detailed error for Jupiter failures
-                        error_msg = tx_hash if isinstance(tx_hash, str) and not tx_hash.startswith("0x") else "Jupiter returned unsuccessful"
+                        error_msg = tx_hash if isinstance(tx_hash, str) and not tx_hash.startswith("0x") and tx_hash else "Jupiter returned unsuccessful"
                         log_error("trading.jupiter_error", f"Jupiter execution failed for {symbol}: {error_msg}")
+                except ValueError as ve:
+                    # Handle unpacking/value errors specifically
+                    log_error("trading.jupiter_error", f"Jupiter execution value error for {symbol}: {ve}")
                 except Exception as e:
-                    log_error("trading.jupiter_error", f"Jupiter execution exception for {symbol}: {e}")
+                    # For other exceptions, check if transaction might have actually succeeded
+                    error_str = str(e)
+                    log_error("trading.jupiter_error", f"Jupiter execution exception for {symbol}: {error_str}")
+                    
+                    # If the error mentions a transaction hash, try to verify it succeeded
+                    if "not enough values to unpack" in error_str.lower():
+                        log_error("trading.jupiter_unpack_error", 
+                                f"Jupiter return value unpacking error for {symbol}. "
+                                f"This may indicate the transaction actually succeeded but return format was unexpected. "
+                                f"Please verify transaction on-chain manually.")
                 
                 # Try Raydium fallback
                 try:

@@ -424,8 +424,15 @@ def execute_solana_trade(token_address: str, amount_usd: float, is_buy: bool = T
 # Additional functions for multi-chain compatibility
 def buy_token_solana(token_address: str, amount_usd: float, symbol: str = "", test_mode: bool = False,
                      slippage: float = None, route_preferences: Dict[str, Any] = None,
-                     use_exactout: bool = False) -> Tuple[str, bool]:
-    """Buy token on Solana (for multi-chain compatibility) with guardrails and metrics."""
+                     use_exactout: bool = False) -> Tuple[str, bool, Optional[int]]:
+    """Buy token on Solana (for multi-chain compatibility) with guardrails and metrics.
+    
+    Returns:
+        Tuple of (tx_hash, success, quoted_output_amount)
+        - tx_hash: Transaction hash if successful, empty string otherwise
+        - success: True if trade was successful, False otherwise
+        - quoted_output_amount: Quoted output amount in token units, None if not available
+    """
     trade_started = time.time()
     record_trade_attempt(CHAIN_NAME, "buy")
 
@@ -449,7 +456,7 @@ def buy_token_solana(token_address: str, amount_usd: float, symbol: str = "", te
         record_trade_failure(CHAIN_NAME, "buy", "duplicate_intent")
         log_warning_context = existing or {}
         log_info("solana.trade.duplicate", "Duplicate Solana buy intent skipped", context=log_warning_context)
-        return "", False
+        return "", False, None
     mark_trade_intent_pending(intent.intent_id)
 
     executor = JupiterCustomExecutor()
@@ -460,12 +467,12 @@ def buy_token_solana(token_address: str, amount_usd: float, symbol: str = "", te
     if use_exactout:
         log_info("solana.trade.use_exactout", note="Using ExactOut mode for swap")
 
-    def abort(reason: str, message: str, **context) -> Tuple[str, bool]:
+    def abort(reason: str, message: str, **context) -> Tuple[str, bool, Optional[int]]:
         mark_trade_intent_failed(intent.intent_id, reason)
         latency_ms = int((time.time() - trade_started) * 1000)
         record_trade_failure(CHAIN_NAME, "buy", reason, latency_ms=latency_ms)
         log_error(f"solana.trade.{reason}", message, context=context)
-        return "", False
+        return "", False, None
 
     def succeed(tx_hash: Optional[str], quoted_amt: Optional[int] = None) -> Tuple[str, bool, Optional[int]]:
         mark_trade_intent_completed(intent.intent_id, tx_hash=tx_hash)
