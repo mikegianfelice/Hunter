@@ -171,7 +171,7 @@ The bot now features a sophisticated **tiered position sizing system** that scal
 | Tier | Balance Range | Base Position | Max Position | Max Exposure | Description |
 |------|---------------|---------------|--------------|--------------|-------------|
 | **Tier 1** | $100 - $499 | $5 - $10 | $10 | $100 | Learning Phase - Conservative |
-| **Tier 2** | $1,000 - $4,999 | $25 - $50 | $50 | $500 | Scaling Phase - Moderate |
+| **Tier 2** | $500 - $4,999 | $25 - $50 | $50 | $500 | Scaling Phase - Moderate |
 | **Tier 3** | $5,000 - $19,999 | $50 - $100 | $100 | $1,000 | Acceleration Phase - Aggressive |
 | **Tier 4** | $20,000 - $99,999 | $100 - $200 | $200 | $2,000 | Professional Phase - Maximum |
 | **Tier 5** | $100,000+ | $200 - $500 | $500 | $5,000 | Institutional Phase - Elite |
