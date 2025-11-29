@@ -6,9 +6,6 @@ timestamp,token,entry_price,exit_price,pnl_pct,reason
 2025-11-19 00:39:14,Dz9mQ9NzkBcCsuGPFJ3r1bS4wgqKMHBPiVuniW8Mbonk,0.1252,0.116,-7.35,hard_stop_loss_-7.35%
 2025-11-19 14:06:02,A8C3xuqscfmyLrte3VmTqrAq8kgMASius9AFNANwpump,0.00964,0.008788,-8.84,hard_stop_loss_-8.84%
 2025-11-19 14:59:47,63LfDmNb3MQ8mw9MtZ2To9bEA2M71kZUUGq5tiJxcqj9,0.004837,0.006175,27.66,take_profit
-2025-11-19 23:38:13,9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump,0.2425,0.2787,14.93,take_profit
-2025-11-20 02:49:37,9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump,0.2425,0.284,17.11,take_profit
-2025-11-20 03:46:00,9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump,0.2425,0.298,22.89,take_profit
 2025-11-20 11:17:02,63LfDmNb3MQ8mw9MtZ2To9bEA2M71kZUUGq5tiJxcqj9,0.005981,0.007135,19.29,take_profit
 2025-11-20 11:19:18,9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump,0.3021,0.2807,-7.08,hard_stop_loss_-7.08%
 2025-11-20 11:23:26,GMvCfcZg8YvkkQmwDaAzCtHDrrEtgE74nQpQ7xNabonk,0.01242,0.01153,-7.17,hard_stop_loss_-7.17%
