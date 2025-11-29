@@ -74,6 +74,7 @@ def check_holder_concentration(token_address: str, chain_id: str = "solana") -> 
         "is_safe": True,
         "risk_level": "unknown",
         "error": None,
+        "error_type": None,  # "rate_limit", "timeout", "data_error", etc.
         "total_supply": None,
         "top_10_balance": None
     }
@@ -96,6 +97,10 @@ def check_holder_concentration(token_address: str, chain_id: str = "solana") -> 
         
         fail_closed = get_config_bool("holder_concentration_fail_closed", True)
         if result.get("error"):
+            error_type = result.get("error_type", "unknown")
+            # For rate limit errors, fail-open (don't block trades) since it's not a concentration issue
+            is_rate_limit = error_type == "rate_limit"
+            
             log_warning(
                 "holder_concentration.error",
                 f"Holder concentration check failed for {token_address} on {chain_id}",
@@ -103,11 +108,19 @@ def check_holder_concentration(token_address: str, chain_id: str = "solana") -> 
                     "token": token_address,
                     "chain": chain_id,
                     "error": result["error"],
+                    "error_type": error_type,
+                    "is_rate_limit": is_rate_limit,
                     "fail_closed": fail_closed,
                 },
             )
-            result["is_safe"] = not fail_closed
-            result["risk_level"] = "unknown"
+            # Rate limit errors should not block trades (fail-open)
+            # Only block if it's a data error and fail_closed is True
+            if is_rate_limit:
+                result["is_safe"] = True  # Fail-open for rate limits
+                result["risk_level"] = "unknown"
+            else:
+                result["is_safe"] = not fail_closed
+                result["risk_level"] = "unknown"
             return result
         else:
             percentage = result["top_10_percentage"]
@@ -178,7 +191,12 @@ def _check_solana_holder_concentration(token_address: str) -> Dict:
         supply_response = _post_with_fallback(supply_payload, rpc_url, timeout=15)
         
         if supply_response.status_code != 200:
-            result["error"] = f"RPC request failed: HTTP {supply_response.status_code}"
+            error_msg = f"RPC request failed: HTTP {supply_response.status_code}"
+            result["error"] = error_msg
+            if supply_response.status_code == 429:
+                result["error_type"] = "rate_limit"
+            else:
+                result["error_type"] = "rpc_error"
             return result
         
         supply_data = supply_response.json()
@@ -218,7 +236,12 @@ def _check_solana_holder_concentration(token_address: str) -> Dict:
         accounts_response = _post_with_fallback(accounts_payload, rpc_url, timeout=15)
         
         if accounts_response.status_code != 200:
-            result["error"] = f"RPC request failed: HTTP {accounts_response.status_code}"
+            error_msg = f"RPC request failed: HTTP {accounts_response.status_code}"
+            result["error"] = error_msg
+            if accounts_response.status_code == 429:
+                result["error_type"] = "rate_limit"
+            else:
+                result["error_type"] = "rpc_error"
             return result
         
         accounts_data = accounts_response.json()
@@ -262,11 +285,14 @@ def _check_solana_holder_concentration(token_address: str) -> Dict:
         
     except requests.exceptions.Timeout:
         result["error"] = "RPC request timeout"
+        result["error_type"] = "timeout"
         return result
     except requests.exceptions.RequestException as e:
         result["error"] = f"RPC request error: {str(e)}"
+        result["error_type"] = "rpc_error"
         return result
     except Exception as e:
         result["error"] = f"Unexpected error: {str(e)}"
+        result["error_type"] = "unknown_error"
         return result
 

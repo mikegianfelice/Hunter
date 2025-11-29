@@ -196,8 +196,13 @@ class CentralizedRiskManager:
                     holder_check = check_holder_concentration(token_address, chain_id)
                     
                     if holder_check and holder_check.get("error"):
-                        if fail_closed:
-                            error_msg = holder_check['error']
+                        error_type = holder_check.get("error_type", "unknown")
+                        error_msg = holder_check['error']
+                        
+                        # Don't block trades for rate limit errors - these are RPC issues, not concentration issues
+                        is_rate_limit = error_type == "rate_limit"
+                        
+                        if fail_closed and not is_rate_limit:
                             logger.warning(f"Holder concentration check error (fail-closed) for {token_address} on {chain_id}: {error_msg}")
                             from src.monitoring.structured_logger import log_error
                             log_error("risk.holder_concentration_blocked",
@@ -205,7 +210,8 @@ class CentralizedRiskManager:
                                      symbol=token.get('symbol', 'UNKNOWN'),
                                      token_address=token_address,
                                      chain_id=chain_id,
-                                     error=error_msg)
+                                     error=error_msg,
+                                     error_type=error_type)
                             return RiskAssessment(
                                 overall_risk_score=0.95,
                                 risk_level=RiskLevel.CRITICAL,
@@ -219,6 +225,17 @@ class CentralizedRiskManager:
                                 recommendations=["Retry later; holder concentration data unavailable"],
                                 timestamp=datetime.now().isoformat()
                             )
+                        elif is_rate_limit:
+                            # Rate limit error - log warning but don't block trade
+                            logger.warning(f"Holder concentration check rate limited for {token_address} on {chain_id}: {error_msg}. Allowing trade to proceed.")
+                            from src.monitoring.structured_logger import log_warning
+                            log_warning("risk.holder_concentration_rate_limited",
+                                       f"Holder concentration check rate limited for {token.get('symbol', 'UNKNOWN')}: {error_msg}. Trade allowed to proceed.",
+                                       symbol=token.get('symbol', 'UNKNOWN'),
+                                       token_address=token_address,
+                                       chain_id=chain_id,
+                                       error=error_msg)
+                            # Continue with risk assessment without blocking
                     if holder_check and not holder_check.get("error"):
                         threshold = get_config_float("holder_concentration_threshold", 60.0)
                         percentage = holder_check.get("top_10_percentage", 0)
@@ -277,11 +294,20 @@ class CentralizedRiskManager:
                 holder_check = check_holder_concentration(token_address, chain_id)
                 
                 if holder_check and holder_check.get("error"):
-                    if fail_closed:
+                    error_type = holder_check.get("error_type", "unknown")
+                    error_msg = holder_check['error']
+                    is_rate_limit = error_type == "rate_limit"
+                    
+                    # Don't add risk for rate limit errors - these are RPC issues, not concentration issues
+                    if fail_closed and not is_rate_limit:
                         holder_concentration_risk = 1.0
                         holder_concentration_pct = 0.0
-                        logger.warning(f"Holder concentration risk weighting hit error (fail-closed) for {token_address} on {chain_id}: {holder_check['error']}")
+                        logger.warning(f"Holder concentration risk weighting hit error (fail-closed) for {token_address} on {chain_id}: {error_msg}")
                         overall_risk += holder_concentration_risk * risk_weight
+                    elif is_rate_limit:
+                        # Rate limit error - don't add risk, just log
+                        logger.info(f"Holder concentration check rate limited for {token_address} on {chain_id}: {error_msg}. Not adding risk penalty.")
+                        # Continue without adding risk
                 if holder_check and not holder_check.get("error"):
                     threshold = get_config_float("holder_concentration_threshold", 60.0)
                     percentage = holder_check.get("top_10_percentage", 0)
