@@ -1,6 +1,6 @@
 # 🚀 Hunter: The Crypto Bot
 
-A sophisticated AI-powered cryptocurrency trading bot designed for **consistent 10-20% gains** through sustainable trading strategies. This bot uses advanced AI systems including sentiment analysis, market microstructure analysis, execution optimization, and comprehensive risk management to identify and execute profitable trades with institutional-grade precision.
+An AI-powered crypto trading bot executing real on-chain trades with live PnL, smart token scanning, sentiment scoring, microstructure analysis, and adaptive risk control. Updated in real time. If you find this project useful, drop a ⭐️ to support it.
 
 ## ⚠️ **IMPORTANT DISCLAIMER**
 
