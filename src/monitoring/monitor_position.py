@@ -1048,6 +1048,7 @@ def monitor_all_positions():
             print(f"🧵 Trailing stop @ ${dyn_stop:.6f} (peak-based)")
 
         # AI Partial Take-Profit Manager
+        partial_tp_handled_stop_loss = False  # Flag to track if Partial TP Manager already handled stop loss
         try:
             from src.ai.ai_partial_take_profit_manager import get_partial_tp_manager
             partial_tp_manager = get_partial_tp_manager()
@@ -1087,6 +1088,10 @@ def monitor_all_positions():
                         # Full sell - use existing logic
                         tx = _sell_token_multi_chain(token_address, chain_id, symbol)
                         if tx:
+                            # Check if this is a hard stop loss action - only set flag if sell succeeded
+                            if "hard_stop_loss" in action.reason.lower():
+                                partial_tp_handled_stop_loss = True
+                            
                             log_trade(token_address, entry_price, current_price, action.reason)
                             if trade:
                                 position_size = trade.get('position_size_usd', 0)
@@ -1176,8 +1181,8 @@ def monitor_all_positions():
                 # Don't remove position - keep monitoring to retry
             continue  # move to next token
 
-        # Hard stop-loss
-        if gain <= -config['STOP_LOSS']:
+        # Hard stop-loss (only if not already handled by Partial TP Manager)
+        if not partial_tp_handled_stop_loss and gain <= -config['STOP_LOSS']:
             print(f"\n{'='*60}")
             print(f"🛑 STOP-LOSS TRIGGERED!")
             print(f"Token: {symbol} ({token_address[:8]}...{token_address[-8:]})")
