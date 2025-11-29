@@ -130,7 +130,7 @@ class JupiterCustomExecutor:
         log_info("solana.price.fallback", level="WARNING", token=token_address)
         return 0.000001  # Small positive value instead of 0
 
-    def execute_trade(self, token_address: str, amount_usd: float, is_buy: bool = True) -> Tuple[str, bool]:
+    def execute_trade(self, token_address: str, amount_usd: float, is_buy: bool = True) -> Tuple[str, bool, Optional[int]]:
         """Execute trade using custom Jupiter library"""
         print(f"🔍 [DEBUG] execute_trade called: token={token_address}, amount_usd={amount_usd}, is_buy={is_buy}")
         try:
@@ -284,13 +284,19 @@ class JupiterCustomExecutor:
             tx_hash, success = self.jupiter_lib.execute_swap(input_mint, output_mint, amount)
             print(f"🔍 [DEBUG] execute_swap result: tx_hash={tx_hash}, success={success}, type(tx_hash)={type(tx_hash)}")
             
+            # Get quoted output amount for slippage calculation
+            quoted_output_amount = None
+            if self.jupiter_lib.last_quote and self.jupiter_lib.last_quote.get("outputMint") == output_mint:
+                quoted_output_amount = int(self.jupiter_lib.last_quote.get("outAmount", 0))
+            
             if success:
                 log_info("solana.trade.sent", token=token_address, side=("buy" if is_buy else "sell"), tx_hash=tx_hash)
                 print(f"✅ [SUCCESS] Trade executed successfully: tx_hash={tx_hash}")
             else:
                 log_error("solana.trade.error", token=token_address, side=("buy" if is_buy else "sell"))
                 print(f"❌ [ERROR] Trade execution failed: tx_hash={tx_hash}")
-            return tx_hash, success
+                return "", False, None
+            return tx_hash, success, quoted_output_amount
             
         except Exception as e:
             print(f"❌ [EXCEPTION] Exception in execute_trade: {e}")
@@ -410,7 +416,7 @@ def get_solana_balance() -> float:
     executor = JupiterCustomExecutor()
     return executor.get_solana_balance()
 
-def execute_solana_trade(token_address: str, amount_usd: float, is_buy: bool = True) -> Tuple[str, bool]:
+def execute_solana_trade(token_address: str, amount_usd: float, is_buy: bool = True) -> Tuple[str, bool, Optional[int]]:
     """Legacy function for executing trades"""
     executor = JupiterCustomExecutor()
     return executor.execute_trade(token_address, amount_usd, is_buy)
@@ -461,7 +467,7 @@ def buy_token_solana(token_address: str, amount_usd: float, symbol: str = "", te
         log_error(f"solana.trade.{reason}", message, context=context)
         return "", False
 
-    def succeed(tx_hash: Optional[str]) -> Tuple[str, bool]:
+    def succeed(tx_hash: Optional[str], quoted_amt: Optional[int] = None) -> Tuple[str, bool, Optional[int]]:
         mark_trade_intent_completed(intent.intent_id, tx_hash=tx_hash)
         latency_ms = int((time.time() - trade_started) * 1000)
         record_trade_success(
@@ -471,7 +477,7 @@ def buy_token_solana(token_address: str, amount_usd: float, symbol: str = "", te
             slippage_bps_value=effective_slippage * 10000.0,
         )
         log_info("solana.trade.completed", token=token_address, symbol=symbol, tx_hash=tx_hash)
-        return tx_hash or "", True
+        return tx_hash or "", True, quoted_amt
 
     if test_mode:
         try:
@@ -487,13 +493,13 @@ def buy_token_solana(token_address: str, amount_usd: float, symbol: str = "", te
             quote = executor.jupiter_lib.get_quote(WSOL_MINT, token_address, sol_amount_lamports)
             if quote:
                 log_info("solana.trade.test_mode_valid", token=token_address, symbol=symbol)
-                return succeed(None)
+                return succeed(None, None)
             return abort("test_mode_quote_failed", "Test mode quote failed", token=token_address)
         except Exception as exc:
             return abort("test_mode_exception", "Test mode validation failed", error=str(exc))
 
     try:
-        tx_hash, success = executor.execute_trade(token_address, amount_usd, is_buy=True)
+        tx_hash, success, quoted_output_amount = executor.execute_trade(token_address, amount_usd, is_buy=True)
     except Exception as exc:
         return abort("execution_exception", "Executor raised exception", error=str(exc))
 
@@ -506,7 +512,7 @@ def buy_token_solana(token_address: str, amount_usd: float, symbol: str = "", te
         verified = executor.jupiter_lib.verify_transaction_success(tx_hash)
         if verified is True:
             print(f"✅ Buy transaction {tx_hash} verified as successful on-chain")
-            return succeed(tx_hash)
+            return succeed(tx_hash, quoted_output_amount)
         elif verified is False:
             print(f"❌ Buy transaction {tx_hash} confirmed as failed on-chain")
             print(f"   Check transaction on Solscan: https://solscan.io/tx/{tx_hash}")

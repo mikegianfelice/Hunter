@@ -30,6 +30,7 @@ class JupiterCustomLib:
         self.rpc_url = rpc_url
         self.wallet_address = wallet_address
         self.private_key = private_key
+        self.last_quote = None  # Store last quote for slippage calculation
         
         # Initialize wallet
         try:
@@ -175,6 +176,13 @@ class JupiterCustomLib:
                             data["transaction"] = data["transaction"]
                         # Add success field for compatibility
                         data["success"] = True
+                        # Store quote for slippage calculation
+                        self.last_quote = {
+                            "inAmount": data.get("inAmount"),
+                            "outAmount": data.get("outAmount"),
+                            "inputMint": input_mint,
+                            "outputMint": output_mint
+                        }
                         return data
                     else:
                         error_msg = data.get('errorMessage', data.get('error', 'Unknown error'))

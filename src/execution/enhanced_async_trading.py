@@ -464,21 +464,28 @@ class EnhancedAsyncTradingEngine:
                 # Try Jupiter first
                 try:
                     log_info("trading.jupiter", f"Executing Jupiter trade for {symbol} on Solana")
-                    tx_hash, success = buy_token_solana(address, position_size, symbol, test_mode=False)
+                    tx_hash, success, quoted_output_amount = buy_token_solana(address, position_size, symbol, test_mode=False)
                     if success and tx_hash:
-                        # Analyze transaction to get actual execution details
-                        buy_fee_data = await self._analyze_buy_transaction(tx_hash, chain, "jupiter")
+                        # Analyze transaction to get actual execution details including slippage
+                        buy_fee_data = await self._analyze_buy_transaction(tx_hash, chain, "jupiter", quoted_output_amount)
                         
                         # At entry time, P&L is 0.0 - will be calculated when position is closed
                         # Real P&L = (exit_price - entry_price) / entry_price * position_size
                         profit_loss = 0.0  # No profit/loss until position is closed
-                        return {
+                        
+                        result = {
                             "success": True,
                             "profit_loss": profit_loss,
                             "tx_hash": tx_hash,
                             "dex": "jupiter",
                             "fee_data": buy_fee_data
                         }
+                        
+                        # Include actual slippage in trade result for metrics
+                        if 'actual_slippage' in buy_fee_data:
+                            result['slippage'] = buy_fee_data['actual_slippage']
+                        
+                        return result
                     elif not success:
                         # Log detailed error for Jupiter failures
                         error_msg = tx_hash if isinstance(tx_hash, str) and not tx_hash.startswith("0x") else "Jupiter returned unsuccessful"
@@ -495,7 +502,8 @@ class EnhancedAsyncTradingEngine:
                     success, tx_hash = raydium.execute_trade(address, position_size, is_buy=True)
                     if success and tx_hash:
                         # Analyze transaction to get actual execution details
-                        buy_fee_data = await self._analyze_buy_transaction(tx_hash, chain, "raydium")
+                        # Note: Raydium doesn't return quoted amount yet, so slippage won't be calculated
+                        buy_fee_data = await self._analyze_buy_transaction(tx_hash, chain, "raydium", None)
                         
                         # At entry time, P&L is 0.0 - will be calculated when position is closed
                         profit_loss = 0.0  # No profit/loss until position is closed
@@ -518,7 +526,8 @@ class EnhancedAsyncTradingEngine:
                     tx_hash, success = buy_token(address, position_size, symbol)
                     if success and tx_hash:
                         # Analyze transaction to get actual execution details
-                        buy_fee_data = await self._analyze_buy_transaction(tx_hash, chain, "uniswap")
+                        # Note: Uniswap executor doesn't return quoted amount yet
+                        buy_fee_data = await self._analyze_buy_transaction(tx_hash, chain, "uniswap", None)
                         
                         # At entry time, P&L is 0.0 - will be calculated when position is closed
                         profit_loss = 0.0  # No profit/loss until position is closed
@@ -678,8 +687,8 @@ class EnhancedAsyncTradingEngine:
                 "error": str(e)
             }
     
-    async def _analyze_buy_transaction(self, tx_hash: str, chain: str, dex: str) -> Dict[str, Any]:
-        """Analyze buy transaction to extract fee data"""
+    async def _analyze_buy_transaction(self, tx_hash: str, chain: str, dex: str, quoted_output_amount: Optional[int] = None) -> Dict[str, Any]:
+        """Analyze buy transaction to extract fee data and actual slippage"""
         try:
             if chain.lower() == "solana":
                 from src.utils.solana_transaction_analyzer import analyze_jupiter_transaction
@@ -689,14 +698,21 @@ class EnhancedAsyncTradingEngine:
                     SOLANA_RPC_URL, 
                     tx_hash, 
                     SOLANA_WALLET_ADDRESS,
-                    is_buy=True
+                    is_buy=True,
+                    quoted_output_amount=quoted_output_amount
                 )
                 
-                return {
+                result = {
                     'entry_gas_fee_usd': fee_data.get('gas_fee_usd', 0),
                     'entry_amount_usd_actual': fee_data.get('actual_cost_usd', 0),
                     'buy_tx_hash': tx_hash
                 }
+                
+                # Include actual slippage if calculated
+                if 'actual_slippage' in fee_data:
+                    result['actual_slippage'] = fee_data['actual_slippage']
+                
+                return result
             elif chain.lower() in ["ethereum", "base", "arbitrum", "polygon"]:
                 from src.utils.transaction_analyzer import analyze_buy_transaction
                 from src.execution.uniswap_executor import w3

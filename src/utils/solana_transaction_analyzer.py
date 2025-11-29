@@ -35,7 +35,7 @@ def get_sol_price_usd() -> float:
             pass
         return 150.0  # Conservative fallback
 
-def analyze_jupiter_transaction(rpc_url: str, tx_signature: str, wallet_address: str, is_buy: bool = True) -> Dict:
+def analyze_jupiter_transaction(rpc_url: str, tx_signature: str, wallet_address: str, is_buy: bool = True, quoted_output_amount: Optional[int] = None) -> Dict:
     """
     Analyze Jupiter swap transaction to extract actual execution details
     
@@ -149,11 +149,70 @@ def analyze_jupiter_transaction(rpc_url: str, tx_signature: str, wallet_address:
             tokens_received = sum([t['amount'] for t in token_transfers if t['direction'] == 'receive'])
             result['tokens_received'] = tokens_received
             result['actual_cost_usd'] = abs(balance_change) * sol_price + fee_usd
+            
+            # Calculate actual slippage if quoted amount is provided
+            if quoted_output_amount is not None and quoted_output_amount > 0 and tokens_received > 0:
+                try:
+                    # Get token decimals from transaction data
+                    token_decimals = None
+                    for transfer in token_transfers:
+                        if transfer.get('direction') == 'receive':
+                            # Try to get decimals from pre/post token balances
+                            for pre_bal in meta.get('preTokenBalances', []):
+                                if pre_bal.get('accountIndex') == transfer.get('account_index'):
+                                    ui_amount_info = pre_bal.get('uiTokenAmount', {})
+                                    if ui_amount_info:
+                                        decimals = ui_amount_info.get('decimals')
+                                        if decimals is not None:
+                                            token_decimals = int(decimals)
+                                            break
+                            if token_decimals is None:
+                                # Try post balances
+                                for post_bal in meta.get('postTokenBalances', []):
+                                    if post_bal.get('accountIndex') == transfer.get('account_index'):
+                                        ui_amount_info = post_bal.get('uiTokenAmount', {})
+                                        if ui_amount_info:
+                                            decimals = ui_amount_info.get('decimals')
+                                            if decimals is not None:
+                                                token_decimals = int(decimals)
+                                                break
+                            break
+                    
+                    # If we couldn't get decimals, try to infer from the amounts
+                    # Jupiter quotes are in raw units (with decimals), tokens_received is in UI units
+                    if token_decimals is None:
+                        # Try to infer decimals by comparing order of magnitude
+                        # This is a fallback - not perfect but better than nothing
+                        if quoted_output_amount > tokens_received * 1000:
+                            # Likely 6-9 decimals
+                            token_decimals = 9  # Default assumption
+                        else:
+                            token_decimals = 6  # Alternative assumption
+                        logger.warning(f"Could not determine token decimals, using assumption: {token_decimals}")
+                    
+                    # Convert quoted amount from raw units to UI units
+                    quoted_ui_amount = quoted_output_amount / (10 ** token_decimals)
+                    # Calculate slippage: (quoted - actual) / quoted
+                    actual_slippage = calculate_actual_slippage(quoted_ui_amount, tokens_received, is_buy=True)
+                    result['actual_slippage'] = abs(actual_slippage)  # Use absolute value
+                    result['quoted_output_amount'] = quoted_ui_amount
+                    logger.info(f"Calculated actual slippage: {result['actual_slippage']*100:.2f}% (quoted: {quoted_ui_amount:.6f}, actual: {tokens_received:.6f}, decimals: {token_decimals})")
+                except Exception as e:
+                    logger.warning(f"Could not calculate slippage: {e}")
         else:
             # For sells, calculate proceeds
             sol_received = max(0, balance_change - fee_sol) if balance_change > 0 else 0
             result['sol_received'] = sol_received
             result['actual_proceeds_usd'] = sol_received * sol_price
+            
+            # Calculate actual slippage for sells if quoted amount is provided
+            if quoted_output_amount is not None and quoted_output_amount > 0:
+                # For sells, quoted_output_amount is in lamports (raw SOL units)
+                quoted_sol = quoted_output_amount / 1_000_000_000  # Convert lamports to SOL
+                actual_slippage = calculate_actual_slippage(quoted_sol, sol_received, is_buy=False)
+                result['actual_slippage'] = abs(actual_slippage)
+                result['quoted_output_amount'] = quoted_sol
+                logger.info(f"Calculated actual slippage for sell: {result['actual_slippage']*100:.2f}% (quoted: {quoted_sol}, actual: {sol_received})")
         
         logger.info(f"Analyzed Solana tx {tx_signature[:8]}...: fee=${fee_usd:.4f}, balance_change={balance_change:.6f} SOL")
         return result
