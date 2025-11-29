@@ -99,7 +99,7 @@ The bot uses a **sustainable 10-20% gains strategy** focused on quality over qua
 
 ### **🧠 AI System Integration Architecture**
 
-The bot features a **comprehensive AI integration engine** that coordinates **29 AI modules** across **6 analysis stages**:
+The bot features a **comprehensive AI integration engine** that coordinates **30 AI modules** across **6 analysis stages**:
 
 #### **Stage 1: Core Analysis** (Foundation)
 1. **📊 Sentiment Analysis** - Analyzes social media, news, market, and technical sentiment
@@ -154,7 +154,7 @@ The bot features a **comprehensive AI integration engine** that coordinates **29
 - **Quality Focus**: Minimum $150k volume, $150k liquidity for improved win rate (raised from $100k)
 - **Quality Scoring**: Minimum quality score of 50 (0-100 scale, raised from 40)
 - **Risk Management**: Maximum 6 concurrent positions, $10 daily loss limit
-- **Stop Loss/Take Profit**: 7% stop loss, 12% take profit (with dynamic TP up to 20%)
+- **Stop Loss/Take Profit**: 7% stop loss, 13% take profit (with dynamic TP up to 20%)
 - **Execution Optimization**: AI-optimized execution with balance verification for sell transactions
 - **Performance Tracking**: Comprehensive analytics with quality tier analysis, failed entry attempts excluded from win rate
 
@@ -170,7 +170,7 @@ The bot now features a sophisticated **tiered position sizing system** that scal
 #### **📈 Tier Structure**
 | Tier | Balance Range | Base Position | Max Position | Max Exposure | Description |
 |------|---------------|---------------|--------------|--------------|-------------|
-| **Tier 1** | $100 - $999 | $5 - $10 | $10 | $100 | Learning Phase - Conservative |
+| **Tier 1** | $100 - $499 | $5 - $10 | $10 | $100 | Learning Phase - Conservative |
 | **Tier 2** | $1,000 - $4,999 | $25 - $50 | $50 | $500 | Scaling Phase - Moderate |
 | **Tier 3** | $5,000 - $19,999 | $50 - $100 | $100 | $1,000 | Acceleration Phase - Aggressive |
 | **Tier 4** | $20,000 - $99,999 | $100 - $200 | $200 | $2,000 | Professional Phase - Maximum |
@@ -193,7 +193,7 @@ tiered_position_scaling: true
 wallet_tiers:
   tier_1:
     min_balance: 100
-    max_balance: 999
+    max_balance: 499
     base_position_size_usd: 5.0
     max_position_size_usd: 10.0
     max_total_exposure_usd: 100.0
@@ -365,7 +365,7 @@ The bot now includes **established cryptocurrencies and DeFi blue chips** alongs
 | **Token Quality** | Meme-heavy | Balanced (established + quality) | +300% |
 
 ### **🛠️ Maintenance Tools:**
-- `cleanup_delisted_tokens.py` - Clean up false positives in delisted tokens list
+- Use `scripts/clear_state.py` to clean up delisted tokens and reset bot state
 
 
 ## 🚨 Enhanced Delisting Detection System
@@ -424,7 +424,7 @@ enable_pre_buy_delisting_check: true   # Enable pre-buy delisting checks
 ### **Configuration Updates**
 - **Supported Chains**: Focused on Solana and Base (Ethereum removed for fee efficiency)
 - **Position Sizing**: Dynamic tiered position sizing based on portfolio value
-- **Risk Management**: Tightened stop loss (7%) and take profit (12% base, dynamic up to 20%)
+- **Risk Management**: Tightened stop loss (7%) and take profit (13% base, dynamic up to 20%)
 
 ## 🚀 Quick Start
 
@@ -565,7 +565,7 @@ supported_chains: ["solana", "base"]  # Solana and Base only (Ethereum removed f
 test_mode: false              # LIVE TRADING ENABLED
 trade_amount_usd: 6           # Position size (USD)
 slippage: 0.03                # 3% slippage tolerance
-take_profit: 0.12             # 12% take profit target (base)
+take_profit: 0.13             # 13% take profit target (base)
 stop_loss: 0.07               # 7% stop loss
 use_dynamic_tp: true          # Enable dynamic take profit (8-20% range)
 
@@ -708,7 +708,7 @@ python main.py
   - Automatic token account creation (ATA)
   - Priority-based pool discovery
 - **Base Features**: Uniswap V3 integration, EIP-1559 gas optimization, re-quote protection, multiple fee tier support
-- **Smart Blacklist Management**: Automatic cleanup every 6 hours to maintain trading opportunities
+- **Smart Blacklist Management**: Automatic cleanup every loop to maintain trading opportunities
 
 ### AI-Enhanced Trading Strategy
 - **Sustainable 10-20% Gains**: Focus on consistent returns over high-risk moonshots
@@ -735,7 +735,7 @@ python main.py
 - **Cross-Chain Safety**: Prevents trading on unsupported networks
 - **Delisting Detection**: Automatically detects and handles delisted tokens
 - **Pre-Buy Delisting Check**: Prevents buying tokens that are already delisted or inactive
-- **Smart Blacklist Management**: Automatic cleanup of blacklist every 6 hours to maintain trading opportunities while keeping high-risk tokens blocked
+- **Smart Blacklist Management**: Automatic cleanup of blacklist every loop to maintain trading opportunities while keeping high-risk tokens blocked
 
 ### Position Monitoring
 - **Real-time Monitoring**: Continuous position tracking every 30 seconds
@@ -784,17 +784,17 @@ The bot can send real-time notifications via Telegram:
 
 ## 📈 Monitoring and Analytics
 
-### Dashboard
-Open `trading_bot_dashboard.html` in your browser to view:
-- Real-time trading performance
-- Position tracking across chains
-- Profit/loss analysis
-- Trading history
+### Performance Analytics
+View real-time trading performance through:
+- Performance data in `data/performance_data.json`
+- Trade logs in `data/trade_log.csv`
+- Console output with real-time status updates
+- Telegram notifications for all trading events
 
 ### Smart Blacklist Management
 The bot automatically maintains its blacklist to ensure trading opportunities:
 
-- **Automatic Cleanup**: Runs every 6 loops (6 hours) to remove safer tokens
+- **Automatic Cleanup**: Runs every loop to remove safer tokens
 - **Risk-Based Filtering**: Keeps high-risk tokens (3+ failures, 100% losses) blocked
 - **Trading Opportunity Maintenance**: Removes tokens with low failure counts to allow new trades
 - **Transparent Logging**: Shows exactly which tokens are removed and why
@@ -803,18 +803,18 @@ The bot automatically maintains its blacklist to ensure trading opportunities:
 **Configuration Options:**
 ```yaml
 # Smart Blacklist Maintenance
-enable_smart_blacklist_cleanup: true    # Auto-clean blacklist every 6 loops
-blacklist_cleanup_interval: 6           # Clean every N loops (6 = every 6 hours)
+enable_smart_blacklist_cleanup: true    # Auto-clean blacklist every loop
+blacklist_cleanup_interval: 1           # Clean every N loops (1 = every loop)
 blacklist_keep_failure_threshold: 3     # Keep tokens with N+ failures
 ```
 
 ### Logs
 The bot creates detailed logs in:
-- `archives/` - Trading logs and data
+- `logs/` - Trading logs (trading.log, errors.log, performance.log, etc.)
 - Console output - Real-time status updates
-- `trending_tokens.csv` - Token discovery history
-- `trade_log.csv` - Detailed trade history with reason codes
-- `delisted_tokens.json` (snapshot) - Tracking of delisted tokens (SQLite is source of truth)
+- `data/trending_tokens.csv` - Token discovery history
+- `data/trade_log.csv` - Detailed trade history with reason codes
+- `data/delisted_tokens.json` (snapshot) - Tracking of delisted tokens (SQLite is source of truth)
 
 ## 🔧 Advanced Configuration
 
@@ -1073,7 +1073,7 @@ Hunter/
 │       ├── http_utils.py
 │       └── ... (other utilities)
 ├── system/
-└── test_telegram_status.py
+└── tests/
 ```
 
 ## 🚀 AI-Enhanced Trading Features
@@ -1081,7 +1081,7 @@ Hunter/
 The bot now includes sophisticated AI-powered trading strategies for optimal execution:
 
 ### 🧠 **AI System Integration**
-- **8 Integrated AI Systems**: Working together for comprehensive market analysis
+- **30 AI Modules**: Working together for comprehensive market analysis
 - **Real-time Analysis**: Continuous market monitoring and adaptation
 - **Institutional-Grade Intelligence**: Professional-level trading algorithms
 - **Adaptive Strategy**: Automatically adjusts to changing market conditions
@@ -1098,23 +1098,23 @@ The bot now includes sophisticated AI-powered trading strategies for optimal exe
 - **Whale Activity Monitoring**: Real-time whale trade detection and impact analysis
 - **Market Maker Intelligence**: Leverages market maker presence for execution stability
 - **Sequential Execution**: Slices sent sequentially with re-quoting between each
-- **Configurable Limits**: Minimum slice size ($1) and maximum slices per trade (5)
+- **Configurable Limits**: Minimum slice size ($5) and maximum slices per trade (5)
 
 ### 🎯 **Dynamic Slippage**
 - **Impact-Based Calculation**: Slippage derived from predicted price impact
-- **Smart Multiplier**: Impact × 1.5 = slippage (with 2-15% bounds)
+- **Smart Multiplier**: Impact × 2.0 = slippage (with 1-8% bounds)
 - **Real-Time Adjustment**: Slippage calculated per trade based on current market conditions
 - **Risk Management**: Prevents overpaying while ensuring trade execution
 
 ### 🔄 **ExactOut Trades**
-- **Sketchy Token Protection**: For tokens with <$5k liquidity or <$1k volume
+- **Sketchy Token Protection**: For tokens with <$25k liquidity or <$10k volume
 - **Spending Cap**: Receive X tokens max, cap what you'll spend
 - **Failure Tolerance**: Accept that many attempts will fail
 - **Smart Fallback**: Continue with remaining slices even if some fail
 
 ### 🛣️ **Route Restrictions**
 - **Direct Route Preference**: Prefer single-hop routes over multi-hop
-- **Hop Limits**: Maximum 2 hops in any route
+- **Hop Limits**: Maximum 1 hop in any route
 - **Direct Pool Swaps**: Bypass aggregators for known pools
 - **Chain-Specific Optimization**: Different strategies per blockchain
 
@@ -1313,7 +1313,6 @@ For issues and questions:
 
 ### Solana-Specific Support
 
-- **Check Solana Documentation**: See `SOLANA_IMPLEMENTATION.md`
 - **Verify RPC Endpoint**: Ensure SOLANA_RPC_URL is accessible
 - **Wallet Setup**: Use Phantom wallet for Solana
 - **Token Account Creation**: Bot automatically creates associated token accounts
