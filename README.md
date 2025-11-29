@@ -119,16 +119,6 @@ All positions are monitored in real-time, and exits execute automatically on-cha
 
 *Note: Currently focusing on Solana and Base for optimal fee efficiency and trading opportunities. Ethereum support may be re-enabled in the future.*
 
-## 🎯 AI-Enhanced Sustainable Trading Strategy
-
-### **🌱 Strategy Overview**
-The bot uses a **sustainable 10-20% gains strategy** focused on quality over quantity. This approach prioritizes:
-
-- **Quality Token Selection** - AI-enhanced quality scoring (0-100) based on volume, liquidity, sentiment, and technical analysis
-- **Risk-Adjusted Position Sizing** - Dynamic position sizing based on token quality, market regime, and risk assessment
-- **Optimal Execution Timing** - AI-determined best execution windows using microstructure analysis
-- **Comprehensive Risk Management** - Multi-layered risk assessment with AI-powered loss prevention
-
 ### **🧠 AI System Integration Architecture**
 
 The bot features a **comprehensive AI integration engine** that coordinates **30 AI modules** across **6 analysis stages**:
