@@ -811,15 +811,39 @@ class EnhancedAsyncTradingEngine:
             confidence = recommendation.get("confidence", 0)
             quality_score = analysis.get("quality_score", 0)
             
+            # Extract additional AI signals for stricter gating
+            price_pred = analysis.get("price_prediction", {})
+            success_prob = price_pred.get("success_probability", 0.5)
+            risk_score = price_pred.get("risk_score", 0.5)
+            
+            # Hard AI thresholds for trade approval
+            MIN_QUALITY_SCORE = 0.60    # 60%
+            MIN_SUCCESS_PROB = 0.60     # 60%
+            MAX_RISK_SCORE = 0.50       # 50%
+            
+            passes_ai_filters = (
+                quality_score >= MIN_QUALITY_SCORE
+                and success_prob >= MIN_SUCCESS_PROB
+                and risk_score <= MAX_RISK_SCORE
+            )
+            
             # Log recommendation details for debugging
             log_info("trading.recommendation_check",
-                    f"Token {token.get('symbol', 'UNKNOWN')}: action={action}, confidence={confidence:.2f}, quality_score={quality_score:.2f}",
+                    f"Token {token.get('symbol', 'UNKNOWN')}: "
+                    f"action={action}, confidence={confidence:.2f}, "
+                    f"quality_score={quality_score:.2f}, "
+                    f"success_prob={success_prob:.2f}, "
+                    f"risk_score={risk_score:.2f}, "
+                    f"passes_ai_filters={passes_ai_filters}",
                     symbol=token.get("symbol"),
                     action=action,
                     confidence=confidence,
-                    quality_score=quality_score)
+                    quality_score=quality_score,
+                    success_prob=success_prob,
+                    risk_score=risk_score,
+                    passes_ai_filters=passes_ai_filters)
             
-            if action == "buy" and confidence > 0.7:
+            if action == "buy" and confidence > 0.7 and passes_ai_filters:
                 enhanced_token["approved_for_trading"] = True
                 
                 # Get AI-recommended position size

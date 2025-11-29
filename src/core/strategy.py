@@ -1063,8 +1063,10 @@ def check_buy_signal(token: dict) -> bool:
     
     # For multi-chain tokens, use lower requirements but not too aggressive
     if chain_id != "ethereum":
-        min_vol = max(100.0, min_vol * 0.2)  # 20% of normal requirement (was 5%)
-        min_liq = max(500.0, min_liq * 0.3)  # 30% of normal requirement (was 10%)
+        # Previously: 20% / 30% of ETH thresholds (too lenient)
+        # Now: require 75% of ETH thresholds with sensible floors
+        min_vol = max(50_000.0, min_vol * 0.75)
+        min_liq = max(75_000.0, min_liq * 0.75)
 
     if vol24h < min_vol or liq_usd < min_liq:
         _log_trace(
@@ -1088,9 +1090,11 @@ def check_buy_signal(token: dict) -> bool:
     # Trusted tokens: slightly easier momentum threshold
     momentum_need = config['MIN_MOMENTUM_PCT'] if not is_trusted else max(0.003, config['MIN_MOMENTUM_PCT'] * 0.5)  # e.g. 0.3%
     
-    # Multi-chain tokens: even easier momentum threshold
+    # Multi-chain tokens: require real (but slightly easier) momentum
     if chain_id != "ethereum":
-        momentum_need = max(0.0001, momentum_need * 0.05)  # 5% of normal requirement for multi-chain (0.02% * 0.05 = 0.001% = 0.01%)
+        # Previously: momentum_need * 0.05 (≈0.01% threshold), far too loose.
+        # Now: require at least ~0.10-0.20% momentum.
+        momentum_need = max(0.001, momentum_need * 0.5)
         _log_trace(
             f"🔓 Multi-chain momentum threshold: {momentum_need*100:.4f}%",
             level="info",
