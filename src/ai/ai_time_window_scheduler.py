@@ -51,6 +51,10 @@ class AITimeWindowScheduler:
         # Load persisted state or use defaults
         self._load_state()
         
+        # Track when score dropped below threshold for recovery mechanism
+        if not hasattr(self, 'score_below_threshold_since'):
+            self.score_below_threshold_since = 0.0
+        
         # Ensure minimum floor is at least equal to threshold to prevent blocking at floor
         # This prevents the score from getting stuck at 0.50 when threshold is 0.55
         min_score_floor = max(0.50, self.min_window_score_to_trade - 0.05)  # Floor is threshold - 5%
@@ -198,9 +202,22 @@ class AITimeWindowScheduler:
         else:
             weighted_score = 0.5  # Default neutral score
         
-        # Automatic recovery mechanism: if no recent bad data, gradually improve score
+        # Track when score drops below threshold for recovery mechanism
         current_time = time.time()
-        time_since_last_review = current_time - self.last_review_time if self.last_review_time > 0 else 0
+        if weighted_score < self.min_window_score_to_trade:
+            # Score is below threshold - track when this started
+            if self.score_below_threshold_since == 0.0:
+                self.score_below_threshold_since = current_time
+                log_info("time_window_scheduler.score_below_threshold",
+                        score=weighted_score,
+                        threshold=self.min_window_score_to_trade)
+        else:
+            # Score is above threshold - reset tracking
+            if self.score_below_threshold_since > 0.0:
+                log_info("time_window_scheduler.score_recovered",
+                        score=weighted_score,
+                        threshold=self.min_window_score_to_trade)
+            self.score_below_threshold_since = 0.0
         
         # If we have no recent execution history and no metrics provided, default to optimistic score
         # This prevents blocking trades when there's insufficient data (e.g., after position closes)
@@ -213,51 +230,49 @@ class AITimeWindowScheduler:
             # No recent data - use optimistic default to avoid blocking trades unnecessarily
             # This handles the case where positions just closed and we don't have recent buy execution data
             weighted_score = max(weighted_score, 0.70)  # At least 70% if no recent data
-        else:
-            # Automatic recovery: if score is low but no recent failures, gradually improve
-            # Recovery rate: 0.01 (1%) per 5 minutes of good behavior
-            recovery_rate = 0.01  # 1% per review interval
-            recovery_intervals = max(0, int(time_since_last_review / self.review_interval_seconds))
-            
-            # Only apply recovery if current score is below threshold and we have recent good data
-            if weighted_score < self.min_window_score_to_trade and recovery_intervals > 0:
-                # Check if recent metrics are actually good (no recent failures)
-                recent_fill_rate = fill_success_rate
-                recent_slippage = avg_slippage
-                recent_latency = avg_latency
-                
-                # If recent metrics are good, apply recovery
-                if (recent_fill_rate >= 0.8 and recent_slippage <= 0.03 and recent_latency <= 3000):
-                    recovery_bonus = min(0.10, recovery_intervals * recovery_rate)  # Cap at 10% recovery
-                    weighted_score = min(1.0, weighted_score + recovery_bonus)
+            # Reset below-threshold tracking since we're using optimistic default
+            self.score_below_threshold_since = 0.0
         
         # Minimum score floor: prevent score from getting stuck below threshold
         # Floor should be at least threshold - 5% to allow some buffer
         min_score_floor = max(0.50, self.min_window_score_to_trade - 0.05)
         weighted_score = max(min_score_floor, weighted_score)
         
-        # Improved recovery mechanism: if score is stuck at floor, gradually recover
+        # Improved recovery mechanism: if score is stuck below threshold, gradually recover over time
         # This prevents permanent blocking when metrics are temporarily bad
-        if weighted_score <= min_score_floor + 0.01:  # Within 1% of floor
-            current_time = time.time()
-            time_since_last_review = current_time - self.last_review_time if self.last_review_time > 0 else 0
+        if weighted_score < self.min_window_score_to_trade and self.score_below_threshold_since > 0.0:
+            # Calculate how long we've been below threshold
+            time_below_threshold = current_time - self.score_below_threshold_since
+            recovery_intervals = max(0, int(time_below_threshold / self.review_interval_seconds))
             
-            # If we've been at the floor for a while, start gradual recovery
-            # Recovery rate: 0.02 (2%) per review interval when stuck at floor
-            recovery_intervals = max(0, int(time_since_last_review / self.review_interval_seconds))
             if recovery_intervals > 0:
                 # More forgiving recovery - don't require perfect metrics
-                # Just check that we're not getting worse
+                # Just check that we're not getting catastrophically worse
                 recent_fill_rate = fill_success_rate
                 recent_slippage = avg_slippage
                 
                 # If metrics aren't catastrophically bad, allow recovery
+                # Recovery rate: 0.02 (2%) per review interval when stuck below threshold
                 if recent_fill_rate >= 0.5 and recent_slippage <= 0.10:  # More lenient thresholds
                     recovery_bonus = min(0.15, recovery_intervals * 0.02)  # Cap at 15% recovery
+                    old_score = weighted_score
                     weighted_score = min(1.0, weighted_score + recovery_bonus)
-                    log_info("time_window_scheduler.floor_recovery",
-                            old_score=min_score_floor,
+                    
+                    # If recovery improved score above threshold, reset tracking
+                    if weighted_score >= self.min_window_score_to_trade:
+                        self.score_below_threshold_since = 0.0
+                    
+                    log_info("time_window_scheduler.recovery_applied",
+                            old_score=old_score,
                             new_score=weighted_score,
+                            recovery_intervals=recovery_intervals,
+                            time_below_threshold_seconds=int(time_below_threshold))
+                else:
+                    # Metrics are bad - don't recover yet, but log for debugging
+                    log_info("time_window_scheduler.recovery_blocked",
+                            score=weighted_score,
+                            fill_rate=recent_fill_rate,
+                            slippage=recent_slippage,
                             recovery_intervals=recovery_intervals)
         
         return max(0.0, min(1.0, weighted_score))
@@ -345,6 +360,7 @@ class AITimeWindowScheduler:
                 self.last_review_time = float(state.get("last_review_time", 0.0))
                 self.is_paused = bool(state.get("is_paused", False))
                 self.pause_until = float(state.get("pause_until", 0.0))
+                self.score_below_threshold_since = float(state.get("score_below_threshold_since", 0.0))
                 
                 # Load execution history (limited to recent entries)
                 history = state.get("execution_history", [])
@@ -357,13 +373,15 @@ class AITimeWindowScheduler:
                 
                 log_info("time_window_scheduler.state_loaded",
                         score=self.current_window_score,
-                        history_size=len(self.execution_history))
+                        history_size=len(self.execution_history),
+                        score_below_threshold_since=self.score_below_threshold_since)
             else:
                 # First run - use defaults
                 self.last_review_time = 0.0
                 self.current_window_score = 0.75  # Default to 75% - optimistic but safe
                 self.is_paused = False
                 self.pause_until = 0.0
+                self.score_below_threshold_since = 0.0
         except Exception as e:
             log_error("time_window_scheduler.load_state_error", error=str(e))
             # On error, use defaults
@@ -371,6 +389,7 @@ class AITimeWindowScheduler:
             self.current_window_score = 0.75
             self.is_paused = False
             self.pause_until = 0.0
+            self.score_below_threshold_since = 0.0
     
     def _save_state(self) -> None:
         """Save scheduler state to persistent storage"""
@@ -381,6 +400,7 @@ class AITimeWindowScheduler:
                 "last_review_time": self.last_review_time,
                 "is_paused": self.is_paused,
                 "pause_until": self.pause_until,
+                "score_below_threshold_since": getattr(self, 'score_below_threshold_since', 0.0),
                 # Save recent execution history (last 50 entries)
                 "execution_history": list(self.execution_history)[-50:]
             }
