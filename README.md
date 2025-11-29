@@ -18,7 +18,39 @@ An AI-powered crypto trading bot executing real on-chain trades with live PnL, s
 
 ---
 
-## 🎯 AI-Enhanced Features
+## 🔄 How It Works
+
+### **1. Token Selection** 🔍
+The bot continuously scans DexScreener for trending tokens across Solana and Base. It filters out low-quality tokens by requiring:
+- Minimum $150k daily volume
+- Minimum $150k liquidity
+- Active trading activity
+- No stablecoins or wrapped tokens
+
+Top candidates are ranked by volume and passed to the AI system for deeper analysis.
+
+### **2. Entry Decision** ✅
+Before entering any trade, tokens must pass multiple AI-driven checks:
+- **AI Quality Score** ≥ 60% (combines sentiment, technical analysis, price prediction)
+- **Success Probability** ≥ 60% (AI's prediction of profitable outcome)
+- **Risk Score** ≤ 50% (lower is safer)
+- **AI Recommendation** = "buy" with >70% confidence
+- **Risk Gates** = Approved (wallet balance, position limits, market conditions)
+
+Only tokens passing all criteria are considered for trading.
+
+### **3. Exit Strategy** 💰
+The bot continuously monitors all open positions and automatically sells when:
+- **Take Profit** is hit: 13% gain (default, can be dynamic based on market conditions)
+- **Stop Loss** is triggered: 7% loss
+- **Trailing Stop** activates: Locks in profits if price drops 6% from peak
+- **Token Delisted**: Auto-sells if token becomes untradeable
+
+All positions are monitored in real-time, and exits execute automatically on-chain.
+
+---
+
+## 🎯 Artificial Intelligence Features
 
 ### **🧠 Core AI Systems**
 - **🔍 AI Market Microstructure Analyzer** - Real-time order book analysis, trade flow patterns, liquidity analysis, whale activity detection, market maker identification, and manipulation detection
