@@ -1,6 +1,6 @@
-# 🚀 Hunter: The Crypto Bot
+# 🚀 Hunter: The AI-Powered Crypto Trading Bot
 
-An AI-powered crypto trading bot executing real on-chain trades with live PnL, smart token scanning, sentiment scoring, microstructure analysis, and adaptive risk control. Updated in real time. If you find this project useful, drop a ⭐️ to support it.
+Hunter is a quant level AI-powered crypto trading bot executing real on-chain trades with live PnL, smart token scanning, sentiment scoring, microstructure analysis, and adaptive risk control. Updated in real time. If you find this project useful, drop a ⭐️ to support it.
 
 ## ⚠️ **IMPORTANT DISCLAIMER**
 
