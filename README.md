@@ -119,11 +119,11 @@ All positions are monitored in real-time, and exits execute automatically on-cha
 
 *Note: Currently focusing on Solana and Base for optimal fee efficiency and trading opportunities. Ethereum support may be re-enabled in the future.*
 
-### **🧠 AI System Integration Architecture**
+## 🧠 AI System Integration Architecture
 
 The bot features a **comprehensive AI integration engine** that coordinates **30 AI modules** across **6 analysis stages**:
 
-#### **Stage 1: Core Analysis** (Foundation)
+### **Stage 1: Core Analysis** (Foundation)
 1. **📊 Sentiment Analysis** - Analyzes social media, news, market, and technical sentiment
 2. **🔮 Price Prediction** - Predicts token success probability using LSTM neural networks
 3. **🛡️ Risk Assessment** - Machine learning-based risk scoring and loss prediction
@@ -131,28 +131,28 @@ The bot features a **comprehensive AI integration engine** that coordinates **30
 5. **🔍 Technical Analysis** - Pattern recognition, indicators, and trend analysis
 6. **⚡ Execution Optimization** - Basic execution timing and slippage optimization
 
-#### **Stage 2: Market Context Analysis** (Regime & Environment)
+### **Stage 2: Market Context Analysis** (Regime & Environment)
 7. **🎯 Market Regime Detection** - Detects market conditions (bull, bear, sideways, volatile, recovery) and adapts strategy
 8. **🔄 Market Regime Transition Detector** - Real-time detection of regime changes for optimal strategy switching
 9. **🔄 Market Cycle Predictor** - Predicts market cycles (accumulation, markup, distribution, markdown) for strategic positioning
 10. **💧 Liquidity Flow Analyzer** - Analyzes liquidity flow patterns, detects traps, and optimizes execution timing
 11. **🔍 Market Anomaly Detector** - Detects unusual market conditions, opportunities, and risks
 
-#### **Stage 3: Predictive Analytics** (Forecasting)
+### **Stage 3: Predictive Analytics** (Forecasting)
 12. **🔮 Predictive Analytics Engine** - Advanced price movement prediction using multiple analysis methods
 13. **🔍 Market Microstructure Analyzer** - Analyzes order book, trade flow, liquidity, whale activity, and manipulation
 14. **⏰ Multi-Timeframe Analysis Engine** - Integrates data from multiple timeframes for robust market view
 
-#### **Stage 4: Risk Controls** (Protection)
+### **Stage 4: Risk Controls** (Protection)
 15. **🛡️ Risk Prediction & Prevention System** - Comprehensive risk protection including flash crash detection, rug pull prevention, manipulation detection
 16. **🛡️ Drawdown Protection System** - Advanced drawdown protection with portfolio analysis and market condition monitoring
 17. **🚨 Emergency Stop System** - Automatically halts trading during extreme conditions, system errors, or excessive losses
 
-#### **Stage 5: Portfolio Analysis** (Optimization)
+### **Stage 5: Portfolio Analysis** (Optimization)
 18. **📈 Portfolio Optimization** - Optimizes capital allocation using modern portfolio theory
 19. **⚖️ Portfolio Rebalancing Engine** - Optimal portfolio allocation for risk-adjusted returns and diversification
 
-#### **Stage 6: Execution Optimization** (Post-Analysis)
+### **Stage 6: Execution Optimization** (Post-Analysis)
 20. **⚡ Trade Execution Monitor** - Monitors trade execution quality and performance
 21. **✅ Position Size Validator** - Validates position sizes before execution to prevent oversized trades
 22. **🎯 Dynamic Strategy Selector** - Adaptive strategy selection based on market conditions and performance
@@ -164,7 +164,7 @@ The bot features a **comprehensive AI integration engine** that coordinates **30
 28. **💵 Partial Take-Profit Manager** - Staged profit-taking with adaptive trailing stops
 29. **🛡️ Market Condition Guardian** - Trading safety monitoring and market condition checks
 
-#### **Integration Benefits**
+### **Integration Benefits**
 - **Parallel Processing**: All modules run in parallel for maximum efficiency
 - **Comprehensive Scoring**: Overall score combines all 6 stages with weighted importance
 - **Intelligent Recommendations**: Trading decisions incorporate insights from all modules
