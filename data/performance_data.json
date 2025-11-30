@@ -1595,7 +1595,7 @@
       "exit_price": 0.1211,
       "pnl_usd": 0.0,
       "pnl_percent": 0.0,
-      "status": "manual_close",
+      "status": "sold",
       "take_profit_target": null,
       "stop_loss_target": null,
       "buy_tx_hash": "2WwiGXAdWru4xvY5Z1miy57BmfiJ2CvmaA7G5C7v4gS4rEu6DarNUrcGDwBgamF5bLkLrvQzFHVB7L5trP3iKeUR",
@@ -1603,7 +1603,8 @@
       "entry_amount_usd_actual": 0,
       "entry_tokens_received": null,
       "entry_gas_fee_usd": 0,
-      "buy_slippage_actual": null
+      "buy_slippage_actual": null,
+      "sell_tx_hash": "dzSXAjtKLfc1aRGbptJcQ7QAsuNd4mrnCFv5jDbDvw7kV1AtAy6s2z9E3TZhjyLqsRjniC1acgGzmr3uwvS8e3J"
     },
     {
       "id": "arc_20251130_053914",
@@ -1620,7 +1621,7 @@
       "exit_price": 0.04406,
       "pnl_usd": 0.0,
       "pnl_percent": 0.0,
-      "status": "manual_close",
+      "status": "sold",
       "take_profit_target": null,
       "stop_loss_target": null,
       "buy_tx_hash": "4rTWAq6M6rcp7ph1zBFGaWp5BxdAJNcjP4aFV7UP5vR62KjJgoFpy111DqFcrLVxyxbCz1faL2pNpvwy1QeSLHiS",
@@ -1628,7 +1629,8 @@
       "entry_amount_usd_actual": 0,
       "entry_tokens_received": null,
       "entry_gas_fee_usd": 0,
-      "buy_slippage_actual": null
+      "buy_slippage_actual": null,
+      "sell_tx_hash": "SwpJjk3RqiVxEDeAF8e6L2ZEtDAm8NE7BoBQtWdCNMuhFLryMox6y6Kfd6b7nbu3sYheFZH3ZwBFnkdcB6NziqL"
     },
     {
       "id": "pippin_20251130_094756",
@@ -1649,6 +1651,31 @@
       "take_profit_target": null,
       "stop_loss_target": null,
       "buy_tx_hash": "2UGGRayaxyc6rLg3tqEEZUc8rg3py8ZYQQZmdMTofKmmC4epb9Q5G5nEf1Tss55uM11DBH75tCUNRuBhDDwwkLeZ",
+      "entry_amount_usd_quoted": 19.8,
+      "entry_amount_usd_actual": 0,
+      "entry_tokens_received": null,
+      "entry_gas_fee_usd": 0,
+      "buy_slippage_actual": null
+    },
+    {
+      "id": "GRIFFAIN_20251130_095335",
+      "symbol": "GRIFFAIN",
+      "address": "KENJSUYLASHUMfHyy5o4Hp2FdNqZg1AsUPhfH2kYvEP",
+      "chain": "solana",
+      "entry_time": "2025-11-30T09:53:35.048627",
+      "entry_price": 0.01743,
+      "position_size_usd": 19.8,
+      "quality_score": 0.7173977011971765,
+      "volume_24h": 2684444.04,
+      "liquidity": 2010748.73,
+      "exit_time": "2025-11-30T09:53:35.048627",
+      "exit_price": 0.01743,
+      "pnl_usd": 0.0,
+      "pnl_percent": 0.0,
+      "status": "manual_close",
+      "take_profit_target": null,
+      "stop_loss_target": null,
+      "buy_tx_hash": "5EkDjrdSi6VA1KEVJmUrKktSBiQ8hcKVJLT8pgmeRbi8235J3wWxT77NLaaR55fQ7LD135A8kaueRJSbsK9jE5QW",
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 0,
       "entry_tokens_received": null,
@@ -1684,5 +1711,5 @@
       }
     }
   },
-  "last_updated": "2025-11-30T09:47:56.506858"
+  "last_updated": "2025-11-30T09:53:35.073160"
 }
