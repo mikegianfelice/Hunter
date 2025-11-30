@@ -1128,6 +1128,49 @@ def monitor_all_positions():
         # Take-profit (full position)
         if gain >= take_profit_threshold:
             print(f"💰 [TAKE PROFIT] Take-profit hit! Gain: {gain*100:.2f}% >= Threshold: {take_profit_threshold*100:.2f}%")
+            
+            # Check balance BEFORE attempting to sell - if already sold, clean up position
+            print(f"🔍 [PRE-SELL CHECK] Verifying token balance before take-profit sell...")
+            pre_sell_balance = _check_token_balance_on_chain(token_address, chain_id)
+            
+            if pre_sell_balance == -1.0:
+                # Balance check failed - proceed with sell attempt (can't verify)
+                print(f"⚠️ [PRE-SELL CHECK] Balance check failed, proceeding with sell attempt...")
+            elif pre_sell_balance <= 0.0 or pre_sell_balance < 0.000001:
+                # Token already sold (zero/dust balance) - clean up position
+                print(f"✅ [PRE-SELL CHECK] Token balance is zero/dust ({pre_sell_balance:.8f}) - position already sold, cleaning up...")
+                
+                # Log the trade exit
+                log_trade(token_address, entry_price, current_price, "take_profit")
+                
+                # Update performance tracker
+                trade = _find_open_trade_by_address(token_address, chain_id)
+                if trade:
+                    position_size = trade.get('position_size_usd', 0)
+                    pnl_usd = gain * position_size
+                    from src.core.performance_tracker import performance_tracker
+                    performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, "take_profit")
+                    print(f"📊 Updated performance tracker for take profit: {trade.get('symbol', '?')}")
+                
+                # Clean up position
+                _cleanup_closed_position(position_key, token_address, chain_id)
+                
+                # Send notification
+                send_telegram_message(
+                    f"💰 Take-profit triggered (already sold)!\n"
+                    f"Token: {symbol} ({token_address})\n"
+                    f"Chain: {chain_id.upper()}\n"
+                    f"Entry: ${entry_price:.6f}\n"
+                    f"Exit: ${current_price:.6f} (+{gain * 100:.2f}%)\n"
+                    f"TX: Already sold (detected by balance check)"
+                )
+                closed_positions.append(position_key)
+                updated_positions.pop(position_key, None)
+                continue  # Skip to next position
+            else:
+                # Token still in wallet - proceed with sell attempt
+                print(f"✅ [PRE-SELL CHECK] Token balance confirmed: {pre_sell_balance:.6f} - proceeding with sell...")
+            
             print(f"🔍 [DEBUG] Calling _sell_token_multi_chain for {symbol} ({token_address}) on {chain_id}")
             tx = _sell_token_multi_chain(token_address, chain_id, symbol)
             print(f"🔍 [DEBUG] Sell result: tx={tx}, type={type(tx)}")
@@ -1238,6 +1281,49 @@ def monitor_all_positions():
             print(f"Current Price: ${current_price:.6f}")
             print(f"Gain/Loss: {gain * 100:.2f}%")
             print(f"Stop Loss Threshold: {config['STOP_LOSS'] * 100:.2f}%")
+            
+            # Check balance BEFORE attempting to sell - if already sold, clean up position
+            print(f"🔍 [PRE-SELL CHECK] Verifying token balance before stop-loss sell...")
+            pre_sell_balance = _check_token_balance_on_chain(token_address, chain_id)
+            
+            if pre_sell_balance == -1.0:
+                # Balance check failed - proceed with sell attempt (can't verify)
+                print(f"⚠️ [PRE-SELL CHECK] Balance check failed, proceeding with sell attempt...")
+            elif pre_sell_balance <= 0.0 or pre_sell_balance < 0.000001:
+                # Token already sold (zero/dust balance) - clean up position
+                print(f"✅ [PRE-SELL CHECK] Token balance is zero/dust ({pre_sell_balance:.8f}) - position already sold, cleaning up...")
+                
+                # Log the trade exit
+                log_trade(token_address, entry_price, current_price, "stop_loss")
+                
+                # Update performance tracker
+                trade = _find_open_trade_by_address(token_address, chain_id)
+                if trade:
+                    position_size = trade.get('position_size_usd', 0)
+                    pnl_usd = gain * position_size
+                    from src.core.performance_tracker import performance_tracker
+                    performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, "stop_loss")
+                    print(f"📊 Updated performance tracker for stop loss: {trade.get('symbol', '?')}")
+                
+                # Clean up position
+                _cleanup_closed_position(position_key, token_address, chain_id)
+                
+                # Send notification
+                send_telegram_message(
+                    f"🛑 Stop-loss triggered (already sold)!\n"
+                    f"Token: {symbol} ({token_address})\n"
+                    f"Chain: {chain_id.upper()}\n"
+                    f"Entry: ${entry_price:.6f}\n"
+                    f"Exit: ${current_price:.6f} ({gain * 100:.2f}%)\n"
+                    f"TX: Already sold (detected by balance check)"
+                )
+                closed_positions.append(position_key)
+                updated_positions.pop(position_key, None)
+                continue  # Skip to next position
+            else:
+                # Token still in wallet - proceed with sell attempt
+                print(f"✅ [PRE-SELL CHECK] Token balance confirmed: {pre_sell_balance:.6f} - proceeding with sell...")
+            
             print(f"Attempting to sell...")
             print(f"{'='*60}\n")
             tx = _sell_token_multi_chain(token_address, chain_id, symbol)
@@ -1350,7 +1436,51 @@ def monitor_all_positions():
 
         # Trailing stop (if enabled and price fell below dynamic level)
         if dyn_stop and current_price <= dyn_stop:
-            print("🧵 Trailing stop-loss hit! Selling...")
+            print("🧵 Trailing stop-loss hit!")
+            
+            # Check balance BEFORE attempting to sell - if already sold, clean up position
+            print(f"🔍 [PRE-SELL CHECK] Verifying token balance before trailing stop-loss sell...")
+            pre_sell_balance = _check_token_balance_on_chain(token_address, chain_id)
+            
+            if pre_sell_balance == -1.0:
+                # Balance check failed - proceed with sell attempt (can't verify)
+                print(f"⚠️ [PRE-SELL CHECK] Balance check failed, proceeding with sell attempt...")
+            elif pre_sell_balance <= 0.0 or pre_sell_balance < 0.000001:
+                # Token already sold (zero/dust balance) - clean up position
+                print(f"✅ [PRE-SELL CHECK] Token balance is zero/dust ({pre_sell_balance:.8f}) - position already sold, cleaning up...")
+                
+                # Log the trade exit
+                log_trade(token_address, entry_price, current_price, "trailing_stop")
+                
+                # Update performance tracker
+                trade = _find_open_trade_by_address(token_address, chain_id)
+                if trade:
+                    position_size = trade.get('position_size_usd', 0)
+                    pnl_usd = gain * position_size
+                    from src.core.performance_tracker import performance_tracker
+                    performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, "trailing_stop")
+                    print(f"📊 Updated performance tracker for trailing stop: {trade.get('symbol', '?')}")
+                
+                # Clean up position
+                _cleanup_closed_position(position_key, token_address, chain_id)
+                
+                # Send notification
+                send_telegram_message(
+                    f"🧵 Trailing stop-loss triggered (already sold)!\n"
+                    f"Token: {symbol} ({token_address})\n"
+                    f"Chain: {chain_id.upper()}\n"
+                    f"Entry: ${entry_price:.6f}\n"
+                    f"Exit: ${current_price:.6f}\n"
+                    f"TX: Already sold (detected by balance check)"
+                )
+                closed_positions.append(position_key)
+                updated_positions.pop(position_key, None)
+                continue  # Skip to next position
+            else:
+                # Token still in wallet - proceed with sell attempt
+                print(f"✅ [PRE-SELL CHECK] Token balance confirmed: {pre_sell_balance:.6f} - proceeding with sell...")
+            
+            print("Selling...")
             tx = _sell_token_multi_chain(token_address, chain_id, symbol)
             
             if tx:  # Only proceed if sell succeeded
