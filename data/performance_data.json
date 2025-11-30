@@ -22,7 +22,7 @@
       "entry_amount_usd_quoted": 13.200000000000001,
       "entry_amount_usd_actual": 13.200000000000017,
       "entry_tokens_received": 117.307665,
-      "entry_gas_fee_usd": 0.0008578429499999999,
+      "entry_gas_fee_usd": 0.0008152958600000001,
       "buy_slippage_actual": null,
       "exit_gas_fee_usd": null,
       "total_fees_usd": null,
@@ -53,7 +53,7 @@
       "entry_amount_usd_quoted": 13.200000000000001,
       "entry_amount_usd_actual": 13.200000000000017,
       "entry_tokens_received": 126.183275,
-      "entry_gas_fee_usd": 0.0036600917999999997,
+      "entry_gas_fee_usd": 0.0034785594400000004,
       "buy_slippage_actual": null,
       "exit_gas_fee_usd": null,
       "total_fees_usd": null,
@@ -84,7 +84,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.799999999999983,
       "entry_tokens_received": 158.527739,
-      "entry_gas_fee_usd": 0.0032100851999999997,
+      "entry_gas_fee_usd": 0.0030508721600000003,
       "buy_slippage_actual": null,
       "exit_gas_fee_usd": null,
       "total_fees_usd": null,
@@ -1466,11 +1466,11 @@
       "quality_score": 0.7225796362930431,
       "volume_24h": 44998831.02,
       "liquidity": 5935432.55,
-      "exit_time": "2025-11-29T19:14:13.590702",
-      "exit_price": 0.1049,
-      "pnl_usd": 2.67696,
-      "pnl_percent": 13.52,
-      "status": "sold",
+      "exit_time": "2025-11-29T10:21:23.478011",
+      "exit_price": 0.09241,
+      "pnl_usd": 0.0,
+      "pnl_percent": 0.0,
+      "status": "manual_close",
       "take_profit_target": null,
       "stop_loss_target": null,
       "buy_tx_hash": "21PnoZYPv42ExxWm1r5jtZeKzdUAVnwYR9g6VgpsqbwLQ36EpiqfTMemAatMJM5b1KG1h3u3JpvzffRbo7pPMrtw",
@@ -1478,9 +1478,7 @@
       "entry_amount_usd_actual": 0,
       "entry_tokens_received": null,
       "entry_gas_fee_usd": 0,
-      "buy_slippage_actual": null,
-      "sell_tx_hash": "2nXevGEoabV2wXi3gptVN76K3TLHPYsdR9LBj3qAfY8VVXbSCXHqHc2PnR8MFzYgAvhoZwnPSXFEDrMXMxWspy96",
-      "exit_gas_fee_usd": 0.038297222990000004
+      "buy_slippage_actual": null
     },
     {
       "id": "FWOG_20251129_102207",
@@ -1581,6 +1579,31 @@
       "entry_tokens_received": null,
       "entry_gas_fee_usd": 0,
       "buy_slippage_actual": null
+    },
+    {
+      "id": "pippin_20251130_021928",
+      "symbol": "pippin",
+      "address": "Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump",
+      "chain": "solana",
+      "entry_time": "2025-11-30T02:19:28.263036",
+      "entry_price": 0.1211,
+      "position_size_usd": 19.8,
+      "quality_score": 0.7249639102341213,
+      "volume_24h": 44334775.98,
+      "liquidity": 6746999.19,
+      "exit_time": "2025-11-30T02:19:28.263036",
+      "exit_price": 0.1211,
+      "pnl_usd": 0.0,
+      "pnl_percent": 0.0,
+      "status": "manual_close",
+      "take_profit_target": null,
+      "stop_loss_target": null,
+      "buy_tx_hash": "2WwiGXAdWru4xvY5Z1miy57BmfiJ2CvmaA7G5C7v4gS4rEu6DarNUrcGDwBgamF5bLkLrvQzFHVB7L5trP3iKeUR",
+      "entry_amount_usd_quoted": 19.8,
+      "entry_amount_usd_actual": 0,
+      "entry_tokens_received": null,
+      "entry_gas_fee_usd": 0,
+      "buy_slippage_actual": null
     }
   ],
   "daily_stats": {
@@ -1611,5 +1634,5 @@
       }
     }
   },
-  "last_updated": "2025-11-29T19:16:48.277968"
+  "last_updated": "2025-11-30T02:19:28.323989"
 }
