@@ -1169,16 +1169,63 @@ def monitor_all_positions():
                 )
                 closed_positions.append(position_key)
                 updated_positions.pop(position_key, None)
-            else:  # Sell failed
-                send_telegram_message(
-                    f"⚠️ Take-profit triggered but SELL FAILED!\n"
-                    f"Token: {symbol} ({token_address})\n"
-                    f"Chain: {chain_id.upper()}\n"
-                    f"Entry: ${entry_price:.6f}\n"
-                    f"Now: ${current_price:.6f} (+{gain * 100:.2f}%)\n"
-                    f"Will retry on next check..."
-                )
-                # Don't remove position - keep monitoring to retry
+            else:  # Sell failed - but verify with balance check first to avoid false negatives
+                # Double-check if sell actually succeeded by checking balance
+                # This prevents false "SELL FAILED" messages when verification is delayed
+                balance_check_passed = False
+                if chain_id == "solana":
+                    try:
+                        from src.execution.jupiter_lib import JupiterCustomLib
+                        from src.config.secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
+                        lib = JupiterCustomLib(SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY)
+                        time.sleep(3)  # Wait a bit for transaction to propagate
+                        current_balance = lib.get_token_balance(token_address)
+                        
+                        # If balance is zero or very small, sell likely succeeded
+                        if current_balance is not None:
+                            if current_balance == 0 or current_balance < 0.000001:
+                                print(f"✅ [BALANCE CHECK] Token balance is zero/dust - sell actually succeeded despite verification failure")
+                                balance_check_passed = True
+                    except Exception as balance_check_error:
+                        print(f"⚠️ [BALANCE CHECK] Error checking balance: {balance_check_error}")
+                
+                if balance_check_passed:
+                    # Sell actually succeeded - log it and remove position
+                    print(f"✅ [RECOVERY] Sell succeeded (verified by balance check), logging trade...")
+                    log_trade(token_address, entry_price, current_price, "take_profit")
+                    
+                    # Update performance tracker
+                    if trade:
+                        position_size = trade.get('position_size_usd', 0)
+                        pnl_usd = gain * position_size
+                        
+                        from src.core.performance_tracker import performance_tracker
+                        performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, "take_profit")
+                    
+                    # Clean up position
+                    _cleanup_closed_position(position_key, token_address, chain_id)
+                    
+                    send_telegram_message(
+                        f"💰 Take-profit triggered!\n"
+                        f"Token: {symbol} ({token_address})\n"
+                        f"Chain: {chain_id.upper()}\n"
+                        f"Entry: ${entry_price:.6f}\n"
+                        f"Now: ${current_price:.6f} (+{gain * 100:.2f}%)\n"
+                        f"TX: Verified by balance check"
+                    )
+                    closed_positions.append(position_key)
+                    updated_positions.pop(position_key, None)
+                else:
+                    # Sell actually failed - send error message
+                    send_telegram_message(
+                        f"⚠️ Take-profit triggered but SELL FAILED!\n"
+                        f"Token: {symbol} ({token_address})\n"
+                        f"Chain: {chain_id.upper()}\n"
+                        f"Entry: ${entry_price:.6f}\n"
+                        f"Now: ${current_price:.6f} (+{gain * 100:.2f}%)\n"
+                        f"Will retry on next check..."
+                    )
+                    # Don't remove position - keep monitoring to retry
             continue  # move to next token
 
         # Hard stop-loss (only if not already handled by Partial TP Manager)
@@ -1233,25 +1280,72 @@ def monitor_all_positions():
                 )
                 closed_positions.append(position_key)
                 updated_positions.pop(position_key, None)
-            else:  # Sell failed
-                print(f"\n{'='*60}")
-                print(f"❌ CRITICAL: STOP-LOSS TRIGGERED BUT SELL FAILED!")
-                print(f"Token: {symbol} ({token_address[:8]}...{token_address[-8:]})")
-                print(f"Chain: {chain_id.upper()}")
-                print(f"Entry Price: ${entry_price:.6f}")
-                print(f"Current Price: ${current_price:.6f}")
-                print(f"Loss: {gain * 100:.2f}%")
-                print(f"Position will remain open and retry on next check")
-                print(f"{'='*60}\n")
-                send_telegram_message(
-                    f"⚠️ Stop-loss triggered but SELL FAILED!\n"
-                    f"Token: {symbol} ({token_address})\n"
-                    f"Chain: {chain_id.upper()}\n"
-                    f"Entry: ${entry_price:.6f}\n"
-                    f"Now: ${current_price:.6f} ({gain * 100:.2f}%)\n"
-                    f"Will retry on next check..."
-                )
-                # Don't remove position - keep monitoring to retry
+            else:  # Sell failed - but verify with balance check first to avoid false negatives
+                # Double-check if sell actually succeeded by checking balance
+                balance_check_passed = False
+                if chain_id == "solana":
+                    try:
+                        from src.execution.jupiter_lib import JupiterCustomLib
+                        from src.config.secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
+                        lib = JupiterCustomLib(SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY)
+                        time.sleep(3)  # Wait a bit for transaction to propagate
+                        current_balance = lib.get_token_balance(token_address)
+                        
+                        # If balance is zero or very small, sell likely succeeded
+                        if current_balance is not None:
+                            if current_balance == 0 or current_balance < 0.000001:
+                                print(f"✅ [BALANCE CHECK] Token balance is zero/dust - sell actually succeeded despite verification failure")
+                                balance_check_passed = True
+                    except Exception as balance_check_error:
+                        print(f"⚠️ [BALANCE CHECK] Error checking balance: {balance_check_error}")
+                
+                if balance_check_passed:
+                    # Sell actually succeeded - log it and remove position
+                    print(f"✅ [RECOVERY] Stop-loss sell succeeded (verified by balance check), logging trade...")
+                    log_trade(token_address, entry_price, current_price, "stop_loss")
+                    
+                    # Update performance tracker
+                    trade = _find_open_trade_by_address(token_address, chain_id)
+                    if trade:
+                        position_size = trade.get('position_size_usd', 0)
+                        pnl_usd = gain * position_size
+                        
+                        from src.core.performance_tracker import performance_tracker
+                        performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, "stop_loss")
+                    
+                    # Clean up position
+                    _cleanup_closed_position(position_key, token_address, chain_id)
+                    
+                    send_telegram_message(
+                        f"🛑 Stop-loss triggered!\n"
+                        f"Token: {symbol} ({token_address})\n"
+                        f"Chain: {chain_id.upper()}\n"
+                        f"Entry: ${entry_price:.6f}\n"
+                        f"Now: ${current_price:.6f} ({gain * 100:.2f}%)\n"
+                        f"TX: Verified by balance check"
+                    )
+                    closed_positions.append(position_key)
+                    updated_positions.pop(position_key, None)
+                else:
+                    # Sell actually failed
+                    print(f"\n{'='*60}")
+                    print(f"❌ CRITICAL: STOP-LOSS TRIGGERED BUT SELL FAILED!")
+                    print(f"Token: {symbol} ({token_address[:8]}...{token_address[-8:]})")
+                    print(f"Chain: {chain_id.upper()}")
+                    print(f"Entry Price: ${entry_price:.6f}")
+                    print(f"Current Price: ${current_price:.6f}")
+                    print(f"Loss: {gain * 100:.2f}%")
+                    print(f"Position will remain open and retry on next check")
+                    print(f"{'='*60}\n")
+                    send_telegram_message(
+                        f"⚠️ Stop-loss triggered but SELL FAILED!\n"
+                        f"Token: {symbol} ({token_address})\n"
+                        f"Chain: {chain_id.upper()}\n"
+                        f"Entry: ${entry_price:.6f}\n"
+                        f"Now: ${current_price:.6f} ({gain * 100:.2f}%)\n"
+                        f"Will retry on next check..."
+                    )
+                    # Don't remove position - keep monitoring to retry
             continue
 
         # Trailing stop (if enabled and price fell below dynamic level)
@@ -1297,16 +1391,63 @@ def monitor_all_positions():
                 )
                 closed_positions.append(position_key)
                 updated_positions.pop(position_key, None)
-            else:  # Sell failed
-                send_telegram_message(
-                    f"⚠️ Trailing stop-loss triggered but SELL FAILED!\n"
-                    f"Token: {symbol} ({token_address})\n"
-                    f"Chain: {chain_id.upper()}\n"
-                    f"Entry: ${entry_price:.6f}\n"
-                    f"Now: ${current_price:.6f}\n"
-                    f"Will retry on next check..."
-                )
-                # Don't remove position - keep monitoring to retry
+            else:  # Sell failed - but verify with balance check first to avoid false negatives
+                # Double-check if sell actually succeeded by checking balance
+                balance_check_passed = False
+                if chain_id == "solana":
+                    try:
+                        from src.execution.jupiter_lib import JupiterCustomLib
+                        from src.config.secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
+                        lib = JupiterCustomLib(SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY)
+                        time.sleep(3)  # Wait a bit for transaction to propagate
+                        current_balance = lib.get_token_balance(token_address)
+                        
+                        # If balance is zero or very small, sell likely succeeded
+                        if current_balance is not None:
+                            if current_balance == 0 or current_balance < 0.000001:
+                                print(f"✅ [BALANCE CHECK] Token balance is zero/dust - sell actually succeeded despite verification failure")
+                                balance_check_passed = True
+                    except Exception as balance_check_error:
+                        print(f"⚠️ [BALANCE CHECK] Error checking balance: {balance_check_error}")
+                
+                if balance_check_passed:
+                    # Sell actually succeeded - log it and remove position
+                    print(f"✅ [RECOVERY] Trailing stop sell succeeded (verified by balance check), logging trade...")
+                    log_trade(token_address, entry_price, current_price, "trailing_stop")
+                    
+                    # Update performance tracker
+                    trade = _find_open_trade_by_address(token_address, chain_id)
+                    if trade:
+                        position_size = trade.get('position_size_usd', 0)
+                        pnl_usd = gain * position_size
+                        
+                        from src.core.performance_tracker import performance_tracker
+                        performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, "trailing_stop")
+                    
+                    # Clean up position
+                    _cleanup_closed_position(position_key, token_address, chain_id)
+                    
+                    send_telegram_message(
+                        f"🧵 Trailing stop-loss triggered!\n"
+                        f"Token: {symbol} ({token_address})\n"
+                        f"Chain: {chain_id.upper()}\n"
+                        f"Entry: ${entry_price:.6f}\n"
+                        f"Now: ${current_price:.6f}\n"
+                        f"TX: Verified by balance check"
+                    )
+                    closed_positions.append(position_key)
+                    updated_positions.pop(position_key, None)
+                else:
+                    # Sell actually failed
+                    send_telegram_message(
+                        f"⚠️ Trailing stop-loss triggered but SELL FAILED!\n"
+                        f"Token: {symbol} ({token_address})\n"
+                        f"Chain: {chain_id.upper()}\n"
+                        f"Entry: ${entry_price:.6f}\n"
+                        f"Now: ${current_price:.6f}\n"
+                        f"Will retry on next check..."
+                    )
+                    # Don't remove position - keep monitoring to retry
         else:
             print("⏳ Holding position...")
 
