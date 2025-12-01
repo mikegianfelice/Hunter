@@ -2181,6 +2181,31 @@
       "entry_tokens_received": null,
       "entry_gas_fee_usd": 0,
       "buy_slippage_actual": null
+    },
+    {
+      "id": "GRIFFAIN_20251201_173303",
+      "symbol": "GRIFFAIN",
+      "address": "KENJSUYLASHUMfHyy5o4Hp2FdNqZg1AsUPhfH2kYvEP",
+      "chain": "solana",
+      "entry_time": "2025-12-01T17:33:03.359386",
+      "entry_price": 0.02056,
+      "position_size_usd": 19.8,
+      "quality_score": 0.7052981052958974,
+      "volume_24h": 6777843.91,
+      "liquidity": 2106504.68,
+      "exit_time": "2025-12-01T17:33:03.359386",
+      "exit_price": 0.02056,
+      "pnl_usd": 0.0,
+      "pnl_percent": 0.0,
+      "status": "manual_close",
+      "take_profit_target": null,
+      "stop_loss_target": null,
+      "buy_tx_hash": "wsJ2ki1So253VqS832h5weEY9EKiPERCsYLRCgA2qoSyVTHpeGWaDovnJC12difk34PQEfW91mRaLNLjpzgKQPj",
+      "entry_amount_usd_quoted": 19.8,
+      "entry_amount_usd_actual": 0,
+      "entry_tokens_received": null,
+      "entry_gas_fee_usd": 0,
+      "buy_slippage_actual": null
     }
   ],
   "daily_stats": {
@@ -2211,5 +2236,5 @@
       }
     }
   },
-  "last_updated": "2025-12-01T16:13:00.135689"
+  "last_updated": "2025-12-01T17:33:03.429152"
 }
