@@ -335,13 +335,31 @@ def _fetch_token_price_multi_chain(token_address: str) -> float:
                     print(f"🔗 Fetched Solana price for {token_address[:8]}...{token_address[-8:]}: ${price:.6f}")
                     return price
                 else:
+                    # If Solana price fetch returns 0, don't fall back to Ethereum APIs
+                    # Try one more time with a direct DexScreener call as last resort
+                    print(f"⚠️ Solana price fetch returned 0, trying direct DexScreener fallback...")
+                    try:
+                        import requests
+                        url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
+                        response = requests.get(url, timeout=15)
+                        if response.status_code == 200:
+                            data = response.json()
+                            pairs = data.get("pairs", [])
+                            if pairs:
+                                for pair in pairs:
+                                    price = float(pair.get("priceUsd", 0))
+                                    if price > 0:
+                                        print(f"✅ Direct DexScreener fallback price: ${price:.6f}")
+                                        return price
+                    except Exception as e2:
+                        print(f"⚠️ DexScreener fallback also failed: {e2}")
                     print(f"⚠️ Zero price returned for {token_address[:8]}...{token_address[-8:]}")
                     return 0.0
             except Exception as e:
                 print(f"⚠️ Solana price fetch failed: {e}")
                 return 0.0
         
-        # Fallback to Ethereum price fetching
+        # Fallback to Ethereum price fetching (only for non-Solana addresses)
         price = fetch_token_price_usd(token_address)
         if price and price > 0:
             print(f"🔗 Fetched Ethereum price for {token_address[:8]}...{token_address[-8:]}: ${price:.6f}")
@@ -989,10 +1007,29 @@ def monitor_all_positions():
                 balance = _check_token_balance_on_chain(token_address, chain_id)
                 
                 if balance > 0:
-                    # Token definitely exists - just a price API issue, don't track failure
-                    print(f"✅ Token has balance ({balance:.6f}) - price API issue, not tracking failure")
-                    print(f"⏳ Holding position (price unavailable but token exists in wallet)...")
-                    continue
+                    # Token definitely exists - just a price API issue
+                    # Try one more direct DexScreener call as emergency fallback
+                    print(f"✅ Token has balance ({balance:.6f}) - price API issue, trying emergency fallback...")
+                    try:
+                        import requests
+                        url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
+                        response = requests.get(url, timeout=10)
+                        if response.status_code == 200:
+                            data = response.json()
+                            pairs = data.get("pairs", [])
+                            if pairs:
+                                for pair in pairs:
+                                    price = float(pair.get("priceUsd", 0))
+                                    if price > 0:
+                                        print(f"✅ Emergency DexScreener fallback successful: ${price:.6f}")
+                                        current_price = price
+                                        break
+                    except Exception as e:
+                        print(f"⚠️ Emergency fallback also failed: {e}")
+                    
+                    if current_price == 0:
+                        print(f"⏳ Holding position (price unavailable but token exists in wallet)...")
+                        continue
                 elif balance == 0:
                     # Balance is zero - might be delisted or sold manually, track failure normally
                     print(f"⚠️ Zero balance detected for {symbol}, tracking price failure")
