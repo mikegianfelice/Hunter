@@ -921,6 +921,63 @@ def monitor_all_positions():
         print(f"\n[{timestamp}] 🔍 Monitoring token: {symbol} ({token_address}) on {chain_id.upper()}{trade_id_str}")
         print(f"[{timestamp}] 🎯 Entry price: ${entry_price:.6f}")
 
+        # Check max position duration (auto-close stale positions)
+        if isinstance(position_data, dict) and position_data.get("timestamp"):
+            try:
+                from src.config.config_loader import get_config_bool, get_config_float
+                from datetime import datetime, timedelta
+                
+                if get_config_bool("enable_max_position_duration", True):
+                    max_duration_hours = get_config_float("max_position_duration_hours", 72)
+                    entry_timestamp_str = position_data.get("timestamp")
+                    
+                    if entry_timestamp_str:
+                        entry_time = datetime.fromisoformat(entry_timestamp_str.replace("Z", "+00:00"))
+                        if entry_time.tzinfo is None:
+                            entry_time = entry_time.replace(tzinfo=datetime.now().tzinfo)
+                        current_time = datetime.now(entry_time.tzinfo)
+                        duration = current_time - entry_time
+                        duration_hours = duration.total_seconds() / 3600
+                        
+                        if duration_hours >= max_duration_hours:
+                            print(f"⏰ Position age: {duration_hours:.1f} hours (max: {max_duration_hours}h)")
+                            print(f"🔄 Auto-closing stale position to free capital for new opportunities...")
+                            
+                            # Sell the token
+                            try:
+                                tx_hash = _sell_token_multi_chain(token_address, chain_id, symbol)
+                                if tx_hash:
+                                    print(f"✅ Sold stale position: {tx_hash}")
+                                    _cleanup_closed_position(position_key, token_address, chain_id)
+                                    closed_positions.append(position_key)
+                                    
+                                    # Update performance tracker
+                                    if trade_id:
+                                        try:
+                                            current_price = _fetch_token_price_multi_chain(token_address) or entry_price
+                                            position_size = position_data.get("position_size_usd", 0)
+                                            pnl_percent = ((current_price - entry_price) / entry_price * 100) if entry_price > 0 else 0
+                                            pnl_usd = (pnl_percent / 100) * position_size
+                                            performance_tracker.log_trade_exit(
+                                                trade_id,
+                                                current_price,
+                                                pnl_usd,
+                                                "max_duration_close",
+                                                sell_tx_hash=tx_hash
+                                            )
+                                        except Exception as e:
+                                            print(f"⚠️ Failed to update performance tracker: {e}")
+                                    continue
+                                else:
+                                    print(f"⚠️ Failed to sell stale position, will retry next cycle")
+                            except Exception as e:
+                                print(f"⚠️ Error selling stale position: {e}")
+                                # Continue monitoring, will retry next cycle
+                        else:
+                            print(f"⏰ Position age: {duration_hours:.1f} hours (max: {max_duration_hours}h)")
+            except Exception as e:
+                print(f"⚠️ Error checking position duration: {e}")
+
         # Fetch current price using multi-chain function
         current_price = _fetch_token_price_multi_chain(token_address)
 

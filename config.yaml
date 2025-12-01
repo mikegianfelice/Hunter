@@ -75,6 +75,8 @@ max_losing_streak: 3  # Stop after 3 losses
 circuit_breaker_minutes: 60  # 60 minute cooldown after losses
 per_trade_max_usd: 25  # $25 max per trade for accelerated growth
 min_wallet_balance_buffer: 0.02  # Reduced buffer for limited capital
+max_position_duration_hours: 72  # Auto-close positions older than 72 hours (3 days) to free capital for new opportunities
+enable_max_position_duration: true  # Enable automatic closing of stale positions
 
 # === Reconciliation Settings ===
 enable_helius_reconciliation: true  # Periodically sync Solana positions using Helius

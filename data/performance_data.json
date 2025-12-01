@@ -1011,16 +1011,16 @@
       "address": "EjamcKN1PixSzm3GiFgUaqCFXBMy3F51JKmbUqNF99S",
       "chain": "solana",
       "entry_time": "2025-11-27T06:23:12.956787",
-      "entry_price": 0.3004,
+      "entry_price": 0.3015,
       "position_size_usd": 13.200000000000001,
       "quality_score": 0.6622931512167831,
       "volume_24h": 3382229.11,
       "liquidity": 654269.37,
-      "exit_time": "2025-11-27T06:23:12.956787",
-      "exit_price": 0.3004,
-      "pnl_usd": 0.0,
-      "pnl_percent": 0.0,
-      "status": "manual_close",
+      "exit_time": "2025-12-01T07:02:32.000000",
+      "exit_price": 0.3167,
+      "pnl_usd": 0.67,
+      "pnl_percent": 5.04,
+      "status": "closed",
       "take_profit_target": null,
       "stop_loss_target": null,
       "buy_tx_hash": "5DadtxPb56auCcMBKJq8Pd2qsqUi2igtVKbitJvZgcPdDxwiqhjxHDWpKqThPibE3zvNempC68qPKa4TVv1WChjU",
@@ -2161,5 +2161,5 @@
       }
     }
   },
-  "last_updated": "2025-12-01T06:52:37.037120"
+  "last_updated": "2025-12-01T07:02:32.702237"
 }
