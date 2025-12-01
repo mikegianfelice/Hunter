@@ -65,6 +65,43 @@ def load_trade_log():
         print(f"Error loading trade log: {e}")
     return trades
 
+def calculate_win_rate_from_trade_log(days=30):
+    """
+    Calculate win rate from trade_log.csv (closed trades only)
+    This is the accurate source of truth for win rate statistics
+    """
+    trade_log = load_trade_log()
+    
+    if not trade_log:
+        return 0.0, 0
+    
+    # Calculate date range
+    today = datetime.now()
+    start_date = today - timedelta(days=days)
+    
+    # Filter trades within date range
+    recent_trades = [t for t in trade_log if t['timestamp'] >= start_date]
+    
+    if not recent_trades:
+        return 0.0, 0
+    
+    # Count wins and losses (only closed trades with actual PnL)
+    wins = 0
+    losses = 0
+    
+    for trade in recent_trades:
+        pnl_pct = trade.get('pnl_pct', 0)
+        if pnl_pct > 0:
+            wins += 1
+        elif pnl_pct < 0:
+            losses += 1
+        # Breakeven trades (pnl_pct == 0) are not counted in win rate
+    
+    total_closed_trades = wins + losses
+    win_rate = (wins / total_closed_trades * 100) if total_closed_trades > 0 else 0.0
+    
+    return win_rate, total_closed_trades
+
 def estimate_position_size_from_trades(trades):
     """Estimate average position size from trade data"""
     position_sizes = []
@@ -364,10 +401,9 @@ def plot_percentage_pnl(days=30, initial_wallet_usd=None, save_path=None):
         for val in data['detailed_wallet_values']
     ]
     
-    # Calculate win rate from events
-    winning_trades = len([e for e in data['events'] if e['pnl_usd'] > 0])
-    total_trades = data['total_trades']
-    win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+    # Calculate win rate from trade_log.csv (closed trades only - accurate source)
+    win_rate, total_closed_trades = calculate_win_rate_from_trade_log(days)
+    total_trades = total_closed_trades  # Use closed trades count for display
     
     # Create professional figure with modern styling
     try:
