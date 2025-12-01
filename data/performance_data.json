@@ -2106,6 +2106,31 @@
       "entry_tokens_received": null,
       "entry_gas_fee_usd": 0,
       "buy_slippage_actual": null
+    },
+    {
+      "id": "arc_20251201_065237",
+      "symbol": "arc",
+      "address": "61V8vBaqAGMpgDQi4JcAwo1dmBGHsyhzodcPqnEVpump",
+      "chain": "solana",
+      "entry_time": "2025-12-01T06:52:37.005116",
+      "entry_price": 0.0396,
+      "position_size_usd": 19.8,
+      "quality_score": 0.708893217872646,
+      "volume_24h": 8124309.77,
+      "liquidity": 3037665.57,
+      "exit_time": "2025-12-01T06:52:37.005116",
+      "exit_price": 0.0396,
+      "pnl_usd": 0.0,
+      "pnl_percent": 0.0,
+      "status": "manual_close",
+      "take_profit_target": null,
+      "stop_loss_target": null,
+      "buy_tx_hash": "5Ss99VyE68x7x1sqKa5c2RTtXM1f8StC624ZPvGJ2Tzh1mPHEaB8juBTPFFWpVCmE83DjPUzV6SyLKpFc6qjz7JH",
+      "entry_amount_usd_quoted": 19.8,
+      "entry_amount_usd_actual": 0,
+      "entry_tokens_received": null,
+      "entry_gas_fee_usd": 0,
+      "buy_slippage_actual": null
     }
   ],
   "daily_stats": {
@@ -2136,5 +2161,5 @@
       }
     }
   },
-  "last_updated": "2025-12-01T05:10:48.591262"
+  "last_updated": "2025-12-01T06:52:37.037120"
 }
