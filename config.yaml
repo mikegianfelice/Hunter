@@ -4,8 +4,8 @@ test_mode: false  # LIVE TRADING ENABLED - Realistic Scaling
 # === Trading Parameters ===
 trade_amount_usd: 6  # Adjusted to align with current USDC balance
 slippage: 0.03  # 3% slippage (tightened for better execution)
-take_profit: 0.13  # 13%
-stop_loss: 0.07  # 7%
+take_profit: 0.12  # 12% (reduced from 13% to improve win rate)
+stop_loss: 0.08  # 8% (increased from 7% to reduce premature exits)
 use_dynamic_tp: true  # Enable dynamic take profit
 min_trade_amount_usd: 10  # Minimum trade amount for realistic scaling
 
@@ -44,15 +44,15 @@ check_pool_reserves: true  # Verify pool has sufficient reserves
 min_pool_reserves_multiplier: 2.0  # Pool reserves must be 2x trade amount
 
 # === Strategy Thresholds ===
-min_momentum_pct: 0.002  # Increased momentum requirement for quality (raised from 0.001 to 0.002 - 0.2% minimum)
-min_volume_24h_for_buy: 150000   # Quality-first: $150k volume minimum for reliability (raised from $100k to improve win rate)
-min_liquidity_usd_for_buy: 150000  # Quality-first: $150k liquidity minimum for reliability (raised from $100k to improve win rate)
+min_momentum_pct: 0.003  # Increased momentum requirement for quality (raised from 0.002 to 0.003 - 0.3% minimum)
+min_volume_24h_for_buy: 200000   # Quality-first: $200k volume minimum for reliability (raised from $150k to improve win rate)
+min_liquidity_usd_for_buy: 200000  # Quality-first: $200k liquidity minimum for reliability (raised from $150k to improve win rate)
 min_price_usd: 0.000001  # MICRO TESTING - reduced minimum price for more opportunities
 
 # Fast-path thresholds for first-seen tokens
-fastpath_min_volume_24h: 10000   # More aggressive - reduced to $10k volume for more opportunities
-fastpath_min_liquidity_usd: 30000   # More aggressive - reduced to $30k liquidity for more opportunities
-fastpath_min_sent_score: 30  # MICRO TESTING - reduced sentiment requirement for more opportunities
+fastpath_min_volume_24h: 50000   # Increased from $10k to $50k to reduce risky early entries
+fastpath_min_liquidity_usd: 100000   # Increased from $30k to $100k to reduce risky early entries
+fastpath_min_sent_score: 50  # Increased from 30 to 50 to reduce risky early entries
 
 # === Pre-buy Delisting Check ===
 enable_pre_buy_delisting_check: false  # DISABLED - too aggressive, causing false rejections
@@ -68,7 +68,7 @@ solana_usdc_mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"  # USDC mint ad
 solana_min_sol_for_fees: 0.05  # Minimum SOL needed for transaction fees (separate from trading balance)
 
 # === Risk Management ===
-max_concurrent_positions: 6  # Increased for $100 start strategy
+max_concurrent_positions: 4  # Reduced from 6 to 4 to focus on quality over quantity
 max_concurrent_trades: 5  # Maximum number of trades to execute concurrently per cycle (defaults to min(max_concurrent_positions, 5) if not set)
 daily_loss_limit_usd: 10.0  # $10 daily loss limit for $100 start (scales with equity)
 max_losing_streak: 3  # Stop after 3 losses
@@ -158,7 +158,7 @@ reset_state_now: false
 
 # === Sustainable Trading Settings ===
 # Quality scoring thresholds
-min_quality_score: 50  # Minimum quality score (0-100) - increased from 40 to 50 to improve win rate (filter weaker tokens)
+min_quality_score: 60  # Minimum quality score (0-100) - increased from 50 to 60 to improve win rate (filter weaker tokens)
 quality_volume_weight: 0.4  # 40% weight for volume in quality score
 quality_liquidity_weight: 0.4  # 40% weight for liquidity in quality score
 quality_price_weight: 0.2  # 20% weight for price stability in quality score
@@ -237,11 +237,11 @@ wallet_tiers: {
 }
 
 # Quality-based position multipliers
-excellent_quality_threshold: 80  # Quality score >= 80
-excellent_quality_multiplier: 1.5  # 50% increase for excellent quality
-high_quality_threshold: 70  # Quality score >= 70
+excellent_quality_threshold: 85  # Quality score >= 85 (increased from 80)
+excellent_quality_multiplier: 1.6  # 60% increase for excellent quality (increased from 1.5)
+high_quality_threshold: 75  # Quality score >= 75 (increased from 70)
 high_quality_multiplier: 1.3  # 30% increase for high quality
-good_quality_threshold: 60  # Quality score >= 60
+good_quality_threshold: 65  # Quality score >= 65 (increased from 60)
 good_quality_multiplier: 1.1  # 10% increase for good quality
 low_quality_threshold: 50  # Quality score < 50
 low_quality_multiplier: 0.8  # 20% decrease for low quality
@@ -369,8 +369,8 @@ regime_recovery_position_multiplier: 0.9  # Position size multiplier for recover
 # Market regime quality threshold adjustments
 regime_bull_quality_adjustment: -5  # Quality threshold adjustment for bull market
 regime_bear_quality_adjustment: 10  # Quality threshold adjustment for bear market
-regime_sideways_quality_adjustment: 0  # Quality threshold adjustment for sideways market
-regime_high_volatility_quality_adjustment: 15  # Quality threshold adjustment for high volatility
+regime_sideways_quality_adjustment: 15  # Quality threshold adjustment for sideways market (increased from 0 to 15)
+regime_high_volatility_quality_adjustment: 20  # Quality threshold adjustment for high volatility (increased from 15 to 20)
 regime_recovery_quality_adjustment: 5  # Quality threshold adjustment for recovery market
 
 # Market regime volume/liquidity adjustments
@@ -1565,11 +1565,11 @@ fill_verifier:
 enable_ai_partial_tp_manager: true  # Enable partial TP manager
 partial_tp_manager:
   first_take_pct: 0.50  # Take 50% at first TP trigger
-  first_take_trigger_pct: 0.10  # Trigger at +10% gain
-  trailing_stop_initial: 0.06  # 6% trailing stop after partial
+  first_take_trigger_pct: 0.08  # Trigger at +8% gain (reduced from 10% to lock profits earlier)
+  trailing_stop_initial: 0.05  # 5% trailing stop after partial (tightened from 6% to protect gains)
   trail_tighten_trigger_pct: 0.15  # Tighten trail at +15% gain
   trailing_stop_tightened: 0.05  # 5% trailing stop when tightened
-  hard_stop_loss_pct: 0.07  # Hard stop loss at -7%
+  hard_stop_loss_pct: 0.08  # Hard stop loss at -8% (updated to match stop_loss)
 
 # === AI TIME WINDOW SCHEDULER ===
 # Enable AI-powered time window scheduling for optimal entry timing
