@@ -5,7 +5,7 @@ import json
 import yaml
 import csv
 import signal
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Tuple, Dict, Any
 
@@ -925,7 +925,6 @@ def monitor_all_positions():
         if isinstance(position_data, dict) and position_data.get("timestamp"):
             try:
                 from src.config.config_loader import get_config_bool, get_config_float
-                from datetime import datetime, timedelta
                 
                 if get_config_bool("enable_max_position_duration", True):
                     max_duration_hours = get_config_float("max_position_duration_hours", 72)

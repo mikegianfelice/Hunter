@@ -2118,10 +2118,10 @@
       "quality_score": 0.708893217872646,
       "volume_24h": 8124309.77,
       "liquidity": 3037665.57,
-      "exit_time": "2025-12-01T06:52:37.005116",
-      "exit_price": 0.0396,
-      "pnl_usd": 0.0,
-      "pnl_percent": 0.0,
+      "exit_time": "2025-12-01T16:08:22.966992",
+      "exit_price": 0.04283,
+      "pnl_usd": 1.6149999999999984,
+      "pnl_percent": 8.156565656565649,
       "status": "manual_close",
       "take_profit_target": null,
       "stop_loss_target": null,
@@ -2186,5 +2186,5 @@
       }
     }
   },
-  "last_updated": "2025-12-01T16:07:42.740147"
+  "last_updated": "2025-12-01T16:08:22.972837"
 }

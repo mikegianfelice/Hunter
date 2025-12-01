@@ -88,13 +88,44 @@ def close_position(token_address: str, symbol: str = None, chain: str = "solana"
     print(f"\n💰 Selling {symbol}...")
     try:
         if chain.lower() == "solana":
-            tx_hash = sell_token_solana(token_address, symbol)
+            # Get token balance and calculate USD amount
+            from src.execution.jupiter_lib import JupiterCustomLib
+            from src.config.secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
+            
+            lib = JupiterCustomLib(SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY)
+            balance = lib.get_token_balance(token_address)
+            
+            if balance is None or balance <= 0:
+                print(f"❌ No balance to sell for {symbol} (balance: {balance})")
+                return False
+            
+            # Get current price to calculate USD value
+            from src.utils.utils import fetch_token_price_usd
+            current_price = fetch_token_price_usd(token_address) or entry_price
+            
+            if current_price <= 0:
+                print(f"⚠️ Could not get current price, using entry price for calculation")
+                current_price = entry_price
+            
+            amount_usd = balance * current_price
+            print(f"   Balance: {balance:.6f} tokens")
+            print(f"   Current price: ${current_price:.6f}")
+            print(f"   Amount to sell: ${amount_usd:.2f}")
+            
+            result = sell_token_solana(token_address, amount_usd, symbol)
+            
+            # Handle both tuple and string return values
+            if isinstance(result, tuple):
+                tx_hash, success = result
+            else:
+                tx_hash = result
+                success = bool(tx_hash)
+            
+            if not success or not tx_hash:
+                print("❌ Failed to sell token")
+                return False
         else:
             print(f"❌ Unsupported chain: {chain}")
-            return False
-        
-        if not tx_hash:
-            print("❌ Failed to sell token (no transaction hash returned)")
             return False
         
         print(f"✅ Sell transaction submitted: {tx_hash}")
