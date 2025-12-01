@@ -185,7 +185,8 @@ class CentralizedRiskManager:
         
         # Check holder concentration (optional hard block)
         fail_closed = get_config_bool("holder_concentration_fail_closed", True)
-        if get_config_bool("holder_concentration_block_on_high_risk", False):
+        block_on_high_risk = get_config_bool("holder_concentration_block_on_high_risk", True)
+        if block_on_high_risk:
             try:
                 from src.utils.holder_concentration_checker import check_holder_concentration
                 
@@ -240,6 +241,9 @@ class CentralizedRiskManager:
                         threshold = get_config_float("holder_concentration_threshold", 60.0)
                         percentage = holder_check.get("top_10_percentage", 0)
                         
+                        # Log the check result for debugging
+                        logger.info(f"Holder concentration check for {token.get('symbol', 'UNKNOWN')}: {percentage:.2f}% (threshold: {threshold:.2f}%)")
+                        
                         if percentage >= threshold:
                             from src.monitoring.structured_logger import log_error
                             log_error("risk.holder_concentration_blocked",
@@ -264,7 +268,33 @@ class CentralizedRiskManager:
                                 timestamp=datetime.now().isoformat()
                             )
             except Exception as e:
-                logger.warning(f"Holder concentration check failed: {e}, continuing with risk assessment")
+                # If fail_closed is True, block trades when check fails due to exception
+                token_address = token.get("address", "")
+                chain_id = token.get("chainId", "solana")
+                if fail_closed:
+                    logger.error(f"Holder concentration check exception (fail-closed) for {token_address} on {chain_id}: {e}")
+                    from src.monitoring.structured_logger import log_error
+                    log_error("risk.holder_concentration_blocked",
+                             f"Trade blocked: holder concentration check exception for {token.get('symbol', 'UNKNOWN')}: {str(e)}",
+                             symbol=token.get('symbol', 'UNKNOWN'),
+                             token_address=token_address,
+                             chain_id=chain_id,
+                             exception=str(e))
+                    return RiskAssessment(
+                        overall_risk_score=0.95,
+                        risk_level=RiskLevel.CRITICAL,
+                        approved=False,
+                        reason=f"Holder concentration check failed with exception: {str(e)}",
+                        position_adjustment=0.0,
+                        risk_factors={
+                            'holder_concentration_error': str(e),
+                            'holder_concentration_blocked': True
+                        },
+                        recommendations=["Holder concentration check unavailable - trade blocked for safety"],
+                        timestamp=datetime.now().isoformat()
+                    )
+                else:
+                    logger.warning(f"Holder concentration check failed: {e}, continuing with risk assessment (fail-open mode)")
         
         # Token-specific risk assessment
         token_risk = await self._assess_token_risk(token)
