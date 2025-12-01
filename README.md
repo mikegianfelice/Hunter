@@ -22,8 +22,8 @@ Hunter is a quant level AI-powered crypto trading bot executing real on-chain tr
 
 ### **1. Token Selection** 🔍
 The bot continuously scans DexScreener for trending tokens across Solana and Base. It filters out low-quality tokens by requiring:
-- Minimum $150k daily volume
-- Minimum $150k liquidity
+- Minimum $200k daily volume
+- Minimum $200k liquidity
 - Active trading activity
 - No stablecoins or wrapped tokens
 
@@ -41,8 +41,8 @@ Only tokens passing all criteria are considered for trading.
 
 ### **3. Exit Strategy** 💰
 The bot continuously monitors all open positions and automatically sells when:
-- **Take Profit** is hit: 13% gain (default, can be dynamic based on market conditions)
-- **Stop Loss** is triggered: 7% loss
+- **Take Profit** is hit: 12% gain (default, can be dynamic based on market conditions)
+- **Stop Loss** is triggered: 8% loss
 - **Trailing Stop** activates: Locks in profits if price drops 6% from peak
 - **Token Delisted**: Auto-sells if token becomes untradeable
 
@@ -173,10 +173,10 @@ The bot features a **comprehensive AI integration engine** that coordinates **30
 
 ### **📊 Performance Metrics**
 - **Target Gains**: 10-20% consistent returns
-- **Quality Focus**: Minimum $150k volume, $150k liquidity for improved win rate (raised from $100k)
+- **Quality Focus**: Minimum $200k volume, $200k liquidity for improved win rate (raised from $150k)
 - **Quality Scoring**: Minimum quality score of 50 (0-100 scale, raised from 40)
 - **Risk Management**: Maximum 6 concurrent positions, $10 daily loss limit
-- **Stop Loss/Take Profit**: 7% stop loss, 13% take profit (with dynamic TP up to 20%)
+- **Stop Loss/Take Profit**: 8% stop loss, 12% take profit (with dynamic TP up to 20%)
 - **Execution Optimization**: AI-optimized execution with balance verification for sell transactions
 - **Performance Tracking**: Comprehensive analytics with quality tier analysis, failed entry attempts excluded from win rate
 
@@ -438,15 +438,15 @@ enable_pre_buy_delisting_check: true   # Enable pre-buy delisting checks
 ### **Entry Criteria Improvements** (Win Rate Optimization)
 - **Raised Quality Thresholds**: 
   - Minimum quality score: 40 → 50 (improves token selection)
-  - Minimum 24h volume: $100k → $150k (better liquidity)
-  - Minimum liquidity: $100k → $150k (reduced slippage)
+  - Minimum 24h volume: $100k → $200k (better liquidity)
+  - Minimum liquidity: $100k → $200k (reduced slippage)
   - Minimum momentum: 0.1% → 0.2% (stronger entry signals)
 - **Result**: Improved win rate by filtering weaker tokens before entry
 
 ### **Configuration Updates**
 - **Supported Chains**: Focused on Solana and Base (Ethereum removed for fee efficiency)
 - **Position Sizing**: Dynamic tiered position sizing based on portfolio value
-- **Risk Management**: Tightened stop loss (7%) and take profit (13% base, dynamic up to 20%)
+- **Risk Management**: Stop loss (8%) and take profit (12% base, dynamic up to 20%)
 
 ## 🚀 Quick Start
 
@@ -587,14 +587,14 @@ supported_chains: ["solana", "base"]  # Solana and Base only (Ethereum removed f
 test_mode: false              # LIVE TRADING ENABLED
 trade_amount_usd: 6           # Position size (USD)
 slippage: 0.03                # 3% slippage tolerance
-take_profit: 0.13             # 13% take profit target (base)
-stop_loss: 0.07               # 7% stop loss
+take_profit: 0.12             # 12% take profit target (base)
+stop_loss: 0.08               # 8% stop loss
 use_dynamic_tp: true          # Enable dynamic take profit (8-20% range)
 
 # Strategy Thresholds (Improved Entry Quality)
 min_quality_score: 50         # Minimum quality score (0-100) - raised from 40 to improve win rate
-min_volume_24h_for_buy: 150000   # $150k minimum 24h volume - raised from $100k
-min_liquidity_usd_for_buy: 150000 # $150k minimum liquidity - raised from $100k
+min_volume_24h_for_buy: 200000   # $200k minimum 24h volume - raised from $150k
+min_liquidity_usd_for_buy: 200000 # $200k minimum liquidity - raised from $150k
 min_momentum_pct: 0.002       # 0.2% minimum momentum - raised from 0.1%
 
 # Risk Management (Current Settings)
