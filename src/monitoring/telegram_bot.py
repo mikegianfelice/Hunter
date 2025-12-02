@@ -512,13 +512,6 @@ def format_status_message(risk_summary, recent_summary, open_trades, market_regi
         # Escape description to prevent markdown parsing errors
         escaped_description = _escape_markdown(description)
         msg += f"📝 *Description:* {escaped_description}\n"
-        
-        if recommendations:
-            msg += "\n✅ *Focus Now:*\n"
-            for r in recommendations:
-                # Escape recommendations to prevent markdown parsing errors
-                escaped_rec = _escape_markdown(r)
-                msg += f"• {escaped_rec}\n"
     else:
         msg += "• Bot is monitoring opportunities\n"
         msg += "• Following sustainable trading strategy\n"
