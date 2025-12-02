@@ -2306,6 +2306,31 @@
       "entry_tokens_received": null,
       "entry_gas_fee_usd": 0,
       "buy_slippage_actual": null
+    },
+    {
+      "id": "Fartcoin _20251202_020510",
+      "symbol": "Fartcoin ",
+      "address": "9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump",
+      "chain": "solana",
+      "entry_time": "2025-12-02T02:05:10.216089",
+      "entry_price": 0.3179,
+      "position_size_usd": 19.8,
+      "quality_score": 0.7274817732470121,
+      "volume_24h": 7418338.79,
+      "liquidity": 11037836.74,
+      "exit_time": "2025-12-02T02:05:10.216089",
+      "exit_price": 0.3179,
+      "pnl_usd": 0.0,
+      "pnl_percent": 0.0,
+      "status": "manual_close",
+      "take_profit_target": null,
+      "stop_loss_target": null,
+      "buy_tx_hash": "kPhY3ziPQaRkxgCJWqdrNMttrh6gWEJQtU4D2heaUi965bAqHaBtFHQtdxGNZDG1c3yR5E1xq3VLsc8Pbvj7YLo",
+      "entry_amount_usd_quoted": 19.8,
+      "entry_amount_usd_actual": 0,
+      "entry_tokens_received": null,
+      "entry_gas_fee_usd": 0,
+      "buy_slippage_actual": null
     }
   ],
   "daily_stats": {
@@ -2336,5 +2361,5 @@
       }
     }
   },
-  "last_updated": "2025-12-02T02:00:04.175707"
+  "last_updated": "2025-12-02T02:05:10.254373"
 }

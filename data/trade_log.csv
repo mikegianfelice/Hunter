@@ -85,3 +85,4 @@ timestamp,token,entry_price,exit_price,pnl_pct,reason
 2025-12-01 21:16:40,A8C3xuqscfmyLrte3VmTqrAq8kgMASius9AFNANwpump,0.01277,0.01431,12.06,take_profit
 2025-12-01 22:28:24,KENJSUYLASHUMfHyy5o4Hp2FdNqZg1AsUPhfH2kYvEP,0.02289,0.02099,-8.3,stop_loss
 2025-12-02 01:59:21,9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump,0.3197,0.3833,19.89,take_profit
+2025-12-02 02:01:39,9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump,0.3194,0.383,19.91,take_profit
