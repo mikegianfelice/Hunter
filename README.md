@@ -1342,7 +1342,10 @@ For issues and questions:
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+
+> As of 2025-12-02, this project is licensed under the Apache License 2.0.  
+> Earlier releases were available under the MIT License.
 
 ## ⚠️ Risk Warning
 
