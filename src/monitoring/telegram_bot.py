@@ -489,9 +489,7 @@ def format_status_message(risk_summary, recent_summary, open_trades, market_regi
     if market_regime:
         regime = market_regime.get('regime', 'unknown')
         confidence = market_regime.get('confidence', 0) * 100.0  # Convert to percentage
-        description = market_regime.get('description', 'Unknown market condition')
         strategy = market_regime.get('strategy', 'neutral')
-        recommendations = market_regime.get('recommendations', [])[:3]  # Show top 3
         
         # Format regime display with emoji
         regime_emoji = {
@@ -509,9 +507,6 @@ def format_status_message(risk_summary, recent_summary, open_trades, market_regi
         msg += f"{regime_emoji} *Regime:* {regime_display}\n"
         msg += f"📊 *Confidence:* {confidence:.1f}%\n"
         msg += f"💡 *Strategy:* {strategy_display}\n"
-        # Escape description to prevent markdown parsing errors
-        escaped_description = _escape_markdown(description)
-        msg += f"📝 *Description:* {escaped_description}\n"
     else:
         msg += "• Bot is monitoring opportunities\n"
         msg += "• Following sustainable trading strategy\n"
