@@ -86,6 +86,21 @@ class PerformanceTracker:
                 print(f"⚠️ Sync script not found at {script_path}")
                 return
             
+            # Check if sync is already running (lock file check)
+            sync_lock = project_root / '.sync_chart_data.lock'
+            if sync_lock.exists():
+                # Check if the lock is stale (older than 5 minutes)
+                try:
+                    lock_age = datetime.now().timestamp() - sync_lock.stat().st_mtime
+                    if lock_age > 300:  # 5 minutes
+                        # Stale lock - will be cleaned up by script
+                        pass
+                    else:
+                        # Recent lock - sync already running, skip
+                        return
+                except:
+                    pass
+            
             # Ensure script is executable
             os.chmod(script_path, 0o755)
             
