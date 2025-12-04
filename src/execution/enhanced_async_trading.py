@@ -846,33 +846,47 @@ class EnhancedAsyncTradingEngine:
             if action == "buy" and confidence > 0.7 and passes_ai_filters:
                 enhanced_token["approved_for_trading"] = True
                 
-                # Get AI-recommended position size
-                ai_recommended_size = recommendation.get("position_size", 5)
-                
-                # Cap position size to tier-based maximum to prevent risk gate blocks
+                # Get tier-based limits FIRST
                 try:
                     from src.core.risk_manager import get_tier_based_risk_limits
                     tier_limits = get_tier_based_risk_limits()
+                    tier_base_size = tier_limits.get("BASE_POSITION_SIZE_USD", 5.0)
                     tier_max_size = tier_limits.get("PER_TRADE_MAX_USD", 25.0)
-                    
-                    # Cap the position size to the tier maximum
-                    capped_size = min(ai_recommended_size, tier_max_size)
-                    
-                    if capped_size < ai_recommended_size:
-                        log_info("trading.position_size_capped",
-                                f"Position size capped for {token.get('symbol', 'UNKNOWN')}: "
-                                f"${ai_recommended_size:.2f} → ${capped_size:.2f} (tier max: ${tier_max_size:.2f})",
-                                symbol=token.get("symbol"),
-                                ai_recommended=ai_recommended_size,
-                                capped=capped_size,
-                                tier_max=tier_max_size)
-                    
-                    enhanced_token["recommended_position_size"] = capped_size
                 except Exception as e:
-                    log_error("trading.position_size_cap_error", 
-                            f"Error capping position size for {token.get('symbol', 'UNKNOWN')}: {e}")
-                    # Fallback to AI recommendation if tier check fails
-                    enhanced_token["recommended_position_size"] = ai_recommended_size
+                    log_error("trading.tier_limits_error", 
+                            f"Error getting tier limits: {e}")
+                    tier_base_size = 5.0
+                    tier_max_size = 25.0
+                
+                # Get AI-recommended position size
+                ai_recommended_size = recommendation.get("position_size", tier_base_size)
+                
+                # Scale AI recommendation relative to tier base
+                # AI uses old base of 5.0, so scale: new_size = tier_base * (ai_size / 5.0)
+                OLD_AI_BASE = 5.0
+                if ai_recommended_size > 0:
+                    # Scale the AI recommendation to tier base
+                    scaled_size = tier_base_size * (ai_recommended_size / OLD_AI_BASE)
+                else:
+                    scaled_size = tier_base_size
+                
+                # Ensure position size is within tier bounds
+                final_position_size = max(tier_base_size, min(scaled_size, tier_max_size))
+                
+                # Log the scaling
+                if abs(final_position_size - ai_recommended_size) > 0.01:
+                    log_info("trading.position_size_scaled",
+                            f"Position size scaled for {token.get('symbol', 'UNKNOWN')}: "
+                            f"AI: ${ai_recommended_size:.2f} → Tier-scaled: ${scaled_size:.2f} → Final: ${final_position_size:.2f} "
+                            f"(tier base: ${tier_base_size:.2f}, tier max: ${tier_max_size:.2f})",
+                            symbol=token.get("symbol"),
+                            ai_recommended=ai_recommended_size,
+                            scaled=scaled_size,
+                            final=final_position_size,
+                            tier_base=tier_base_size,
+                            tier_max=tier_max_size)
+                
+                enhanced_token["recommended_position_size"] = final_position_size
                 
                 enhanced_token["recommended_tp"] = recommendation.get("take_profit", 0.15)
             else:
@@ -894,24 +908,33 @@ class EnhancedAsyncTradingEngine:
         position_size = token.get("recommended_position_size", 5)
         take_profit = token.get("recommended_tp", 0.15)
         
-        # Safety cap: Ensure position size doesn't exceed tier-based maximum
-        # (This is a safety measure in case position size wasn't capped earlier)
+        # Safety cap: Ensure position size is within tier-based bounds
+        # (This is a safety measure in case position size wasn't adjusted earlier)
         try:
             from src.core.risk_manager import get_tier_based_risk_limits
             tier_limits = get_tier_based_risk_limits()
+            tier_base_size = tier_limits.get("BASE_POSITION_SIZE_USD", 5.0)
             tier_max_size = tier_limits.get("PER_TRADE_MAX_USD", 25.0)
             
-            if position_size > tier_max_size:
-                log_info("trading.position_size_safety_cap",
-                        f"Safety cap applied for {symbol}: ${position_size:.2f} → ${tier_max_size:.2f}",
+            # Ensure position size is within tier bounds
+            if position_size < tier_base_size:
+                log_info("trading.position_size_below_base",
+                        f"Position size below tier base for {symbol}: ${position_size:.2f} → ${tier_base_size:.2f}",
                         symbol=symbol,
                         original_size=position_size,
-                        capped_size=tier_max_size)
+                        adjusted_size=tier_base_size)
+                position_size = tier_base_size
+            elif position_size > tier_max_size:
+                log_info("trading.position_size_above_max",
+                        f"Position size above tier max for {symbol}: ${position_size:.2f} → ${tier_max_size:.2f}",
+                        symbol=symbol,
+                        original_size=position_size,
+                        adjusted_size=tier_max_size)
                 position_size = tier_max_size
         except Exception as e:
             log_error("trading.position_size_safety_cap_error", 
-                    f"Error applying safety cap for {symbol}: {e}")
-            # Continue with original position size if cap check fails
+                    f"Error applying tier bounds for {symbol}: {e}")
+            # Continue with original position size if tier check fails
         
         # DEBUG: Log that we're entering the trade execution
         log_info("trading.debug", f"🔍 DEBUG: Entering _execute_trade_async for {symbol} on {chain}")

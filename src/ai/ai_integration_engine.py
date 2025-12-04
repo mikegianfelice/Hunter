@@ -1229,33 +1229,40 @@ class AIIntegrationEngine:
     
     def _generate_recommendations(self, overall_score: float, sentiment: Dict, 
                                  prediction: Dict, risk: Dict, market: Dict, 
-                                 technical: Dict) -> Dict[str, Any]:
-        """Generate trading recommendations based on analysis"""
+                                 technical: Dict, base_position_size: float = 5.0) -> Dict[str, Any]:
+        """Generate trading recommendations based on analysis
+        
+        Args:
+            base_position_size: Base position size from tier system (default 5.0 for backward compat)
+        """
         try:
+            # Use tier base as the default instead of hardcoded 5.0
             recommendations = {
                 "action": "hold",
                 "confidence": 0.5,
-                "position_size": 5.0,
+                "position_size": base_position_size,
                 "take_profit": 0.15,
                 "stop_loss": 0.08,
                 "reasoning": []
             }
             
-            # Determine action based on overall score
+            # Scale recommendations relative to base position size
+            # Old system: 5.0 base, recommendations were 10.0, 15.0, 20.0 (2x, 3x, 4x)
+            # New system: use tier base, scale by same multipliers
             if overall_score > 0.8:
                 recommendations["action"] = "strong_buy"
                 recommendations["confidence"] = 0.9
-                recommendations["position_size"] = 20.0
+                recommendations["position_size"] = base_position_size * 4.0  # 4x base (was 20.0)
                 recommendations["reasoning"].append("High overall score")
             elif overall_score > 0.7:
                 recommendations["action"] = "buy"
                 recommendations["confidence"] = 0.8
-                recommendations["position_size"] = 15.0
+                recommendations["position_size"] = base_position_size * 3.0  # 3x base (was 15.0)
                 recommendations["reasoning"].append("Good overall score")
             elif overall_score > 0.6:
                 recommendations["action"] = "weak_buy"
                 recommendations["confidence"] = 0.6
-                recommendations["position_size"] = 10.0
+                recommendations["position_size"] = base_position_size * 2.0  # 2x base (was 10.0)
                 recommendations["reasoning"].append("Moderate overall score")
             elif overall_score < 0.3:
                 recommendations["action"] = "avoid"
@@ -1263,7 +1270,7 @@ class AIIntegrationEngine:
                 recommendations["position_size"] = 0.0
                 recommendations["reasoning"].append("Low overall score")
             
-            # Adjust based on risk
+            # Adjust based on risk (multipliers remain the same)
             risk_level = risk.get("risk_level", "medium")
             if risk_level == "high":
                 recommendations["position_size"] *= 0.5
@@ -1289,7 +1296,7 @@ class AIIntegrationEngine:
             return {
                 "action": "hold",
                 "confidence": 0.5,
-                "position_size": 5.0,
+                "position_size": base_position_size,
                 "take_profit": 0.15,
                 "stop_loss": 0.08,
                 "reasoning": ["Analysis error"]
@@ -1401,12 +1408,16 @@ class AIIntegrationEngine:
                                               prediction: Dict, risk: Dict, market: Dict,
                                               technical: Dict, market_context: Dict,
                                               predictive_analytics: Dict, risk_controls: Dict,
-                                              portfolio_analysis: Dict) -> Dict[str, Any]:
-        """Generate comprehensive trading recommendations with all modules"""
+                                              portfolio_analysis: Dict, base_position_size: float = 5.0) -> Dict[str, Any]:
+        """Generate comprehensive trading recommendations with all modules
+        
+        Args:
+            base_position_size: Base position size from tier system (default 5.0 for backward compat)
+        """
         try:
             # Start with base recommendations
             recommendations = self._generate_recommendations(
-                overall_score, sentiment, prediction, risk, market, technical
+                overall_score, sentiment, prediction, risk, market, technical, base_position_size
             )
             
             # Adjust based on market context
@@ -1503,7 +1514,7 @@ class AIIntegrationEngine:
             
         except Exception as e:
             log_error(f"Error generating comprehensive recommendations: {e}")
-            return self._generate_recommendations(overall_score, sentiment, prediction, risk, market, technical)
+            return self._generate_recommendations(overall_score, sentiment, prediction, risk, market, technical, base_position_size)
 
 # Global AI integration engine instance
 _ai_engine: Optional[AIIntegrationEngine] = None
