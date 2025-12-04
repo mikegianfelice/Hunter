@@ -2931,6 +2931,31 @@
       "entry_tokens_received": null,
       "entry_gas_fee_usd": 0,
       "buy_slippage_actual": null
+    },
+    {
+      "id": "jellyjelly_20251204_024438",
+      "symbol": "jellyjelly",
+      "address": "FeR8VBqNRSUD5NtXAj2n3j1dAHkZHfyDktKuLXD4pump",
+      "chain": "solana",
+      "entry_time": "2025-12-04T02:44:38.203005",
+      "entry_price": 0.04565,
+      "position_size_usd": 54.806947655123366,
+      "quality_score": 0.7282730737993086,
+      "volume_24h": 6300887.7,
+      "liquidity": 4348873.69,
+      "exit_time": "2025-12-04T02:44:38.203005",
+      "exit_price": 0.04565,
+      "pnl_usd": 0.0,
+      "pnl_percent": 0.0,
+      "status": "manual_close",
+      "take_profit_target": null,
+      "stop_loss_target": null,
+      "buy_tx_hash": "2PNSZRKN4Km7Z26kZubTH4NAtME35gQq99LeuuDuzDbYkFLYim2bgy6uRofyeJ1fyt32Sb8HSvXxirbxXpRsC5bs",
+      "entry_amount_usd_quoted": 54.806947655123366,
+      "entry_amount_usd_actual": 0,
+      "entry_tokens_received": null,
+      "entry_gas_fee_usd": 0,
+      "buy_slippage_actual": null
     }
   ],
   "daily_stats": {
@@ -2961,5 +2986,5 @@
       }
     }
   },
-  "last_updated": "2025-12-03T19:36:20.380226"
+  "last_updated": "2025-12-04T02:44:38.260413"
 }
