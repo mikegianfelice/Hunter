@@ -2981,6 +2981,31 @@
       "entry_tokens_received": null,
       "entry_gas_fee_usd": 0,
       "buy_slippage_actual": null
+    },
+    {
+      "id": "pippin_20251204_104716",
+      "symbol": "pippin",
+      "address": "Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump",
+      "chain": "solana",
+      "entry_time": "2025-12-04T10:47:16.854877",
+      "entry_price": 0.1849,
+      "position_size_usd": 51.58140909779444,
+      "quality_score": 0.7021932458469509,
+      "volume_24h": 20290051.96,
+      "liquidity": 8922220.36,
+      "exit_time": "2025-12-04T10:47:16.854877",
+      "exit_price": 0.1849,
+      "pnl_usd": 0.0,
+      "pnl_percent": 0.0,
+      "status": "manual_close",
+      "take_profit_target": null,
+      "stop_loss_target": null,
+      "buy_tx_hash": "2q9J8NbTXQhcgSZkFoM1owQx22SripUTj6y25L8u3nJ3n8UfyZAyioiixXDGXemvhwf8bPaHRJaRtKd1roUBGm9o",
+      "entry_amount_usd_quoted": 51.58140909779444,
+      "entry_amount_usd_actual": 0,
+      "entry_tokens_received": null,
+      "entry_gas_fee_usd": 0,
+      "buy_slippage_actual": null
     }
   ],
   "daily_stats": {
@@ -3011,5 +3036,5 @@
       }
     }
   },
-  "last_updated": "2025-12-04T05:32:00.227482"
+  "last_updated": "2025-12-04T10:47:16.907552"
 }
