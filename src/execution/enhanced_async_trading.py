@@ -861,16 +861,31 @@ class EnhancedAsyncTradingEngine:
                 # Get AI-recommended position size
                 ai_recommended_size = recommendation.get("position_size", tier_base_size)
                 
-                # Scale AI recommendation relative to tier base
-                # AI uses old base of 5.0, so scale: new_size = tier_base * (ai_size / 5.0)
+                # Scale AI recommendation to work within tier range (base to max)
+                # Old AI system: 5.0 base, recommendations were 10.0 (2x), 15.0 (3x), 20.0 (4x)
+                # New system: Map AI recommendations to tier range proportionally
                 OLD_AI_BASE = 5.0
+                OLD_AI_MAX = 20.0  # Strong buy was 4x base
+                tier_range = tier_max_size - tier_base_size
+                
                 if ai_recommended_size > 0:
-                    # Scale the AI recommendation to tier base
-                    scaled_size = tier_base_size * (ai_recommended_size / OLD_AI_BASE)
+                    # Map old AI range (5.0-20.0) to tier range (base-max)
+                    # Formula: tier_base + (ai_size - old_base) / (old_max - old_base) * tier_range
+                    if ai_recommended_size >= OLD_AI_MAX:
+                        # Strong buy: use tier max
+                        scaled_size = tier_max_size
+                    elif ai_recommended_size <= OLD_AI_BASE:
+                        # Base or below: use tier base
+                        scaled_size = tier_base_size
+                    else:
+                        # Scale proportionally within tier range
+                        old_range = OLD_AI_MAX - OLD_AI_BASE
+                        proportion = (ai_recommended_size - OLD_AI_BASE) / old_range
+                        scaled_size = tier_base_size + (proportion * tier_range)
                 else:
                     scaled_size = tier_base_size
                 
-                # Ensure position size is within tier bounds
+                # Ensure position size is within tier bounds (safety check)
                 final_position_size = max(tier_base_size, min(scaled_size, tier_max_size))
                 
                 # Log the scaling
