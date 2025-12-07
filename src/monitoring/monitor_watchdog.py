@@ -25,10 +25,12 @@ LOG_FILE = project_root / "logs" / "monitor_watchdog.log"
 CHECK_INTERVAL = 60  # Check every 60 seconds
 MAX_RESTART_ATTEMPTS = 5  # Maximum restart attempts within 5 minutes
 RESTART_WINDOW = 300  # 5 minutes in seconds
+RECONCILE_INTERVAL_SEC = 30 * 60  # 30 minutes
 
 _running = True
 _monitor_process = None
 _restart_history = []  # Track restart times
+_last_reconcile_ts = 0.0
 
 def log_message(message: str):
     """Log message to file and console"""
@@ -183,6 +185,48 @@ def is_watchdog_running() -> bool:
     except (ValueError, OSError):
         return False
 
+def _maybe_reconcile_positions():
+    """Periodically reconcile position sizes from on-chain data"""
+    global _last_reconcile_ts
+    now = time.time()
+    
+    if now - _last_reconcile_ts < RECONCILE_INTERVAL_SEC:
+        return
+    
+    _last_reconcile_ts = now
+    
+    try:
+        from src.utils.position_sync import reconcile_position_sizes
+        
+        log_message("🔄 Running periodic position size reconciliation...")
+        stats = reconcile_position_sizes(
+            threshold_pct=5.0,
+            min_balance_threshold=1e-6,
+            chains=None,  # All chains
+            verify_balance=True,
+            dry_run=False,
+            verbose=False,
+        )
+        
+        log_message(
+            f"✅ Position reconciliation complete: "
+            f"updated={stats['updated']} "
+            f"closed={stats['closed']} "
+            f"skipped={stats['skipped']} "
+            f"errors={len(stats['errors'])}"
+        )
+        
+        if stats["errors"]:
+            for err in stats["errors"][:5]:  # Log first 5 errors
+                log_message(f"⚠️  Reconciliation error: {err}")
+            if len(stats["errors"]) > 5:
+                log_message(f"⚠️  ... and {len(stats['errors']) - 5} more errors")
+                
+    except Exception as e:
+        log_message(f"❌ Position reconciliation failed: {e}")
+        import traceback
+        log_message(f"Traceback: {traceback.format_exc()}")
+
 def main():
     """Main watchdog loop"""
     global _running, _monitor_process
@@ -215,6 +259,9 @@ def main():
     try:
         while _running:
             time.sleep(CHECK_INTERVAL)
+            
+            # Periodically reconcile position sizes
+            _maybe_reconcile_positions()
             
             if not is_monitor_running(_monitor_process):
                 log_message("⚠️ Position monitor is not running!")

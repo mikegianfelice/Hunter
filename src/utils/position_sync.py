@@ -8,7 +8,7 @@ import json
 import time
 from pathlib import Path
 from datetime import datetime
-from typing import Any, Dict, Optional, List, Tuple
+from typing import Any, Dict, Optional, List, Tuple, Iterable
 from src.storage.positions import load_positions as load_positions_store, replace_positions
 from src.storage.performance import load_performance_data, replace_performance_data
 
@@ -937,6 +937,186 @@ def _load_open_positions() -> Dict[str, Any]:
 
 def _save_open_positions(positions: Dict[str, Any]) -> None:
     replace_positions(positions)
+
+
+def reconcile_position_sizes(
+    *,
+    threshold_pct: float = 5.0,
+    min_balance_threshold: float = 1e-6,
+    chains: Optional[Iterable[str]] = None,
+    verify_balance: bool = True,
+    dry_run: bool = False,
+    verbose: bool = False,
+) -> Dict[str, Any]:
+    """
+    Recalculate position_size_usd from on-chain balance * current price and
+    update open_positions.json, performance_data.json, and hunter_state.db.
+
+    Args:
+        threshold_pct: Minimum percentage difference to trigger update (default 5%)
+        min_balance_threshold: Minimum balance to consider as valid position (default 1e-6)
+        chains: Optional list of chains to process (None = all chains)
+        verify_balance: Whether to verify on-chain balance (default True)
+        dry_run: If True, don't persist changes (default False)
+        verbose: If True, print detailed logs (default False)
+
+    Returns:
+        Dict with stats: {"updated": int, "closed": int, "skipped": int, "errors": List[str]}
+    """
+    stats = {"updated": 0, "closed": 0, "skipped": 0, "errors": []}
+    chains_set = {c.lower() for c in chains} if chains else None
+
+    try:
+        positions = load_positions_store()
+        perf = load_performance_data()
+        trades = perf.get("trades", [])
+    except Exception as e:
+        stats["errors"].append(f"load_error: {e}")
+        if verbose:
+            print(f"❌ Failed to load data: {e}")
+        return stats
+
+    updated_positions = dict(positions)
+    any_change = False
+
+    for pos_key, pos_data in list(positions.items()):
+        try:
+            if not isinstance(pos_data, dict):
+                continue
+
+            chain_id = pos_data.get("chain_id", "ethereum").lower()
+            if chains_set and chain_id not in chains_set:
+                stats["skipped"] += 1
+                continue
+
+            token_addr = resolve_token_address(pos_key, pos_data)
+            symbol = pos_data.get("symbol", "?")
+
+            if is_native_gas_token(token_addr, symbol, chain_id):
+                stats["skipped"] += 1
+                continue
+
+            # Check balance
+            balance = None
+            if verify_balance:
+                balance = _check_token_balance_on_chain(token_addr, chain_id)
+                if balance is None or balance == -1.0:
+                    stats["skipped"] += 1
+                    if verbose:
+                        print(f"[skip-balance] {symbol} {token_addr[:8]}...{token_addr[-8:]} - balance check failed")
+                    continue
+
+            if balance is not None and (balance <= 0 or balance < min_balance_threshold):
+                # Position closed - remove from open_positions
+                updated_positions.pop(pos_key, None)
+                trade_id = pos_data.get("trade_id")
+                _mark_trade_as_closed_in_performance_data(token_addr, chain_id, trade_id)
+                stats["closed"] += 1
+                any_change = True
+                if verbose:
+                    print(f"[close] {symbol} {token_addr[:8]}...{token_addr[-8:]} - balance={balance:.8f} (zero/dust)")
+                continue
+
+            # Fetch current price
+            price = 0.0
+            try:
+                if chain_id == "solana":
+                    from src.execution.solana_executor import get_token_price_usd
+                    price = float(get_token_price_usd(token_addr) or 0.0)
+                    if price <= 0:
+                        from src.utils.utils import fetch_token_price_usd
+                        price = float(fetch_token_price_usd(token_addr) or 0.0)
+                else:
+                    from src.utils.utils import fetch_token_price_usd
+                    price = float(fetch_token_price_usd(token_addr) or 0.0)
+            except Exception as e:
+                if verbose:
+                    print(f"[skip-price] {symbol} {token_addr[:8]}...{token_addr[-8:]} - price fetch error: {e}")
+                price = 0.0
+
+            if price <= 0:
+                stats["skipped"] += 1
+                if verbose:
+                    print(f"[skip-price] {symbol} {token_addr[:8]}...{token_addr[-8:]} - price unavailable")
+                continue
+
+            # Calculate actual position value
+            if balance is None:
+                # If balance verification was skipped, try to get it now
+                balance = _check_token_balance_on_chain(token_addr, chain_id)
+                if balance is None or balance == -1.0 or balance <= 0:
+                    stats["skipped"] += 1
+                    if verbose:
+                        print(f"[skip-balance] {symbol} {token_addr[:8]}...{token_addr[-8:]} - cannot get balance")
+                    continue
+
+            actual_usd = balance * price
+            logged_usd = float(pos_data.get("position_size_usd", 0.0) or 0.0)
+
+            if logged_usd <= 0:
+                # No logged size - always update
+                diff_ratio = 1.0
+            else:
+                diff_ratio = abs(actual_usd - logged_usd) / logged_usd
+
+            # Only update if discrepancy exceeds threshold
+            if diff_ratio * 100 < threshold_pct:
+                stats["skipped"] += 1
+                if verbose:
+                    print(f"[skip-threshold] {symbol} {token_addr[:8]}...{token_addr[-8:]} - diff {diff_ratio*100:.2f}% < {threshold_pct}%")
+                continue
+
+            # Update position data
+            pos_data["position_size_usd"] = actual_usd
+            pos_data["last_reconciled_at"] = datetime.now().isoformat()
+            updated_positions[pos_key] = pos_data
+            any_change = True
+            stats["updated"] += 1
+
+            # Update performance_data.json for matching open trade
+            trade_id = pos_data.get("trade_id")
+            for t in trades:
+                if t.get("status") == "open" and (
+                    (trade_id and t.get("id") == trade_id)
+                    or (t.get("address", "").lower() == token_addr.lower() and t.get("chain", "").lower() == chain_id)
+                ):
+                    t["position_size_usd"] = actual_usd
+                    if t.get("entry_amount_usd_actual") is None or t.get("entry_amount_usd_actual") == 0:
+                        t["entry_amount_usd_actual"] = actual_usd
+                    break
+
+            if verbose:
+                print(f"[update] {symbol} {token_addr[:8]}...{token_addr[-8:]} - ${logged_usd:.2f} -> ${actual_usd:.2f} ({diff_ratio*100:+.1f}%)")
+
+        except Exception as e:
+            error_msg = f"{pos_key}: {e}"
+            stats["errors"].append(error_msg)
+            if verbose:
+                print(f"[error] {error_msg}")
+            import traceback
+            if verbose:
+                print(traceback.format_exc())
+
+    # Persist changes if not dry run
+    if not dry_run and any_change:
+        try:
+            # Update open_positions.json and hunter_state.db via replace_positions
+            replace_positions(updated_positions)
+            
+            # Update performance_data.json
+            perf["trades"] = trades
+            perf["last_updated"] = datetime.now().isoformat()
+            replace_performance_data(perf)
+            
+            if verbose:
+                print(f"✅ Persisted changes to open_positions.json, performance_data.json, and hunter_state.db")
+        except Exception as e:
+            error_msg = f"persist_error: {e}"
+            stats["errors"].append(error_msg)
+            if verbose:
+                print(f"❌ Failed to persist changes: {e}")
+
+    return stats
 
 
 if __name__ == "__main__":
