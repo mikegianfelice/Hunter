@@ -3456,6 +3456,31 @@
       "entry_tokens_received": null,
       "entry_gas_fee_usd": 0,
       "buy_slippage_actual": null
+    },
+    {
+      "id": "MOODENG_20251207_031038",
+      "symbol": "MOODENG",
+      "address": "ED5nyyWEzpPPiWimP8vYm7sD7TD3LAt3Q3gRTWHzPJBY",
+      "chain": "solana",
+      "entry_time": "2025-12-07T03:10:38.500631",
+      "entry_price": 0.1014,
+      "position_size_usd": 54.71970900999621,
+      "quality_score": 0.7271518549073102,
+      "volume_24h": 20450426.82,
+      "liquidity": 4389192.7,
+      "exit_time": "2025-12-07T03:10:38.500631",
+      "exit_price": 0.1014,
+      "pnl_usd": 0.0,
+      "pnl_percent": 0.0,
+      "status": "manual_close",
+      "take_profit_target": null,
+      "stop_loss_target": null,
+      "buy_tx_hash": "43YpUqrjDCJ5NBUrWvyfjF3ijNWv3dEJShrNjKme5GCmHN3KtcpmGsc5reY7AhyFtvDctnJWQp6Qeng8CkAWWc53",
+      "entry_amount_usd_quoted": 54.71970900999621,
+      "entry_amount_usd_actual": 0,
+      "entry_tokens_received": null,
+      "entry_gas_fee_usd": 0,
+      "buy_slippage_actual": null
     }
   ],
   "daily_stats": {
@@ -3486,5 +3511,5 @@
       }
     }
   },
-  "last_updated": "2025-12-07T01:37:02.707132"
+  "last_updated": "2025-12-07T03:10:38.545320"
 }
