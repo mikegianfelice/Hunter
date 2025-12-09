@@ -3681,6 +3681,31 @@
       "entry_tokens_received": null,
       "entry_gas_fee_usd": 0,
       "buy_slippage_actual": null
+    },
+    {
+      "id": "USELESS_20251208_212910",
+      "symbol": "USELESS",
+      "address": "Dz9mQ9NzkBcCsuGPFJ3r1bS4wgqKMHBPiVuniW8Mbonk",
+      "chain": "solana",
+      "entry_time": "2025-12-08T21:29:10.312829",
+      "entry_price": 0.09897,
+      "position_size_usd": 39.799637488960414,
+      "quality_score": 0.6892699808980417,
+      "volume_24h": 693850.2,
+      "liquidity": 2850151.29,
+      "exit_time": "2025-12-08T21:29:10.312829",
+      "exit_price": 0.09897,
+      "pnl_usd": 0.0,
+      "pnl_percent": 0.0,
+      "status": "manual_close",
+      "take_profit_target": null,
+      "stop_loss_target": null,
+      "buy_tx_hash": "fSsuCtYcU6zUEUuNKnsPM9daYhGm49s3ZL1EqUJeH4VvXiurNQfkyMChHAX7gvyYyze8WJ6RBUuwzyScAgtbAKB",
+      "entry_amount_usd_quoted": 39.799637488960414,
+      "entry_amount_usd_actual": 0,
+      "entry_tokens_received": null,
+      "entry_gas_fee_usd": 0,
+      "buy_slippage_actual": null
     }
   ],
   "daily_stats": {
@@ -3711,5 +3736,5 @@
       }
     }
   },
-  "last_updated": "2025-12-08T14:57:55.140122"
+  "last_updated": "2025-12-08T21:29:10.363891"
 }
