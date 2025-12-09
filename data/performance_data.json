@@ -3731,6 +3731,31 @@
       "entry_tokens_received": null,
       "entry_gas_fee_usd": 0,
       "buy_slippage_actual": null
+    },
+    {
+      "id": "FWOG_20251209_111623",
+      "symbol": "FWOG",
+      "address": "A8C3xuqscfmyLrte3VmTqrAq8kgMASius9AFNANwpump",
+      "chain": "solana",
+      "entry_time": "2025-12-09T11:16:23.427681",
+      "entry_price": 0.01184,
+      "position_size_usd": 40.78178826260407,
+      "quality_score": 0.6668362684532649,
+      "volume_24h": 968983.04,
+      "liquidity": 2497545.11,
+      "exit_time": "2025-12-09T11:16:23.427681",
+      "exit_price": 0.01184,
+      "pnl_usd": 0.0,
+      "pnl_percent": 0.0,
+      "status": "manual_close",
+      "take_profit_target": null,
+      "stop_loss_target": null,
+      "buy_tx_hash": "3JMkjMJNaefzeCk28t5en7R5Jqsqh1y5KY69MEzGeaQyf4mxaC8cMLaYtgQDcoB6NGNMSFEBzSXgEMEZxQBqCkSM",
+      "entry_amount_usd_quoted": 40.78178826260407,
+      "entry_amount_usd_actual": 0,
+      "entry_tokens_received": null,
+      "entry_gas_fee_usd": 0,
+      "buy_slippage_actual": null
     }
   ],
   "daily_stats": {
@@ -3761,5 +3786,5 @@
       }
     }
   },
-  "last_updated": "2025-12-09T09:58:22.937229"
+  "last_updated": "2025-12-09T11:16:23.515637"
 }
