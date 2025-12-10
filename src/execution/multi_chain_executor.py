@@ -843,6 +843,17 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
                                             symbol=symbol,
                                             error=str(e))
                 
+                # Get current window_score for tracking (if available)
+                try:
+                    from src.ai.ai_time_window_scheduler import get_time_window_scheduler
+                    scheduler = get_time_window_scheduler()
+                    # Get current window score without triggering recalculation
+                    current_window_score = getattr(scheduler, 'current_window_score', None)
+                    if current_window_score is not None:
+                        fee_data['window_score'] = current_window_score
+                except Exception as e:
+                    log_event("trading.window_score_fetch_error", level="WARNING", error=str(e))
+                
                 # Verify we have actual execution data before logging
                 entry_amount_actual = fee_data.get('entry_amount_usd_actual', 0) or 0
                 tokens_received = fee_data.get('entry_tokens_received')
@@ -858,7 +869,7 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
                             token_for_logging,
                             total_successful_amount or amount_usd,
                             quality_score,
-                            additional_data=fee_data  # Pass fee_data here
+                            additional_data=fee_data  # Pass fee_data here (includes window_score)
                         )
                         log_event("trading.performance_logged", symbol=symbol, 
                                 entry_amount_actual=entry_amount_actual,

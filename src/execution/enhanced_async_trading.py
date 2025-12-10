@@ -433,6 +433,9 @@ class EnhancedAsyncTradingEngine:
             # Check if we should trade now
             window_decision = scheduler.should_trade_now(recent_metrics, market_metrics)
             
+            # Store window_score in token for later use in performance tracking
+            token['_window_score'] = window_decision.score
+            
             if not window_decision.should_trade:
                 log_info("trading.window_blocked",
                         symbol=token.get("symbol", "?"),
@@ -449,7 +452,14 @@ class EnhancedAsyncTradingEngine:
             # On error, proceed with trade (fail open)
         
         # Proceed with original trade execution
-        return await self._execute_real_trade_internal(token, position_size, chain)
+        trade_result = await self._execute_real_trade_internal(token, position_size, chain)
+        
+        # Include window_score in trade result if available
+        window_score = token.get('_window_score')
+        if window_score is not None:
+            trade_result['window_score'] = window_score
+        
+        return trade_result
     
     async def _execute_real_trade_internal(self, token: Dict, position_size: float, chain: str) -> Dict[str, Any]:
         """Execute real trade using DEX integrations"""
@@ -1050,6 +1060,11 @@ class EnhancedAsyncTradingEngine:
                         }
                         # Include fee data if available
                         fee_data = trade_result.get('fee_data', {})
+                        
+                        # Include window_score if available from trade result or token
+                        window_score = trade_result.get('window_score') or token.get('_window_score')
+                        if window_score is not None:
+                            fee_data['window_score'] = window_score
                         
                         # Verify we have actual execution data before logging
                         entry_amount_actual = fee_data.get('entry_amount_usd_actual', 0) or 0

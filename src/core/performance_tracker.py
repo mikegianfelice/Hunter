@@ -165,6 +165,8 @@ class PerformanceTracker:
             'entry_tokens_received': None,
             'entry_gas_fee_usd': None,
             'buy_slippage_actual': None,
+            # Window score tracking for entry timing analysis
+            'window_score': None,
         }
         
         # Merge additional fee data if provided

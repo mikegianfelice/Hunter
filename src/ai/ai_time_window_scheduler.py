@@ -39,7 +39,7 @@ class AITimeWindowScheduler:
     
     def __init__(self):
         self.enabled = get_config_bool("enable_ai_time_window_scheduler", True)
-        self.min_window_score_to_trade = get_config_float("time_window_scheduler.min_window_score_to_trade", 0.60)
+        self.min_window_score_to_trade = get_config_float("time_window_scheduler.min_window_score_to_trade", 0.65)
         self.pause_on_volatility_spike = get_config_bool("time_window_scheduler.pause_on_volatility_spike", True)
         self.volatility_spike_threshold = get_config_float("time_window_scheduler.volatility_spike_threshold", 0.70)
         self.review_interval_seconds = get_config_int("time_window_scheduler.review_interval_seconds", 300)
@@ -100,6 +100,9 @@ class AITimeWindowScheduler:
                 reason=f"paused_until_{remaining_pause}s"
             )
         
+        # Get dynamic threshold based on market regime
+        effective_threshold = self._get_dynamic_threshold()
+        
         # Force recalculation on first call (when last_review_time is 0.0) or if score is still at default
         # This ensures we get a proper score calculation even if we haven't hit the review interval yet
         force_recalculate = (self.last_review_time == 0.0) or (self.current_window_score == 0.0)
@@ -147,19 +150,20 @@ class AITimeWindowScheduler:
                 log_info("time_window_scheduler.resume", score=self.current_window_score)
                 self._save_state()
         
-        # Make decision based on window score
-        should_trade = self.current_window_score >= self.min_window_score_to_trade
+        # Make decision based on window score with dynamic threshold
+        should_trade = self.current_window_score >= effective_threshold
         
         if not should_trade:
             log_info("time_window_scheduler.blocked",
                     score=self.current_window_score,
-                    threshold=self.min_window_score_to_trade)
+                    threshold=effective_threshold,
+                    base_threshold=self.min_window_score_to_trade)
         
         return WindowDecision(
             should_trade=should_trade,
             score=self.current_window_score,
             next_check_in_s=self.review_interval_seconds,
-            reason=f"window_score_{self.current_window_score:.2f}"
+            reason=f"window_score_{self.current_window_score:.2f}_threshold_{effective_threshold:.2f}"
         )
     
     def _calculate_window_score(
@@ -204,19 +208,27 @@ class AITimeWindowScheduler:
         
         # Track when score drops below threshold for recovery mechanism
         current_time = time.time()
-        if weighted_score < self.min_window_score_to_trade:
+        # Get dynamic threshold (will use base threshold if regime detection fails)
+        try:
+            dynamic_threshold = self._get_dynamic_threshold()
+        except:
+            dynamic_threshold = self.min_window_score_to_trade
+        
+        if weighted_score < dynamic_threshold:
             # Score is below threshold - track when this started
             if self.score_below_threshold_since == 0.0:
                 self.score_below_threshold_since = current_time
                 log_info("time_window_scheduler.score_below_threshold",
                         score=weighted_score,
-                        threshold=self.min_window_score_to_trade)
+                        threshold=dynamic_threshold,
+                        base_threshold=self.min_window_score_to_trade)
         else:
             # Score is above threshold - reset tracking
             if self.score_below_threshold_since > 0.0:
                 log_info("time_window_scheduler.score_recovered",
                         score=weighted_score,
-                        threshold=self.min_window_score_to_trade)
+                        threshold=dynamic_threshold,
+                        base_threshold=self.min_window_score_to_trade)
             self.score_below_threshold_since = 0.0
         
         # If we have no recent execution history and no metrics provided, default to optimistic score
@@ -235,12 +247,13 @@ class AITimeWindowScheduler:
         
         # Minimum score floor: prevent score from getting stuck below threshold
         # Floor should be at least threshold - 5% to allow some buffer
-        min_score_floor = max(0.50, self.min_window_score_to_trade - 0.05)
+        # Use dynamic threshold for floor calculation
+        min_score_floor = max(0.50, dynamic_threshold - 0.05)
         weighted_score = max(min_score_floor, weighted_score)
         
         # Improved recovery mechanism: if score is stuck below threshold, gradually recover over time
         # This prevents permanent blocking when metrics are temporarily bad
-        if weighted_score < self.min_window_score_to_trade and self.score_below_threshold_since > 0.0:
+        if weighted_score < dynamic_threshold and self.score_below_threshold_since > 0.0:
             # Calculate how long we've been below threshold
             time_below_threshold = current_time - self.score_below_threshold_since
             recovery_intervals = max(0, int(time_below_threshold / self.review_interval_seconds))
@@ -259,7 +272,7 @@ class AITimeWindowScheduler:
                     weighted_score = min(1.0, weighted_score + recovery_bonus)
                     
                     # If recovery improved score above threshold, reset tracking
-                    if weighted_score >= self.min_window_score_to_trade:
+                    if weighted_score >= dynamic_threshold:
                         self.score_below_threshold_since = 0.0
                     
                     log_info("time_window_scheduler.recovery_applied",
@@ -320,10 +333,55 @@ class AITimeWindowScheduler:
         # Default: assume 2s latency
         return 2000.0
     
+    def _get_dynamic_threshold(self) -> float:
+        """
+        Get dynamic threshold based on market regime
+        Returns adjusted threshold based on current market conditions
+        """
+        try:
+            from .ai_market_regime_detector import ai_market_regime_detector
+            
+            regime_data = ai_market_regime_detector.detect_market_regime()
+            regime = regime_data.get('regime', 'sideways_market')
+            confidence = regime_data.get('confidence', 0.5)
+            
+            # Base threshold adjustments by regime (in percentage points, converted to 0-1 scale)
+            regime_adjustments = {
+                'bull_market': -0.05,      # Lower threshold (0.60) - more opportunities
+                'bear_market': 0.10,        # Higher threshold (0.75) - more conservative
+                'sideways_market': 0.0,     # Base threshold (0.65) - neutral
+                'high_volatility': 0.10,    # Higher threshold (0.75) - very conservative
+                'recovery_market': 0.05     # Slightly higher (0.70) - cautious
+            }
+            
+            adjustment = regime_adjustments.get(regime, 0.0)
+            # Scale adjustment by confidence (higher confidence = full adjustment)
+            confidence_factor = min(1.0, max(0.5, confidence))
+            adjusted_threshold = self.min_window_score_to_trade + (adjustment * confidence_factor)
+            
+            # Clamp between 0.55 and 0.80
+            adjusted_threshold = max(0.55, min(0.80, adjusted_threshold))
+            
+            if abs(adjustment) > 0.01:  # Only log if there's a meaningful adjustment
+                log_info("time_window_scheduler.dynamic_threshold",
+                        base_threshold=self.min_window_score_to_trade,
+                        adjusted_threshold=adjusted_threshold,
+                        regime=regime,
+                        confidence=confidence,
+                        adjustment=adjustment * confidence_factor)
+            
+            return adjusted_threshold
+            
+        except Exception as e:
+            log_error("time_window_scheduler.dynamic_threshold_error", error=str(e))
+            # Fallback to base threshold on error
+            return self.min_window_score_to_trade
+    
     def _get_market_quality_score(self, metrics: Optional[Dict[str, Any]]) -> float:
-        """Get market quality score based on volatility and liquidity"""
+        """Get market quality score based on volatility and liquidity with enhanced fallback metrics"""
         if not metrics:
-            return 0.7  # Default neutral
+            # Enhanced fallback: use time-of-day and basic market indicators
+            return self._get_fallback_market_score()
         
         volatility = metrics.get("volatility", 0.5)
         liquidity = metrics.get("liquidity_score", 0.5)
@@ -334,8 +392,48 @@ class AITimeWindowScheduler:
         # Higher liquidity = higher score
         liquidity_score = min(1.0, liquidity)
         
-        # Combined score
-        return (volatility_score * 0.6 + liquidity_score * 0.4)
+        # Enhanced: Add volume trend if available
+        volume_trend = metrics.get("volume_trend", 0.5)
+        volume_score = min(1.0, volume_trend)
+        
+        # Weighted average: volatility (40%), liquidity (40%), volume (20%)
+        market_score = (volatility_score * 0.4) + (liquidity_score * 0.4) + (volume_score * 0.2)
+        
+        return max(0.0, min(1.0, market_score))
+    
+    def _get_fallback_market_score(self) -> float:
+        """
+        Enhanced fallback market score when metrics are unavailable
+        Uses time-of-day patterns and basic market indicators
+        """
+        import datetime
+        
+        # Time-of-day adjustments (UTC)
+        current_hour = datetime.datetime.utcnow().hour
+        time_score = 0.7  # Base neutral score
+        
+        # Crypto markets are most active during US/EU overlap (13:00-21:00 UTC)
+        if 13 <= current_hour < 21:
+            time_score = 0.8  # Higher score during active hours
+        elif 21 <= current_hour or current_hour < 5:
+            time_score = 0.6  # Lower score during quiet hours (late night/early morning)
+        else:
+            time_score = 0.7  # Neutral for other hours
+        
+        # Try to get basic market indicators if available
+        try:
+            # Check if we can get BTC price trend as market indicator
+            # This is a lightweight check that doesn't require full market analysis
+            from ..utils.utils import get_eth_price_usd
+            # If we can get price, assume market is functioning
+            price = get_eth_price_usd()
+            if price and price > 0:
+                # Market is functioning - slightly boost score
+                return min(0.75, time_score + 0.05)
+        except:
+            pass
+        
+        return time_score
     
     def record_execution(
         self,
