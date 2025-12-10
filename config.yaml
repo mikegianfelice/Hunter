@@ -158,7 +158,7 @@ reset_state_now: false
 
 # === Sustainable Trading Settings ===
 # Quality scoring thresholds
-min_quality_score: 60  # Minimum quality score (0-100) - increased from 50 to 60 to improve win rate (filter weaker tokens)
+min_quality_score: 65  # Minimum quality score (0-100) - increased from 60 to 65 to improve win rate (filter weaker tokens)
 quality_volume_weight: 0.4  # 40% weight for volume in quality score
 quality_liquidity_weight: 0.4  # 40% weight for liquidity in quality score
 quality_price_weight: 0.2  # 20% weight for price stability in quality score

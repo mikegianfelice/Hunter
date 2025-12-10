@@ -817,7 +817,7 @@ class EnhancedAsyncTradingEngine:
             risk_score = price_pred.get("risk_score", 0.5)
             
             # Hard AI thresholds for trade approval
-            MIN_QUALITY_SCORE = 0.60    # 60%
+            MIN_QUALITY_SCORE = 0.65    # 65%
             MIN_SUCCESS_PROB = 0.60     # 60%
             MAX_RISK_SCORE = 0.50       # 50%
             
