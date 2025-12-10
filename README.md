@@ -31,7 +31,7 @@ Top candidates are ranked by volume and passed to the AI system for deeper analy
 
 ### **2. Entry Decision** ✅
 Before entering any trade, tokens must pass multiple AI-driven checks:
-- **AI Quality Score** ≥ 60% (combines sentiment, technical analysis, price prediction)
+- **AI Quality Score** ≥ 65% (combines sentiment, technical analysis, price prediction)
 - **Success Probability** ≥ 60% (AI's prediction of profitable outcome)
 - **Risk Score** ≤ 50% (lower is safer)
 - **AI Recommendation** = "buy" with >70% confidence
@@ -174,7 +174,7 @@ The bot features a **comprehensive AI integration engine** that coordinates **30
 ### **📊 Performance Metrics**
 - **Target Gains**: 10-20% consistent returns
 - **Quality Focus**: Minimum $200k volume, $200k liquidity for improved win rate (raised from $150k)
-- **Quality Scoring**: Minimum quality score of 50 (0-100 scale, raised from 40)
+- **Quality Scoring**: Minimum quality score of 65 (0-100 scale, raised from earlier 40/50 thresholds)
 - **Risk Management**: Maximum 6 concurrent positions, $10 daily loss limit
 - **Stop Loss/Take Profit**: 8% stop loss, 12% take profit (with dynamic TP up to 20%)
 - **Execution Optimization**: AI-optimized execution with balance verification for sell transactions
@@ -437,10 +437,10 @@ enable_pre_buy_delisting_check: true   # Enable pre-buy delisting checks
 
 ### **Entry Criteria Improvements** (Win Rate Optimization)
 - **Raised Quality Thresholds**: 
-  - Minimum quality score: 40 → 50 (improves token selection)
+  - Minimum quality score: 40 → 50 → **65 (current)** for stricter token selection
   - Minimum 24h volume: $100k → $200k (better liquidity)
   - Minimum liquidity: $100k → $200k (reduced slippage)
-  - Minimum momentum: 0.1% → 0.2% (stronger entry signals)
+  - Minimum momentum: 0.1% → 0.2% → **0.3% (current)** (stronger entry signals)
 - **Result**: Improved win rate by filtering weaker tokens before entry
 
 ### **Configuration Updates**
@@ -592,13 +592,13 @@ stop_loss: 0.08               # 8% stop loss
 use_dynamic_tp: true          # Enable dynamic take profit (8-20% range)
 
 # Strategy Thresholds (Improved Entry Quality)
-min_quality_score: 50         # Minimum quality score (0-100) - raised from 40 to improve win rate
+min_quality_score: 65         # Minimum quality score (0-100) - raised from 60 to 65 to improve win rate
 min_volume_24h_for_buy: 200000   # $200k minimum 24h volume - raised from $150k
 min_liquidity_usd_for_buy: 200000 # $200k minimum liquidity - raised from $150k
-min_momentum_pct: 0.002       # 0.2% minimum momentum - raised from 0.1%
+min_momentum_pct: 0.003       # 0.3% minimum momentum - raised from 0.2%
 
 # Risk Management (Current Settings)
-max_concurrent_positions: 6   # Maximum open positions
+max_concurrent_positions: 4   # Maximum open positions (reduced from 6 to focus on quality)
 daily_loss_limit_usd: 10.0   # Daily loss limit
 max_losing_streak: 3         # Stop after 3 consecutive losses
 circuit_breaker_minutes: 60  # Cooldown after losses
