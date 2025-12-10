@@ -735,22 +735,151 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
             token_for_logging["position_size_usd"] = total_successful_amount or amount_usd
 
             trade_id = None
-
-            # Log trade entry to performance tracker for status reports and analytics
+            fee_data = {}
+            
+            # CRITICAL FIX: Analyze transactions BEFORE logging to get actual execution data
+            # This ensures entry_amount_usd_actual is set correctly
             try:
-                from src.core.performance_tracker import performance_tracker
+                # Analyze the first successful transaction to get fee data
+                primary_tx_hash = successful_txs[0] if successful_txs else None
+                
+                if primary_tx_hash:
+                    # Import transaction analyzer based on chain
+                    if chain_id == "solana":
+                        from src.utils.solana_transaction_analyzer import analyze_jupiter_transaction
+                        from src.config.secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS
+                        
+                        # Retry logic for transaction analysis (up to 3 attempts)
+                        max_retries = 3
+                        retry_delay = 2  # seconds
+                        
+                        for attempt in range(max_retries):
+                            try:
+                                # Wait a bit for transaction to settle on-chain
+                                if attempt > 0:
+                                    time.sleep(retry_delay * attempt)
+                                
+                                analyzed_data = analyze_jupiter_transaction(
+                                    SOLANA_RPC_URL,
+                                    primary_tx_hash,
+                                    SOLANA_WALLET_ADDRESS,
+                                    is_buy=True,
+                                    quoted_output_amount=None
+                                )
+                                
+                                # Check if we got valid data
+                                if analyzed_data.get('actual_cost_usd', 0) > 0 or analyzed_data.get('tokens_received', 0) > 0:
+                                    fee_data = {
+                                        'entry_gas_fee_usd': analyzed_data.get('gas_fee_usd', 0),
+                                        'entry_amount_usd_actual': analyzed_data.get('actual_cost_usd', 0),
+                                        'entry_tokens_received': analyzed_data.get('tokens_received'),
+                                        'buy_tx_hash': primary_tx_hash,
+                                        'buy_slippage_actual': analyzed_data.get('actual_slippage')
+                                    }
+                                    log_event("trading.transaction_analysis_success", 
+                                            symbol=symbol, 
+                                            attempt=attempt+1,
+                                            actual_cost=fee_data.get('entry_amount_usd_actual', 0),
+                                            tokens_received=fee_data.get('entry_tokens_received'))
+                                    break
+                                else:
+                                    log_event("trading.transaction_analysis_empty", 
+                                            level="WARNING",
+                                            symbol=symbol, 
+                                            attempt=attempt+1)
+                            except Exception as e:
+                                log_event("trading.transaction_analysis_error", 
+                                        level="WARNING",
+                                        symbol=symbol, 
+                                        attempt=attempt+1,
+                                        error=str(e))
+                                if attempt == max_retries - 1:
+                                    # Last attempt failed - log warning but continue
+                                    log_event("trading.transaction_analysis_failed", 
+                                            level="ERROR",
+                                            symbol=symbol,
+                                            error=str(e))
+                    
+                    elif chain_id in ["ethereum", "base", "arbitrum", "polygon"]:
+                        from src.utils.transaction_analyzer import analyze_buy_transaction
+                        from src.execution.uniswap_executor import w3
+                        
+                        # Retry logic for transaction analysis
+                        max_retries = 3
+                        retry_delay = 2
+                        
+                        for attempt in range(max_retries):
+                            try:
+                                if attempt > 0:
+                                    time.sleep(retry_delay * attempt)
+                                
+                                analyzed_data = analyze_buy_transaction(w3, primary_tx_hash)
+                                
+                                if analyzed_data.get('actual_cost_usd', 0) > 0:
+                                    fee_data = {
+                                        'entry_gas_fee_usd': analyzed_data.get('gas_fee_usd', 0),
+                                        'entry_amount_usd_actual': analyzed_data.get('actual_cost_usd', 0),
+                                        'buy_tx_hash': primary_tx_hash
+                                    }
+                                    log_event("trading.transaction_analysis_success", 
+                                            symbol=symbol, 
+                                            attempt=attempt+1,
+                                            actual_cost=fee_data.get('entry_amount_usd_actual', 0))
+                                    break
+                                else:
+                                    log_event("trading.transaction_analysis_empty", 
+                                            level="WARNING",
+                                            symbol=symbol, 
+                                            attempt=attempt+1)
+                            except Exception as e:
+                                log_event("trading.transaction_analysis_error", 
+                                        level="WARNING",
+                                        symbol=symbol, 
+                                        attempt=attempt+1,
+                                        error=str(e))
+                                if attempt == max_retries - 1:
+                                    log_event("trading.transaction_analysis_failed", 
+                                            level="ERROR",
+                                            symbol=symbol,
+                                            error=str(e))
+                
+                # Verify we have actual execution data before logging
+                entry_amount_actual = fee_data.get('entry_amount_usd_actual', 0) or 0
+                tokens_received = fee_data.get('entry_tokens_received')
+                
+                # Only log trade if we have confirmed execution
+                if entry_amount_actual > 0 or (tokens_received is not None and tokens_received > 0):
+                    # Log trade entry to performance tracker with fee data
+                    try:
+                        from src.core.performance_tracker import performance_tracker
 
-                quality_score = float(token.get("quality_score", 0.0))
-                trade_id = performance_tracker.log_trade_entry(
-                    token_for_logging,
-                    total_successful_amount or amount_usd,
-                    quality_score,
-                )
-                log_event("trading.performance_logged", symbol=symbol)
+                        quality_score = float(token.get("quality_score", 0.0))
+                        trade_id = performance_tracker.log_trade_entry(
+                            token_for_logging,
+                            total_successful_amount or amount_usd,
+                            quality_score,
+                            additional_data=fee_data  # Pass fee_data here
+                        )
+                        log_event("trading.performance_logged", symbol=symbol, 
+                                entry_amount_actual=entry_amount_actual,
+                                tokens_received=tokens_received)
+                    except Exception as e:
+                        log_event(
+                            "trading.performance_log_error",
+                            level="WARNING",
+                            symbol=symbol,
+                            error=str(e),
+                        )
+                else:
+                    # No confirmed execution - don't log trade
+                    log_event("trading.trade_not_logged", 
+                            level="WARNING",
+                            symbol=symbol,
+                            reason="No confirmed execution data (entry_amount_usd_actual=0 and no tokens_received)")
             except Exception as e:
                 log_event(
-                    "trading.performance_log_error",
-                    level="WARNING",
+                    "trading.transaction_analysis_critical_error",
+                    level="ERROR",
                     symbol=symbol,
                     error=str(e),
                 )

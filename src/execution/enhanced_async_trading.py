@@ -1034,6 +1034,7 @@ class EnhancedAsyncTradingEngine:
                         log_error("trading.register_buy_error", f"Failed to register buy: {e}")
                     
                     # Log trade entry to performance tracker for status reports and analytics
+                    # CRITICAL FIX: Verify execution succeeded before logging
                     trade_id = None
                     try:
                         from src.core.performance_tracker import performance_tracker
@@ -1049,8 +1050,42 @@ class EnhancedAsyncTradingEngine:
                         }
                         # Include fee data if available
                         fee_data = trade_result.get('fee_data', {})
-                        trade_id = performance_tracker.log_trade_entry(pt_token, position_size, quality_score, additional_data=fee_data)
-                        log_info("trading.performance_logged", f"✅ Trade entry logged to performance tracker for {symbol}")
+                        
+                        # Verify we have actual execution data before logging
+                        entry_amount_actual = fee_data.get('entry_amount_usd_actual', 0) or 0
+                        tokens_received = fee_data.get('entry_tokens_received')
+                        
+                        # Only log if we have confirmed execution
+                        if entry_amount_actual > 0 or (tokens_received is not None and tokens_received > 0):
+                            trade_id = performance_tracker.log_trade_entry(pt_token, position_size, quality_score, additional_data=fee_data)
+                            log_info("trading.performance_logged", 
+                                   f"✅ Trade entry logged to performance tracker for {symbol} "
+                                   f"(entry_amount_usd_actual=${entry_amount_actual:.2f}, tokens_received={tokens_received})")
+                        else:
+                            # Transaction analysis may have failed - retry analysis
+                            log_info("trading.execution_unverified", 
+                                      f"⚠️ Trade execution for {symbol} not verified - retrying transaction analysis")
+                            
+                            # Retry transaction analysis
+                            if tx_hash:
+                                try:
+                                    retry_fee_data = await self._analyze_buy_transaction(tx_hash, chain, trade_result.get('dex', 'jupiter'), None)
+                                    entry_amount_actual = retry_fee_data.get('entry_amount_usd_actual', 0) or 0
+                                    tokens_received = retry_fee_data.get('entry_tokens_received')
+                                    
+                                    if entry_amount_actual > 0 or (tokens_received is not None and tokens_received > 0):
+                                        # Merge retry data with original fee_data
+                                        fee_data.update(retry_fee_data)
+                                        trade_id = performance_tracker.log_trade_entry(pt_token, position_size, quality_score, additional_data=fee_data)
+                                        log_info("trading.performance_logged_retry", 
+                                               f"✅ Trade entry logged after retry for {symbol} "
+                                               f"(entry_amount_usd_actual=${entry_amount_actual:.2f})")
+                                    else:
+                                        log_error("trading.execution_failed", 
+                                                f"❌ Trade execution for {symbol} failed - no tokens received. TX: {tx_hash}")
+                                except Exception as retry_error:
+                                    log_error("trading.retry_analysis_failed", 
+                                            f"Failed to retry transaction analysis for {symbol}: {retry_error}")
                     except Exception as e:
                         log_error("trading.performance_log_error", f"Failed to log trade entry for {symbol}: {e}")
                     
