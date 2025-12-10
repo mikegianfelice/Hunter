@@ -231,12 +231,10 @@ class AITimeWindowScheduler:
                         base_threshold=self.min_window_score_to_trade)
             self.score_below_threshold_since = 0.0
         
-        # If we have no recent execution history and no metrics provided, default to optimistic score
+        # If we have no recent execution history, default to optimistic score
         # This prevents blocking trades when there's insufficient data (e.g., after position closes)
-        has_recent_data = (
-            len(self.execution_history) > 0 or
-            (recent_exec_metrics and recent_exec_metrics.get("fill_success_rate") is not None)
-        )
+        # Only check execution_history - don't rely on caller-provided metrics which may be defaults
+        has_recent_data = len(self.execution_history) > 0
         
         if not has_recent_data:
             # No recent data - use optimistic default to avoid blocking trades unnecessarily

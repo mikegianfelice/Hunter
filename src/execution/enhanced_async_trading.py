@@ -1351,6 +1351,26 @@ class EnhancedAsyncTradingEngine:
         # Add to performance window
         trade_result["timestamp"] = current_time
         self.performance_window.append(trade_result)
+        
+        # Record execution metrics in time window scheduler for better window score calculation
+        try:
+            from src.ai.ai_time_window_scheduler import get_time_window_scheduler
+            scheduler = get_time_window_scheduler()
+            
+            # Extract execution metrics from trade result
+            success = trade_result.get("success", False)
+            slippage = trade_result.get("slippage")  # May be None if not available
+            execution_time = trade_result.get("execution_time", 0)  # Already in ms
+            
+            # Record execution in scheduler's execution_history
+            scheduler.record_execution(
+                success=success,
+                slippage=slippage,
+                latency_ms=execution_time if execution_time > 0 else None
+            )
+        except Exception as e:
+            # Don't fail metrics update if scheduler recording fails
+            log_error("trading.scheduler_record_error", f"Failed to record execution in scheduler: {e}")
     
     async def run_enhanced_trading_cycle(self) -> Dict[str, Any]:
         """Run a single enhanced trading cycle"""
