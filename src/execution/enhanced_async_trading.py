@@ -1353,24 +1353,33 @@ class EnhancedAsyncTradingEngine:
         self.performance_window.append(trade_result)
         
         # Record execution metrics in time window scheduler for better window score calculation
-        try:
-            from src.ai.ai_time_window_scheduler import get_time_window_scheduler
-            scheduler = get_time_window_scheduler()
-            
-            # Extract execution metrics from trade result
-            success = trade_result.get("success", False)
-            slippage = trade_result.get("slippage")  # May be None if not available
-            execution_time = trade_result.get("execution_time", 0)  # Already in ms
-            
-            # Record execution in scheduler's execution_history
-            scheduler.record_execution(
-                success=success,
-                slippage=slippage,
-                latency_ms=execution_time if execution_time > 0 else None
-            )
-        except Exception as e:
-            # Don't fail metrics update if scheduler recording fails
-            log_error("trading.scheduler_record_error", f"Failed to record execution in scheduler: {e}")
+        # CRITICAL: Skip gate failures - they're protective mechanisms, not execution failures
+        # Recording them creates a feedback loop that keeps window score low
+        error_type = trade_result.get("error_type")
+        if error_type != "gate":
+            try:
+                from src.ai.ai_time_window_scheduler import get_time_window_scheduler
+                scheduler = get_time_window_scheduler()
+                
+                # Extract execution metrics from trade result
+                success = trade_result.get("success", False)
+                slippage = trade_result.get("slippage")  # May be None if not available
+                execution_time = trade_result.get("execution_time", 0)  # Already in ms
+                
+                # Record execution in scheduler's execution_history
+                # Only record actual execution attempts (successful or real failures, not gate blocks)
+                scheduler.record_execution(
+                    success=success,
+                    slippage=slippage,
+                    latency_ms=execution_time if execution_time > 0 else None
+                )
+            except Exception as e:
+                # Don't fail metrics update if scheduler recording fails
+                log_error("trading.scheduler_record_error", f"Failed to record execution in scheduler: {e}")
+        else:
+            # Gate failures are logged but not recorded as execution failures
+            log_info("trading.gate_not_recorded", 
+                    f"Gate failure not recorded in scheduler (error_type=gate): {trade_result.get('error', 'Unknown')}")
     
     async def run_enhanced_trading_cycle(self) -> Dict[str, Any]:
         """Run a single enhanced trading cycle"""
