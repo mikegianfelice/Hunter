@@ -175,7 +175,7 @@ The bot features a **comprehensive AI integration engine** that coordinates **30
 - **Target Gains**: 10-20% consistent returns
 - **Quality Focus**: Minimum $200k volume, $200k liquidity for improved win rate (raised from $150k)
 - **Quality Scoring**: Minimum quality score of 65 (0-100 scale, raised from earlier 40/50 thresholds)
-- **Risk Management**: Maximum 6 concurrent positions, $10 daily loss limit
+- **Risk Management**: Maximum 4 concurrent positions, $10 daily loss limit
 - **Stop Loss/Take Profit**: 8% stop loss, 12% take profit (with dynamic TP up to 20%)
 - **Execution Optimization**: AI-optimized execution with balance verification for sell transactions
 - **Performance Tracking**: Comprehensive analytics with quality tier analysis, failed entry attempts excluded from win rate
@@ -271,12 +271,6 @@ telegram_chat_id: "your_chat_id"
 ## 🚀 Jupiter v6 Integration - Real Solana Trading
 
 The bot now features a **custom Jupiter library** that enables real trading on Solana with actual transaction execution:
-
-### **✅ Real Trading Confirmed**
-- **Actual Transaction Hashes**: No more dummy `1111...` hashes - real transaction tracking
-- **Custom Jupiter Library**: `jupiter_lib.py` with direct transaction handling for Jupiter v6
-- **Smart Transaction Signing**: Proper transaction signing using `solders` library
-- **Transaction Size Management**: Automatic fallback with smaller amounts when transactions are too large
 
 ### **🔧 How It Works**
 1. **Quote Retrieval**: Gets best swap quotes from Jupiter v6 API
@@ -377,19 +371,6 @@ The bot now includes **established cryptocurrencies and DeFi blue chips** alongs
 - **Sector-Specific**: Gaming, NFT, AI, Privacy, Infrastructure categories
 - **Time-Based**: 24h, 7d, 30d trending searches for established tokens
 
-### **📈 Performance Results:**
-| Metric | Before | After | Improvement |
-|--------|--------|-------|-------------|
-| **Unique Symbols** | 4 | 13+ | +225% |
-| **Avg Volume** | $1,673 | $229,970+ | +13,640% |
-| **Avg Liquidity** | $34,973 | $361,500+ | +934% |
-| **Symbol Diversity** | Poor (65% HOT) | Excellent (established + trending) | +225% |
-| **Token Quality** | Meme-heavy | Balanced (established + quality) | +300% |
-
-### **🛠️ Maintenance Tools:**
-- Use `scripts/clear_state.py` to clean up delisted tokens and reset bot state
-
-
 ## 🚨 Enhanced Delisting Detection System
 
 The bot now includes an intelligent delisting detection system that automatically identifies and blocks inactive or delisted tokens:
@@ -421,32 +402,6 @@ The bot now includes an intelligent delisting detection system that automaticall
 ```yaml
 enable_pre_buy_delisting_check: true   # Enable pre-buy delisting checks
 ```
-
-## 🔄 Recent Updates & Improvements
-
-### **Enhanced Sell Transaction Verification** (Latest)
-- **Balance Check Verification**: Enhanced sell verification now includes balance checks before assuming transaction failure
-- **Multi-Method Verification**: Uses RPC verification, balance checks, and retry logic for robust transaction confirmation
-- **Reduced False Negatives**: Prevents false "SELL FAILED" messages when transactions actually succeeded
-- **Improved Reliability**: More accurate position monitoring with better on-chain transaction verification
-
-### **Performance Tracking Improvements**
-- **Failed Entry Attempts Excluded**: Failed entry attempts (tokens not received) are now excluded from win rate calculations
-- **Accurate Metrics**: Win rate now reflects only actual completed trades, providing more accurate performance analysis
-- **Quality Tier Analysis**: Failed entry attempts are filtered out of quality tier performance tracking
-
-### **Entry Criteria Improvements** (Win Rate Optimization)
-- **Raised Quality Thresholds**: 
-  - Minimum quality score: 40 → 50 → **65 (current)** for stricter token selection
-  - Minimum 24h volume: $100k → $200k (better liquidity)
-  - Minimum liquidity: $100k → $200k (reduced slippage)
-  - Minimum momentum: 0.1% → 0.2% → **0.3% (current)** (stronger entry signals)
-- **Result**: Improved win rate by filtering weaker tokens before entry
-
-### **Configuration Updates**
-- **Supported Chains**: Focused on Solana and Base (Ethereum removed for fee efficiency)
-- **Position Sizing**: Dynamic tiered position sizing based on portfolio value
-- **Risk Management**: Stop loss (8%) and take profit (12% base, dynamic up to 20%)
 
 ## 🚀 Quick Start
 
