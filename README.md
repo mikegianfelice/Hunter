@@ -171,15 +171,6 @@ The bot features a **comprehensive AI integration engine** that coordinates **30
 - **Graceful Degradation**: System continues operating even if some modules fail
 - **Circuit Breaker Protection**: Automatic fault tolerance and recovery
 
-### **📊 Performance Metrics**
-- **Target Gains**: 10-20% consistent returns
-- **Quality Focus**: Minimum $200k volume, $200k liquidity for improved win rate (raised from $150k)
-- **Quality Scoring**: Minimum quality score of 65 (0-100 scale, raised from earlier 40/50 thresholds)
-- **Risk Management**: Maximum 4 concurrent positions, $10 daily loss limit
-- **Stop Loss/Take Profit**: 8% stop loss, 12% take profit (with dynamic TP up to 20%)
-- **Execution Optimization**: AI-optimized execution with balance verification for sell transactions
-- **Performance Tracking**: Comprehensive analytics with quality tier analysis, failed entry attempts excluded from win rate
-
 ### **🎯 Multi-Chain Tier System**
 The bot now features a sophisticated **tiered position sizing system** that scales with your total portfolio value across all chains:
 
@@ -278,11 +269,6 @@ The bot now features a **custom Jupiter library** that enables real trading on S
 3. **Transaction Signing**: Signs the transaction with your wallet using custom library
 4. **Transaction Submission**: Sends signed transaction to Solana network
 5. **Fallback Logic**: Multiple retry attempts with different amounts for better success
-
-### **📊 Real Transaction Results**
-Recent successful trades with actual transaction hashes:
-- **Buy Transaction**: `5dZMcrGAAZmhs79bm1K46wasKvLXDVgSoKPnoHwVAuZmKJ3fwkLZAbAZwnXjwoWZs3nLDQoFqaFHmyvWChwD3jDJ`
-- **Sell Transaction**: `endhq277LAdSe59qHBXgDskLocmBCqiUARzFRrQpTPNTB4kbepmULq8XuNCwMWwaWaMgkvRVYbhY9SQdr3nnqug`
 
 ### **🛡️ Safety Features**
 - **Transaction Size Limits**: Automatically reduces trade amounts when transactions are too large
