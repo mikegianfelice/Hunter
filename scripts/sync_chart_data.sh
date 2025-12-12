@@ -87,9 +87,10 @@ fi
 echo "📥 Fetching latest changes from remote..."
 git fetch origin main > /dev/null 2>&1
 
-# Check if there are local changes to commit
+# Check if there are local changes to commit (both staged and unstaged)
 HAS_UNCOMMITTED=false
-if ! git diff --quiet data/performance_data.json data/trade_log.csv 2>/dev/null; then
+if ! git diff --quiet data/performance_data.json data/trade_log.csv 2>/dev/null || \
+   ! git diff --cached --quiet data/performance_data.json data/trade_log.csv 2>/dev/null; then
     HAS_UNCOMMITTED=true
 fi
 
