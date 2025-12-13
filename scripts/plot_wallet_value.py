@@ -103,6 +103,69 @@ def calculate_win_rate_from_trade_log(days=30):
     
     return win_rate, total_closed_trades
 
+def load_position_sizes_from_performance_data():
+    """
+    Load actual position sizes from performance_data.json
+    Returns a dictionary mapping (token_address, date) -> position_size_usd
+    """
+    perf_data = load_performance_data()
+    if not perf_data:
+        return {}
+    
+    position_sizes = {}
+    trades = perf_data.get('trades', [])
+    
+    for trade in trades:
+        try:
+            entry_time_str = trade.get('entry_time', '')
+            if not entry_time_str:
+                continue
+            
+            # Parse entry time
+            entry_time = datetime.fromisoformat(entry_time_str.replace('Z', '+00:00').split('.')[0])
+            token = trade.get('address', '')
+            
+            # Get position size (try multiple fields)
+            pos_size = (
+                trade.get('position_size_usd') or 
+                trade.get('entry_amount_usd_actual') or 
+                trade.get('entry_amount_usd', 0)
+            )
+            
+            if token and pos_size and pos_size > 0:
+                # Use token + date as key (date only, not time, to match trades on same day)
+                key = (token, entry_time.date().isoformat())
+                position_sizes[key] = pos_size
+        except Exception as e:
+            continue
+    
+    return position_sizes
+
+def get_position_size_for_trade(trade, position_sizes_map, fallback_avg=None):
+    """
+    Get actual position size for a trade from performance data
+    Falls back to average if not found
+    """
+    token = trade.get('token', '')
+    trade_date = trade['timestamp'].date().isoformat()
+    key = (token, trade_date)
+    
+    if key in position_sizes_map:
+        return position_sizes_map[key]
+    
+    # If not found, try to find any trade for this token on this date
+    # (in case timestamp doesn't match exactly)
+    for (map_token, map_date), pos_size in position_sizes_map.items():
+        if map_token == token and map_date == trade_date:
+            return pos_size
+    
+    # Fallback to average of all known position sizes
+    if position_sizes_map and fallback_avg is None:
+        fallback_avg = sum(position_sizes_map.values()) / len(position_sizes_map)
+    
+    # Final fallback
+    return fallback_avg if fallback_avg else 13.2
+
 def estimate_position_size_from_trades(trades):
     """Estimate average position size from trade data"""
     position_sizes = []
@@ -115,13 +178,23 @@ def estimate_position_size_from_trades(trades):
     return 13.2  # Default estimate based on config
 
 def calculate_wallet_value_over_time(days=5, initial_wallet_usd=None):
-    """Calculate wallet value over time from trades"""
+    """Calculate wallet value over time from trades using actual position sizes"""
     # Use only trade_log.csv for consistency with calculate_sharpe_r2.py
     trade_log = load_trade_log()
     
     if not trade_log:
         print("No trade data available")
         return None
+    
+    # Load actual position sizes from performance data
+    position_sizes_map = load_position_sizes_from_performance_data()
+    
+    # Calculate average position size for fallback
+    avg_position_size = None
+    if position_sizes_map:
+        avg_position_size = sum(position_sizes_map.values()) / len(position_sizes_map)
+    else:
+        avg_position_size = 13.2  # Default estimate
     
     # Calculate date range
     today = datetime.now()
@@ -147,10 +220,6 @@ def calculate_wallet_value_over_time(days=5, initial_wallet_usd=None):
     # Filter trades within date range
     recent_log_trades = [t for t in trade_log if t['timestamp'] >= start_date]
     
-    # Estimate average position size (use default since trade_log doesn't have position_size_usd)
-    # This matches the default used in calculate_sharpe_r2.py
-    avg_position_size = 13.2  # Default estimate based on config
-    
     # Estimate initial wallet value if not provided
     if initial_wallet_usd is None:
         initial_wallet_usd = 300.0  # Default starting value
@@ -159,9 +228,11 @@ def calculate_wallet_value_over_time(days=5, initial_wallet_usd=None):
     # Collect all trade events (entries and exits)
     events = []
     
-    # Process trade log entries
+    # Process trade log entries using actual position sizes
     for trade in recent_log_trades:
-        pnl_usd = (trade['pnl_pct'] / 100) * avg_position_size
+        # Get actual position size for this trade
+        position_size = get_position_size_for_trade(trade, position_sizes_map, avg_position_size)
+        pnl_usd = (trade['pnl_pct'] / 100) * position_size
         events.append({
             'time': trade['timestamp'],
             'pnl_usd': pnl_usd,
