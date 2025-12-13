@@ -474,17 +474,32 @@ def plot_percentage_pnl(days=30, initial_wallet_usd=None, save_path=None):
     avg_daily_return = total_return / days if days > 0 else 0
     
     # Calculate Sharpe ratio from daily returns
+    # Group wallet values by date to match calculate_sharpe_r2.py behavior
+    # This ensures we only calculate one return per day (not per trade) and exclude days with no trades
     sharpe_ratio = 0.0
-    # Use daily wallet values if available, otherwise use detailed values
-    wallet_values = data.get('daily_wallet_values', data.get('detailed_wallet_values', []))
-    if len(wallet_values) > 1:
-        # Calculate daily returns from wallet values
-        # Skip days where portfolio value is zero or negative (can't calculate meaningful return)
-        # This ensures consistency with calculate_sharpe_r2.py and proper volatility calculations
+    detailed_values = data.get('detailed_wallet_values', [])
+    detailed_times = data.get('detailed_time_points', [])
+    
+    if len(detailed_values) > 1 and len(detailed_times) == len(detailed_values):
+        # Group by date to get end-of-day wallet values (one per day)
+        from collections import defaultdict
+        daily_end_values = {}
+        for i, (time_point, wallet_value) in enumerate(zip(detailed_times, detailed_values)):
+            date_key = time_point.date()
+            # Keep the last value for each day (end of day)
+            daily_end_values[date_key] = wallet_value
+        
+        # Sort by date and calculate daily returns
+        sorted_dates = sorted(daily_end_values.keys())
         daily_returns = []
-        for i in range(1, len(wallet_values)):
-            prev_value = wallet_values[i-1]
-            curr_value = wallet_values[i]
+        for i in range(1, len(sorted_dates)):
+            prev_date = sorted_dates[i-1]
+            curr_date = sorted_dates[i]
+            prev_value = daily_end_values[prev_date]
+            curr_value = daily_end_values[curr_date]
+            
+            # Skip days where portfolio value is zero or negative (can't calculate meaningful return)
+            # This ensures consistency with calculate_sharpe_r2.py and proper volatility calculations
             if prev_value > 0:
                 daily_return = (curr_value - prev_value) / prev_value
                 daily_returns.append(daily_return)
