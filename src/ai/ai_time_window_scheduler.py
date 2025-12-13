@@ -44,6 +44,10 @@ class AITimeWindowScheduler:
         self.pause_on_volatility_spike = get_config_bool("time_window_scheduler.pause_on_volatility_spike", True)
         self.volatility_spike_threshold = get_config_float("time_window_scheduler.volatility_spike_threshold", 0.70)
         self.review_interval_seconds = get_config_int("time_window_scheduler.review_interval_seconds", 300)
+        # Latency scoring + weighting (tunable)
+        # latency_score is normalized to 0.0 when avg_latency_ms >= latency_score_zero_ms
+        self.latency_score_zero_ms = get_config_int("time_window_scheduler.latency_score_zero_ms", 8000)
+        self.latency_weight = get_config_float("time_window_scheduler.latency_weight", 0.10)
         
         # Track execution metrics over time windows
         self.window_size_seconds = 300  # 5 minute windows
@@ -192,9 +196,10 @@ class AITimeWindowScheduler:
         
         # 3. Execution latency (15% weight) - lower is better
         avg_latency = self._get_avg_latency(recent_exec_metrics)
-        latency_score = max(0.0, 1.0 - (avg_latency / 5000.0))  # Normalize to 0-1, 5s latency = 0 score
+        latency_zero_ms = float(self.latency_score_zero_ms) if self.latency_score_zero_ms and self.latency_score_zero_ms > 0 else 8000.0
+        latency_score = max(0.0, 1.0 - (avg_latency / latency_zero_ms))  # Normalize to 0-1, latency_zero_ms latency = 0 score
         score_components.append(latency_score)
-        weights.append(0.15)
+        weights.append(self.latency_weight)
         
         # 4. Market quality (15% weight)
         market_score = self._get_market_quality_score(market_quality_metrics)
