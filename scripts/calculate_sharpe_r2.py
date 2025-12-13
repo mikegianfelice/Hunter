@@ -100,12 +100,15 @@ def calculate_daily_returns(trades: List[Dict], days: int = None, initial_wallet
     for date in sorted_dates:
         # Calculate portfolio return for this day
         daily_pnl = daily_pnl_usd[date]
-        daily_return = daily_pnl / current_portfolio_value if current_portfolio_value > 0 else 0.0
         
-        daily_returns.append(daily_return)
-        dates.append(datetime.combine(date, datetime.min.time()))
+        # Skip days where portfolio value is zero or negative (can't calculate meaningful return)
+        # This ensures consistency with plot_wallet_value.py and proper volatility calculations
+        if current_portfolio_value > 0:
+            daily_return = daily_pnl / current_portfolio_value
+            daily_returns.append(daily_return)
+            dates.append(datetime.combine(date, datetime.min.time()))
         
-        # Update portfolio value for next day
+        # Update portfolio value for next day (always update, even if we skipped return)
         current_portfolio_value += daily_pnl
     
     return daily_returns, dates

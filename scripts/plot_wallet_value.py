@@ -479,6 +479,8 @@ def plot_percentage_pnl(days=30, initial_wallet_usd=None, save_path=None):
     wallet_values = data.get('daily_wallet_values', data.get('detailed_wallet_values', []))
     if len(wallet_values) > 1:
         # Calculate daily returns from wallet values
+        # Skip days where portfolio value is zero or negative (can't calculate meaningful return)
+        # This ensures consistency with calculate_sharpe_r2.py and proper volatility calculations
         daily_returns = []
         for i in range(1, len(wallet_values)):
             prev_value = wallet_values[i-1]
