@@ -6,6 +6,7 @@ Uses real execution data to determine optimal trading windows
 
 import time
 import json
+import math
 from pathlib import Path
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
@@ -233,12 +234,12 @@ class AITimeWindowScheduler:
         
         # If we have no recent execution history, default to optimistic score
         # This prevents blocking trades when there's insufficient data (e.g., after position closes)
-        # Check for recent data (within last hour) to avoid using stale execution_history
+        # Check for recent data (within last 24 hours) to avoid using stale execution_history
         current_time = time.time()
-        one_hour_ago = current_time - 3600
+        one_day_ago = current_time - 86400  # 24 hours
         recent_executions = [
             e for e in self.execution_history 
-            if e.get("timestamp", 0) > one_hour_ago
+            if e.get("timestamp", 0) > one_day_ago
         ]
         has_recent_data = len(recent_executions) > 0
         
@@ -300,20 +301,36 @@ class AITimeWindowScheduler:
         if metrics and "fill_success_rate" in metrics:
             return float(metrics["fill_success_rate"])
         
-        # Only use execution_history if it has recent data (within last hour)
-        # This prevents using stale data that's hours/days old
+        # Use execution_history with time-weighted calculation (similar to performance_window)
+        # Use last 24 hours of data with exponential decay weighting
+        # This provides meaningful data even if no trades in last hour
         current_time = time.time()
-        one_hour_ago = current_time - 3600
+        one_day_ago = current_time - 86400  # 24 hours
         
         if len(self.execution_history) > 0:
-            # Filter to only recent executions (within last hour)
+            # Get recent executions (within last 24 hours) with time weighting
             recent = [
-                e for e in list(self.execution_history)[-20:] 
-                if e.get("timestamp", 0) > one_hour_ago
+                e for e in list(self.execution_history)[-50:]  # Check last 50 for more data
+                if e.get("timestamp", 0) > one_day_ago
             ]
+            
             if len(recent) > 0:
-                successful = sum(1 for e in recent if e.get("success", False))
-                return successful / len(recent)
+                # Time-weighted calculation with 6-hour half-life
+                # Older data counts less but still contributes
+                half_life_seconds = 21600  # 6 hours
+                total_weight = 0.0
+                weighted_successes = 0.0
+                
+                for e in recent:
+                    age_seconds = current_time - e.get("timestamp", current_time)
+                    weight = math.exp(-age_seconds / half_life_seconds)
+                    
+                    if e.get("success", False):
+                        weighted_successes += weight
+                    total_weight += weight
+                
+                if total_weight > 0:
+                    return weighted_successes / total_weight
         
         # Default: assume good if no recent data
         return 0.85
@@ -324,19 +341,32 @@ class AITimeWindowScheduler:
         if metrics and "avg_slippage" in metrics:
             return float(metrics["avg_slippage"])
         
-        # Only use execution_history if it has recent data (within last hour)
-        # This prevents using stale data that's hours/days old
+        # Use execution_history with time-weighted calculation (last 24 hours)
+        # This provides meaningful data even if no trades in last hour
         current_time = time.time()
-        one_hour_ago = current_time - 3600
+        one_day_ago = current_time - 86400  # 24 hours
         
         if len(self.execution_history) > 0:
-            # Filter to only recent executions with slippage data (within last hour)
-            recent = [
-                e.get("slippage", 0) for e in list(self.execution_history)[-20:] 
-                if e.get("slippage") is not None and e.get("timestamp", 0) > one_hour_ago
+            # Get recent executions with slippage data (within last 24 hours)
+            recent_entries = [
+                e for e in list(self.execution_history)[-50:]
+                if e.get("slippage") is not None and e.get("timestamp", 0) > one_day_ago
             ]
-            if recent:
-                return statistics.mean(recent)
+            
+            if recent_entries:
+                # Time-weighted average with 6-hour half-life
+                half_life_seconds = 21600  # 6 hours
+                total_weight = 0.0
+                weighted_slippage = 0.0
+                
+                for e in recent_entries:
+                    age_seconds = current_time - e.get("timestamp", current_time)
+                    weight = math.exp(-age_seconds / half_life_seconds)
+                    weighted_slippage += e.get("slippage", 0.02) * weight
+                    total_weight += weight
+                
+                if total_weight > 0:
+                    return weighted_slippage / total_weight
         
         # Default: assume 2% slippage
         return 0.02
@@ -347,19 +377,32 @@ class AITimeWindowScheduler:
         if metrics and "avg_latency_ms" in metrics:
             return float(metrics["avg_latency_ms"])
         
-        # Only use execution_history if it has recent data (within last hour)
-        # This prevents using stale data that's hours/days old
+        # Use execution_history with time-weighted calculation (last 24 hours)
+        # This provides meaningful data even if no trades in last hour
         current_time = time.time()
-        one_hour_ago = current_time - 3600
+        one_day_ago = current_time - 86400  # 24 hours
         
         if len(self.execution_history) > 0:
-            # Filter to only recent executions with latency data (within last hour)
-            recent = [
-                e.get("latency_ms", 0) for e in list(self.execution_history)[-20:] 
-                if e.get("latency_ms") is not None and e.get("timestamp", 0) > one_hour_ago
+            # Get recent executions with latency data (within last 24 hours)
+            recent_entries = [
+                e for e in list(self.execution_history)[-50:]
+                if e.get("latency_ms") is not None and e.get("timestamp", 0) > one_day_ago
             ]
-            if recent:
-                return statistics.mean(recent)
+            
+            if recent_entries:
+                # Time-weighted average with 6-hour half-life
+                half_life_seconds = 21600  # 6 hours
+                total_weight = 0.0
+                weighted_latency = 0.0
+                
+                for e in recent_entries:
+                    age_seconds = current_time - e.get("timestamp", current_time)
+                    weight = math.exp(-age_seconds / half_life_seconds)
+                    weighted_latency += e.get("latency_ms", 2000.0) * weight
+                    total_weight += weight
+                
+                if total_weight > 0:
+                    return weighted_latency / total_weight
         
         # Default: assume 2s latency
         return 2000.0
