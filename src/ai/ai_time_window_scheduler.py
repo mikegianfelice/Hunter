@@ -233,8 +233,14 @@ class AITimeWindowScheduler:
         
         # If we have no recent execution history, default to optimistic score
         # This prevents blocking trades when there's insufficient data (e.g., after position closes)
-        # Only check execution_history - don't rely on caller-provided metrics which may be defaults
-        has_recent_data = len(self.execution_history) > 0
+        # Check for recent data (within last hour) to avoid using stale execution_history
+        current_time = time.time()
+        one_hour_ago = current_time - 3600
+        recent_executions = [
+            e for e in self.execution_history 
+            if e.get("timestamp", 0) > one_hour_ago
+        ]
+        has_recent_data = len(recent_executions) > 0
         
         if not has_recent_data:
             # No recent data - use optimistic default to avoid blocking trades unnecessarily
@@ -289,28 +295,46 @@ class AITimeWindowScheduler:
         return max(0.0, min(1.0, weighted_score))
     
     def _get_fill_success_rate(self, metrics: Optional[Dict[str, Any]]) -> float:
-        """Get fill success rate from metrics or Prometheus"""
+        """Get fill success rate from metrics - prioritize real-time data"""
+        # Always use provided metrics if available (real-time from performance_window)
         if metrics and "fill_success_rate" in metrics:
             return float(metrics["fill_success_rate"])
         
-        # Try to get from execution history
+        # Only use execution_history if it has recent data (within last hour)
+        # This prevents using stale data that's hours/days old
+        current_time = time.time()
+        one_hour_ago = current_time - 3600
+        
         if len(self.execution_history) > 0:
-            recent = list(self.execution_history)[-20:]  # Last 20 executions
-            successful = sum(1 for e in recent if e.get("success", False))
+            # Filter to only recent executions (within last hour)
+            recent = [
+                e for e in list(self.execution_history)[-20:] 
+                if e.get("timestamp", 0) > one_hour_ago
+            ]
             if len(recent) > 0:
+                successful = sum(1 for e in recent if e.get("success", False))
                 return successful / len(recent)
         
-        # Default: assume good if no data
+        # Default: assume good if no recent data
         return 0.85
     
     def _get_avg_slippage(self, metrics: Optional[Dict[str, Any]]) -> float:
-        """Get average slippage from metrics"""
+        """Get average slippage from metrics - prioritize real-time data"""
+        # Always use provided metrics if available (real-time from performance_window)
         if metrics and "avg_slippage" in metrics:
             return float(metrics["avg_slippage"])
         
-        # Try to get from execution history
+        # Only use execution_history if it has recent data (within last hour)
+        # This prevents using stale data that's hours/days old
+        current_time = time.time()
+        one_hour_ago = current_time - 3600
+        
         if len(self.execution_history) > 0:
-            recent = [e.get("slippage", 0) for e in list(self.execution_history)[-20:] if e.get("slippage") is not None]
+            # Filter to only recent executions with slippage data (within last hour)
+            recent = [
+                e.get("slippage", 0) for e in list(self.execution_history)[-20:] 
+                if e.get("slippage") is not None and e.get("timestamp", 0) > one_hour_ago
+            ]
             if recent:
                 return statistics.mean(recent)
         
@@ -318,13 +342,22 @@ class AITimeWindowScheduler:
         return 0.02
     
     def _get_avg_latency(self, metrics: Optional[Dict[str, Any]]) -> float:
-        """Get average execution latency"""
+        """Get average execution latency - prioritize real-time data"""
+        # Always use provided metrics if available (real-time from performance_window)
         if metrics and "avg_latency_ms" in metrics:
             return float(metrics["avg_latency_ms"])
         
-        # Try to get from execution history
+        # Only use execution_history if it has recent data (within last hour)
+        # This prevents using stale data that's hours/days old
+        current_time = time.time()
+        one_hour_ago = current_time - 3600
+        
         if len(self.execution_history) > 0:
-            recent = [e.get("latency_ms", 0) for e in list(self.execution_history)[-20:] if e.get("latency_ms") is not None]
+            # Filter to only recent executions with latency data (within last hour)
+            recent = [
+                e.get("latency_ms", 0) for e in list(self.execution_history)[-20:] 
+                if e.get("latency_ms") is not None and e.get("timestamp", 0) > one_hour_ago
+            ]
             if recent:
                 return statistics.mean(recent)
         
@@ -446,6 +479,28 @@ class AITimeWindowScheduler:
             "slippage": slippage,
             "latency_ms": latency_ms
         })
+        # Clean up old entries periodically (keep only last 24 hours)
+        self._cleanup_old_execution_history()
+    
+    def _cleanup_old_execution_history(self, max_age_hours: int = 24):
+        """Remove execution history entries older than max_age_hours"""
+        current_time = time.time()
+        max_age_seconds = max_age_hours * 3600
+        cutoff_time = current_time - max_age_seconds
+        
+        # Filter to keep only recent entries
+        original_count = len(self.execution_history)
+        self.execution_history = deque(
+            [e for e in self.execution_history if e.get("timestamp", 0) > cutoff_time],
+            maxlen=100
+        )
+        
+        removed_count = original_count - len(self.execution_history)
+        if removed_count > 0:
+            log_info("time_window_scheduler.cleaned_history",
+                    removed=removed_count,
+                    remaining=len(self.execution_history),
+                    max_age_hours=max_age_hours)
     
     def _load_state(self) -> None:
         """Load scheduler state from persistent storage"""
