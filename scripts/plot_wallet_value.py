@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from collections import defaultdict
 import sys
+import numpy as np
 
 def get_project_root():
     """Find the project root directory"""
@@ -472,10 +473,38 @@ def plot_percentage_pnl(days=30, initial_wallet_usd=None, save_path=None):
     total_return = percentage_returns[-1] if percentage_returns else 0
     avg_daily_return = total_return / days if days > 0 else 0
     
+    # Calculate Sharpe ratio from daily returns
+    sharpe_ratio = 0.0
+    # Use daily wallet values if available, otherwise use detailed values
+    wallet_values = data.get('daily_wallet_values', data.get('detailed_wallet_values', []))
+    if len(wallet_values) > 1:
+        # Calculate daily returns from wallet values
+        daily_returns = []
+        for i in range(1, len(wallet_values)):
+            prev_value = wallet_values[i-1]
+            curr_value = wallet_values[i]
+            if prev_value > 0:
+                daily_return = (curr_value - prev_value) / prev_value
+                daily_returns.append(daily_return)
+        
+        # Calculate Sharpe ratio (annualized, risk-free rate = 0 for crypto)
+        if len(daily_returns) > 1:
+            returns_array = np.array(daily_returns)
+            mean_return = np.mean(returns_array)
+            std_return = np.std(returns_array, ddof=1)  # Sample standard deviation
+            
+            if std_return > 0:
+                # Annualize: daily returns * 365, volatility * sqrt(365)
+                annualized_return = mean_return * 365
+                annualized_volatility = std_return * np.sqrt(365)
+                risk_free_rate = 0.0  # Assume 0% for crypto
+                sharpe_ratio = (annualized_return - risk_free_rate) / annualized_volatility
+    
     stats_text = f"""Key Metrics
 ━━━━━━━━━━━━━━━━━━━━
 Total Return: {total_return:+.2f}%
 Avg Daily: {avg_daily_return:+.2f}%
+Sharpe Ratio: {sharpe_ratio:.2f}
 Win Rate: {win_rate:.1f}%
 Trades: {total_trades}
 Period: {days} days"""
