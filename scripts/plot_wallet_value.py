@@ -116,10 +116,10 @@ def estimate_position_size_from_trades(trades):
 
 def calculate_wallet_value_over_time(days=5, initial_wallet_usd=None):
     """Calculate wallet value over time from trades"""
-    data = load_performance_data()
+    # Use only trade_log.csv for consistency with calculate_sharpe_r2.py
     trade_log = load_trade_log()
     
-    if not data and not trade_log:
+    if not trade_log:
         print("No trade data available")
         return None
     
@@ -131,19 +131,7 @@ def calculate_wallet_value_over_time(days=5, initial_wallet_usd=None):
     # This prevents showing empty days before trading actually started
     earliest_trade_date = None
     
-    # Check performance data
-    all_trades = data.get('trades', []) if data else []
-    for trade in all_trades:
-        try:
-            entry_time_str = trade.get('entry_time', '')
-            if entry_time_str:
-                entry_time = datetime.fromisoformat(entry_time_str.replace('Z', '+00:00').split('.')[0])
-                if earliest_trade_date is None or entry_time < earliest_trade_date:
-                    earliest_trade_date = entry_time
-        except Exception:
-            continue
-    
-    # Check trade log
+    # Check trade log for earliest date
     for trade in trade_log:
         if trade.get('timestamp'):
             if earliest_trade_date is None or trade['timestamp'] < earliest_trade_date:
@@ -157,65 +145,21 @@ def calculate_wallet_value_over_time(days=5, initial_wallet_usd=None):
     start_date = max(start_date, min_date)
     
     # Filter trades within date range
-    recent_trades = []
-    for trade in all_trades:
-        try:
-            entry_time_str = trade.get('entry_time', '')
-            if not entry_time_str:
-                continue
-            
-            # Parse entry time
-            entry_time = datetime.fromisoformat(entry_time_str.replace('Z', '+00:00').split('.')[0])
-            
-            if entry_time >= start_date:
-                recent_trades.append({
-                    'entry_time': entry_time,
-                    'exit_time': datetime.fromisoformat(trade.get('exit_time', today.isoformat()).replace('Z', '+00:00').split('.')[0]) if trade.get('exit_time') else None,
-                    'position_size_usd': trade.get('position_size_usd', 0) or 0,
-                    'pnl_usd': trade.get('pnl_usd'),
-                    'pnl_percent': trade.get('pnl_percent'),
-                    'status': trade.get('status', 'open'),
-                    'symbol': trade.get('symbol', 'UNKNOWN')
-                })
-        except Exception as e:
-            continue
-    
-    # Also process trade log for more granular data
     recent_log_trades = [t for t in trade_log if t['timestamp'] >= start_date]
     
-    # Estimate average position size
-    avg_position_size = estimate_position_size_from_trades(recent_trades)
-    if not recent_trades:
-        avg_position_size = 13.2  # Default
+    # Estimate average position size (use default since trade_log doesn't have position_size_usd)
+    # This matches the default used in calculate_sharpe_r2.py
+    avg_position_size = 13.2  # Default estimate based on config
     
     # Estimate initial wallet value if not provided
     if initial_wallet_usd is None:
-        # Try to estimate from open positions and recent trades
-        open_positions_value = sum([t['position_size_usd'] for t in recent_trades if t['status'] == 'open'])
-        
-        # Sum all closed trade PnL
-        closed_pnl = sum([t.get('pnl_usd', 0) or 0 for t in recent_trades if t.get('pnl_usd') is not None and t['status'] != 'open'])
-        
-        # Estimate: current wallet = open positions + cash - closed PnL losses
-        # Reverse engineer: if we know current open positions, we can estimate starting
-        # But we'll use a simpler approach: estimate from position sizes
-        initial_wallet_usd = 300.0  # Default starting value (user mentioned $300 earlier)
+        initial_wallet_usd = 300.0  # Default starting value
     
     # Create time series of wallet value changes
     # Collect all trade events (entries and exits)
     events = []
     
-    # Process closed trades from performance data
-    for trade in recent_trades:
-        if trade.get('exit_time') and trade.get('pnl_usd') is not None:
-            events.append({
-                'time': trade['exit_time'],
-                'pnl_usd': trade.get('pnl_usd', 0) or 0,
-                'type': 'exit',
-                'symbol': trade.get('symbol', 'UNKNOWN')
-            })
-    
-    # Process trade log entries (more granular)
+    # Process trade log entries
     for trade in recent_log_trades:
         pnl_usd = (trade['pnl_pct'] / 100) * avg_position_size
         events.append({
@@ -261,10 +205,9 @@ def calculate_wallet_value_over_time(days=5, initial_wallet_usd=None):
             current_detailed += event['pnl_usd']
             detailed_wallet_values.append(current_detailed)
     
-    # Add current time if we have open positions
-    if any(t['status'] == 'open' for t in recent_trades):
-        detailed_time_points.append(today)
-        detailed_wallet_values.append(current_detailed)
+    # Add current time point
+    detailed_time_points.append(today)
+    detailed_wallet_values.append(current_detailed)
     
     return {
         'daily_time_points': time_points,
