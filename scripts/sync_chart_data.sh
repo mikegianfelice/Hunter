@@ -70,6 +70,11 @@ fi
 # Create lock file
 echo $$ > "$SYNC_LOCK_FILE"
 
+# Log script execution start
+TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S")
+echo "[$TIMESTAMP] Starting sync..."
+echo "Sync process started with PID $$"
+
 # Clean up stale git index lock if it exists
 if [ -f ".git/index.lock" ]; then
     LOCK_AGE=$(($(date +%s) - $(stat -f %m ".git/index.lock" 2>/dev/null || echo 0)))

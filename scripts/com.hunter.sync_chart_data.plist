@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.hunter.sync_chart_data</string>
+    
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/gianf/Desktop/Cursor/Hunter/scripts/sync_chart_data.sh</string>
+    </array>
+    
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    
+    <key>StandardOutPath</key>
+    <string>/Users/gianf/Desktop/Cursor/Hunter/logs/sync_chart_data.log</string>
+    
+    <key>StandardErrorPath</key>
+    <string>/Users/gianf/Desktop/Cursor/Hunter/logs/sync_chart_data.log</string>
+    
+    <key>RunAtLoad</key>
+    <false/>
+    
+    <key>KeepAlive</key>
+    <false/>
+    
+    <key>WorkingDirectory</key>
+    <string>/Users/gianf/Desktop/Cursor/Hunter</string>
+</dict>
+</plist>
+
