@@ -1575,7 +1575,7 @@ partial_tp_manager:
 # Enable AI-powered time window scheduling for optimal entry timing
 enable_ai_time_window_scheduler: true  # Enable time window scheduler
 time_window_scheduler:
-  min_window_score_to_trade: 0.65  # Minimum window quality score to allow trading (increased from 0.5 for better entry timing)
+  min_window_score_to_trade: 0.6  # Minimum window quality score to allow trading
   pause_on_volatility_spike: false  # Disable volatility-triggered pauses
   volatility_spike_threshold: 1.0  # Volatility threshold to trigger pause
   review_interval_seconds: 300  # Review window quality every 5 minutes
