@@ -41,6 +41,12 @@ if [ ! -f "data/trade_log.csv" ]; then
     exit 1
 fi
 
+# open_positions.json is optional - create empty if it doesn't exist
+if [ ! -f "data/open_positions.json" ]; then
+    echo "⚠️  data/open_positions.json not found, creating empty file..."
+    echo "{}" > "data/open_positions.json"
+fi
+
 # Check if git is available
 if ! command -v git &> /dev/null; then
     echo "❌ Error: git command not found" >&2
@@ -94,8 +100,8 @@ git fetch origin main > /dev/null 2>&1
 
 # Check if there are local changes to commit (both staged and unstaged)
 HAS_UNCOMMITTED=false
-if ! git diff --quiet data/performance_data.json data/trade_log.csv 2>/dev/null || \
-   ! git diff --cached --quiet data/performance_data.json data/trade_log.csv 2>/dev/null; then
+if ! git diff --quiet data/performance_data.json data/trade_log.csv data/open_positions.json 2>/dev/null || \
+   ! git diff --cached --quiet data/performance_data.json data/trade_log.csv data/open_positions.json 2>/dev/null; then
     HAS_UNCOMMITTED=true
 fi
 
@@ -133,7 +139,7 @@ fi
 if [ "$HAS_UNCOMMITTED" = true ]; then
     # Stage the data files
     echo "📊 Staging performance data files..."
-    git add data/performance_data.json data/trade_log.csv
+    git add data/performance_data.json data/trade_log.csv data/open_positions.json
     
     # Commit with timestamp
     TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S")
