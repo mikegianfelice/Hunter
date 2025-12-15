@@ -27,17 +27,15 @@ The bot continuously scans DexScreener for trending tokens across Solana using c
 - Active trading activity
 - No stablecoins or wrapped tokens
 
-**Holder Concentration Check**: Blocks tokens where top 10 holders own ≥75% (red zone). Tokens with 60-75% concentration (yellow zone) are allowed only with reduced position size (50% reduction) and when overall risk is low/medium (< 0.6). Tokens with <60% concentration (green zone) have no restrictions.
-
 Top candidates are ranked by volume and passed to the AI system for deeper analysis.
 
 ### **2. Entry Decision** ✅
 Before entering any trade, tokens must pass multiple AI-driven checks:
 - **AI Quality Score** ≥ 65% (combines sentiment, technical analysis, price prediction)
 - **Success Probability** ≥ 60% (AI's prediction of profitable outcome)
+- **Holder Concentration** < 75% (blocks tokens where top 10 holders own over 75%)
 - **Risk Score** ≤ 50% (lower is safer)
 - **AI Recommendation** = "buy" with >70% confidence
-- **Risk Gates** = Approved (wallet balance, position limits, market conditions)
 
 Only tokens passing all criteria are considered for trading.
 
