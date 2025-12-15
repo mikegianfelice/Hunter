@@ -21,17 +21,13 @@ Hunter is a quant level AI-powered crypto trading bot executing real on-chain tr
 ## 🔄 How It Works
 
 ### **1. Token Selection** 🔍
-The bot continuously scans DexScreener for trending tokens across Solana and Base using configurable discovery settings. It filters out low-quality tokens by requiring:
+The bot continuously scans DexScreener for trending tokens across Solana using configurable discovery settings. It filters out low-quality tokens by requiring:
 - Minimum $200k daily volume (configurable)
 - Minimum $200k liquidity (configurable)
 - Active trading activity
 - No stablecoins or wrapped tokens
 
-**Discovery Configuration:**
-- **30 tokens per chain** (default, configurable) - increased from 15 for better opportunity coverage
-- **80 token maximum** across all chains (safety cap)
-- **Configurable DexScreener queries** per chain for expanded discovery
-- **Configurable prefilter thresholds** for volume/liquidity during discovery
+**Holder Concentration Check**: Blocks tokens where top 10 holders own ≥75% (red zone). Tokens with 60-75% concentration (yellow zone) are allowed only with reduced position size (50% reduction) and when overall risk is low/medium (< 0.6). Tokens with <60% concentration (green zone) have no restrictions.
 
 Top candidates are ranked by volume and passed to the AI system for deeper analysis.
 
