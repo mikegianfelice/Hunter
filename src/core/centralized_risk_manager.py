@@ -362,6 +362,55 @@ class CentralizedRiskManager:
         
         overall_risk = min(1.0, overall_risk)
         
+        # Yellow-zone logic for holder concentration:
+        # - < 60%: generally OK (green zone)
+        # - 60-75%: yellow zone - allow only if other signals are strong, and reduce position size
+        # - >= 75%: red zone - already hard-blocked earlier via holder_concentration_threshold
+        yellow_floor = 60.0
+        hard_block_threshold = get_config_float("holder_concentration_threshold", 75.0)
+        holder_concentration_position_multiplier = 1.0
+        yellow_zone = False
+        
+        if holder_concentration_pct >= yellow_floor and holder_concentration_pct < hard_block_threshold:
+            yellow_zone = True
+            # Require "other signals are strong": do NOT allow if overall risk is already high/critical
+            if overall_risk >= 0.6:
+                from src.monitoring.structured_logger import log_warning
+                log_warning("risk.holder_concentration_yellow_zone_blocked",
+                           f"Trade blocked: holder concentration yellow-zone ({holder_concentration_pct:.1f}%) with high overall risk ({overall_risk:.2f})",
+                           symbol=token.get('symbol', 'UNKNOWN'),
+                           token_address=token.get("address", ""),
+                           holder_concentration_pct=holder_concentration_pct,
+                           overall_risk=overall_risk)
+                return RiskAssessment(
+                    overall_risk_score=overall_risk,
+                    risk_level=RiskLevel.HIGH,
+                    approved=False,
+                    reason=(
+                        f"Holder concentration yellow-zone ({holder_concentration_pct:.1f}%) "
+                        f"and overall risk too high ({overall_risk:.2f})"
+                    ),
+                    position_adjustment=0.0,
+                    risk_factors={
+                        'portfolio_risk': portfolio_risk.overall_portfolio_risk,
+                        'position_risk': position_risk,
+                        'market_risk': market_risk.overall_market_risk,
+                        'token_risk': token_risk,
+                        'holder_concentration_pct': holder_concentration_pct,
+                        'holder_concentration_risk': holder_concentration_risk,
+                        'holder_concentration_yellow_zone': True,
+                        'overall_risk': overall_risk,
+                    },
+                    recommendations=[
+                        "High holder concentration (yellow-zone): only trade when other signals are strong",
+                        "Skip this token unless market/portfolio/token risk improves",
+                    ],
+                    timestamp=datetime.now().isoformat()
+                )
+            # Otherwise allow but reduce position size by 50%
+            holder_concentration_position_multiplier = 0.5
+            logger.info(f"Holder concentration yellow-zone ({holder_concentration_pct:.1f}%): allowing trade with reduced position size (0.5x multiplier)")
+        
         # Determine risk level and approval
         if overall_risk >= 0.8:
             risk_level = RiskLevel.CRITICAL
@@ -384,6 +433,9 @@ class CentralizedRiskManager:
             reason = "Low risk - proceed normally"
             position_adjustment = 1.0
         
+        # Apply holder concentration yellow-zone position size reduction
+        position_adjustment = position_adjustment * holder_concentration_position_multiplier
+        
         # Generate recommendations
         recommendations = self._generate_risk_recommendations(
             portfolio_risk, position_risk, market_risk, token_risk, holder_concentration_pct
@@ -401,6 +453,8 @@ class CentralizedRiskManager:
         if holder_concentration_pct > 0:
             risk_factors['holder_concentration_pct'] = holder_concentration_pct
             risk_factors['holder_concentration_risk'] = holder_concentration_risk
+            risk_factors['holder_concentration_position_multiplier'] = holder_concentration_position_multiplier
+            risk_factors['holder_concentration_yellow_zone'] = yellow_zone
         
         return RiskAssessment(
             overall_risk_score=overall_risk,
