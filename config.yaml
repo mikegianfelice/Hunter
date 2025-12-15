@@ -95,7 +95,7 @@ token_discovery:
       - weth
 
 # === Chain Support ===
-supported_chains: ["solana", "base"]  # Removed ethereum - focus on active chains with lower fees (Solana: 0.02% approval rate, Base: good discovery volume)
+supported_chains: ["solana"]  # Temporarily disabled Base to focus on Solana - re-enable when needed for diversification
 
 # === Solana Configuration ===
 solana_base_currency: "USDC"  # Options: "SOL" or "USDC" - base currency for trading
