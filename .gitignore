@@ -234,6 +234,7 @@ data/time_window_scheduler_state.json
 .monitor_heartbeat
 .monitor_lock
 .monitor_watchdog.pid
+.sync_chart_data.lock
 
 # Secrets and encryption keys
 .secret_key
