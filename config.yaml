@@ -59,6 +59,41 @@ enable_pre_buy_delisting_check: false  # DISABLED - too aggressive, causing fals
 pre_buy_check_sensitivity: "lenient"
 pre_buy_check_timeout: 10
 
+# === Token Discovery ===
+# Configuration for token discovery and filtering
+token_discovery:
+  tokens_per_chain: 30  # Number of tokens to fetch per chain (increased from hardcoded 15)
+  max_tokens_total: 80  # Safety cap across all chains to prevent excessive processing
+  prefilter_min_volume_24h: 5000  # Minimum 24h volume to keep during discovery (filters out dead pairs)
+  prefilter_min_liquidity_usd: 20000  # Minimum liquidity to keep during discovery (filters out low-liquidity pairs)
+  
+  # DexScreener search query terms per chain (controls discovery breadth)
+  dexscreener_queries:
+    solana:
+      - trending
+      - raydium
+      - jupiter
+      - orca
+      - meteora
+      - pump
+      - bonk
+    base:
+      - trending
+      - aerodrome
+      - aero
+      - baseswap
+      - uniswap
+      - volume
+    ethereum:
+      - uniswap
+      - trending
+      - top
+      - volume
+      - liquidity
+      - ethereum
+      - eth
+      - weth
+
 # === Chain Support ===
 supported_chains: ["solana", "base"]  # Removed ethereum - focus on active chains with lower fees (Solana: 0.02% approval rate, Base: good discovery volume)
 

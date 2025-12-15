@@ -24,7 +24,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from src.monitoring.structured_logger import log_info, log_error, log_trade, log_performance
 from src.config.config_validator import get_validated_config
-from src.config.config_loader import get_config_bool, get_config_int
+from src.config.config_loader import get_config_bool, get_config_int, get_config_float, get_config
 from src.monitoring.performance_monitor import record_trade_metrics, start_trading_session, end_trading_session
 from src.core.centralized_risk_manager import assess_trade_risk, update_trade_result, is_circuit_breaker_active
 from src.ai.ai_circuit_breaker import circuit_breaker_manager, check_ai_module_health
@@ -217,43 +217,50 @@ class EnhancedAsyncTradingEngine:
             
             dex_chain = chain_mapping.get(chain.lower(), chain.lower())
             
-            # DexScreener trending API endpoints - use specific chain searches
-            if dex_chain == "ethereum":
-                trending_urls = [
-                    # Broader nets for ERC-20 discovery on Ethereum
-                    "https://api.dexscreener.com/latest/dex/search/?q=uniswap",
-                    "https://api.dexscreener.com/latest/dex/search/?q=trending",
-                    "https://api.dexscreener.com/latest/dex/search/?q=top",
-                    "https://api.dexscreener.com/latest/dex/search/?q=volume",
-                    "https://api.dexscreener.com/latest/dex/search/?q=liquidity",
-                    # Keep originals as supplemental (though they mostly return ETH/WETH pairs)
-                    "https://api.dexscreener.com/latest/dex/search/?q=ethereum",
-                    "https://api.dexscreener.com/latest/dex/search/?q=eth",
-                    "https://api.dexscreener.com/latest/dex/search/?q=weth"
-                ]
-            elif dex_chain == "solana":
-                trending_urls = [
-                    "https://api.dexscreener.com/latest/dex/search/?q=bonk",
-                    "https://api.dexscreener.com/latest/dex/search/?q=raydium",
-                    "https://api.dexscreener.com/latest/dex/search/?q=jupiter",
-                    "https://api.dexscreener.com/latest/dex/search/?q=orca"
-                ]
-            else:
-                trending_urls = [
-                    f"https://api.dexscreener.com/latest/dex/search/?q={dex_chain}",
-                    f"https://api.dexscreener.com/latest/dex/search/?q=trending"
-                ]
+            # Get configurable DexScreener queries from config
+            # Use config_loader for nested access with dot notation
+            queries_by_chain = get_config("token_discovery.dexscreener_queries", {}) or {}
+            query_terms = queries_by_chain.get(dex_chain) if isinstance(queries_by_chain, dict) else None
+            
+            # Fallback to default queries if config not found
+            if not query_terms:
+                if dex_chain == "ethereum":
+                    query_terms = ["uniswap", "trending", "top", "volume", "liquidity", "ethereum", "eth", "weth"]
+                elif dex_chain == "solana":
+                    query_terms = ["bonk", "raydium", "jupiter", "orca"]
+                else:
+                    query_terms = [dex_chain, "trending"]
+            
+            # Build URLs from query terms
+            trending_urls = [
+                f"https://api.dexscreener.com/latest/dex/search/?q={term}"
+                for term in query_terms
+            ]
+            
+            # Get configurable prefilter thresholds
+            min_vol = get_config_float("token_discovery.prefilter_min_volume_24h", 5000)
+            min_liq = get_config_float("token_discovery.prefilter_min_liquidity_usd", 20000)
             
             all_tokens = []
             seen_pairs = set()
             
+            # Debug counters for query stats
+            query_stats = []
+            
             async with aiohttp.ClientSession() as session:
                 for url in trending_urls:
+                    query_start_count = len(all_tokens)
+                    pairs_returned = 0
+                    pairs_after_chain_filter = 0
+                    pairs_after_dedupe = 0
+                    pairs_after_prefilter = 0
+                    
                     try:
                         async with session.get(url, timeout=10) as response:
                             if response.status == 200:
                                 data = await response.json()
                                 pairs = data.get("pairs", []) if data and data.get("pairs") else []
+                                pairs_returned = len(pairs)
                                 log_info("trading.api_debug", f"Found {len(pairs)} pairs from {url}")
                                 
                                 for pair in pairs:
@@ -272,6 +279,7 @@ class EnhancedAsyncTradingEngine:
                                         (dex_chain == "arbitrum" and pair_chain == "arbitrum") or
                                         (dex_chain == "polygon" and pair_chain == "polygon") or
                                         (dex_chain == "bsc" and pair_chain in ["bsc", "bsc-bnb"])):
+                                        pairs_after_chain_filter += 1
                                         log_info("trading.filter", f"Processing {symbol} on {pair_chain} (target: {dex_chain})")
                                         
                                         # Skip if no valid token data
@@ -295,6 +303,7 @@ class EnhancedAsyncTradingEngine:
                                             continue
                                         if pair_id in seen_pairs:
                                             continue
+                                        pairs_after_dedupe += 1
                                         
                                         # Calculate metrics
                                         price_usd = float(pair.get("priceUsd", 0))
@@ -302,9 +311,10 @@ class EnhancedAsyncTradingEngine:
                                         liquidity_usd = float(pair.get("liquidity", {}).get("usd", 0))
                                         price_change_24h = float(pair.get("priceChange", {}).get("h24", 0))
                                         
-                                        # Skip tokens with poor metrics
-                                        if price_usd <= 0 or volume_24h < 1000 or liquidity_usd < 5000:
+                                        # Skip tokens with poor metrics (using configurable thresholds)
+                                        if price_usd <= 0 or volume_24h < min_vol or liquidity_usd < min_liq:
                                             continue
+                                        pairs_after_prefilter += 1
                                             
                                         token = {
                                             "symbol": base_token.get("symbol", ""),
@@ -328,9 +338,31 @@ class EnhancedAsyncTradingEngine:
                                         
                                         if len(all_tokens) >= limit * 2:  # Get more than needed for filtering
                                             break
+                    
+                    # Record query stats
+                    query_end_count = len(all_tokens)
+                    tokens_kept_this_query = query_end_count - query_start_count
+                    query_stats.append({
+                        "url": url,
+                        "chain": chain,
+                        "pairs_returned": pairs_returned,
+                        "pairs_after_chain_filter": pairs_after_chain_filter,
+                        "pairs_after_dedupe": pairs_after_dedupe,
+                        "pairs_after_prefilter": pairs_after_prefilter,
+                        "tokens_kept": tokens_kept_this_query,
+                        "tokens_total_so_far": query_end_count
+                    })
                                             
                     except Exception as e:
                         log_error("trading.api_error", f"Error fetching from {url}: {e}")
+                        # Record failed query stats
+                        query_stats.append({
+                            "url": url,
+                            "chain": chain,
+                            "error": str(e),
+                            "pairs_returned": 0,
+                            "tokens_kept": 0
+                        })
                         # Debug: print response for troubleshooting
                         try:
                             async with session.get(url, timeout=5) as debug_response:
@@ -342,6 +374,24 @@ class EnhancedAsyncTradingEngine:
                     
                     if len(all_tokens) >= limit * 2:
                         break
+            
+            # Log query stats for debugging
+            for stat in query_stats:
+                if "error" in stat:
+                    log_info("trading.discovery_query_stats", f"Query failed: {stat['url']}", {
+                        "chain": stat["chain"],
+                        "error": stat["error"]
+                    })
+                else:
+                    log_info("trading.discovery_query_stats", f"DexScreener query stats for {stat['url']}", {
+                        "chain": stat["chain"],
+                        "pairs_returned": stat["pairs_returned"],
+                        "pairs_after_chain_filter": stat["pairs_after_chain_filter"],
+                        "pairs_after_dedupe": stat["pairs_after_dedupe"],
+                        "pairs_after_prefilter": stat["pairs_after_prefilter"],
+                        "tokens_kept": stat["tokens_kept"],
+                        "tokens_total_so_far": stat["tokens_total_so_far"]
+                    })
                         
             # Sort by volume and take the top tokens
             all_tokens.sort(key=lambda x: x["volume24h"], reverse=True)
@@ -1425,11 +1475,15 @@ class EnhancedAsyncTradingEngine:
             regime_data = None
         
         # Fetch tokens from all supported chains
+        # Get configurable discovery settings
+        per_chain_limit = get_config_int("token_discovery.tokens_per_chain", 30)
+        max_total = get_config_int("token_discovery.max_tokens_total", 80)
+        
         all_tokens = []
         fetch_tasks = []
         
         for chain in self.config.chains.supported_chains:
-            task = self.fetch_trending_tokens_async(chain, limit=15)
+            task = self.fetch_trending_tokens_async(chain, limit=per_chain_limit)
             fetch_tasks.append(task)
         
         try:
@@ -1440,6 +1494,11 @@ class EnhancedAsyncTradingEngine:
                     log_error("trading.chain_fetch_error", f"Error fetching tokens for chain {i}: {result}")
                     continue
                 all_tokens.extend(result)
+            
+            # Cap total tokens to prevent excessive processing
+            if len(all_tokens) > max_total:
+                all_tokens = all_tokens[:max_total]
+                log_info("trading.fetch", f"📊 Capped tokens to {max_total} (fetched {len(chain_results) * per_chain_limit} total)")
             
             log_info("trading.fetch", f"📊 Fetched {len(all_tokens)} tokens across {len(self.config.chains.supported_chains)} chains")
             
