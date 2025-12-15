@@ -21,11 +21,17 @@ Hunter is a quant level AI-powered crypto trading bot executing real on-chain tr
 ## 🔄 How It Works
 
 ### **1. Token Selection** 🔍
-The bot continuously scans DexScreener for trending tokens across Solana and Base. It filters out low-quality tokens by requiring:
-- Minimum $200k daily volume
-- Minimum $200k liquidity
+The bot continuously scans DexScreener for trending tokens across Solana and Base using configurable discovery settings. It filters out low-quality tokens by requiring:
+- Minimum $200k daily volume (configurable)
+- Minimum $200k liquidity (configurable)
 - Active trading activity
 - No stablecoins or wrapped tokens
+
+**Discovery Configuration:**
+- **30 tokens per chain** (default, configurable) - increased from 15 for better opportunity coverage
+- **80 token maximum** across all chains (safety cap)
+- **Configurable DexScreener queries** per chain for expanded discovery
+- **Configurable prefilter thresholds** for volume/liquidity during discovery
 
 Top candidates are ranked by volume and passed to the AI system for deeper analysis.
 
@@ -318,23 +324,33 @@ The bot now features a significantly improved token discovery system that addres
 
 ### **📊 Key Improvements:**
 
-#### **1. Quality Scoring System (8-point scale)**
+#### **1. Configurable Discovery Settings**
+- **Tokens Per Chain**: Configurable limit (default: 30, increased from 15)
+- **Maximum Total Tokens**: Safety cap across all chains (default: 80)
+- **Configurable Queries**: Customize DexScreener search terms per chain
+- **Prefilter Thresholds**: Configurable volume/liquidity minimums during discovery
+- **Debug Statistics**: Comprehensive query stats logging for monitoring
+
+#### **2. Quality Scoring System (8-point scale)**
 - **Volume Scoring**: 0-3 points based on 24h volume ($10k, $50k, $100k+)
 - **Liquidity Scoring**: 0-3 points based on liquidity ($10k, $50k, $100k+)
 - **Symbol Quality**: Penalizes spam symbols, rewards unique ones
 - **Chain Bonus**: Neutral for major chains (Solana, Base)
 
-#### **2. Enhanced Filtering**
+#### **3. Enhanced Filtering**
 - **Promotional Content**: Better detection of spam/promotional tokens
 - **Keyword Filtering**: Blocks common spam keywords (INU, AI, PEPE, DOGE, etc.)
 - **Symbol Diversity**: Prevents token list from being dominated by one symbol (max 2 per symbol)
 - **Minimum Requirements**: Higher volume/liquidity thresholds for better quality
 
-#### **3. Better API Usage**
-- **Multiple Sources**: 7 primary + 3 fallback DexScreener endpoints
+#### **4. Better API Usage**
+- **Multiple Sources**: Expanded DexScreener queries per chain (configurable)
+- **Expanded Base Queries**: aerodrome, baseswap, uniswap, volume, trending
+- **Expanded Solana Queries**: raydium, jupiter, orca, meteora, pump, bonk, trending
 - **Randomized Order**: Prevents bias toward specific sources
 - **Rate Limiting**: Added delays between requests
 - **Error Handling**: Better fallback mechanisms
+- **Query Statistics**: Detailed logging of pairs at each filter stage
 
 ### **🏆 Major Coin Integration**
 The bot now includes **established cryptocurrencies and DeFi blue chips** alongside trending tokens:
@@ -531,6 +547,29 @@ slippage: 0.03                # 3% slippage tolerance
 take_profit: 0.12             # 12% take profit target (base)
 stop_loss: 0.08               # 8% stop loss
 use_dynamic_tp: true          # Enable dynamic take profit (8-20% range)
+
+# Token Discovery Configuration
+token_discovery:
+  tokens_per_chain: 30           # Number of tokens to fetch per chain (increased from 15)
+  max_tokens_total: 80           # Safety cap across all chains
+  prefilter_min_volume_24h: 5000  # Minimum volume during discovery (filters dead pairs)
+  prefilter_min_liquidity_usd: 20000  # Minimum liquidity during discovery
+  dexscreener_queries:
+    solana:
+      - trending
+      - raydium
+      - jupiter
+      - orca
+      - meteora
+      - pump
+      - bonk
+    base:
+      - trending
+      - aerodrome
+      - aero
+      - baseswap
+      - uniswap
+      - volume
 
 # Strategy Thresholds (Improved Entry Quality)
 min_quality_score: 65         # Minimum quality score (0-100) - raised from 60 to 65 to improve win rate
@@ -863,8 +902,12 @@ def _detect_delisted_token(token_address: str, consecutive_failures: int) -> boo
 3. **"No trending tokens found"**
    - Check internet connection
    - Verify API endpoints are accessible
-   - Adjust trending thresholds
+   - Adjust trending thresholds in config.yaml
    - Check if tokens are being filtered as promotional
+   - **Increase discovery limits**: Adjust `token_discovery.tokens_per_chain` (default: 30)
+   - **Expand queries**: Add more search terms to `token_discovery.dexscreener_queries`
+   - **Lower prefilters**: Reduce `token_discovery.prefilter_min_volume_24h` or `prefilter_min_liquidity_usd` if too restrictive
+   - **Check query stats**: Review `trading.discovery_query_stats` logs to see where tokens are being filtered
 
 4. **"Chain not supported"**
    - Verify chain is in supported_chains list
