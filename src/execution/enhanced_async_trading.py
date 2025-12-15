@@ -339,19 +339,19 @@ class EnhancedAsyncTradingEngine:
                                         if len(all_tokens) >= limit * 2:  # Get more than needed for filtering
                                             break
                     
-                    # Record query stats
-                    query_end_count = len(all_tokens)
-                    tokens_kept_this_query = query_end_count - query_start_count
-                    query_stats.append({
-                        "url": url,
-                        "chain": chain,
-                        "pairs_returned": pairs_returned,
-                        "pairs_after_chain_filter": pairs_after_chain_filter,
-                        "pairs_after_dedupe": pairs_after_dedupe,
-                        "pairs_after_prefilter": pairs_after_prefilter,
-                        "tokens_kept": tokens_kept_this_query,
-                        "tokens_total_so_far": query_end_count
-                    })
+                        # Record query stats (successful query)
+                        query_end_count = len(all_tokens)
+                        tokens_kept_this_query = query_end_count - query_start_count
+                        query_stats.append({
+                            "url": url,
+                            "chain": chain,
+                            "pairs_returned": pairs_returned,
+                            "pairs_after_chain_filter": pairs_after_chain_filter,
+                            "pairs_after_dedupe": pairs_after_dedupe,
+                            "pairs_after_prefilter": pairs_after_prefilter,
+                            "tokens_kept": tokens_kept_this_query,
+                            "tokens_total_so_far": query_end_count
+                        })
                                             
                     except Exception as e:
                         log_error("trading.api_error", f"Error fetching from {url}: {e}")
