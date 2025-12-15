@@ -3899,6 +3899,21 @@
       "stop_loss_target": null,
       "buy_tx_hash": null,
       "sell_tx_hash": "4M2KAwAGWi5Jvs36cKaeNavPnnvE27JLoPnmqisuUJEwfvhS3ie6RCo5GYStqRC6ovpUE3cuUrDW7UvbjK312YNA"
+    },
+    {
+      "id": "arc_20251215_160002",
+      "symbol": "arc",
+      "address": "61V8vBaqAGMpgDQi4JcAwo1dmBGHsyhzodcPqnEVpump",
+      "chain": "solana",
+      "entry_time": "2025-12-15T15:54:49.000000",
+      "entry_price": 0.03883,
+      "position_size_usd": 19.8,
+      "exit_time": "2025-12-15T15:54:49.000000",
+      "exit_price": 0.0398,
+      "pnl_usd": 0.49461756373937615,
+      "pnl_percent": 2.5,
+      "status": "closed",
+      "sell_tx_hash": "sv24VVXizbfXs9rmJqWRqHMAczS7bj18LkSjuxZjsxuYkSbThMG6fgkuXcej2TtbHT4WV3Ed68pBh4k1B2toBYK"
     }
   ],
   "daily_stats": {
@@ -3929,5 +3944,5 @@
       }
     }
   },
-  "last_updated": "2025-12-15T06:20:45.583424"
+  "last_updated": "2025-12-15T16:02:27.778691"
 }
