@@ -11,13 +11,9 @@ SYNC_LOCK_FILE="$PROJECT_ROOT/.sync_chart_data.lock"
 
 # Cleanup function to remove lock file
 cleanup() {
+    # Always remove our lock file on exit
     if [ -f "$SYNC_LOCK_FILE" ]; then
-        # Check if the lock is stale (older than 5 minutes)
-        LOCK_AGE=$(($(date +%s) - $(stat -f %m "$SYNC_LOCK_FILE" 2>/dev/null || echo 0)))
-        if [ "$LOCK_AGE" -gt 300 ]; then
-            echo "⚠️  Removing stale lock file (age: ${LOCK_AGE}s)"
-            rm -f "$SYNC_LOCK_FILE"
-        fi
+        rm -f "$SYNC_LOCK_FILE"
     fi
 }
 
@@ -59,22 +55,24 @@ if ! git rev-parse --git-dir > /dev/null 2>&1; then
     exit 1
 fi
 
-# Prevent multiple sync processes from running simultaneously
-if [ -f "$SYNC_LOCK_FILE" ]; then
-    LOCK_PID=$(cat "$SYNC_LOCK_FILE" 2>/dev/null)
-    # Check if the process is still running
-    if ps -p "$LOCK_PID" > /dev/null 2>&1; then
+# Prevent multiple sync processes from running simultaneously (atomic lock)
+if ! ( set -o noclobber; echo "$$" > "$SYNC_LOCK_FILE" ) 2> /dev/null; then
+    # Lock file already exists – try to detect if it's stale
+    LOCK_PID=$(cat "$SYNC_LOCK_FILE" 2>/dev/null || echo "")
+    if [ -n "$LOCK_PID" ] && ps -p "$LOCK_PID" > /dev/null 2>&1; then
         echo "⏳ Another sync process is already running (PID: $LOCK_PID)"
         exit 0
-    else
-        # Stale lock - remove it
-        echo "⚠️  Removing stale lock file"
-        rm -f "$SYNC_LOCK_FILE"
+    fi
+
+    echo "⚠️  Removing stale lock file"
+    rm -f "$SYNC_LOCK_FILE"
+
+    # Try once more to acquire the lock
+    if ! ( set -o noclobber; echo "$$" > "$SYNC_LOCK_FILE" ) 2> /dev/null; then
+        echo "⏳ Could not acquire sync lock; another process started concurrently"
+        exit 0
     fi
 fi
-
-# Create lock file
-echo $$ > "$SYNC_LOCK_FILE"
 
 # Log script execution start
 TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S")
