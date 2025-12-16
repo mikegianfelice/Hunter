@@ -460,56 +460,10 @@ class EnhancedAsyncTradingEngine:
     
     async def _execute_real_trade(self, token: Dict, position_size: float, chain: str) -> Dict[str, Any]:
         """
-        Execute real trade with time window scheduler gate
+        Execute real trade using chain-specific executors (no time-window gate)
         """
-        # Check time window scheduler before executing
-        try:
-            from src.ai.ai_time_window_scheduler import get_time_window_scheduler
-            scheduler = get_time_window_scheduler()
-            
-            # Get recent execution metrics
-            recent_metrics = {
-                "fill_success_rate": self._get_recent_fill_rate(),
-                "avg_slippage": self._get_recent_avg_slippage(),
-                "avg_latency_ms": self._get_recent_avg_latency()
-            }
-            
-            # Get market quality metrics
-            market_metrics = {
-                "volatility": abs(float(token.get("priceChange24h", 0)) / 100.0) if token.get("priceChange24h") else 0.5,
-                "liquidity_score": min(1.0, float(token.get("liquidity", 0)) / 1_000_000.0) if token.get("liquidity") else 0.5
-            }
-            
-            # Check if we should trade now
-            window_decision = scheduler.should_trade_now(recent_metrics, market_metrics)
-            
-            # Store window_score in token for later use in performance tracking
-            token['_window_score'] = window_decision.score
-            
-            if not window_decision.should_trade:
-                log_info("trading.window_blocked",
-                        symbol=token.get("symbol", "?"),
-                        score=window_decision.score,
-                        reason=window_decision.reason)
-                return {
-                    "success": False,
-                    "error": f"Time window blocked: {window_decision.reason}",
-                    "window_score": window_decision.score,
-                    "error_type": "gate"  # Mark as gate failure
-                }
-        except Exception as e:
-            log_error("trading.scheduler_error", error=str(e))
-            # On error, proceed with trade (fail open)
-        
-        # Proceed with original trade execution
-        trade_result = await self._execute_real_trade_internal(token, position_size, chain)
-        
-        # Include window_score in trade result if available
-        window_score = token.get('_window_score')
-        if window_score is not None:
-            trade_result['window_score'] = window_score
-        
-        return trade_result
+        # Directly execute the trade without AI time-window gating
+        return await self._execute_real_trade_internal(token, position_size, chain)
     
     async def _execute_real_trade_internal(self, token: Dict, position_size: float, chain: str) -> Dict[str, Any]:
         """Execute real trade using DEX integrations"""
