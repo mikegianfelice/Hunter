@@ -592,7 +592,6 @@ enable_ai_drawdown_protection: true
 enable_ai_emergency_stop: true
 enable_ai_fill_verifier: true
 enable_ai_partial_tp_manager: true
-enable_ai_time_window_scheduler: true
 # Note: Some AI modules may be disabled if too restrictive - check config.yaml for full list
 
 # Advanced Trading Features
