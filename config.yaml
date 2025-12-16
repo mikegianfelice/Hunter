@@ -1614,5 +1614,5 @@ time_window_scheduler:
   pause_on_volatility_spike: false  # Disable volatility-triggered pauses
   volatility_spike_threshold: 1.0  # Volatility threshold to trigger pause
   review_interval_seconds: 300  # Review window quality every 5 minutes
-  latency_score_zero_ms: 60000  # Latency (ms) where latency_score becomes 0.0 (raised from 8000ms to 60s to tolerate higher latencies)
-  latency_weight: 0.05  # Weight of latency in window score (reduced from 0.10 to minimize impact)
+  latency_score_zero_ms: 60000  # Latency (ms) for metrics tracking only (not used in window score calculation)
+  latency_weight: 0.05  # DEPRECATED: Latency no longer included in window score (kept for backward compatibility)

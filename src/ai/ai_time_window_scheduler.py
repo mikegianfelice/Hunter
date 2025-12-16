@@ -44,10 +44,11 @@ class AITimeWindowScheduler:
         self.pause_on_volatility_spike = get_config_bool("time_window_scheduler.pause_on_volatility_spike", True)
         self.volatility_spike_threshold = get_config_float("time_window_scheduler.volatility_spike_threshold", 0.70)
         self.review_interval_seconds = get_config_int("time_window_scheduler.review_interval_seconds", 300)
-        # Latency scoring + weighting (tunable)
-        # latency_score is normalized to 0.0 when avg_latency_ms >= latency_score_zero_ms
+        # Latency tracking (for metrics only, not used in window score calculation)
+        # Latency is an infrastructure metric, not a market timing metric
+        # Its impact is already captured in slippage and fill success rate
         self.latency_score_zero_ms = get_config_int("time_window_scheduler.latency_score_zero_ms", 8000)
-        self.latency_weight = get_config_float("time_window_scheduler.latency_weight", 0.10)
+        self.latency_weight = get_config_float("time_window_scheduler.latency_weight", 0.10)  # Not used in score, kept for backward compatibility
         
         # Track execution metrics over time windows
         self.window_size_seconds = 300  # 5 minute windows
@@ -183,28 +184,23 @@ class AITimeWindowScheduler:
         score_components = []
         weights = []
         
-        # 1. Fill success rate (40% weight)
+        # 1. Fill success rate (42% weight)
         fill_success_rate = self._get_fill_success_rate(recent_exec_metrics)
         score_components.append(fill_success_rate)
-        weights.append(0.40)
+        weights.append(0.42)
         
-        # 2. Average slippage (30% weight) - lower is better
+        # 2. Average slippage (32% weight) - lower is better
         avg_slippage = self._get_avg_slippage(recent_exec_metrics)
         slippage_score = max(0.0, 1.0 - (avg_slippage / 0.05))  # Normalize to 0-1, 5% slippage = 0 score
         score_components.append(slippage_score)
-        weights.append(0.30)
+        weights.append(0.32)
         
-        # 3. Execution latency (15% weight) - lower is better
-        avg_latency = self._get_avg_latency(recent_exec_metrics)
-        latency_zero_ms = float(self.latency_score_zero_ms) if self.latency_score_zero_ms and self.latency_score_zero_ms > 0 else 8000.0
-        latency_score = max(0.0, 1.0 - (avg_latency / latency_zero_ms))  # Normalize to 0-1, latency_zero_ms latency = 0 score
-        score_components.append(latency_score)
-        weights.append(self.latency_weight)
-        
-        # 4. Market quality (15% weight)
+        # 3. Market quality (16% weight)
+        # Note: Latency removed from window score - it's an infrastructure metric, not a market timing metric
+        # Latency impact is already captured in slippage and fill success rate
         market_score = self._get_market_quality_score(market_quality_metrics)
         score_components.append(market_score)
-        weights.append(0.15)
+        weights.append(0.16)
         
         # Weighted average
         if sum(weights) > 0:
