@@ -1608,7 +1608,8 @@ partial_tp_manager:
 
 # === AI TIME WINDOW SCHEDULER ===
 # Enable AI-powered time window scheduling for optimal entry timing
-enable_ai_time_window_scheduler: true  # Enable time window scheduler
+# NOTE: The ai_time_window_scheduler module has been removed; keep this disabled
+enable_ai_time_window_scheduler: false  # Disabled: scheduler module not present
 time_window_scheduler:
   min_window_score_to_trade: 0.6  # Minimum window quality score to allow trading
   pause_on_volatility_spike: false  # Disable volatility-triggered pauses

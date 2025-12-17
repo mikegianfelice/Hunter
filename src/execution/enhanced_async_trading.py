@@ -1364,12 +1364,12 @@ class EnhancedAsyncTradingEngine:
             try:
                 from src.ai.ai_time_window_scheduler import get_time_window_scheduler
                 scheduler = get_time_window_scheduler()
-                
+
                 # Extract execution metrics from trade result
                 success = trade_result.get("success", False)
                 slippage = trade_result.get("slippage")  # May be None if not available
                 execution_time = trade_result.get("execution_time", 0)  # Already in ms
-                
+
                 # Record execution in scheduler's execution_history
                 # Only record actual execution attempts (successful or real failures, not gate blocks)
                 scheduler.record_execution(
@@ -1377,8 +1377,13 @@ class EnhancedAsyncTradingEngine:
                     slippage=slippage,
                     latency_ms=execution_time if execution_time > 0 else None
                 )
+            except ModuleNotFoundError:
+                # Time window scheduler module has been removed; safely skip recording
+                # This prevents noisy errors like:
+                # \"No module named 'src.ai.ai_time_window_scheduler'\"
+                pass
             except Exception as e:
-                # Don't fail metrics update if scheduler recording fails
+                # Don't fail metrics update if scheduler recording fails for any other reason
                 log_error("trading.scheduler_record_error", f"Failed to record execution in scheduler: {e}")
         else:
             # Gate failures are logged but not recorded as execution failures
