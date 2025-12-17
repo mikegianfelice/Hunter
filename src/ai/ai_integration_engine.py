@@ -1193,17 +1193,27 @@ class AIIntegrationEngine:
             if not perf_data or not perf_data.get('trades'):
                 return overall_score  # No historical data, return as-is
             
+            def _to_float(value, default: float = 0.0) -> float:
+                """Safely coerce values (including None) to float."""
+                try:
+                    if value is None:
+                        return default
+                    return float(value)
+                except (TypeError, ValueError):
+                    return default
+
             # Find similar tokens (similar volume/liquidity)
-            volume = float(token_data.get('volume24h', 0))
-            liquidity = float(token_data.get('liquidity', 0))
+            volume = _to_float(token_data.get('volume24h', 0))
+            liquidity = _to_float(token_data.get('liquidity', 0))
             
             similar_trades = []
             for trade in perf_data['trades']:
-                trade_vol = float(trade.get('volume_24h', 0))
-                trade_liq = float(trade.get('liquidity', 0))
+                trade_vol = _to_float(trade.get('volume_24h', 0))
+                trade_liq = _to_float(trade.get('liquidity', 0))
                 
                 # Similar if within 50% of volume/liquidity
-                if volume > 0 and liquidity > 0:
+                # Require positive values to avoid divide-by-zero and meaningless comparisons
+                if volume > 0 and liquidity > 0 and trade_vol > 0 and trade_liq > 0:
                     vol_ratio = trade_vol / volume
                     liq_ratio = trade_liq / liquidity
                     if (0.5 <= vol_ratio <= 2.0 and 0.5 <= liq_ratio <= 2.0):
