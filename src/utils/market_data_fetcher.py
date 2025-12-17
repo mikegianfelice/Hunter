@@ -37,6 +37,12 @@ class MarketDataFetcher:
         self._coincap_base_url = "https://api.coincap.io/v2/"
         self._binance_base_url = "https://api.binance.com/api/"
         self._coincap_available = True
+        # Prefer non-CoinGecko sources to stay within free-tier limits
+        self.prefer_coincap_for_prices = True
+        # When False, CoinGecko market_chart/range is disabled and only CoinCap is used
+        self.enable_coingecko_market_chart = False
+        # When False, global metrics are fetched from CoinCap first; CoinGecko is fallback-only
+        self.enable_coingecko_global = False
         
     def get_btc_price(self) -> Optional[float]:
         """Get current BTC price in USD"""
@@ -47,7 +53,19 @@ class MarketDataFetcher:
                 if time.time() - cached_data['timestamp'] < self.cache_duration:
                     return cached_data['price']
             
-            # Try CoinGecko API
+            # Prefer CoinCap/Binance first to reduce CoinGecko usage
+            if self.prefer_coincap_for_prices:
+                price = self._get_price_from_coincap("bitcoin")
+                if price is not None:
+                    self.cache['btc_price'] = {'price': price, 'timestamp': time.time()}
+                    return price
+
+                price = self._get_price_from_binance("BTCUSDT")
+                if price is not None:
+                    self.cache['btc_price'] = {'price': price, 'timestamp': time.time()}
+                    return price
+            
+            # Fallback to CoinGecko API
             url = f"{self._coingecko_base_url}simple/price?ids=bitcoin&vs_currencies=usd"
             data = self._fetch_json(url)
             if data and 'bitcoin' in data:
@@ -64,18 +82,17 @@ class MarketDataFetcher:
                 self.cache['btc_price'] = {'price': price, 'timestamp': time.time()}
                 logger.info(f"✅ BTC price: ${price}")
                 return price
-
-            # Fallback to CoinCap
-            price = self._get_price_from_coincap("bitcoin")
-            if price is not None:
-                self.cache['btc_price'] = {'price': price, 'timestamp': time.time()}
-                return price
-
-            # Fallback to Binance
-            price = self._get_price_from_binance("BTCUSDT")
-            if price is not None:
-                self.cache['btc_price'] = {'price': price, 'timestamp': time.time()}
-                return price
+            
+            # Final fallback to CoinCap/Binance if not already tried
+            if not self.prefer_coincap_for_prices:
+                price = self._get_price_from_coincap("bitcoin")
+                if price is not None:
+                    self.cache['btc_price'] = {'price': price, 'timestamp': time.time()}
+                    return price
+                price = self._get_price_from_binance("BTCUSDT")
+                if price is not None:
+                    self.cache['btc_price'] = {'price': price, 'timestamp': time.time()}
+                    return price
                 
         except Exception as e:
             logger.error(f"❌ Failed to fetch BTC price: {e}")
@@ -91,7 +108,19 @@ class MarketDataFetcher:
                 if time.time() - cached_data['timestamp'] < self.cache_duration:
                     return cached_data['price']
             
-            # Try CoinGecko API
+            # Prefer CoinCap/Binance first to reduce CoinGecko usage
+            if self.prefer_coincap_for_prices:
+                price = self._get_price_from_coincap("ethereum")
+                if price is not None:
+                    self.cache['eth_price'] = {'price': price, 'timestamp': time.time()}
+                    return price
+
+                price = self._get_price_from_binance("ETHUSDT")
+                if price is not None:
+                    self.cache['eth_price'] = {'price': price, 'timestamp': time.time()}
+                    return price
+            
+            # Fallback to CoinGecko API
             url = f"{self._coingecko_base_url}simple/price?ids=ethereum&vs_currencies=usd"
             data = self._fetch_json(url)
             if data and 'ethereum' in data:
@@ -108,18 +137,17 @@ class MarketDataFetcher:
                 self.cache['eth_price'] = {'price': price, 'timestamp': time.time()}
                 logger.info(f"✅ ETH price: ${price}")
                 return price
-
-            # Fallback to CoinCap
-            price = self._get_price_from_coincap("ethereum")
-            if price is not None:
-                self.cache['eth_price'] = {'price': price, 'timestamp': time.time()}
-                return price
-
-            # Fallback to Binance
-            price = self._get_price_from_binance("ETHUSDT")
-            if price is not None:
-                self.cache['eth_price'] = {'price': price, 'timestamp': time.time()}
-                return price
+            
+            # Final fallback to CoinCap/Binance if not already tried
+            if not self.prefer_coincap_for_prices:
+                price = self._get_price_from_coincap("ethereum")
+                if price is not None:
+                    self.cache['eth_price'] = {'price': price, 'timestamp': time.time()}
+                    return price
+                price = self._get_price_from_binance("ETHUSDT")
+                if price is not None:
+                    self.cache['eth_price'] = {'price': price, 'timestamp': time.time()}
+                    return price
                 
         except Exception as e:
             logger.error(f"❌ Failed to fetch ETH price: {e}")
@@ -527,6 +555,11 @@ class MarketDataFetcher:
         from_timestamp = bucket_now - (hours * 3600)
         cache_key = f"market_chart:{asset_id}:{hours}:{bucket_now}"
 
+        # Optionally disable CoinGecko market_chart usage entirely to conserve quota.
+        # Callers will then fall back to CoinCap-only logic.
+        if not self.enable_coingecko_market_chart:
+            return None, from_timestamp, bucket_now
+
         cached = self.market_chart_cache.get(cache_key)
         current_time = time.time()
         if cached and current_time - cached["timestamp"] < self.market_chart_cache_duration:
@@ -685,6 +718,25 @@ class MarketDataFetcher:
         if cached_snapshot and now - cached_snapshot.get("timestamp", 0) < self.global_snapshot_ttl:
             return cached_snapshot.get("data")
 
+        # Prefer CoinCap first to reduce CoinGecko usage if enabled
+        if not self.enable_coingecko_global:
+            coincap_data = self._get_global_from_coincap()
+            if coincap_data:
+                normalized = {
+                    "data": {
+                        "total_market_cap": {
+                            "usd": float(coincap_data.get("marketCapUsd")) if coincap_data.get("marketCapUsd") else None
+                        },
+                        "total_volume": {
+                            "usd": float(coincap_data.get("volumeUsd24Hr")) if coincap_data.get("volumeUsd24Hr") else None
+                        }
+                    }
+                }
+                self._global_market_snapshot = {"timestamp": now, "data": normalized}
+                self._global_snapshot_failure = None
+                return normalized
+
+        # CoinGecko global as primary or fallback
         url = f"{self._coingecko_base_url}global?vs_currency={DEFAULT_FIAT}"
         data = self._fetch_json(url)
         if data and isinstance(data, Dict):
