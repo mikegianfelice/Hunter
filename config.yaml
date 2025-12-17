@@ -103,7 +103,7 @@ solana_usdc_mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"  # USDC mint ad
 solana_min_sol_for_fees: 0.05  # Minimum SOL needed for transaction fees (separate from trading balance)
 
 # === Risk Management ===
-max_concurrent_positions: 4  # Reduced from 6 to 4 to focus on quality over quantity
+max_concurrent_positions: 5  # Increased from 4 to 5 to allow one additional open position
 max_concurrent_trades: 5  # Maximum number of trades to execute concurrently per cycle (defaults to min(max_concurrent_positions, 5) if not set)
 daily_loss_limit_usd: 10.0  # $10 daily loss limit for $100 start (scales with equity)
 max_losing_streak: 3  # Stop after 3 losses
