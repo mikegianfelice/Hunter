@@ -55,22 +55,35 @@ if ! git rev-parse --git-dir > /dev/null 2>&1; then
     exit 1
 fi
 
-# Prevent multiple sync processes from running simultaneously (atomic lock)
-if ! ( set -o noclobber; echo "$$" > "$SYNC_LOCK_FILE" ) 2> /dev/null; then
-    # Lock file already exists – try to detect if it's stale
-    LOCK_PID=$(cat "$SYNC_LOCK_FILE" 2>/dev/null || echo "")
-    if [ -n "$LOCK_PID" ] && ps -p "$LOCK_PID" > /dev/null 2>&1; then
-        echo "⏳ Another sync process is already running (PID: $LOCK_PID)"
+# Prevent multiple sync processes from running simultaneously (strong lock)
+# Prefer flock if available; otherwise fall back to atomic noclobber lockfile.
+if command -v flock >/dev/null 2>&1; then
+    # Open lockfile without truncating it, then acquire an exclusive lock (non-blocking)
+    exec 200>>"$SYNC_LOCK_FILE"
+    if ! flock -n 200; then
+        echo "⏳ Another sync process is already running (lock held)"
         exit 0
     fi
-
-    echo "⚠️  Removing stale lock file"
-    rm -f "$SYNC_LOCK_FILE"
-
-    # Try once more to acquire the lock
+    # Record PID for debugging (optional)
+    echo "$$" 1>&200
+else
+    # Fallback: atomic lock via noclobber
     if ! ( set -o noclobber; echo "$$" > "$SYNC_LOCK_FILE" ) 2> /dev/null; then
-        echo "⏳ Could not acquire sync lock; another process started concurrently"
-        exit 0
+        # Lock file already exists – try to detect if it's stale
+        LOCK_PID=$(cat "$SYNC_LOCK_FILE" 2>/dev/null || echo "")
+        if [ -n "$LOCK_PID" ] && ps -p "$LOCK_PID" > /dev/null 2>&1; then
+            echo "⏳ Another sync process is already running (PID: $LOCK_PID)"
+            exit 0
+        fi
+
+        echo "⚠️  Removing stale lock file"
+        rm -f "$SYNC_LOCK_FILE"
+
+        # Try once more to acquire the lock
+        if ! ( set -o noclobber; echo "$$" > "$SYNC_LOCK_FILE" ) 2> /dev/null; then
+            echo "⏳ Could not acquire sync lock; another process started concurrently"
+            exit 0
+        fi
     fi
 fi
 
