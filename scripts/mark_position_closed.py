@@ -23,7 +23,7 @@ sys.path.insert(0, str(project_root))
 from src.storage.positions import load_positions, remove_position
 from src.storage.performance import load_performance_data, replace_performance_data
 from src.core.performance_tracker import performance_tracker
-from src.utils.utils import fetch_token_price_usd
+from src.utils.real_market_data_provider import RealMarketDataProvider
 
 def mark_position_closed(token_address: str, symbol: str = None, chain: str = "solana", exit_price: float = None):
     """
@@ -76,12 +76,21 @@ def mark_position_closed(token_address: str, symbol: str = None, chain: str = "s
     
     # Get exit price
     if exit_price is None:
-        print(f"💰 Fetching current price...")
+        print(f"💰 Fetching current price (snapshot)...")
         try:
-            exit_price = fetch_token_price_usd(token_address, chain) or entry_price
-            print(f"   Current price: ${exit_price:.6f}")
+            provider = RealMarketDataProvider()
+            snapshot = None
+            # Prefer symbol-based lookup when available
+            if symbol:
+                snapshot = provider.get_asset_snapshot(symbol)
+            if snapshot and snapshot.get("price_usd") is not None:
+                exit_price = float(snapshot["price_usd"])
+                print(f"   Snapshot price: ${exit_price:.6f}")
+            else:
+                exit_price = entry_price
+                print(f"   Snapshot unavailable; using entry price as exit price: ${exit_price:.6f}")
         except Exception as e:
-            print(f"⚠️  Could not fetch price: {e}")
+            print(f"⚠️  Could not fetch snapshot price: {e}")
             exit_price = entry_price
             print(f"   Using entry price as exit price: ${exit_price:.6f}")
     
