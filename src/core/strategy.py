@@ -1134,29 +1134,6 @@ def check_buy_signal(token: dict) -> bool:
             )
             return True
         else:
-            # External momentum insufficient, but check if token has good metrics bypass
-            # Special case for Solana tokens with good volume/liquidity
-            if chain_id == "solana" and vol24h >= 10000 and liq_usd >= 50000:
-                _log_trace(
-                    "🔓 Solana token with good metrics - allowing despite insufficient external momentum",
-                    level="info",
-                    event="strategy.buy.solana_metrics_override",
-                    symbol=token.get("symbol"),
-                    volume_24h=vol24h,
-                    liquidity_usd=liq_usd,
-                )
-                return True
-            # Special case for Base tokens with good volume/liquidity
-            if chain_id == "base" and vol24h >= 10000 and liq_usd >= 50000:
-                _log_trace(
-                    "🔓 Base token with good metrics - allowing despite insufficient external momentum",
-                    level="info",
-                    event="strategy.buy.base_metrics_override",
-                    symbol=token.get("symbol"),
-                    volume_24h=vol24h,
-                    liquidity_usd=liq_usd,
-                )
-                return True
             _log_trace(
                 "❌ External momentum insufficient.",
                 level="error",
@@ -1191,97 +1168,30 @@ def check_buy_signal(token: dict) -> bool:
                 )
                 return True
             else:
-                # Special case for Solana tokens with good volume/liquidity
-                if chain_id == "solana" and vol24h >= 10000 and liq_usd >= 50000:
-                    _log_trace(
-                        "🔓 Solana token with good metrics - allowing despite insufficient price memory momentum",
-                        level="info",
-                        event="strategy.buy.solana_metrics_override_price_memory",
-                        symbol=token.get("symbol"),
-                        volume_24h=vol24h,
-                        liquidity_usd=liq_usd,
-                    )
-                    return True
-                # Special case for Base tokens with good volume/liquidity
-                if chain_id == "base" and vol24h >= 10000 and liq_usd >= 50000:
-                    _log_trace(
-                        "🔓 Base token with good metrics - allowing despite insufficient price memory momentum",
-                        level="info",
-                        event="strategy.buy.base_metrics_override_price_memory",
-                        symbol=token.get("symbol"),
-                        volume_24h=vol24h,
-                        liquidity_usd=liq_usd,
-                    )
-                    return True
-            _log_trace(
-                "❌ Price memory momentum insufficient.",
-                level="error",
-                event="strategy.buy.price_memory_fail",
-                symbol=token.get("symbol"),
-            )
-            return False
+                _log_trace(
+                    "❌ Price memory momentum insufficient.",
+                    level="error",
+                    event="strategy.buy.price_memory_fail",
+                    symbol=token.get("symbol"),
+                )
+                return False
         else:
             _log_trace(
-                "ℹ️ Snapshot stale or missing, evaluating fast-path…",
+                "ℹ️ Snapshot stale or missing; no reliable momentum data available.",
                 level="info",
                 event="strategy.buy.price_memory_stale",
                 symbol=token.get("symbol"),
             )
     else:
         _log_trace(
-            "ℹ️ No price memory available, evaluated external momentum and fast-path only",
+            "ℹ️ No price memory available; relying solely on external momentum.",
             level="info",
             event="strategy.buy.no_price_memory",
             symbol=token.get("symbol"),
         )
 
-    # Fast-path: for trusted tokens ignore sentiment; for others require sentiment
-    sent_score    = int(token.get("sent_score") or 0)
-    sent_mentions = int(token.get("sent_mentions") or 0)
-    chain_id = token.get("chainId", "ethereum").lower()
-    
-    # Adjust requirements for non-Ethereum chains
-    if chain_id != "ethereum":
-        # Use 50% of Ethereum requirement for Solana/Base (was too aggressive at 1-2%)
-        # This prevents weak tokens from passing while still allowing quality opportunities
-        fast_vol_ok = (vol24h >= config['FASTPATH_VOL'] * 0.5)   # 50% of Ethereum requirement (was 1% - too aggressive)
-        fast_liq_ok = (liq_usd >= config['FASTPATH_LIQ'] * 0.5)  # 50% of Ethereum requirement (was 2% - too aggressive)
-        fast_sent_ok = True  # Skip sentiment for non-Ethereum
-        _log_trace(
-            f"🔓 Multi-chain fast-path: vol ${vol24h:,.0f} (need ≥ {config['FASTPATH_VOL'] * 0.5:,.0f}), liq ${liq_usd:,.0f} (need ≥ {config['FASTPATH_LIQ'] * 0.5:,.0f})",
-            level="info",
-            event="strategy.buy.multichain_fastpath_requirements",
-            symbol=token.get("symbol"),
-            volume_24h=vol24h,
-            liquidity_usd=liq_usd,
-        )
-    else:
-        # Original Ethereum requirements
-        fast_vol_ok = (vol24h >= config['FASTPATH_VOL'])
-        fast_liq_ok = (liq_usd >= config['FASTPATH_LIQ'])
-        fast_sent_ok = (sent_score >= config['FASTPATH_SENT']) or (sent_mentions >= 3)
-
-    if is_trusted:
-        if fast_vol_ok and fast_liq_ok:
-            _log_trace(
-                "🚀 Trusted fast-path (liq/vol only) → TRUE",
-                level="info",
-                event="strategy.buy.fastpath_trusted_pass",
-                symbol=token.get("symbol"),
-            )
-            return True
-    else:
-        if fast_vol_ok and fast_liq_ok and fast_sent_ok:
-            _log_trace(
-                "🚀 Fast-path conditions met (liquidity/volume + sentiment) → TRUE",
-                level="info",
-                event="strategy.buy.fastpath_pass",
-                symbol=token.get("symbol"),
-            )
-            return True
-
     _log_trace(
-        "❌ No buy signal (no momentum yet and fast-path not met).",
+        "❌ No buy signal (no momentum confirmation).",
         level="error",
         event="strategy.buy.no_signal",
         symbol=token.get("symbol"),
