@@ -3946,6 +3946,23 @@
       "pnl_after_fees_percent": null,
       "sell_tx_hash": null,
       "sell_slippage_actual": null
+    },
+    {
+      "id": "JLP_20251217_070351",
+      "symbol": "JLP",
+      "address": "27G8MtK7VtTcCHkpASjSDdkWWYfoqT6ggEuKidVJidD4",
+      "chain": "solana",
+      "entry_time": "2025-12-16T20:13:40.863556",
+      "entry_price": 4.56,
+      "position_size_usd": 53.89367736733334,
+      "quality_score": null,
+      "volume_24h": null,
+      "liquidity": null,
+      "exit_time": "2025-12-17T07:03:51.922884",
+      "exit_price": 4.54,
+      "pnl_usd": -0.24,
+      "pnl_percent": -0.44,
+      "status": "manual_close"
     }
   ],
   "daily_stats": {
@@ -3976,5 +3993,5 @@
       }
     }
   },
-  "last_updated": "2025-12-17T05:43:03.255257"
+  "last_updated": "2025-12-17T10:40:31.286951"
 }
