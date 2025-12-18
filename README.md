@@ -33,7 +33,7 @@ Top candidates are ranked by volume and passed to the AI system for deeper analy
 Before entering any trade, tokens must pass multiple AI-driven checks:
 - **AI Quality Score** ≥ 65% (combines sentiment, technical analysis, price prediction)
 - **Success Probability** ≥ 60% (AI's prediction of profitable outcome)
-- **Holder Concentration** < 75% (blocks tokens where top 10 holders own over 75%)
+- **Holder Concentration** < 65% (blocks tokens where top 10 holders own over 65%)
 - **Risk Score** ≤ 50% (lower is safer)
 - **AI Recommendation** = "buy" with >70% confidence
 
