@@ -79,27 +79,29 @@ def check_holder_concentration(token_address: str, chain_id: str = "solana") -> 
         "top_10_balance": None
     }
     
+    # If fail_closed is enabled, any inability to determine holder concentration should block trades
+    fail_closed = get_config_bool("holder_concentration_fail_closed", True)
+    
     try:
         if chain_id.lower() == "solana":
             result = _check_solana_holder_concentration(token_address)
         elif chain_id.lower() in ["ethereum", "base"]:
             # Ethereum/Base support can be added later
             result["error"] = f"Holder concentration check not yet implemented for {chain_id}"
-            result["is_safe"] = True  # Fail-safe: allow trading if check unavailable
+            result["is_safe"] = not fail_closed
+            result["risk_level"] = "unknown"
             return result
         else:
             result["error"] = f"Unsupported chain: {chain_id}"
-            result["is_safe"] = True  # Fail-safe
+            result["is_safe"] = not fail_closed
+            result["risk_level"] = "unknown"
             return result
         
         # Determine risk level
         threshold = get_config_float("holder_concentration_threshold", 60.0)
         
-        fail_closed = get_config_bool("holder_concentration_fail_closed", True)
         if result.get("error"):
             error_type = result.get("error_type", "unknown")
-            # For rate limit errors, fail-open (don't block trades) since it's not a concentration issue
-            is_rate_limit = error_type == "rate_limit"
             
             log_warning(
                 "holder_concentration.error",
@@ -109,18 +111,12 @@ def check_holder_concentration(token_address: str, chain_id: str = "solana") -> 
                     "chain": chain_id,
                     "error": result["error"],
                     "error_type": error_type,
-                    "is_rate_limit": is_rate_limit,
                     "fail_closed": fail_closed,
                 },
             )
-            # Rate limit errors should not block trades (fail-open)
-            # Only block if it's a data error and fail_closed is True
-            if is_rate_limit:
-                result["is_safe"] = True  # Fail-open for rate limits
-                result["risk_level"] = "unknown"
-            else:
-                result["is_safe"] = not fail_closed
-                result["risk_level"] = "unknown"
+            # Fail-closed: block trades for ANY error (rate limits included)
+            result["is_safe"] = not fail_closed
+            result["risk_level"] = "unknown"
             return result
         else:
             percentage = result["top_10_percentage"]
@@ -154,9 +150,10 @@ def check_holder_concentration(token_address: str, chain_id: str = "solana") -> 
         return result
         
     except Exception as e:
-        # Fail-safe: allow trading if check fails
+        # Fail-closed: block trades if configured to do so
         result["error"] = str(e)
-        result["is_safe"] = True
+        result["error_type"] = "exception"
+        result["is_safe"] = not fail_closed
         result["risk_level"] = "unknown"
         return result
 

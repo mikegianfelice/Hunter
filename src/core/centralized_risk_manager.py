@@ -186,115 +186,105 @@ class CentralizedRiskManager:
         # Check holder concentration (optional hard block)
         fail_closed = get_config_bool("holder_concentration_fail_closed", True)
         block_on_high_risk = get_config_bool("holder_concentration_block_on_high_risk", True)
-        if block_on_high_risk:
-            try:
-                from src.utils.holder_concentration_checker import check_holder_concentration
+        try:
+            from src.utils.holder_concentration_checker import check_holder_concentration
+            
+            token_address = token.get("address", "")
+            chain_id = token.get("chainId", "solana")
+            
+            if token_address and get_config_bool("enable_holder_concentration_check", True):
+                holder_check = check_holder_concentration(token_address, chain_id)
                 
-                token_address = token.get("address", "")
-                chain_id = token.get("chainId", "solana")
-                
-                if token_address and get_config_bool("enable_holder_concentration_check", True):
-                    holder_check = check_holder_concentration(token_address, chain_id)
+                # If we can't get holder percentage data, block trade when fail_closed is enabled
+                if holder_check and holder_check.get("error"):
+                    error_type = holder_check.get("error_type", "unknown")
+                    error_msg = holder_check['error']
                     
-                    if holder_check and holder_check.get("error"):
-                        error_type = holder_check.get("error_type", "unknown")
-                        error_msg = holder_check['error']
-                        
-                        # Don't block trades for rate limit errors - these are RPC issues, not concentration issues
-                        is_rate_limit = error_type == "rate_limit"
-                        
-                        if fail_closed and not is_rate_limit:
-                            logger.warning(f"Holder concentration check error (fail-closed) for {token_address} on {chain_id}: {error_msg}")
-                            from src.monitoring.structured_logger import log_error
-                            log_error("risk.holder_concentration_blocked",
-                                     f"Trade blocked: holder concentration check failed for {token.get('symbol', 'UNKNOWN')}: {error_msg}",
-                                     symbol=token.get('symbol', 'UNKNOWN'),
-                                     token_address=token_address,
-                                     chain_id=chain_id,
-                                     error=error_msg,
-                                     error_type=error_type)
-                            return RiskAssessment(
-                                overall_risk_score=0.95,
-                                risk_level=RiskLevel.CRITICAL,
-                                approved=False,
-                                reason=f"Holder concentration check failed: {error_msg}",
-                                position_adjustment=0.0,
-                                risk_factors={
-                                    'holder_concentration_error': error_msg,
-                                    'holder_concentration_blocked': True
-                                },
-                                recommendations=["Retry later; holder concentration data unavailable"],
-                                timestamp=datetime.now().isoformat()
-                            )
-                        elif is_rate_limit:
-                            # Rate limit error - log warning but don't block trade
-                            logger.warning(f"Holder concentration check rate limited for {token_address} on {chain_id}: {error_msg}. Allowing trade to proceed.")
-                            from src.monitoring.structured_logger import log_warning
-                            log_warning("risk.holder_concentration_rate_limited",
-                                       f"Holder concentration check rate limited for {token.get('symbol', 'UNKNOWN')}: {error_msg}. Trade allowed to proceed.",
-                                       symbol=token.get('symbol', 'UNKNOWN'),
-                                       token_address=token_address,
-                                       chain_id=chain_id,
-                                       error=error_msg)
-                            # Continue with risk assessment without blocking
-                    if holder_check and not holder_check.get("error"):
-                        threshold = get_config_float("holder_concentration_threshold", 60.0)
-                        percentage = holder_check.get("top_10_percentage", 0)
-                        
-                        # Log the check result for debugging
-                        logger.info(f"Holder concentration check for {token.get('symbol', 'UNKNOWN')}: {percentage:.2f}% (threshold: {threshold:.2f}%)")
-                        
-                        if percentage >= threshold:
-                            from src.monitoring.structured_logger import log_error
-                            log_error("risk.holder_concentration_blocked",
-                                     f"Trade blocked: high holder concentration for {token.get('symbol', 'UNKNOWN')}: {percentage:.1f}% (threshold: {threshold:.1f}%)",
-                                     symbol=token.get('symbol', 'UNKNOWN'),
-                                     token_address=token_address,
-                                     chain_id=chain_id,
-                                     percentage=percentage,
-                                     threshold=threshold)
-                            return RiskAssessment(
-                                overall_risk_score=0.9,
-                                risk_level=RiskLevel.CRITICAL,
-                                approved=False,
-                                reason=f"High holder concentration: top 10 holders own {percentage:.1f}% (threshold: {threshold:.1f}%)",
-                                position_adjustment=0.0,
-                                risk_factors={
-                                    'holder_concentration_pct': percentage,
-                                    'holder_concentration_risk': 1.0,
-                                    'holder_concentration_blocked': True
-                                },
-                                recommendations=["Token has high holder concentration - potential rug pull risk"],
-                                timestamp=datetime.now().isoformat()
-                            )
-            except Exception as e:
-                # If fail_closed is True, block trades when check fails due to exception
-                token_address = token.get("address", "")
-                chain_id = token.get("chainId", "solana")
-                if fail_closed:
-                    logger.error(f"Holder concentration check exception (fail-closed) for {token_address} on {chain_id}: {e}")
-                    from src.monitoring.structured_logger import log_error
-                    log_error("risk.holder_concentration_blocked",
-                             f"Trade blocked: holder concentration check exception for {token.get('symbol', 'UNKNOWN')}: {str(e)}",
-                             symbol=token.get('symbol', 'UNKNOWN'),
-                             token_address=token_address,
-                             chain_id=chain_id,
-                             exception=str(e))
-                    return RiskAssessment(
-                        overall_risk_score=0.95,
-                        risk_level=RiskLevel.CRITICAL,
-                        approved=False,
-                        reason=f"Holder concentration check failed with exception: {str(e)}",
-                        position_adjustment=0.0,
-                        risk_factors={
-                            'holder_concentration_error': str(e),
-                            'holder_concentration_blocked': True
-                        },
-                        recommendations=["Holder concentration check unavailable - trade blocked for safety"],
-                        timestamp=datetime.now().isoformat()
-                    )
-                else:
-                    logger.warning(f"Holder concentration check failed: {e}, continuing with risk assessment (fail-open mode)")
+                    if fail_closed:
+                        logger.warning(f"Holder concentration check error (fail-closed) for {token_address} on {chain_id}: {error_msg}")
+                        from src.monitoring.structured_logger import log_error
+                        log_error("risk.holder_concentration_blocked",
+                                 f"Trade blocked: holder concentration check failed for {token.get('symbol', 'UNKNOWN')}: {error_msg}",
+                                 symbol=token.get('symbol', 'UNKNOWN'),
+                                 token_address=token_address,
+                                 chain_id=chain_id,
+                                 error=error_msg,
+                                 error_type=error_type)
+                        return RiskAssessment(
+                            overall_risk_score=0.95,
+                            risk_level=RiskLevel.CRITICAL,
+                            approved=False,
+                            reason=f"Holder concentration check failed: {error_msg}",
+                            position_adjustment=0.0,
+                            risk_factors={
+                                'holder_concentration_error': error_msg,
+                                'holder_concentration_blocked': True
+                            },
+                            recommendations=["Retry later; holder concentration data unavailable"],
+                            timestamp=datetime.now().isoformat()
+                        )
+                    else:
+                        logger.warning(f"Holder concentration check failed (fail-open) for {token_address} on {chain_id}: {error_msg}. Allowing trade to proceed.")
+                
+                # If data is available, optionally hard-block on high concentration
+                if holder_check and not holder_check.get("error") and block_on_high_risk:
+                    threshold = get_config_float("holder_concentration_threshold", 60.0)
+                    percentage = holder_check.get("top_10_percentage", 0)
+                    
+                    # Log the check result for debugging
+                    logger.info(f"Holder concentration check for {token.get('symbol', 'UNKNOWN')}: {percentage:.2f}% (threshold: {threshold:.2f}%)")
+                    
+                    if percentage >= threshold:
+                        from src.monitoring.structured_logger import log_error
+                        log_error("risk.holder_concentration_blocked",
+                                 f"Trade blocked: high holder concentration for {token.get('symbol', 'UNKNOWN')}: {percentage:.1f}% (threshold: {threshold:.1f}%)",
+                                 symbol=token.get('symbol', 'UNKNOWN'),
+                                 token_address=token_address,
+                                 chain_id=chain_id,
+                                 percentage=percentage,
+                                 threshold=threshold)
+                        return RiskAssessment(
+                            overall_risk_score=0.9,
+                            risk_level=RiskLevel.CRITICAL,
+                            approved=False,
+                            reason=f"High holder concentration: top 10 holders own {percentage:.1f}% (threshold: {threshold:.1f}%)",
+                            position_adjustment=0.0,
+                            risk_factors={
+                                'holder_concentration_pct': percentage,
+                                'holder_concentration_risk': 1.0,
+                                'holder_concentration_blocked': True
+                            },
+                            recommendations=["Token has high holder concentration - potential rug pull risk"],
+                            timestamp=datetime.now().isoformat()
+                        )
+        except Exception as e:
+            # If fail_closed is True, block trades when check fails due to exception
+            token_address = token.get("address", "")
+            chain_id = token.get("chainId", "solana")
+            if fail_closed:
+                logger.error(f"Holder concentration check exception (fail-closed) for {token_address} on {chain_id}: {e}")
+                from src.monitoring.structured_logger import log_error
+                log_error("risk.holder_concentration_blocked",
+                         f"Trade blocked: holder concentration check exception for {token.get('symbol', 'UNKNOWN')}: {str(e)}",
+                         symbol=token.get('symbol', 'UNKNOWN'),
+                         token_address=token_address,
+                         chain_id=chain_id,
+                         exception=str(e))
+                return RiskAssessment(
+                    overall_risk_score=0.95,
+                    risk_level=RiskLevel.CRITICAL,
+                    approved=False,
+                    reason=f"Holder concentration check failed with exception: {str(e)}",
+                    position_adjustment=0.0,
+                    risk_factors={
+                        'holder_concentration_error': str(e),
+                        'holder_concentration_blocked': True
+                    },
+                    recommendations=["Holder concentration check unavailable - trade blocked for safety"],
+                    timestamp=datetime.now().isoformat()
+                )
+            else:
+                logger.warning(f"Holder concentration check failed: {e}, continuing with risk assessment (fail-open mode)")
         
         # Token-specific risk assessment
         token_risk = await self._assess_token_risk(token)
@@ -326,18 +316,15 @@ class CentralizedRiskManager:
                 if holder_check and holder_check.get("error"):
                     error_type = holder_check.get("error_type", "unknown")
                     error_msg = holder_check['error']
-                    is_rate_limit = error_type == "rate_limit"
                     
-                    # Don't add risk for rate limit errors - these are RPC issues, not concentration issues
-                    if fail_closed and not is_rate_limit:
+                    # Fail-closed: treat ANY error as blocking/unacceptable data for risk weighting
+                    if fail_closed:
                         holder_concentration_risk = 1.0
                         holder_concentration_pct = 0.0
                         logger.warning(f"Holder concentration risk weighting hit error (fail-closed) for {token_address} on {chain_id}: {error_msg}")
                         overall_risk += holder_concentration_risk * risk_weight
-                    elif is_rate_limit:
-                        # Rate limit error - don't add risk, just log
-                        logger.info(f"Holder concentration check rate limited for {token_address} on {chain_id}: {error_msg}. Not adding risk penalty.")
-                        # Continue without adding risk
+                    else:
+                        logger.info(f"Holder concentration check failed (fail-open) for {token_address} on {chain_id}: {error_msg}. Not adding risk penalty.")
                 if holder_check and not holder_check.get("error"):
                     threshold = get_config_float("holder_concentration_threshold", 60.0)
                     percentage = holder_check.get("top_10_percentage", 0)
