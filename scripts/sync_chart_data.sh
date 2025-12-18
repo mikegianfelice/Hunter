@@ -92,6 +92,57 @@ TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S")
 echo "[$TIMESTAMP] Starting sync..."
 echo "Sync process started with PID $$"
 
+# Configure GitHub authentication using token from .env file
+echo "🔐 Configuring GitHub authentication..."
+GITHUB_TOKEN=""
+if command -v python3 &> /dev/null; then
+    # Try to load token from .env files (check both system/.env and .env)
+    GITHUB_TOKEN=$(python3 -c "
+import os
+import sys
+try:
+    from dotenv import load_dotenv
+    # Try system/.env first, then .env in project root
+    load_dotenv('$PROJECT_ROOT/system/.env')
+    load_dotenv('$PROJECT_ROOT/.env')
+    token = os.getenv('GITHUB_SSH_KEY', '') or os.getenv('GITHUB_TOKEN', '')
+    if token:
+        print(token)
+except ImportError:
+    # Fallback: try to read .env file manually if python-dotenv not available
+    import re
+    for env_file in ['$PROJECT_ROOT/system/.env', '$PROJECT_ROOT/.env']:
+        try:
+            with open(env_file, 'r') as f:
+                for line in f:
+                    match = re.match(r'^\s*GITHUB_SSH_KEY\s*=\s*(.+)$', line)
+                    if match:
+                        print(match.group(1).strip().strip('\"').strip(\"'\"))
+                        break
+                    match = re.match(r'^\s*GITHUB_TOKEN\s*=\s*(.+)$', line)
+                    if match:
+                        print(match.group(1).strip().strip('\"').strip(\"'\"))
+                        break
+        except FileNotFoundError:
+            continue
+except Exception as e:
+    pass
+" 2>/dev/null)
+fi
+
+if [ -n "$GITHUB_TOKEN" ]; then
+    echo "✅ GitHub token found, configuring remote URL..."
+    git remote set-url origin "https://${GITHUB_TOKEN}@github.com/mikegianfelice/Hunter.git" 2>&1
+    if [ $? -eq 0 ]; then
+        echo "✅ Remote URL configured with token authentication"
+    else
+        echo "⚠️  Warning: Failed to set remote URL with token, will try without"
+    fi
+else
+    echo "⚠️  Warning: No GitHub token found in .env files (GITHUB_SSH_KEY or GITHUB_TOKEN)"
+    echo "   Will attempt push with existing git credentials"
+fi
+
 # Clean up stale git index lock if it exists
 if [ -f ".git/index.lock" ]; then
     LOCK_AGE=$(($(date +%s) - $(stat -f %m ".git/index.lock" 2>/dev/null || echo 0)))
@@ -105,9 +156,14 @@ if [ -f ".git/index.lock" ]; then
     fi
 fi
 
-# Fetch latest changes from remote
+# Fetch latest changes from remote (with improved error logging)
 echo "📥 Fetching latest changes from remote..."
-git fetch origin main > /dev/null 2>&1
+FETCH_OUTPUT=$(git fetch origin main 2>&1)
+FETCH_EXIT_CODE=$?
+if [ $FETCH_EXIT_CODE -ne 0 ]; then
+    echo "⚠️  Git fetch had issues: $FETCH_OUTPUT"
+    # Continue anyway - might be network issue or auth issue
+fi
 
 # Check if there are local changes to commit (both staged and unstaged)
 HAS_UNCOMMITTED=false
@@ -116,7 +172,7 @@ if ! git diff --quiet data/performance_data.json data/trade_log.csv data/open_po
     HAS_UNCOMMITTED=true
 fi
 
-# Check if we're behind or diverged from remote
+# Check if we're behind or diverged from remote and sync FIRST (before checking for changes)
 LOCAL=$(git rev-parse HEAD 2>/dev/null)
 REMOTE=$(git rev-parse origin/main 2>/dev/null 2>&1)
 
@@ -125,9 +181,20 @@ if [ -n "$REMOTE" ] && [ "$LOCAL" != "$REMOTE" ]; then
     if git merge-base --is-ancestor "$LOCAL" "$REMOTE" 2>/dev/null; then
         # We're behind - just pull
         echo "📥 Pulling latest changes (we're behind remote)..."
-        if ! git pull origin main > /dev/null 2>&1; then
-            echo "⚠️  Failed to pull changes, trying rebase..."
-            git pull --rebase origin main > /dev/null 2>&1
+        PULL_OUTPUT=$(git pull origin main 2>&1)
+        PULL_EXIT_CODE=$?
+        if [ $PULL_EXIT_CODE -ne 0 ]; then
+            echo "⚠️  Failed to pull changes: $PULL_OUTPUT"
+            echo "   Trying rebase..."
+            REBASE_OUTPUT=$(git pull --rebase origin main 2>&1)
+            REBASE_EXIT_CODE=$?
+            if [ $REBASE_EXIT_CODE -ne 0 ]; then
+                echo "⚠️  Rebase also failed: $REBASE_OUTPUT"
+            else
+                echo "✅ Successfully rebased"
+            fi
+        else
+            echo "✅ Successfully pulled latest changes"
         fi
     elif git merge-base --is-ancestor "$REMOTE" "$LOCAL" 2>/dev/null; then
         # We're ahead - can push directly (but will handle below)
@@ -135,13 +202,22 @@ if [ -n "$REMOTE" ] && [ "$LOCAL" != "$REMOTE" ]; then
     else
         # Branches have diverged - need to rebase
         echo "🔄 Branches have diverged, rebasing local commits..."
-        if ! git pull --rebase origin main > /dev/null 2>&1; then
-            echo "⚠️  Rebase failed, attempting merge..."
-            git pull --no-rebase origin main > /dev/null 2>&1 || {
-                echo "❌ Error: Failed to sync with remote branch" >&2
+        REBASE_OUTPUT=$(git pull --rebase origin main 2>&1)
+        REBASE_EXIT_CODE=$?
+        if [ $REBASE_EXIT_CODE -ne 0 ]; then
+            echo "⚠️  Rebase failed: $REBASE_OUTPUT"
+            echo "   Attempting merge..."
+            MERGE_OUTPUT=$(git pull --no-rebase origin main 2>&1)
+            MERGE_EXIT_CODE=$?
+            if [ $MERGE_EXIT_CODE -ne 0 ]; then
+                echo "❌ Error: Failed to sync with remote branch: $MERGE_OUTPUT" >&2
                 rm -f "$SYNC_LOCK_FILE"
                 exit 1
-            }
+            else
+                echo "✅ Successfully merged remote changes"
+            fi
+        else
+            echo "✅ Successfully rebased"
         fi
     fi
 fi
@@ -170,9 +246,15 @@ REMOTE=$(git rev-parse origin/main 2>/dev/null 2>&1)
 if [ -n "$REMOTE" ] && [ "$LOCAL" != "$REMOTE" ]; then
     # Push to remote
     echo "🚀 Pushing to remote..."
-    if ! git push origin main 2>&1; then
+    PUSH_OUTPUT=$(git push origin main 2>&1)
+    PUSH_EXIT_CODE=$?
+    if [ $PUSH_EXIT_CODE -ne 0 ]; then
         echo "❌ Error: Failed to push to remote" >&2
+        echo "   Error details: $PUSH_OUTPUT" >&2
         echo "   This might be due to authentication issues or network problems" >&2
+        if [ -z "$GITHUB_TOKEN" ]; then
+            echo "   💡 Tip: Add GITHUB_SSH_KEY or GITHUB_TOKEN to .env file for automated authentication" >&2
+        fi
         rm -f "$SYNC_LOCK_FILE"
         exit 1
     fi
