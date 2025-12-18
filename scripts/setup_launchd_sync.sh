@@ -1,52 +1,57 @@
 #!/bin/bash
-# Setup launchd job to periodically sync performance data to GitHub
-# This is more reliable than cron on macOS, especially when system sleeps
+# Setup launchd job to periodically sync performance data to GitHub (macOS)
+
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-PLIST_FILE="$SCRIPT_DIR/com.hunter.sync_chart_data.plist"
+
+PLIST_SOURCE="$SCRIPT_DIR/com.hunter.sync_chart_data.plist"
 LAUNCHD_DIR="$HOME/Library/LaunchAgents"
-LAUNCHD_PLIST="$LAUNCHD_DIR/com.hunter.sync_chart_data.plist"
+PLIST_DEST="$LAUNCHD_DIR/com.hunter.sync_chart_data.plist"
 
-# Make sure sync script is executable
+LABEL="com.hunter.sync_chart_data"
+DOMAIN="gui/$(id -u)"
+
+echo "📍 Project root: $PROJECT_ROOT"
+echo "📄 Plist source: $PLIST_SOURCE"
+echo "📄 Plist dest:   $PLIST_DEST"
+echo ""
+
+# Make sure scripts are executable
 chmod +x "$PROJECT_ROOT/scripts/sync_chart_data.sh"
+chmod +x "$PROJECT_ROOT/scripts/setup_launchd_sync.sh" || true
 
-# Create LaunchAgents directory if it doesn't exist
+# Ensure logs dir exists (launchd won't create it)
+mkdir -p "$PROJECT_ROOT/logs"
+
+# Ensure LaunchAgents dir exists
 mkdir -p "$LAUNCHD_DIR"
 
-# Check if launchd job already exists
-if [ -f "$LAUNCHD_PLIST" ]; then
-    echo "⚠️  Launchd job already exists!"
-    echo ""
-    echo "Current job: $LAUNCHD_PLIST"
-    echo ""
-    read -p "Do you want to replace it? (y/N): " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        echo "Cancelled. Existing job left unchanged."
-        exit 0
-    fi
-    # Unload existing job
-    echo "🔄 Unloading existing job..."
-    launchctl unload "$LAUNCHD_PLIST" 2>/dev/null || true
+if [ ! -f "$PLIST_SOURCE" ]; then
+  echo "❌ Missing plist at $PLIST_SOURCE"
+  exit 1
 fi
 
-# Copy plist to LaunchAgents directory
-echo "📋 Installing launchd job..."
-cp "$PLIST_FILE" "$LAUNCHD_PLIST"
+# Copy plist into LaunchAgents
+echo "📋 Installing plist into LaunchAgents..."
+cp "$PLIST_SOURCE" "$PLIST_DEST"
 
-# Load the job
-echo "🚀 Loading launchd job..."
-launchctl load "$LAUNCHD_PLIST"
+# Best-effort unload any existing job (ignore errors)
+echo "🧹 Unloading any existing job (if present)..."
+launchctl bootout "$DOMAIN" "$PLIST_DEST" 2>/dev/null || true
 
-echo "✅ Launchd job installed successfully!"
-echo ""
-echo "Schedule: Every hour at minute 0"
-echo "Plist file: $LAUNCHD_PLIST"
-echo ""
-echo "To view job status: launchctl list | grep sync_chart_data"
-echo "To unload job: launchctl unload $LAUNCHD_PLIST"
-echo "To reload job: launchctl unload $LAUNCHD_PLIST && launchctl load $LAUNCHD_PLIST"
-echo ""
-echo "The sync will run automatically in the background, even after system sleep."
+# Load job
+echo "🚀 Bootstrapping job..."
+launchctl bootstrap "$DOMAIN" "$PLIST_DEST"
 
+echo "✅ Job installed!"
+echo ""
+echo "Schedule: every hour at minute 0 (and RunAtLoad=true)"
+echo "Log file: $PROJECT_ROOT/logs/sync_chart_data.log"
+echo ""
+echo "Status:"
+launchctl print "$DOMAIN/$LABEL" | head -n 40 || true
+echo ""
+echo "Tip: If you ever want to uninstall:"
+echo "  launchctl bootout $DOMAIN $PLIST_DEST"

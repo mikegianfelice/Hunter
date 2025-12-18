@@ -4,33 +4,41 @@
 <dict>
     <key>Label</key>
     <string>com.hunter.sync_chart_data</string>
-    
+
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
         <string>/Users/gianf/Desktop/Cursor/Hunter/scripts/sync_chart_data.sh</string>
     </array>
-    
+
+    <!-- Run every hour at minute 45 (e.g., 1:45, 2:45, 3:45) -->
     <key>StartCalendarInterval</key>
     <dict>
         <key>Minute</key>
-        <integer>0</integer>
+        <integer>45</integer>
     </dict>
-    
-    <key>StandardOutPath</key>
-    <string>/Users/gianf/Desktop/Cursor/Hunter/logs/sync_chart_data.log</string>
-    
-    <key>StandardErrorPath</key>
-    <string>/Users/gianf/Desktop/Cursor/Hunter/logs/sync_chart_data.log</string>
-    
+
+    <!-- Also run immediately when loaded -->
     <key>RunAtLoad</key>
-    <false/>
-    
-    <key>KeepAlive</key>
-    <false/>
-    
+    <true/>
+
     <key>WorkingDirectory</key>
     <string>/Users/gianf/Desktop/Cursor/Hunter</string>
+
+    <!-- Ensure common paths exist for git, bash, etc. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/gianf/Desktop/Cursor/Hunter/logs/sync_chart_data.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/gianf/Desktop/Cursor/Hunter/logs/sync_chart_data.log</string>
+
+    <key>KeepAlive</key>
+    <false/>
 </dict>
 </plist>
-
