@@ -101,7 +101,7 @@ class AIPricePredictor:
             return self._get_default_prediction()
     
     def _extract_prediction_features(self, token: Dict) -> Dict:
-        """Extract features for price prediction"""
+        """Extract features for price prediction with enhanced technical indicators"""
         try:
             # Basic token data
             price = float(token.get('priceUsd', 0))
@@ -123,8 +123,17 @@ class AIPricePredictor:
             # Market regime impact (from AI market regime detector)
             market_regime_impact = self._get_market_regime_impact(token)
             
-            # Technical indicators (real data)
-            technical_indicators = self._calculate_technical_indicators(token)
+            # NEW: Get technical indicators from candlestick data
+            technical_indicators_data = self._get_technical_indicators(token)
+            
+            # Enhanced technical indicators score
+            technical_score = self._calculate_enhanced_technical_score(technical_indicators_data)
+            
+            # Volume profile analysis
+            volume_profile_score = self._calculate_volume_profile_score(technical_indicators_data)
+            
+            # Price action patterns
+            price_action_score = self._calculate_price_action_score(technical_indicators_data)
             
             # Volatility pattern (real data)
             volatility_pattern = self._calculate_volatility_pattern(token)
@@ -135,8 +144,15 @@ class AIPricePredictor:
                 'liquidity_stability': liquidity_stability,
                 'sentiment_score': sentiment_score,
                 'market_regime_impact': market_regime_impact,
-                'technical_indicators': technical_indicators,
+                'technical_indicators': technical_score,  # Enhanced
                 'volatility_pattern': volatility_pattern,
+                # NEW features
+                'rsi': technical_indicators_data.get('rsi', 50),
+                'macd_signal': technical_indicators_data.get('macd', {}).get('histogram', 0),
+                'bollinger_position': technical_indicators_data.get('bollinger_bands', {}).get('position', 0.5),
+                'volume_profile': volume_profile_score,
+                'price_action': price_action_score,
+                'trend_strength': technical_indicators_data.get('price_action', {}).get('trend_strength', 0.5),
                 'base_price': price,
                 'base_volume': volume_24h,
                 'base_liquidity': liquidity
@@ -412,6 +428,136 @@ class AIPricePredictor:
             'cached': False
         }
     
+    def _get_technical_indicators(self, token: Dict) -> Dict:
+        """Fetch candlestick data and calculate technical indicators"""
+        try:
+            from src.utils.technical_indicators import technical_indicators
+            from src.utils.market_data_fetcher import market_data_fetcher
+            
+            address = token.get('address', '')
+            chain_id = token.get('chainId', 'solana')
+            
+            # QUICK QUALITY CHECK FIRST - don't waste API calls on low-quality tokens
+            volume_24h = float(token.get('volume24h', 0))
+            liquidity = float(token.get('liquidity', 0))
+            price = float(token.get('priceUsd', 0))
+            
+            # Only fetch candlestick data if token passes basic filters
+            min_volume = 100000  # $100k minimum
+            min_liquidity = 100000  # $100k minimum
+            
+            if volume_24h < min_volume or liquidity < min_liquidity or price <= 0:
+                logger.debug(f"Skipping candlestick fetch for low-quality token {token.get('symbol', 'UNKNOWN')}")
+                return {}  # Return empty, will use simple indicators
+            
+            # Fetch candlestick data (with aggressive caching)
+            candles = market_data_fetcher.get_candlestick_data(
+                address, 
+                chain_id, 
+                hours=24,
+                force_fetch=False  # Use cache if available
+            )
+            
+            if not candles or len(candles) < 10:
+                logger.debug(f"Insufficient candlestick data for {token.get('symbol', 'UNKNOWN')}")
+                return {}  # Will fall back to simple indicators
+            
+            # Calculate all indicators
+            indicators = technical_indicators.calculate_all_indicators(candles)
+            return indicators
+            
+        except Exception as e:
+            logger.error(f"Error getting technical indicators: {e}")
+            return {}  # Fall back gracefully
+
+    def _calculate_enhanced_technical_score(self, indicators: Dict) -> float:
+        """Calculate enhanced technical score using RSI, MACD, Bollinger Bands"""
+        if not indicators:
+            return 0.5
+        
+        score = 0.5  # Base neutral score
+        
+        # RSI contribution (0-1 scale)
+        rsi = indicators.get('rsi', 50)
+        if 30 < rsi < 70:  # Normal range
+            rsi_score = 0.6
+        elif rsi < 30:  # Oversold (potential buy)
+            rsi_score = 0.7
+        elif rsi > 70:  # Overbought (caution)
+            rsi_score = 0.3
+        else:
+            rsi_score = 0.5
+        
+        # MACD contribution
+        macd = indicators.get('macd', {})
+        macd_histogram = macd.get('histogram', 0)
+        if macd_histogram > 0:  # Bullish
+            macd_score = 0.6 + min(0.2, macd_histogram * 10)
+        else:  # Bearish
+            macd_score = 0.4 + max(-0.2, macd_histogram * 10)
+        
+        # Bollinger Bands contribution
+        bb = indicators.get('bollinger_bands', {})
+        bb_position = bb.get('position', 0.5)
+        bb_width = bb.get('width', 0)
+        
+        # Prefer middle to upper band (not overbought)
+        if 0.3 < bb_position < 0.7:
+            bb_score = 0.7
+        elif bb_position < 0.3:  # Near lower band (potential bounce)
+            bb_score = 0.8
+        else:  # Near upper band
+            bb_score = 0.4
+        
+        # Narrow bands = low volatility = more predictable
+        if bb_width < 0.05:
+            bb_score += 0.1
+        
+        # Weighted combination
+        technical_score = (
+            rsi_score * 0.35 +
+            macd_score * 0.35 +
+            bb_score * 0.30
+        )
+        
+        return max(0.0, min(1.0, technical_score))
+
+    def _calculate_volume_profile_score(self, indicators: Dict) -> float:
+        """Calculate score based on volume profile"""
+        vp = indicators.get('volume_profile', {})
+        current_vs_poc = vp.get('current_vs_poc', 0)
+        volume_ratio = vp.get('volume_ratio', 1.0)
+        
+        # Prefer prices near POC (high volume area)
+        if abs(current_vs_poc) < 0.02:  # Within 2% of POC
+            score = 0.8
+        elif abs(current_vs_poc) < 0.05:  # Within 5% of POC
+            score = 0.6
+        else:
+            score = 0.4
+        
+        # Higher volume concentration = better
+        score += min(0.2, volume_ratio * 0.2)
+        
+        return max(0.0, min(1.0, score))
+
+    def _calculate_price_action_score(self, indicators: Dict) -> float:
+        """Calculate score based on price action patterns"""
+        pa = indicators.get('price_action', {})
+        
+        trend_strength = pa.get('trend_strength', 0.5)
+        momentum = pa.get('momentum', 0.5)
+        support_resistance = pa.get('support_resistance', 0.5)
+        
+        # Strong trend + positive momentum = good
+        score = (
+            trend_strength * 0.4 +
+            momentum * 0.4 +
+            support_resistance * 0.2
+        )
+        
+        return max(0.0, min(1.0, score))
+
     def _get_default_features(self) -> Dict:
         """Return default features when extraction fails"""
         return {
@@ -422,6 +568,12 @@ class AIPricePredictor:
             'market_regime_impact': 0.6,
             'technical_indicators': 0.5,
             'volatility_pattern': 0.5,
+            'rsi': 50.0,
+            'macd_signal': 0.0,
+            'bollinger_position': 0.5,
+            'volume_profile': 0.5,
+            'price_action': 0.5,
+            'trend_strength': 0.5,
             'base_price': 0,
             'base_volume': 0,
             'base_liquidity': 0

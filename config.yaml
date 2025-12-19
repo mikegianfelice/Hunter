@@ -1617,3 +1617,39 @@ time_window_scheduler:
   review_interval_seconds: 300  # Review window quality every 5 minutes
   latency_score_zero_ms: 60000  # Latency (ms) for metrics tracking only (not used in window score calculation)
   latency_weight: 0.05  # DEPRECATED: Latency no longer included in window score (kept for backward compatibility)
+
+# === Enhanced Technical Analysis ===
+enable_enhanced_technical_indicators: true
+technical_indicators:
+  rsi_period: 14
+  macd_fast: 12
+  macd_slow: 26
+  macd_signal: 9
+  bollinger_period: 20
+  bollinger_std: 2
+  volume_profile_bins: 20
+  min_candles_required: 10
+
+# === API Rate Limiting ===
+api_rate_limiting:
+  helius_max_daily: 30000  # Helius limit
+  coingecko_max_daily: 330  # CoinGecko limit
+  helius_cache_minutes: 5  # 5 minute cache for Helius
+  coingecko_cache_hours: 1  # 1 hour cache for CoinGecko
+  enable_api_call_tracking: true
+  warn_at_calls_remaining: 50
+
+# === Technical Indicators Settings ===
+technical_indicators_settings:
+  enable_enhanced_indicators: true
+  only_fetch_for_quality_tokens: true
+  min_volume_for_candlestick_fetch: 100000  # $100k minimum
+  min_liquidity_for_candlestick_fetch: 100000  # $100k minimum
+  fallback_to_simple_indicators: true
+
+# === A/B Testing ===
+enable_ab_testing: false  # Set to true to enable
+ab_testing:
+  min_trades_per_variant: 10
+  evaluation_period_hours: 168  # 1 week
+  auto_switch_to_best: false

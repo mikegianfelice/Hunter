@@ -11,6 +11,7 @@ import requests
 from typing import Any, Dict, Optional, List, Tuple
 from datetime import datetime, timedelta
 import statistics
+from pathlib import Path
 
 from src.config.secrets import GRAPH_API_KEY, UNISWAP_V3_DEPLOYMENT_ID
 from src.utils.coingecko_helpers import ensure_vs_currency, DEFAULT_FIAT
@@ -43,6 +44,26 @@ class MarketDataFetcher:
         self.enable_coingecko_market_chart = False
         # When False, global metrics are fetched from CoinCap first; CoinGecko is fallback-only
         self.enable_coingecko_global = False
+        
+        # Helius API configuration
+        self.helius_api_key = (os.getenv("HELIUS_API_KEY") or "").strip()
+        self.helius_base_url = "https://api.helius.xyz/v0"
+        
+        # Separate caches for different APIs
+        self.candlestick_cache_helius: Dict[str, Dict[str, any]] = {}
+        self.candlestick_cache_coingecko: Dict[str, Dict[str, any]] = {}
+        self.candlestick_cache_file = Path("data/candlestick_cache.json")
+        
+        # Cache durations
+        self.helius_cache_duration = 300  # 5 minutes (Helius has plenty of quota)
+        self.coingecko_cache_duration = 3600  # 1 hour (conservative for CoinGecko)
+        
+        # API call tracking
+        self.api_call_tracker_file = Path("data/api_call_tracker.json")
+        self.api_call_tracker = self._load_api_tracker()
+        
+        # Load persistent cache
+        self._load_candlestick_cache()
         
     def get_btc_price(self) -> Optional[float]:
         """Get current BTC price in USD"""
@@ -779,25 +800,84 @@ class MarketDataFetcher:
             return "h12"
         return "d1"
 
-    def get_candlestick_data(self, token_address: str, chain_id: str = "ethereum", hours: int = 24) -> Optional[List[Dict]]:
-        """
-        Get REAL historical candlestick data from DEX APIs
-        Returns list of candlesticks with OHLCV data from actual trades
-        """
+    def _load_candlestick_cache(self):
+        """Load persistent candlestick cache from disk"""
+        if self.candlestick_cache_file.exists():
+            try:
+                data = json.loads(self.candlestick_cache_file.read_text())
+                self.candlestick_cache_helius = data.get('helius', {})
+                self.candlestick_cache_coingecko = data.get('coingecko', {})
+                logger.info(f"Loaded candlestick cache: {len(self.candlestick_cache_helius)} Helius, {len(self.candlestick_cache_coingecko)} CoinGecko")
+            except Exception as e:
+                logger.error(f"Error loading candlestick cache: {e}")
+                self.candlestick_cache_helius = {}
+                self.candlestick_cache_coingecko = {}
+
+    def _save_candlestick_cache(self):
+        """Save candlestick cache to disk"""
         try:
-            chain_id_lower = chain_id.lower()
-            
-            if chain_id_lower == "ethereum" or chain_id_lower == "base":
-                return self._get_ethereum_candles(token_address, chain_id_lower, hours)
-            elif chain_id_lower == "solana":
-                return self._get_solana_candles(token_address, hours)
-            else:
-                logger.warning(f"Unsupported chain for candlestick data: {chain_id}")
-                return None
-                
+            data = {
+                'helius': self.candlestick_cache_helius,
+                'coingecko': self.candlestick_cache_coingecko,
+                'last_updated': time.time()
+            }
+            self.candlestick_cache_file.parent.mkdir(parents=True, exist_ok=True)
+            self.candlestick_cache_file.write_text(json.dumps(data, indent=2))
         except Exception as e:
-            logger.error(f"❌ Failed to fetch candlestick data: {e}")
-            return None
+            logger.error(f"Error saving candlestick cache: {e}")
+
+    def _load_api_tracker(self) -> Dict:
+        """Load API call tracking"""
+        if self.api_call_tracker_file.exists():
+            try:
+                data = json.loads(self.api_call_tracker_file.read_text())
+                # Reset if new day
+                last_reset = data.get('last_reset', 0)
+                if time.time() - last_reset > 86400:
+                    return {'helius': 0, 'coingecko': 0, 'last_reset': time.time()}
+                return data
+            except Exception:
+                pass
+        return {'helius': 0, 'coingecko': 0, 'last_reset': time.time()}
+
+    def _save_api_tracker(self):
+        """Save API call tracking"""
+        try:
+            # Reset if new day
+            if time.time() - self.api_call_tracker.get('last_reset', 0) > 86400:
+                self.api_call_tracker = {'helius': 0, 'coingecko': 0, 'last_reset': time.time()}
+            
+            self.api_call_tracker_file.parent.mkdir(parents=True, exist_ok=True)
+            self.api_call_tracker_file.write_text(json.dumps(self.api_call_tracker, indent=2))
+        except Exception as e:
+            logger.error(f"Error saving API tracker: {e}")
+
+    def get_candlestick_data(self, token_address: str, chain_id: str = "ethereum", 
+                            hours: int = 24, force_fetch: bool = False) -> Optional[List[Dict]]:
+        """
+        Get candlestick data using optimal API for each chain:
+        - Solana: Helius API (30k/day limit - use freely!)
+        - Ethereum/Base: The Graph (free tier) or CoinGecko (sparingly)
+        """
+        cache_key = f"{chain_id}:{token_address.lower()}:{hours}"
+        current_time = time.time()
+        
+        # SOLANA: Use Helius (30k/day limit - use freely!)
+        if chain_id.lower() == "solana":
+            return self._get_solana_candles_from_helius(token_address, hours, cache_key, force_fetch)
+        
+        # ETHEREUM/BASE: Use The Graph (free) or CoinGecko (sparingly)
+        elif chain_id.lower() in ["ethereum", "base"]:
+            # Try The Graph first (free, no CoinGecko usage)
+            candles = self._get_ethereum_candles(token_address, chain_id.lower(), hours)
+            if candles:
+                return candles
+            
+            # Fallback to CoinGecko only if The Graph fails AND we have quota
+            if self._can_make_coingecko_call():
+                return self._get_candles_from_coingecko(token_address, chain_id, hours, cache_key)
+        
+        return None
     
     def _get_ethereum_candles(self, token_address: str, chain_id: str, hours: int) -> Optional[List[Dict]]:
         """Get real candlestick data from Uniswap subgraph"""
@@ -874,36 +954,284 @@ class MarketDataFetcher:
             return None
     
     def _get_solana_candles(self, token_address: str, hours: int) -> Optional[List[Dict]]:
-        """Get real candlestick data from Solana DEX"""
+        """Get real candlestick data from Solana DEX (legacy method - now uses Helius)"""
+        # Redirect to Helius method
+        return self._get_solana_candles_from_helius(token_address, hours, f"solana:{token_address.lower()}:{hours}", False)
+    
+    def _get_solana_candles_from_helius(self, token_address: str, hours: int, 
+                                       cache_key: str, force_fetch: bool = False) -> Optional[List[Dict]]:
+        """
+        Build candlesticks from Helius DEX swap transactions
+        Uses Helius API (30k/day limit - use freely!)
+        """
+        current_time = time.time()
+        
+        # Check cache first
+        if not force_fetch and cache_key in self.candlestick_cache_helius:
+            cached = self.candlestick_cache_helius[cache_key]
+            cache_age = current_time - cached['timestamp']
+            
+            if cache_age < self.helius_cache_duration:
+                logger.debug(f"✅ Using cached Helius candlestick data for {token_address[:8]}... (age: {cache_age/60:.1f}m)")
+                return cached['data']
+        
+        if not self.helius_api_key:
+            logger.debug("Helius API key not configured, using price_memory fallback")
+            return self._get_solana_candles_from_memory(token_address, hours)
+        
         try:
-            # Use Jupiter API for Solana
-            url = f"https://price.jup.ag/v4/price?ids={token_address}"
-            data = self._fetch_json(url)
+            # Use Helius DEX API to get swap transactions
+            url = f"{self.helius_base_url}/addresses/{token_address}/transactions"
             
-            if not data or 'data' not in data or token_address not in data['data']:
-                logger.warning(f"No Jupiter price data for {token_address[:8]}...")
-                return None
+            # Calculate time range
+            end_time = int(time.time())
+            start_time = end_time - (hours * 3600)
             
-            price_data = data['data'][token_address]
-            price = float(price_data.get('price', 0))
+            params = {
+                "api-key": self.helius_api_key,
+                "type": "SWAP",  # Only get swap transactions
+                "before": end_time,
+                "until": start_time,
+                "limit": 1000  # Get up to 1000 swaps
+            }
             
-            if price <= 0:
-                return None
+            response = requests.get(url, params=params, timeout=15)
             
-            # For Solana, we have limited historical data from free APIs
-            # Return minimal real data
-            return [{
-                'time': time.time() - 3600,
-                'open': price,
-                'high': price,
-                'low': price,
-                'close': price,
-                'volume': 0
-            }]
+            if response.status_code != 200:
+                logger.warning(f"Helius API error {response.status_code} for {token_address[:8]}..., falling back to price_memory")
+                return self._get_solana_candles_from_memory(token_address, hours)
+            
+            data = response.json()
+            swaps = data.get('transactions', [])
+            
+            if not swaps or len(swaps) < 2:
+                logger.debug(f"Insufficient swap data from Helius for {token_address[:8]}..., using price_memory")
+                return self._get_solana_candles_from_memory(token_address, hours)
+            
+            # Process swaps into hourly candles
+            candles = self._process_helius_swaps_to_candles(swaps, hours)
+            
+            if candles and len(candles) >= 10:
+                # Cache the result
+                self.candlestick_cache_helius[cache_key] = {
+                    'data': candles,
+                    'timestamp': current_time,
+                    'source': 'helius'
+                }
+                self._save_candlestick_cache()
+                
+                # Track API call
+                self.api_call_tracker['helius'] = self.api_call_tracker.get('helius', 0) + 1
+                self._save_api_tracker()
+                
+                logger.info(f"✅ Built {len(candles)} candles from Helius swaps for {token_address[:8]}...")
+                return candles
+            
+            # Fallback to price_memory if Helius data insufficient
+            return self._get_solana_candles_from_memory(token_address, hours)
             
         except Exception as e:
-            logger.error(f"Error fetching Solana candles: {e}")
+            logger.error(f"Error fetching Helius candlestick data: {e}")
+            return self._get_solana_candles_from_memory(token_address, hours)
+    
+    def _process_helius_swaps_to_candles(self, swaps: List[Dict], hours: int) -> List[Dict]:
+        """Convert Helius swap transactions to hourly candles"""
+        if not swaps:
+            return []
+        
+        # Group swaps by hour
+        candles = {}
+        current_time = time.time()
+        hour_start = int(current_time - (hours * 3600))
+        
+        for swap in swaps:
+            # Extract timestamp and price from Helius swap data
+            timestamp = swap.get('timestamp', swap.get('blockTime', 0))
+            if timestamp < hour_start:
+                continue
+            
+            # Extract price from swap
+            price = self._extract_price_from_helius_swap(swap)
+            if not price or price <= 0:
+                continue
+            
+            hour = int((timestamp // 3600) * 3600)
+            
+            if hour not in candles:
+                candles[hour] = {
+                    'open': price,
+                    'high': price,
+                    'low': price,
+                    'close': price,
+                    'volume': 0,
+                    'time': hour
+                }
+            else:
+                candle = candles[hour]
+                candle['high'] = max(candle['high'], price)
+                candle['low'] = min(candle['low'], price)
+                candle['close'] = price  # Latest swap price
+            
+            # Extract volume from swap
+            volume_usd = self._extract_volume_from_helius_swap(swap)
+            candles[hour]['volume'] += volume_usd
+        
+        return sorted(candles.values(), key=lambda x: x['time'])
+    
+    def _extract_price_from_helius_swap(self, swap: Dict) -> Optional[float]:
+        """Extract price from Helius swap transaction"""
+        try:
+            # Helius provides token transfers with amounts
+            token_transfers = swap.get('tokenTransfers', [])
+            
+            if len(token_transfers) < 2:
+                return None
+            
+            # Find USDC transfer (or SOL) and token transfer
+            usdc_amount = 0
+            token_amount = 0
+            
+            # USDC mint on Solana
+            USDC_MINT = "epjfwdd5aufqssqem2qn1xzybapc8g4weggkzwytdt1v"
+            
+            for transfer in token_transfers:
+                mint = transfer.get('mint', '').lower()
+                amount = float(transfer.get('tokenAmount', 0))
+                
+                if mint == USDC_MINT:
+                    usdc_amount = amount
+                elif mint != USDC_MINT:
+                    token_amount = amount
+            
+            if usdc_amount > 0 and token_amount > 0:
+                return usdc_amount / token_amount
+            
             return None
+            
+        except Exception as e:
+            logger.debug(f"Error extracting price from Helius swap: {e}")
+            return None
+    
+    def _extract_volume_from_helius_swap(self, swap: Dict) -> float:
+        """Extract volume in USD from Helius swap"""
+        try:
+            token_transfers = swap.get('tokenTransfers', [])
+            USDC_MINT = "epjfwdd5aufqssqem2qn1xzybapc8g4weggkzwytdt1v"
+            
+            # Sum USDC transfers
+            volume = 0.0
+            for transfer in token_transfers:
+                mint = transfer.get('mint', '').lower()
+                if mint == USDC_MINT:
+                    volume += float(transfer.get('tokenAmount', 0))
+            
+            return volume
+            
+        except Exception:
+            return 0.0
+    
+    def _get_solana_candles_from_memory(self, token_address: str, hours: int) -> Optional[List[Dict]]:
+        """Build candles from price_memory (NO API CALLS)"""
+        try:
+            from src.storage.price_memory import load_price_memory
+            
+            price_memory = load_price_memory()
+            token_data = price_memory.get(token_address.lower())
+            
+            if not token_data:
+                return None
+            
+            # Try different keys
+            prices = token_data.get('prices') or token_data.get('history') or []
+            current_price = token_data.get('price') or token_data.get('last_price')
+            
+            if not prices and not current_price:
+                return None
+            
+            # Build candles from price history
+            current_time = time.time()
+            hour_start = current_time - (hours * 3600)
+            
+            candles = {}
+            
+            # Add historical prices
+            for entry in prices:
+                if isinstance(entry, (list, tuple)) and len(entry) >= 2:
+                    timestamp, price = entry[0], entry[1]
+                elif isinstance(entry, dict):
+                    timestamp = entry.get('timestamp', entry.get('time', 0))
+                    price = entry.get('price', 0)
+                else:
+                    continue
+                
+                if timestamp < hour_start:
+                    continue
+                
+                hour = int((timestamp // 3600) * 3600)
+                
+                if hour not in candles:
+                    candles[hour] = {
+                        'open': price,
+                        'high': price,
+                        'low': price,
+                        'close': price,
+                        'volume': 0,
+                        'time': hour
+                    }
+                else:
+                    candle = candles[hour]
+                    candle['high'] = max(candle['high'], price)
+                    candle['low'] = min(candle['low'], price)
+                    candle['close'] = price
+            
+            # Add CURRENT price to most recent candle
+            if current_price:
+                current_hour = int((current_time // 3600) * 3600)
+                if current_hour not in candles:
+                    candles[current_hour] = {
+                        'open': current_price,
+                        'high': current_price,
+                        'low': current_price,
+                        'close': current_price,
+                        'volume': 0,
+                        'time': current_hour
+                    }
+                else:
+                    candle = candles[current_hour]
+                    candle['high'] = max(candle['high'], current_price)
+                    candle['low'] = min(candle['low'], current_price)
+                    candle['close'] = current_price
+            
+            result = sorted(candles.values(), key=lambda x: x['time'])
+            
+            if len(result) >= 10:
+                logger.debug(f"✅ Built {len(result)} candles from price_memory for {token_address[:8]}...")
+                return result
+            
+            return None
+            
+        except Exception as e:
+            logger.debug(f"Could not build candles from memory: {e}")
+            return None
+    
+    def _can_make_coingecko_call(self) -> bool:
+        """Check if we can make a CoinGecko API call"""
+        calls_today = self.api_call_tracker.get('coingecko', 0)
+        return calls_today < 330
+    
+    def _get_candles_from_coingecko(self, token_address: str, chain_id: str, 
+                                hours: int, cache_key: str) -> Optional[List[Dict]]:
+        """Get candlesticks from CoinGecko (sparingly, only when needed)"""
+        # Check cache first
+        if cache_key in self.candlestick_cache_coingecko:
+            cached = self.candlestick_cache_coingecko[cache_key]
+            if time.time() - cached['timestamp'] < self.coingecko_cache_duration:
+                return cached['data']
+        
+        # This would require CoinGecko token ID mapping
+        # For now, return None to avoid CoinGecko calls
+        logger.debug(f"Skipping CoinGecko fetch for {token_address[:8]}... (use Helius/The Graph instead)")
+        return None
     
     def _process_swaps_to_candles(self, swaps: List[Dict], hours: int) -> List[Dict]:
         """Convert Uniswap swaps to hourly candles"""
