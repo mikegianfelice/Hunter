@@ -57,7 +57,7 @@ All positions are monitored in real-time, and exits execute automatically on-cha
 - **⚡ AI Trade Execution Optimizer** - Intelligent execution timing, optimal DEX/router selection, slippage minimization, gas optimization, and success prediction
 - **📊 AI Sentiment Analysis** - Advanced sentiment analysis using transformer models for social media, news, market, and technical sentiment
 - **🎯 AI Market Regime Detection** - Machine learning-based market condition detection (bull, bear, sideways, volatile, recovery) with adaptive strategy
-- **🔮 AI Price Prediction** - LSTM neural networks for predicting token success probability and optimal entry/exit timing
+- **🔮 AI Price Prediction** - Advanced price prediction using technical indicators (RSI, MACD, Bollinger Bands), volume profiles, and price action patterns for predicting token success probability and optimal entry/exit timing
 - **📈 AI Portfolio Optimization** - Modern portfolio theory optimization for capital allocation, risk-adjusted returns, and diversification
 - **🛡️ AI Risk Assessment** - Machine learning-based risk scoring, loss probability prediction, and dynamic risk management
 - **🔍 AI Pattern Recognition** - Computer vision-based candlestick pattern detection, support/resistance analysis, and momentum signals
@@ -128,7 +128,7 @@ The bot features a **comprehensive AI integration engine** that coordinates **30
 2. **🔮 Price Prediction** - Predicts token success probability using LSTM neural networks
 3. **🛡️ Risk Assessment** - Machine learning-based risk scoring and loss prediction
 4. **📈 Market Conditions** - Market health, liquidity, and volume analysis
-5. **🔍 Technical Analysis** - Pattern recognition, indicators, and trend analysis
+5. **🔍 Technical Analysis** - Advanced technical indicators including RSI, MACD, Bollinger Bands, volume profiles, and price action pattern recognition for trend analysis and entry/exit signals
 6. **⚡ Execution Optimization** - Basic execution timing and slippage optimization
 
 ### **Stage 2: Market Context Analysis** (Regime & Environment)
@@ -223,6 +223,18 @@ wallet_tiers:
 - **Real Data Integration**: All tradeability checks use actual DexScreener data (liquidity, transaction counts, prices)
 - **Impact**: Minimal - actual trading functionality continues to work with real market data validation
 - **Status**: Tradeability checks fully functional using DexScreener API
+
+### 📊 Enhanced Technical Indicators & API Integration
+- **Technical Indicators**: RSI (14-period), MACD (12/26/9), Bollinger Bands (20-period, 2 std dev), volume profiles, and price action patterns
+- **Helius API Integration**: Uses Helius API (30,000 calls/day limit) for Solana candlestick data from real DEX swap transactions
+- **Smart Caching**: 5-minute cache for Helius data, 1-hour cache for CoinGecko to minimize API usage
+- **API Rate Limiting**: 
+  - Helius: 30,000 calls/day (plenty of headroom)
+  - CoinGecko: 330 calls/day (conservative usage with caching)
+- **Quality Filtering**: Only fetches candlestick data for tokens with $100k+ volume/liquidity to minimize API calls
+- **Fallback Strategy**: Uses price_memory storage if APIs fail (no API calls needed)
+- **A/B Testing Framework**: Test different feature weight combinations to optimize performance
+- **Expected Usage**: ~100-200 Helius calls/day, ~10-30 CoinGecko calls/day (well under limits)
 
 ## 📋 Prerequisites
 
@@ -476,6 +488,8 @@ export TRADING_BOT_SECRETS_BASE_RPC_URL="https://mainnet.base.org"
 export TRADING_BOT_SECRETS_SOLANA_RPC_URL="https://api.mainnet-beta.solana.com"
 export TRADING_BOT_SECRETS_TELEGRAM_BOT_TOKEN="your_telegram_bot_token"
 export TRADING_BOT_SECRETS_TELEGRAM_CHAT_ID="your_chat_id"
+export HELIUS_API_KEY="your_helius_api_key"  # Optional but recommended for enhanced technical indicators
+export COINGECKO_API_KEY="your_coingecko_api_key"  # Optional, used sparingly with caching
 ```
 
 **Option C: .env File (Recommended for most users)**
@@ -523,6 +537,10 @@ TELEGRAM_CHAT_ID=your_chat_id
 
 # Secrets Backend Configuration (Important!)
 SECRETS_BACKEND=env
+
+# Optional: Enhanced Technical Indicators APIs
+HELIUS_API_KEY=your_helius_api_key_here  # Recommended for enhanced technical indicators (30k calls/day)
+COINGECKO_API_KEY=your_coingecko_api_key_here  # Optional, used sparingly with caching (330 calls/day)
 ```
 
 **⚠️ Security Note**: Keep your `.env` file secure and never commit it to version control. The `.env` file is already in `.gitignore` to prevent accidental commits.
@@ -1296,6 +1314,10 @@ python -c "import solana.keypair; print('✅ Solana keypair module working')"
 - Check RPC endpoint connectivity
 - Verify API rate limits
 - Consider using paid RPC providers for production
+
+#### API Usage Monitoring
+- **Check API Usage**: Run `python scripts/check_api_usage.py` to monitor Helius and CoinGecko API call usage
+- **Analyze A/B Tests**: Run `python scripts/analyze_ab_tests.py` to review weight configuration performance and identify best performing variants
 
 ## 📞 Support
 
