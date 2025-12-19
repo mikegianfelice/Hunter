@@ -1,6 +1,6 @@
-# 🚀 Hunter: The AI-Powered Crypto Trading Bot
+# 🚀 Hunter: Advanced Rule-Based Crypto Trading Bot
 
-Hunter is a quant level AI-powered crypto trading bot executing real on-chain trades with live PnL, smart token scanning, sentiment scoring, microstructure analysis, and adaptive risk control. Updated in real time. If you find this project useful, drop a ⭐️ to support it.
+Hunter is a sophisticated crypto trading bot executing real on-chain trades with live PnL, smart token scanning, sentiment scoring, microstructure analysis, and adaptive risk control. Uses weighted multi-factor analysis and heuristic algorithms for intelligent decision-making. Updated in real time. If you find this project useful, drop a ⭐️ to support it.
 
 ## ⚠️ **IMPORTANT DISCLAIMER**
 
@@ -27,15 +27,15 @@ The bot continuously scans DexScreener for trending tokens across Solana using c
 - Active trading activity
 - No stablecoins or wrapped tokens
 
-Top candidates are ranked by volume and passed to the AI system for deeper analysis.
+Top candidates are ranked by volume and passed to the analysis system for deeper evaluation.
 
 ### **2. Entry Decision** ✅
-Before entering any trade, tokens must pass multiple AI-driven checks:
-- **AI Quality Score** ≥ 65% (combines sentiment, technical analysis, price prediction)
-- **Success Probability** ≥ 60% (AI's prediction of profitable outcome)
+Before entering any trade, tokens must pass multiple analysis-driven checks:
+- **Quality Score** ≥ 65% (combines sentiment, technical analysis, price prediction)
+- **Success Probability** ≥ 60% (prediction of profitable outcome based on weighted analysis)
 - **Holder Concentration** < 65% (blocks tokens where top 10 holders own over 65%)
 - **Risk Score** ≤ 50% (lower is safer)
-- **AI Recommendation** = "buy" with >70% confidence
+- **Recommendation** = "buy" with >70% confidence
 
 Only tokens passing all criteria are considered for trading.
 
@@ -50,29 +50,29 @@ All positions are monitored in real-time, and exits execute automatically on-cha
 
 ---
 
-## 🎯 Artificial Intelligence Features
+## 🎯 Advanced Analysis Features
 
-### **🧠 Core AI Systems**
-- **🔍 AI Market Microstructure Analyzer** - Real-time order book analysis, trade flow patterns, liquidity analysis, whale activity detection, market maker identification, and manipulation detection
-- **⚡ AI Trade Execution Optimizer** - Intelligent execution timing, optimal DEX/router selection, slippage minimization, gas optimization, and success prediction
-- **📊 AI Sentiment Analysis** - Advanced sentiment analysis using transformer models for social media, news, market, and technical sentiment
-- **🎯 AI Market Regime Detection** - Machine learning-based market condition detection (bull, bear, sideways, volatile, recovery) with adaptive strategy
-- **🔮 AI Price Prediction** - Advanced price prediction using technical indicators (RSI, MACD, Bollinger Bands), volume profiles, and price action patterns for predicting token success probability and optimal entry/exit timing
-- **📈 AI Portfolio Optimization** - Modern portfolio theory optimization for capital allocation, risk-adjusted returns, and diversification
-- **🛡️ AI Risk Assessment** - Machine learning-based risk scoring, loss probability prediction, and dynamic risk management
-- **🔍 AI Pattern Recognition** - Computer vision-based candlestick pattern detection, support/resistance analysis, and momentum signals
-- **🧠 AI Market Intelligence Aggregator** - Comprehensive market intelligence analysis including news sentiment, social media intelligence, influencer tracking, and market events
-- **🔮 AI Predictive Analytics Engine** - Advanced price movement prediction using technical analysis, sentiment analysis, volume analysis, and correlation analysis
-- **🎯 AI Dynamic Strategy Selector** - Adaptive strategy selection that automatically switches between momentum, mean reversion, breakout, scalping, swing, and trend-following strategies based on market conditions
-- **🛡️ AI Risk Prediction & Prevention System** - Comprehensive risk protection including flash crash detection, rug pull prevention, manipulation detection, liquidity drain monitoring, correlation breakdown analysis, and black swan event detection
-- **🔄 AI Market Regime Transition Detector** - Real-time market regime change detection for optimal strategy switching and risk management
-- **💧 AI Liquidity Flow Analyzer** - Advanced liquidity flow analysis for market imbalance detection and optimal entry/exit timing
-- **⏰ AI Multi-Timeframe Analysis Engine** - Comprehensive multi-timeframe analysis integrating data from multiple timeframes for robust market view
-- **🔄 AI Market Cycle Predictor** - Market cycle prediction for strategic positioning and anticipating major market shifts
-- **🛡️ AI Drawdown Protection System** - Advanced drawdown protection with portfolio analysis, individual trade analysis, and market condition monitoring
-- **📊 AI Performance Attribution Analyzer** - Performance driver identification for strategy optimization and performance improvement
-- **🔍 AI Market Anomaly Detector** - Unusual market condition detection for opportunity and risk identification
-- **⚖️ AI Portfolio Rebalancing Engine** - Optimal portfolio allocation using modern portfolio theory for risk-adjusted returns and diversification
+### **🧠 Core Analysis Systems**
+- **🔍 Market Microstructure Analyzer** - Real-time order book analysis, trade flow patterns, liquidity analysis, whale activity detection, market maker identification, and manipulation detection
+- **⚡ Trade Execution Optimizer** - Intelligent execution timing, optimal DEX/router selection, slippage minimization, gas optimization, and success prediction
+- **📊 Sentiment Analysis** - Multi-source sentiment analysis combining social media, news, market, and technical sentiment using weighted scoring
+- **🎯 Market Regime Detection** - Rule-based market condition detection (bull, bear, sideways, volatile, recovery) with adaptive strategy
+- **🔮 Price Prediction** - Advanced price prediction using technical indicators (RSI, MACD, Bollinger Bands), volume profiles, and price action patterns for predicting token success probability and optimal entry/exit timing
+- **📈 Portfolio Optimization** - Modern portfolio theory optimization for capital allocation, risk-adjusted returns, and diversification
+- **🛡️ Risk Assessment** - Multi-factor risk scoring using weighted analysis of volume, liquidity, momentum, and market conditions
+- **🔍 Pattern Recognition** - Candlestick pattern detection using OHLC analysis, support/resistance identification, and momentum signals
+- **🧠 Market Intelligence Aggregator** - Comprehensive market intelligence analysis including news sentiment, social media intelligence, influencer tracking, and market events
+- **🔮 Predictive Analytics Engine** - Advanced price movement prediction using technical analysis, sentiment analysis, volume analysis, and correlation analysis
+- **🎯 Dynamic Strategy Selector** - Adaptive strategy selection that automatically switches between momentum, mean reversion, breakout, scalping, swing, and trend-following strategies based on market conditions
+- **🛡️ Risk Prediction & Prevention System** - Comprehensive risk protection including flash crash detection, rug pull prevention, manipulation detection, liquidity drain monitoring, correlation breakdown analysis, and black swan event detection
+- **🔄 Market Regime Transition Detector** - Real-time market regime change detection for optimal strategy switching and risk management
+- **💧 Liquidity Flow Analyzer** - Advanced liquidity flow analysis for market imbalance detection and optimal entry/exit timing
+- **⏰ Multi-Timeframe Analysis Engine** - Comprehensive multi-timeframe analysis integrating data from multiple timeframes for robust market view
+- **🔄 Market Cycle Predictor** - Market cycle prediction for strategic positioning and anticipating major market shifts
+- **🛡️ Drawdown Protection System** - Advanced drawdown protection with portfolio analysis, individual trade analysis, and market condition monitoring
+- **📊 Performance Attribution Analyzer** - Performance driver identification for strategy optimization and performance improvement
+- **🔍 Market Anomaly Detector** - Unusual market condition detection for opportunity and risk identification
+- **⚖️ Portfolio Rebalancing Engine** - Optimal portfolio allocation using modern portfolio theory for risk-adjusted returns and diversification
 
 ### **🌐 Multi-Chain Trading**
 - **Real trading on Solana (Phantom) and Base (MetaMask)**
@@ -82,26 +82,26 @@ All positions are monitored in real-time, and exits execute automatically on-cha
 - **USDC Trading on Solana** - Uses USDC as base currency for Solana trades (configurable)
 
 ### **📊 Advanced Analytics & Performance**
-- **Dynamic Position Sizing** - AI-calculated position sizes based on token quality, risk, and market conditions
+- **Dynamic Position Sizing** - Rule-based calculated position sizes based on token quality, risk, and market conditions
 - **Performance Tracking** - Comprehensive PnL analysis, win rate tracking, and quality tier performance
 - **Real-time Insights** - Live market analysis, execution optimization, and risk assessment
-- **Quality Scoring System** - 0-100 quality scores combining traditional metrics with AI analysis
+- **Quality Scoring System** - 0-100 quality scores combining traditional metrics with weighted multi-factor analysis
 
 ### **🛡️ Risk Management & Safety**
-- **AI-Enhanced Risk Assessment** - Multi-factor risk analysis with machine learning
+- **Enhanced Risk Assessment** - Multi-factor risk analysis using weighted scoring
 - **Manipulation Detection** - Advanced detection of pump/dump schemes, wash trading, and spoofing
 - **Whale Activity Monitoring** - Real-time whale trade detection and impact analysis
 - **Market Maker Intelligence** - Leverages market maker presence for execution stability
 - **Smart Blacklist Management** - Automatic cleanup and intelligent token filtering
 
 ### **⚡ Execution & Optimization**
-- **Optimal Execution Timing** - AI-determined best execution windows
+- **Optimal Execution Timing** - Algorithm-determined best execution windows
 - **Slippage Minimization** - Advanced slippage optimization across all trades
 - **Gas Optimization** - Intelligent gas price optimization and cost reduction
 - **Route Selection** - Optimal DEX/router selection for each trade
-- **Success Prediction** - AI-powered execution success probability calculation
-- **AI Fill Verifier** - Confirms real fills, reroutes failed slices, and prevents ghost entries
-- **AI Time-Window Scheduler** - Gates entries to high-quality execution windows based on live fill/slippage metrics
+- **Success Prediction** - Rule-based execution success probability calculation
+- **Fill Verifier** - Confirms real fills, reroutes failed slices, and prevents ghost entries
+- **Time-Window Scheduler** - Gates entries to high-quality execution windows based on live fill/slippage metrics
 
 ### **📱 Monitoring & Notifications**
 - **Telegram Integration** - Real-time alerts for trades, performance, and system status
@@ -119,14 +119,14 @@ All positions are monitored in real-time, and exits execute automatically on-cha
 
 *Note: Currently focusing on Solana and Base for optimal fee efficiency and trading opportunities. Ethereum support may be re-enabled in the future.*
 
-## 🧠 AI System Integration Architecture
+## 🧠 Analysis System Integration Architecture
 
-The bot features a **comprehensive AI integration engine** that coordinates **30 AI modules** across **6 analysis stages**:
+The bot features a **comprehensive analysis integration engine** that coordinates **30 analysis modules** across **6 analysis stages**:
 
 ### **Stage 1: Core Analysis** (Foundation)
-1. **📊 Sentiment Analysis** - Analyzes social media, news, market, and technical sentiment
-2. **🔮 Price Prediction** - Predicts token success probability using LSTM neural networks
-3. **🛡️ Risk Assessment** - Machine learning-based risk scoring and loss prediction
+1. **📊 Sentiment Analysis** - Analyzes social media, news, market, and technical sentiment using weighted scoring
+2. **🔮 Price Prediction** - Predicts token success probability using technical indicators and weighted feature analysis
+3. **🛡️ Risk Assessment** - Multi-factor risk scoring and loss probability prediction using weighted analysis
 4. **📈 Market Conditions** - Market health, liquidity, and volume analysis
 5. **🔍 Technical Analysis** - Advanced technical indicators including RSI, MACD, Bollinger Bands, volume profiles, and price action pattern recognition for trend analysis and entry/exit signals
 6. **⚡ Execution Optimization** - Basic execution timing and slippage optimization
@@ -156,7 +156,7 @@ The bot features a **comprehensive AI integration engine** that coordinates **30
 20. **⚡ Trade Execution Monitor** - Monitors trade execution quality and performance
 21. **✅ Position Size Validator** - Validates position sizes before execution to prevent oversized trades
 22. **🎯 Dynamic Strategy Selector** - Adaptive strategy selection based on market conditions and performance
-23. **🔍 Pattern Recognition** - Computer vision-based pattern detection and signal generation
+23. **🔍 Pattern Recognition** - Candlestick pattern detection using OHLC analysis and signal generation
 24. **🧠 Market Intelligence Aggregator** - Comprehensive market intelligence including news, social media, and influencer analysis
 25. **🔌 Circuit Breaker** - Automatic fault tolerance and recovery
 26. **✅ Fill Verifier** - Confirms real fills, reroutes failed slices, prevents ghost entries
@@ -723,12 +723,12 @@ python main.py
 - **Base Features**: Uniswap V3 integration, EIP-1559 gas optimization, re-quote protection, multiple fee tier support
 - **Smart Blacklist Management**: Automatic cleanup every loop to maintain trading opportunities
 
-### AI-Enhanced Trading Strategy
+### Advanced Trading Strategy
 - **Sustainable 10-20% Gains**: Focus on consistent returns over high-risk moonshots
-- **Quality Token Selection**: AI-enhanced quality scoring with minimum thresholds
-- **Dynamic Position Sizing**: AI-calculated position sizes based on quality and risk
+- **Quality Token Selection**: Advanced quality scoring with minimum thresholds
+- **Dynamic Position Sizing**: Rule-based calculated position sizes based on quality and risk
 - **Market Regime Adaptation**: Strategy adapts to bull, bear, sideways, and volatile markets
-- **Comprehensive Risk Management**: Multi-layered risk assessment with AI-powered loss prevention
+- **Comprehensive Risk Management**: Multi-layered risk assessment with rule-based loss prevention
 - **Sentiment Analysis**: Sentiment analysis available when enabled (currently disabled by default to avoid being too restrictive)
 - **Liquidity Analysis**: Ensures sufficient liquidity for trades
 - **Volume Analysis**: Tracks trading volume patterns
@@ -1093,24 +1093,24 @@ Hunter/
 └── tests/
 ```
 
-## 🚀 AI-Enhanced Trading Features
+## 🚀 Advanced Trading Features
 
-The bot now includes sophisticated AI-powered trading strategies for optimal execution:
+The bot now includes sophisticated rule-based trading strategies for optimal execution:
 
-### 🧠 **AI System Integration**
-- **30 AI Modules**: Working together for comprehensive market analysis
+### 🧠 **Analysis System Integration**
+- **30 Analysis Modules**: Working together for comprehensive market analysis
 - **Real-time Analysis**: Continuous market monitoring and adaptation
 - **Institutional-Grade Intelligence**: Professional-level trading algorithms
 - **Adaptive Strategy**: Automatically adjusts to changing market conditions
 
 ### 📊 **Advanced Execution Features**
-- **AI Execution Optimization**: Intelligent timing, routing, and cost optimization
+- **Execution Optimization**: Intelligent timing, routing, and cost optimization
 - **Market Microstructure Analysis**: Order book, trade flow, and liquidity analysis
-- **Dynamic Position Sizing**: AI-calculated position sizes based on quality and risk
+- **Dynamic Position Sizing**: Rule-based calculated position sizes based on quality and risk
 - **Performance Tracking**: Comprehensive analytics with quality tier analysis
 
 ### 🛡️ **Enhanced Risk Management**
-- **AI Risk Assessment**: Machine learning-based risk scoring and loss prediction
+- **Risk Assessment**: Multi-factor risk scoring and loss probability prediction
 - **Manipulation Detection**: Advanced detection of pump/dump schemes and wash trading
 - **Whale Activity Monitoring**: Real-time whale trade detection and impact analysis
 - **Market Maker Intelligence**: Leverages market maker presence for execution stability
