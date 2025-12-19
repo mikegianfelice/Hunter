@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Technical Indicators Calculator
-Computes RSI, MACD, Bollinger Bands, and other indicators from price history
+Computes RSI, MACD, Bollinger Bands, VWAP, and other indicators from price history
 """
 
 import pandas as pd
@@ -176,6 +176,68 @@ class TechnicalIndicators:
             'current_vs_poc': (current_price - poc) / poc if poc > 0 else 0.0
         }
     
+    def calculate_vwap(self, candles: List[Dict]) -> Dict[str, float]:
+        """Calculate Volume Weighted Average Price (VWAP)"""
+        if not candles or len(candles) < 1:
+            return {
+                'vwap': 0.0,
+                'price_vs_vwap': 0.0,
+                'is_above_vwap': False,
+                'vwap_distance_pct': 0.0
+            }
+        
+        try:
+            # Calculate cumulative Typical Price × Volume and cumulative Volume
+            cumulative_tpv = 0.0  # Typical Price × Volume
+            cumulative_volume = 0.0
+            
+            for candle in candles:
+                high = float(candle.get('high', 0))
+                low = float(candle.get('low', 0))
+                close = float(candle.get('close', 0))
+                volume = float(candle.get('volume', 0))
+                
+                # Typical Price = (High + Low + Close) / 3
+                # This is the standard VWAP calculation
+                typical_price = (high + low + close) / 3
+                
+                cumulative_tpv += typical_price * volume
+                cumulative_volume += volume
+            
+            if cumulative_volume == 0:
+                current_price = float(candles[-1].get('close', 0))
+                return {
+                    'vwap': current_price,
+                    'price_vs_vwap': 0.0,
+                    'is_above_vwap': False,
+                    'vwap_distance_pct': 0.0
+                }
+            
+            vwap = cumulative_tpv / cumulative_volume
+            current_price = float(candles[-1].get('close', 0))
+            
+            # Calculate price position relative to VWAP
+            price_vs_vwap = ((current_price - vwap) / vwap * 100) if vwap > 0 else 0.0
+            is_above_vwap = current_price > vwap
+            vwap_distance_pct = abs(price_vs_vwap)
+            
+            return {
+                'vwap': vwap,
+                'price_vs_vwap': price_vs_vwap,  # Percentage above/below VWAP
+                'is_above_vwap': is_above_vwap,
+                'vwap_distance_pct': vwap_distance_pct
+            }
+            
+        except Exception as e:
+            logger.error(f"Error calculating VWAP: {e}")
+            current_price = float(candles[-1].get('close', 0)) if candles else 0.0
+            return {
+                'vwap': current_price,
+                'price_vs_vwap': 0.0,
+                'is_above_vwap': False,
+                'vwap_distance_pct': 0.0
+            }
+    
     def calculate_price_action_patterns(self, candles: List[Dict]) -> Dict[str, float]:
         """Detect price action patterns"""
         if len(candles) < 3:
@@ -264,6 +326,7 @@ class TechnicalIndicators:
             macd = self.calculate_macd(prices)
             bollinger = self.calculate_bollinger_bands(prices)
             volume_profile = self.calculate_volume_profile(prices, volumes)
+            vwap = self.calculate_vwap(candles)
             price_action = self.calculate_price_action_patterns(candles)
             
             return {
@@ -271,6 +334,7 @@ class TechnicalIndicators:
                 'macd': macd,
                 'bollinger_bands': bollinger,
                 'volume_profile': volume_profile,
+                'vwap': vwap,
                 'price_action': price_action,
                 'moving_avg_20': float(prices.tail(20).mean()) if len(prices) >= 20 else float(prices.mean()),
                 'moving_avg_50': float(prices.tail(50).mean()) if len(prices) >= 50 else float(prices.mean()),
@@ -289,6 +353,7 @@ class TechnicalIndicators:
             'macd': {'macd': 0.0, 'signal': 0.0, 'histogram': 0.0},
             'bollinger_bands': {'upper': 0.0, 'middle': 0.0, 'lower': 0.0, 'width': 0.0, 'position': 0.5},
             'volume_profile': {'poc': 0.0, 'vah': 0.0, 'val': 0.0, 'volume_ratio': 1.0, 'current_vs_poc': 0.0},
+            'vwap': {'vwap': 0.0, 'price_vs_vwap': 0.0, 'is_above_vwap': False, 'vwap_distance_pct': 0.0},
             'price_action': {'trend_strength': 0.5, 'volatility': 0.5, 'momentum': 0.5, 'support_resistance': 0.5},
             'moving_avg_20': 0.0,
             'moving_avg_50': 0.0,

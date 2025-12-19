@@ -730,22 +730,47 @@ class AIIntegrationEngine:
         try:
             # Basic technical analysis
             technical_score = 0.5
+            signals = []
             
             if market_data.technical_indicators:
                 rsi = market_data.technical_indicators.get('rsi', 50)
                 if 30 < rsi < 70:
                     technical_score += 0.2
+                    signals.append("rsi_normal")
                 
                 macd = market_data.technical_indicators.get('macd', 0)
                 if macd > 0:
                     technical_score += 0.1
+                    signals.append("macd_positive")
                 
                 # Moving average analysis
                 ma_20 = market_data.technical_indicators.get('moving_avg_20', 0)
                 if ma_20 > 0 and market_data.price > ma_20:
                     technical_score += 0.2
+                    signals.append("price_above_ma20")
+                
+                # VWAP analysis
+                vwap_data = market_data.technical_indicators.get('vwap', {})
+                if isinstance(vwap_data, dict):
+                    is_above_vwap = vwap_data.get('is_above_vwap', False)
+                    price_vs_vwap = vwap_data.get('price_vs_vwap', 0.0)
+                    
+                    if is_above_vwap:
+                        if 0 < price_vs_vwap <= 2:
+                            technical_score += 0.15
+                            signals.append("price_above_vwap")
+                        elif price_vs_vwap > 2:
+                            technical_score += 0.1
+                            signals.append("price_above_vwap_extended")
+                    else:
+                        if -2 <= price_vs_vwap < 0:
+                            technical_score += 0.1
+                            signals.append("price_near_vwap_support")
+                        elif price_vs_vwap < -2:
+                            technical_score -= 0.1
+                            signals.append("price_below_vwap")
             
-            technical_score = min(1.0, technical_score)
+            technical_score = min(1.0, max(0.0, technical_score))
             
             # Enhance with AI module if available
             if "pattern_recognizer" in self.module_connector.modules:
@@ -761,7 +786,7 @@ class AIIntegrationEngine:
             return {
                 "technical_score": technical_score,
                 "trend": "bullish" if technical_score > 0.6 else "bearish" if technical_score < 0.4 else "neutral",
-                "signals": ["rsi_normal", "macd_positive"] if technical_score > 0.6 else []
+                "signals": signals if signals else []
             }
             
         except Exception as e:

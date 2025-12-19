@@ -150,6 +150,8 @@ class AIPricePredictor:
                 'rsi': technical_indicators_data.get('rsi', 50),
                 'macd_signal': technical_indicators_data.get('macd', {}).get('histogram', 0),
                 'bollinger_position': technical_indicators_data.get('bollinger_bands', {}).get('position', 0.5),
+                'vwap': technical_indicators_data.get('vwap', {}).get('price_vs_vwap', 0.0),
+                'is_above_vwap': technical_indicators_data.get('vwap', {}).get('is_above_vwap', False),
                 'volume_profile': volume_profile_score,
                 'price_action': price_action_score,
                 'trend_strength': technical_indicators_data.get('price_action', {}).get('trend_strength', 0.5),
@@ -471,7 +473,13 @@ class AIPricePredictor:
             return {}  # Fall back gracefully
 
     def _calculate_enhanced_technical_score(self, indicators: Dict) -> float:
-        """Calculate enhanced technical score using RSI, MACD, Bollinger Bands"""
+        """Calculate enhanced technical score using RSI, MACD, Bollinger Bands, and VWAP
+        
+        VWAP (Volume Weighted Average Price) provides insight into fair value:
+        - Price above VWAP suggests bullish momentum
+        - Price below VWAP suggests bearish pressure
+        - Distance from VWAP indicates potential overextension
+        """
         if not indicators:
             return 0.5
         
@@ -513,11 +521,38 @@ class AIPricePredictor:
         if bb_width < 0.05:
             bb_score += 0.1
         
-        # Weighted combination
+        # VWAP contribution
+        vwap = indicators.get('vwap', {})
+        is_above_vwap = vwap.get('is_above_vwap', False)
+        price_vs_vwap = vwap.get('price_vs_vwap', 0.0)  # Percentage above/below VWAP
+        vwap_distance = vwap.get('vwap_distance_pct', 0.0)
+        
+        # Price above VWAP is generally bullish, but too far above can indicate overextension
+        if is_above_vwap:
+            if 0 < price_vs_vwap <= 2:  # Slightly above VWAP (healthy bullish)
+                vwap_score = 0.75
+            elif 2 < price_vs_vwap <= 5:  # Moderately above (still bullish)
+                vwap_score = 0.65
+            else:  # Too far above (potential overextension)
+                vwap_score = 0.45
+        else:
+            if -2 <= price_vs_vwap < 0:  # Slightly below VWAP (potential support)
+                vwap_score = 0.7
+            elif -5 <= price_vs_vwap < -2:  # Moderately below (bearish but not extreme)
+                vwap_score = 0.5
+            else:  # Well below VWAP (bearish)
+                vwap_score = 0.35
+        
+        # If price is very close to VWAP (< 0.5%), it's neutral
+        if vwap_distance < 0.5:
+            vwap_score = 0.6
+        
+        # Weighted combination (adjusted weights to include VWAP)
         technical_score = (
-            rsi_score * 0.35 +
-            macd_score * 0.35 +
-            bb_score * 0.30
+            rsi_score * 0.28 +      # Reduced from 0.35
+            macd_score * 0.28 +     # Reduced from 0.35
+            bb_score * 0.24 +       # Reduced from 0.30
+            vwap_score * 0.20       # New VWAP weight
         )
         
         return max(0.0, min(1.0, technical_score))
