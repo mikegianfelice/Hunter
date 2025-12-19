@@ -57,7 +57,7 @@ All positions are monitored in real-time, and exits execute automatically on-cha
 - **⚡ Trade Execution Optimizer** - Intelligent execution timing, optimal DEX/router selection, slippage minimization, gas optimization, and success prediction
 - **📊 Sentiment Analysis** - Multi-source sentiment analysis combining social media, news, market, and technical sentiment using weighted scoring
 - **🎯 Market Regime Detection** - Rule-based market condition detection (bull, bear, sideways, volatile, recovery) with adaptive strategy
-- **🔮 Price Prediction** - Advanced price prediction using technical indicators (RSI, MACD, Bollinger Bands), volume profiles, and price action patterns for predicting token success probability and optimal entry/exit timing
+- **🔮 Price Prediction** - Advanced price prediction using technical indicators (RSI, MACD, Bollinger Bands, VWAP), volume profiles, and price action patterns for predicting token success probability and optimal entry/exit timing
 - **📈 Portfolio Optimization** - Modern portfolio theory optimization for capital allocation, risk-adjusted returns, and diversification
 - **🛡️ Risk Assessment** - Multi-factor risk scoring using weighted analysis of volume, liquidity, momentum, and market conditions
 - **🔍 Pattern Recognition** - Candlestick pattern detection using OHLC analysis, support/resistance identification, and momentum signals
@@ -128,7 +128,7 @@ The bot features a **comprehensive analysis integration engine** that coordinate
 2. **🔮 Price Prediction** - Predicts token success probability using technical indicators and weighted feature analysis
 3. **🛡️ Risk Assessment** - Multi-factor risk scoring and loss probability prediction using weighted analysis
 4. **📈 Market Conditions** - Market health, liquidity, and volume analysis
-5. **🔍 Technical Analysis** - Advanced technical indicators including RSI, MACD, Bollinger Bands, volume profiles, and price action pattern recognition for trend analysis and entry/exit signals
+5. **🔍 Technical Analysis** - Advanced technical indicators including RSI, MACD, Bollinger Bands, VWAP, volume profiles, and price action pattern recognition for trend analysis and entry/exit signals
 6. **⚡ Execution Optimization** - Basic execution timing and slippage optimization
 
 ### **Stage 2: Market Context Analysis** (Regime & Environment)
@@ -225,7 +225,7 @@ wallet_tiers:
 - **Status**: Tradeability checks fully functional using DexScreener API
 
 ### 📊 Enhanced Technical Indicators & API Integration
-- **Technical Indicators**: RSI (14-period), MACD (12/26/9), Bollinger Bands (20-period, 2 std dev), volume profiles, and price action patterns
+- **Technical Indicators**: RSI (14-period), MACD (12/26/9), Bollinger Bands (20-period, 2 std dev), VWAP (Volume Weighted Average Price), volume profiles, and price action patterns
 - **Helius API Integration**: Uses Helius API (30,000 calls/day limit) for Solana candlestick data from real DEX swap transactions
 - **Smart Caching**: 5-minute cache for Helius data, 1-hour cache for CoinGecko to minimize API usage
 - **API Rate Limiting**: 
