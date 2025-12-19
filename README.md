@@ -1,6 +1,6 @@
 # 🚀 Hunter: Advanced Rule-Based Crypto Trading Bot
 
-Hunter is a sophisticated crypto trading bot executing real on-chain trades with live PnL, smart token scanning, sentiment scoring, microstructure analysis, and adaptive risk control. Uses weighted multi-factor analysis and heuristic algorithms for intelligent decision-making. Updated in real time. If you find this project useful, drop a ⭐️ to support it.
+Hunter is a quant level crypto trading bot executing real on-chain trades with live PnL, smart token scanning, sentiment scoring, microstructure analysis, and adaptive risk control. Uses weighted multi-factor analysis and heuristic algorithms for intelligent decision-making. Updated in real time. If you find this project useful, drop a ⭐️ to support it.
 
 ## ⚠️ **IMPORTANT DISCLAIMER**
 
