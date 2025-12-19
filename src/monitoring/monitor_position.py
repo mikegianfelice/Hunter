@@ -7,7 +7,7 @@ import csv
 import signal
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Tuple, Dict, Any
+from typing import Tuple, Dict, Any, Optional
 
 # Add project root to path if not already there
 project_root = Path(__file__).resolve().parents[2]
@@ -370,14 +370,24 @@ def _fetch_token_price_multi_chain(token_address: str) -> float:
         print(f"⚠️ Price fetch failed for {token_address}: {e}")
         return 0.0
 
-def _sell_token_multi_chain(token_address: str, chain_id: str, symbol: str = "?") -> str:
+def _sell_token_multi_chain(token_address: str, chain_id: str, symbol: str = "?", amount_usd: Optional[float] = None) -> str:
     """
     Sell token using the appropriate executor based on chain
+    
+    Args:
+        token_address: Token address to sell
+        chain_id: Chain identifier (solana, ethereum, base)
+        symbol: Token symbol for logging
+        amount_usd: Optional USD amount to sell (for partial sells). If None, sells entire balance.
+    
+    Returns:
+        Transaction hash or None if failed
     """
-    print(f"🔍 [DEBUG] _sell_token_multi_chain called: token={token_address}, chain={chain_id}, symbol={symbol}")
+    print(f"🔍 [DEBUG] _sell_token_multi_chain called: token={token_address}, chain={chain_id}, symbol={symbol}, amount_usd={amount_usd}")
     try:
         if chain_id == "ethereum":
             print(f"🔄 Selling {symbol} on Ethereum...")
+            # Ethereum executor doesn't support partial sells yet - sell full balance
             tx_hash, success = sell_token_ethereum(token_address)
             print(f"🔍 [DEBUG] Ethereum sell result: tx_hash={tx_hash}, success={success}")
         elif chain_id == "base":
@@ -387,7 +397,9 @@ def _sell_token_multi_chain(token_address: str, chain_id: str, symbol: str = "?"
             balance = get_token_balance(token_address)
             print(f"🔍 [DEBUG] Base balance check: {balance}")
             if balance > 0:
-                tx_hash, success = sell_token_base(token_address, balance, symbol)
+                # Base executor accepts token_amount parameter for partial sells
+                sell_amount = balance if amount_usd is None else None  # TODO: Calculate token amount from USD
+                tx_hash, success = sell_token_base(token_address, sell_amount or balance, symbol)
                 print(f"🔍 [DEBUG] Base sell result: tx_hash={tx_hash}, success={success}")
             else:
                 print(f"❌ [ERROR] No {symbol} balance to sell on Base: balance={balance}")
@@ -405,29 +417,43 @@ def _sell_token_multi_chain(token_address: str, chain_id: str, symbol: str = "?"
             balance = lib.get_token_balance(token_address)
             print(f"🔍 [DEBUG] Token balance check result: balance={balance}, type={type(balance)}")
             
-            amount_usd = 0.0
-            if balance is None:
-                print(f"⚠️ [WARNING] Balance pre-check failed (likely RPC rate limit). Proceeding with executor-level balance read.")
-            elif balance <= 0:
-                print(f"❌ [ERROR] No {symbol} balance to sell: balance={balance} (balance <= 0)")
-                return None
+            if amount_usd is None:
+                # Full sell - calculate from balance
+                if balance is None:
+                    print(f"⚠️ [WARNING] Balance pre-check failed (likely RPC rate limit). Proceeding with executor-level balance read.")
+                    amount_usd = 0.0  # Will be calculated in executor
+                elif balance <= 0:
+                    print(f"❌ [ERROR] No {symbol} balance to sell: balance={balance} (balance <= 0)")
+                    return None
+                else:
+                    print(f"✅ [BALANCE OK] Token balance: {balance}")
+                    
+                    # Get current price to calculate USD value
+                    print(f"🔍 [DEBUG] Fetching current price for USD calculation...")
+                    current_price = _fetch_token_price_multi_chain(token_address)
+                    print(f"🔍 [DEBUG] Current price: {current_price}")
+                    
+                    if current_price <= 0:
+                        print(f"⚠️ [WARNING] Could not get current price for {symbol} (price={current_price}), using estimated value")
+                        # Fallback: use a conservative estimate
+                        current_price = 0.01  # Conservative estimate
+                        print(f"🔍 [DEBUG] Using fallback price: {current_price}")
+                    
+                    # Calculate USD value of the token balance
+                    amount_usd = balance * current_price
+                    print(f"🔍 [DEBUG] Calculated amount_usd: {amount_usd} (balance={balance} * price={current_price})")
             else:
-                print(f"✅ [BALANCE OK] Token balance: {balance}")
-                
-                # Get current price to calculate USD value
-                print(f"🔍 [DEBUG] Fetching current price for USD calculation...")
-                current_price = _fetch_token_price_multi_chain(token_address)
-                print(f"🔍 [DEBUG] Current price: {current_price}")
-                
-                if current_price <= 0:
-                    print(f"⚠️ [WARNING] Could not get current price for {symbol} (price={current_price}), using estimated value")
-                    # Fallback: use a conservative estimate
-                    current_price = 0.01  # Conservative estimate
-                    print(f"🔍 [DEBUG] Using fallback price: {current_price}")
-                
-                # Calculate USD value of the token balance
-                amount_usd = balance * current_price
-                print(f"🔍 [DEBUG] Calculated amount_usd: {amount_usd} (balance={balance} * price={current_price})")
+                # Partial sell - use provided amount_usd
+                print(f"📊 [PARTIAL SELL] Selling ${amount_usd:.2f} worth of {symbol}")
+                if balance is None or balance <= 0:
+                    print(f"⚠️ [WARNING] Cannot verify balance for partial sell, proceeding anyway...")
+                else:
+                    current_price = _fetch_token_price_multi_chain(token_address)
+                    if current_price > 0:
+                        balance_value_usd = balance * current_price
+                        if amount_usd > balance_value_usd:
+                            print(f"⚠️ [WARNING] Requested amount ${amount_usd:.2f} exceeds balance value ${balance_value_usd:.2f}, selling full balance")
+                            amount_usd = balance_value_usd
             
             # Try selling with retry logic
             max_retries = 3
@@ -1126,8 +1152,17 @@ def monitor_all_positions():
 
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         print(f"[{timestamp}] 📈 Current price: ${current_price:.6f}")
-        gain = (current_price - entry_price) / entry_price
-        print(f"[{timestamp}] 📊 PnL: {gain * 100:.2f}%")
+        
+        # Calculate gain based on original entry price (for partial positions, use original_entry_price if available)
+        original_entry_price = position_data.get("original_entry_price", entry_price) if isinstance(position_data, dict) else entry_price
+        gain = (current_price - original_entry_price) / original_entry_price
+        print(f"[{timestamp}] 📊 PnL: {gain * 100:.2f}% (entry: ${original_entry_price:.6f})")
+        
+        # Show partial sell info if applicable
+        if isinstance(position_data, dict) and position_data.get("partial_sell_taken"):
+            partial_pct = position_data.get("partial_sell_pct", 0)
+            remaining_pct = 1.0 - partial_pct
+            print(f"[{timestamp}] 📊 Partial sell: {partial_pct*100:.0f}% sold, {remaining_pct*100:.0f}% remaining")
 
         # Calculate take profit threshold (static or dynamic based on config)
         trade = _find_open_trade_by_address(token_address, chain_id)
@@ -1199,14 +1234,81 @@ def monitor_all_positions():
                             updated_positions.pop(position_key, None)
                             continue
                     else:
-                        # Partial sell - log action but don't execute yet
-                        # (Full implementation would require tracking partial position sizes)
-                        print(f"⚠️ Partial sell ({action.size_pct*100:.0f}%) not yet fully implemented - logging action")
-                        log_info("partial_tp.action", 
-                                symbol=symbol,
-                                action_type=action.type,
-                                size_pct=action.size_pct,
-                                reason=action.reason)
+                        # Partial sell - execute the sell and update position
+                        print(f"📊 [PARTIAL TP] Executing partial sell: {action.size_pct*100:.0f}% of position ({action.reason})")
+                        
+                        # Calculate the USD amount to sell
+                        original_position_size = position_data.get("position_size_usd", 0) if isinstance(position_data, dict) else 0
+                        if original_position_size <= 0:
+                            print(f"⚠️ [PARTIAL TP] Cannot determine position size, skipping partial sell")
+                            continue
+                        
+                        # Execute partial sell
+                        tx = _sell_token_multi_chain(token_address, chain_id, symbol, sell_amount_usd)
+                        
+                        if tx:
+                            print(f"✅ [PARTIAL TP] Partial sell successful: {action.size_pct*100:.0f}% sold (TX: {tx})")
+                            
+                            # Calculate remaining position size
+                            remaining_size_pct = 1.0 - action.size_pct
+                            remaining_position_size_usd = original_position_size * remaining_size_pct
+                            
+                            # Update position data with remaining size
+                            if isinstance(position_data, dict):
+                                # Store original entry price if not already stored
+                                if "original_entry_price" not in position_data:
+                                    position_data["original_entry_price"] = entry_price
+                                
+                                # Update position size to remaining amount
+                                position_data["position_size_usd"] = remaining_position_size_usd
+                                position_data["partial_sell_taken"] = True
+                                position_data["partial_sell_pct"] = action.size_pct
+                                position_data["partial_sell_tx"] = tx
+                                position_data["partial_sell_price"] = current_price
+                                position_data["partial_sell_time"] = datetime.now().isoformat()
+                                
+                                # Keep original entry_price for proper PnL calculation
+                                # The remaining position still uses the original entry price
+                                
+                                # Save updated position
+                                updated_positions[position_key] = position_data
+                                
+                                # Also update in storage
+                                from src.storage.positions import upsert_position
+                                upsert_position(position_key, position_data)
+                                
+                                print(f"📊 [PARTIAL TP] Updated position: remaining size=${remaining_position_size_usd:.2f} ({remaining_size_pct*100:.0f}%)")
+                                
+                                # Log partial sell to trade log
+                                log_trade(token_address, entry_price, current_price, f"partial_tp_{action.size_pct:.0%}")
+                                
+                                # Send Telegram notification
+                                send_telegram_message(
+                                    f"💰 Partial Take-Profit Executed!\n"
+                                    f"Token: {symbol} ({token_address[:8]}...{token_address[-8:]})\n"
+                                    f"Chain: {chain_id.upper()}\n"
+                                    f"Sold: {action.size_pct*100:.0f}% at ${current_price:.6f}\n"
+                                    f"Gain: {gain*100:.2f}%\n"
+                                    f"Remaining: {remaining_size_pct*100:.0f}% (${remaining_position_size_usd:.2f})\n"
+                                    f"TX: {tx}\n"
+                                    f"Reason: {action.reason}"
+                                )
+                                
+                                log_info("partial_tp.executed",
+                                        symbol=symbol,
+                                        size_pct=action.size_pct,
+                                        remaining_pct=remaining_size_pct,
+                                        sell_price=current_price,
+                                        tx_hash=tx,
+                                        reason=action.reason)
+                            else:
+                                print(f"⚠️ [PARTIAL TP] Position data format not supported for partial sell tracking")
+                        else:
+                            print(f"❌ [PARTIAL TP] Partial sell failed, will retry on next cycle")
+                            log_info("partial_tp.failed",
+                                    symbol=symbol,
+                                    size_pct=action.size_pct,
+                                    reason=action.reason)
                 
                 elif action.type == "move_stop" and action.new_stop_price:
                     # Update trailing stop
