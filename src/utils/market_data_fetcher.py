@@ -1318,43 +1318,81 @@ class MarketDataFetcher:
                 
                 logger.info(f"Found {len(pool_addresses)} pools, querying transactions from pools...")
                 
-                # Step 2: Query transactions from pool addresses
+                # Step 2: Query transactions from pool addresses with pagination
                 for pool_address in pool_addresses[:5]:  # Limit to first 5 pools for performance
                     try:
                         pool_pubkey = Pubkey.from_string(pool_address)
                         
-                        # Get signatures for the pool address
-                        sigs_response = client.get_signatures_for_address(
-                            pool_pubkey,
-                            limit=500,  # Get recent transactions from pool
-                            before=None
-                        )
+                        # Paginate backwards in time to reach November 2025
+                        all_signatures = []
+                        before_signature = None
+                        max_pages = 20  # Limit to 20 pages (10,000 transactions max) to avoid infinite loops
                         
-                        if not sigs_response.value:
-                            continue
+                        logger.debug(f"Querying pool {pool_address[:8]}... with pagination to reach historical data")
                         
-                        # Extract signatures and filter by timestamp
-                        signatures = []
-                        for sig_info in sigs_response.value:
-                            if sig_info.block_time:
-                                if start_time <= sig_info.block_time <= end_time:
-                                    signatures.append(sig_info.signature)
-                                elif sig_info.block_time < start_time:
-                                    # We've gone too far back, stop
-                                    break
+                        for page in range(max_pages):
+                            # Get signatures for the pool address, paginating backwards
+                            sigs_response = client.get_signatures_for_address(
+                                pool_pubkey,
+                                limit=500,  # Get up to 500 transactions per page
+                                before=before_signature  # Paginate using last signature from previous page
+                            )
+                            
+                            if not sigs_response.value:
+                                break  # No more transactions
+                            
+                            page_signatures = []
+                            found_old_enough = False
+                            
+                            for sig_info in sigs_response.value:
+                                if sig_info.block_time:
+                                    if sig_info.block_time < start_time:
+                                        # We've gone too far back, stop paginating
+                                        found_old_enough = True
+                                        break
+                                    elif start_time <= sig_info.block_time <= end_time:
+                                        # This transaction is in our target range
+                                        page_signatures.append(sig_info.signature)
+                                else:
+                                    # No block_time, include it and filter later
+                                    page_signatures.append(sig_info.signature)
+                            
+                            all_signatures.extend(page_signatures)
+                            
+                            # Check if we need to continue paginating
+                            if found_old_enough:
+                                # We've reached transactions older than our target, stop
+                                break
+                            
+                            # Check if the oldest transaction in this page is still too recent
+                            oldest_block_time = None
+                            for sig_info in sigs_response.value:
+                                if sig_info.block_time:
+                                    if oldest_block_time is None or sig_info.block_time < oldest_block_time:
+                                        oldest_block_time = sig_info.block_time
+                            
+                            if oldest_block_time and oldest_block_time < start_time:
+                                # We've gone back far enough
+                                break
+                            
+                            # Set up pagination for next page
+                            if sigs_response.value:
+                                before_signature = sigs_response.value[-1].signature
                             else:
-                                # No block_time, include it and filter later
-                                signatures.append(sig_info.signature)
+                                break  # No more transactions
+                            
+                            logger.debug(f"Page {page + 1}: Found {len(page_signatures)} transactions in range, oldest: {oldest_block_time}")
                         
-                        if not signatures:
+                        if not all_signatures:
+                            logger.debug(f"No transactions in time range for pool {pool_address[:8]}...")
                             continue
                         
-                        logger.debug(f"Processing {len(signatures)} transactions from pool {pool_address[:8]}...")
+                        logger.info(f"Found {len(all_signatures)} transactions in target time range from pool {pool_address[:8]}...")
                         
                         # Fetch transactions in batches
                         batch_size = 50
-                        for i in range(0, len(signatures), batch_size):
-                            batch = signatures[i:i + batch_size]
+                        for i in range(0, len(all_signatures), batch_size):
+                            batch = all_signatures[i:i + batch_size]
                             
                             try:
                                 # Get transaction details
@@ -1382,7 +1420,7 @@ class MarketDataFetcher:
                                     if not block_time:
                                         continue
                                     
-                                    # Filter by time range
+                                    # Filter by time range (double-check)
                                     if block_time < start_time or block_time > end_time:
                                         continue
                                     
@@ -1584,22 +1622,34 @@ class MarketDataFetcher:
                 data = response.json()
                 pairs = data.get('pairs', [])
                 
+                if not pairs:
+                    logger.warning(f"DexScreener returned no pairs for {token_address[:8]}...")
+                    return []
+                
                 # Extract pool addresses from pairs
                 for pair in pairs[:10]:  # Get top 10 pairs
                     pair_address = pair.get('pairAddress')
                     if pair_address:
-                        pool_addresses.append(pair_address)
+                        # Verify it's a valid Solana address format
+                        if len(pair_address) in [43, 44]:  # Solana address length
+                            pool_addresses.append(pair_address)
+                        else:
+                            logger.debug(f"Invalid address format from DexScreener: {pair_address[:20]}...")
                 
                 if pool_addresses:
                     logger.info(f"Found {len(pool_addresses)} pools from DexScreener for {token_address[:8]}...")
                     return pool_addresses
                 else:
-                    logger.debug(f"No pool addresses found in DexScreener response for {token_address[:8]}...")
+                    logger.warning(f"No valid pool addresses found in DexScreener response for {token_address[:8]}...")
+                    logger.debug(f"DexScreener returned {len(pairs)} pairs, but no valid addresses")
+                    if pairs:
+                        logger.debug(f"Sample pair data: {list(pairs[0].keys())}")
             else:
-                logger.debug(f"DexScreener API returned status {response.status_code} for {token_address[:8]}...")
+                logger.warning(f"DexScreener API returned status {response.status_code} for {token_address[:8]}...")
+                logger.debug(f"Response: {response.text[:500]}")
         
         except Exception as e:
-            logger.debug(f"DexScreener pool discovery failed for {token_address[:8]}...: {e}")
+            logger.error(f"DexScreener pool discovery failed for {token_address[:8]}...: {e}", exc_info=True)
         
         return pool_addresses
     
