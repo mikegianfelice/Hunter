@@ -256,6 +256,10 @@ trending_tokens.csv
 # These files are needed by GitHub Actions workflow
 !data/performance_data.json
 
+# ML training data (generated, can be regenerated)
+data/ml_training_data.json
+data/ml_api_calls.log
+
 # Trading logs and archives
 archives/
 logs/

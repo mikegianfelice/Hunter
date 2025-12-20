@@ -853,18 +853,24 @@ class MarketDataFetcher:
             logger.error(f"Error saving API tracker: {e}")
 
     def get_candlestick_data(self, token_address: str, chain_id: str = "ethereum", 
-                            hours: int = 24, force_fetch: bool = False) -> Optional[List[Dict]]:
+                            hours: int = 24, force_fetch: bool = False,
+                            target_timestamp: Optional[float] = None) -> Optional[List[Dict]]:
         """
         Get candlestick data using optimal API for each chain:
         - Solana: Helius API (30k/day limit - use freely!)
         - Ethereum/Base: The Graph (free tier) or CoinGecko (sparingly)
+        
+        Args:
+            target_timestamp: Unix timestamp to query historical data for (None = current time)
         """
         cache_key = f"{chain_id}:{token_address.lower()}:{hours}"
+        if target_timestamp:
+            cache_key += f":{int(target_timestamp)}"
         current_time = time.time()
         
         # SOLANA: Use Helius (30k/day limit - use freely!)
         if chain_id.lower() == "solana":
-            return self._get_solana_candles_from_helius(token_address, hours, cache_key, force_fetch)
+            return self._get_solana_candles_from_helius(token_address, hours, cache_key, force_fetch, target_timestamp)
         
         # ETHEREUM/BASE: Use The Graph (free) or CoinGecko (sparingly)
         elif chain_id.lower() in ["ethereum", "base"]:
@@ -955,15 +961,21 @@ class MarketDataFetcher:
     
     def _get_solana_candles(self, token_address: str, hours: int) -> Optional[List[Dict]]:
         """Get real candlestick data from Solana DEX (legacy method - now uses Helius)"""
-        # Redirect to Helius method
-        return self._get_solana_candles_from_helius(token_address, hours, f"solana:{token_address.lower()}:{hours}", False)
+        # Redirect to Helius method (None for target_timestamp = current time)
+        return self._get_solana_candles_from_helius(token_address, hours, f"solana:{token_address.lower()}:{hours}", False, None)
     
     def _get_solana_candles_from_helius(self, token_address: str, hours: int, 
-                                       cache_key: str, force_fetch: bool = False) -> Optional[List[Dict]]:
+                                       cache_key: str, force_fetch: bool = False,
+                                       target_timestamp: Optional[float] = None) -> Optional[List[Dict]]:
         """
         Build candlesticks from Helius DEX swap transactions
         Uses Helius API (30k/day limit - use freely!)
+        
+        Args:
+            target_timestamp: Unix timestamp to query historical data for (None = current time)
         """
+        # Use target_timestamp if provided, otherwise use current time
+        query_time = target_timestamp if target_timestamp else time.time()
         current_time = time.time()
         
         # Check cache first
@@ -983,15 +995,15 @@ class MarketDataFetcher:
             # Use Helius DEX API to get swap transactions
             url = f"{self.helius_base_url}/addresses/{token_address}/transactions"
             
-            # Calculate time range
-            end_time = int(time.time())
+            # Calculate time range relative to target_timestamp (or current time)
+            end_time = int(query_time)  # Use target timestamp instead of time.time()
             start_time = end_time - (hours * 3600)
             
             params = {
                 "api-key": self.helius_api_key,
                 "type": "SWAP",  # Only get swap transactions
-                "before": end_time,
-                "until": start_time,
+                "before": end_time,  # Unix timestamp - Helius supports historical queries!
+                "until": start_time,  # Unix timestamp - Helius supports historical queries!
                 "limit": 1000  # Get up to 1000 swaps
             }
             
@@ -1008,8 +1020,8 @@ class MarketDataFetcher:
                 logger.debug(f"Insufficient swap data from Helius for {token_address[:8]}..., using price_memory")
                 return self._get_solana_candles_from_memory(token_address, hours)
             
-            # Process swaps into hourly candles
-            candles = self._process_helius_swaps_to_candles(swaps, hours)
+            # Process swaps into hourly candles (pass target_timestamp for proper filtering)
+            candles = self._process_helius_swaps_to_candles(swaps, hours, target_timestamp)
             
             if candles and len(candles) >= 10:
                 # Cache the result
@@ -1034,15 +1046,16 @@ class MarketDataFetcher:
             logger.error(f"Error fetching Helius candlestick data: {e}")
             return self._get_solana_candles_from_memory(token_address, hours)
     
-    def _process_helius_swaps_to_candles(self, swaps: List[Dict], hours: int) -> List[Dict]:
+    def _process_helius_swaps_to_candles(self, swaps: List[Dict], hours: int, target_timestamp: Optional[float] = None) -> List[Dict]:
         """Convert Helius swap transactions to hourly candles"""
         if not swaps:
             return []
         
         # Group swaps by hour
         candles = {}
-        current_time = time.time()
-        hour_start = int(current_time - (hours * 3600))
+        # Use target_timestamp if provided, otherwise use current time
+        query_time = target_timestamp if target_timestamp else time.time()
+        hour_start = int(query_time - (hours * 3600))
         
         for swap in swaps:
             # Extract timestamp and price from Helius swap data
