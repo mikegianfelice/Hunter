@@ -146,6 +146,9 @@ holder_concentration_cache_minutes: 10  # Cache holder data for 10 minutes
 holder_concentration_block_on_high_risk: true  # Hard block tokens when concentration exceeds threshold
 holder_concentration_fail_closed: true  # Block trades if holder concentration check fails (prevents risky tokens from passing)
 
+# === Volume/Liquidity Safety ===
+max_volume_liquidity_ratio: 10.0  # Reject tokens where volume > 10× liquidity (manipulation/wash trading indicator)
+
 # === Jupiter API Settings ===
 enable_jupiter_pre_check: true  # Enable Jupiter pre-check for quality
 jupiter_pre_check_strict: true  # Reject tokens if Jupiter pre-check fails

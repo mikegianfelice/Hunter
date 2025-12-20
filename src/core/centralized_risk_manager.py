@@ -639,7 +639,12 @@ class CentralizedRiskManager:
             liquidity_conditions = 0.5  # Neutral baseline
             if token_volume > 0 and token_liquidity > 0:
                 vol_liq_ratio = token_volume / token_liquidity
-                if vol_liq_ratio > 0.5:
+                max_vol_liq_ratio = get_config_float("max_volume_liquidity_ratio", 10.0)
+                # CRITICAL: Flag tokens with volume > 10× liquidity as maximum risk (manipulation indicator)
+                if vol_liq_ratio > max_vol_liq_ratio:
+                    liquidity_conditions = 1.0  # Maximum risk - potential manipulation/wash trading
+                    logger.warning(f"High volume/liquidity ratio detected: {vol_liq_ratio:.2f}x (volume: ${token_volume:,.0f}, liquidity: ${token_liquidity:,.0f})")
+                elif vol_liq_ratio > 0.5:
                     liquidity_conditions = 0.2  # Good liquidity
                 elif vol_liq_ratio < 0.1:
                     liquidity_conditions = 0.7  # Poor liquidity
@@ -692,6 +697,20 @@ class CentralizedRiskManager:
         """Assess token-specific risk"""
         try:
             risk_score = 0.0
+            
+            # Volume-to-liquidity ratio check (manipulation indicator)
+            volume_24h = float(token.get('volume24h', 0) or 0.0)
+            liquidity = float(token.get('liquidity', 0) or 0.0)
+            if volume_24h > 0 and liquidity > 0:
+                vol_liq_ratio = volume_24h / liquidity
+                max_vol_liq_ratio = get_config_float("max_volume_liquidity_ratio", 10.0)
+                if vol_liq_ratio > max_vol_liq_ratio:  # Volume > 10× liquidity = manipulation risk
+                    logger.warning(f"Token rejected: volume/liquidity ratio too high ({vol_liq_ratio:.2f}x) - potential manipulation (volume: ${volume_24h:,.0f}, liquidity: ${liquidity:,.0f})")
+                    return 1.0  # Maximum risk - reject token
+                elif vol_liq_ratio > 5.0:  # Volume > 5× liquidity = high risk
+                    risk_score += 0.5
+                elif vol_liq_ratio > 2.0:  # Volume > 2× liquidity = moderate risk
+                    risk_score += 0.2
             
             # Token age risk (if available)
             # This would check token creation date, but simplified for now

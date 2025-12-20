@@ -14,7 +14,7 @@ from src.utils.address_utils import (
     validate_chain_address_match,
 )
 from collections import defaultdict
-from src.config.config_loader import get_config, get_config_bool
+from src.config.config_loader import get_config, get_config_bool, get_config_float
 
 # Dynamic config loading
 def get_token_scraper_config():
@@ -446,9 +446,15 @@ def fetch_trending_tokens(limit=200):  # INCREASED for more opportunities
             print(f"🚫 Skipping suspiciously low price token: {symbol} (${price})")
             continue
         
-        # Reject tokens with extremely low volume/liquidity ratios (manipulation indicators) - more lenient
+        # Reject tokens with suspicious volume/liquidity ratios (manipulation indicators)
         if liq > 0 and vol24 > 0:
             vol_liq_ratio = vol24 / liq
+            max_vol_liq_ratio = get_config_float("max_volume_liquidity_ratio", 10.0)
+            # Reject tokens with volume > 10× liquidity (manipulation/wash trading indicator)
+            if vol_liq_ratio > max_vol_liq_ratio:
+                print(f"🚫 Skipping token with suspiciously high volume/liquidity ratio: {symbol} (ratio: {vol_liq_ratio:.2f}x, vol: ${vol24:,.0f}, liq: ${liq:,.0f})")
+                continue
+            # Reject tokens with extremely low volume/liquidity ratios (more lenient)
             if vol_liq_ratio < 0.05:  # Volume less than 5% of liquidity (more lenient)
                 print(f"🚫 Skipping low volume/liquidity ratio: {symbol} (ratio: {vol_liq_ratio:.2f})")
                 continue
