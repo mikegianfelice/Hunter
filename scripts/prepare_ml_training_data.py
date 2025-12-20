@@ -107,7 +107,7 @@ def fetch_historical_candles(token_address: str, entry_timestamp: datetime, chai
         return filtered_candles
         
     except Exception as e:
-        logger.error(f"Error fetching candles for {token_address[:8]}...: {e}")
+        logger.error(f"Error fetching candles for {token_address[:8]}...: {e}", exc_info=True)
         return None
 
 
@@ -282,17 +282,19 @@ def prepare_training_data():
             fetch_time = time.time() - start_time
             
             api_call_count += 1
-            api_log.append({
+            api_log_entry = {
                 'trade_index': i,
                 'token': trade['token'],
                 'timestamp': trade['timestamp'].isoformat(),
                 'fetch_time_seconds': fetch_time,
                 'candles_count': len(candles) if candles else 0,
                 'success': candles is not None
-            })
+            }
+            api_log.append(api_log_entry)
             
             if not candles:
-                logger.warning(f"  ⚠️  No candlestick data available")
+                logger.warning(f"  ⚠️  No candlestick data available for {trade['token'][:8]}...")
+                logger.debug(f"  API call took {fetch_time:.3f}s, returned {api_log_entry['candles_count']} candles")
                 failed_extractions += 1
                 continue
             

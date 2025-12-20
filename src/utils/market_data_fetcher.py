@@ -41,7 +41,7 @@ class MarketDataFetcher:
         # Prefer non-CoinGecko sources to stay within free-tier limits
         self.prefer_coincap_for_prices = True
         # When False, CoinGecko market_chart/range is disabled and only CoinCap is used
-        self.enable_coingecko_market_chart = False
+        self.enable_coingecko_market_chart = True  # Enabled for Solana token lookups
         # When False, global metrics are fetched from CoinCap first; CoinGecko is fallback-only
         self.enable_coingecko_global = False
         
@@ -857,7 +857,7 @@ class MarketDataFetcher:
                             target_timestamp: Optional[float] = None) -> Optional[List[Dict]]:
         """
         Get candlestick data using optimal API for each chain:
-        - Solana: Helius API (30k/day limit - use freely!)
+        - Solana: CoinGecko API (via token ID lookup)
         - Ethereum/Base: The Graph (free tier) or CoinGecko (sparingly)
         
         Args:
@@ -868,9 +868,15 @@ class MarketDataFetcher:
             cache_key += f":{int(target_timestamp)}"
         current_time = time.time()
         
-        # SOLANA: Use Helius (30k/day limit - use freely!)
+        # SOLANA: Use CoinGecko (instead of Helius)
         if chain_id.lower() == "solana":
-            return self._get_solana_candles_from_helius(token_address, hours, cache_key, force_fetch, target_timestamp)
+            if self._can_make_coingecko_call():
+                return self._get_solana_candles_from_coingecko(
+                    token_address, hours, cache_key, force_fetch, target_timestamp
+                )
+            else:
+                logger.warning(f"Cannot make CoinGecko call for {token_address[:8]}... (quota limit reached)")
+                return None
         
         # ETHEREUM/BASE: Use The Graph (free) or CoinGecko (sparingly)
         elif chain_id.lower() in ["ethereum", "base"]:
@@ -1003,21 +1009,32 @@ class MarketDataFetcher:
                 "api-key": self.helius_api_key,
                 "type": "SWAP",  # Only get swap transactions
                 "before": end_time,  # Unix timestamp - Helius supports historical queries!
-                "until": start_time,  # Unix timestamp - Helius supports historical queries!
+                "after": start_time,  # Changed from "until" to "after" - correct Helius API parameter
                 "limit": 1000  # Get up to 1000 swaps
             }
             
             response = requests.get(url, params=params, timeout=15)
             
             if response.status_code != 200:
-                logger.warning(f"Helius API error {response.status_code} for {token_address[:8]}..., falling back to price_memory")
+                error_msg = response.text if hasattr(response, 'text') else str(response.content)
+                logger.error(f"Helius API error {response.status_code} for {token_address[:8]}...")
+                logger.debug(f"Request URL: {url}")
+                logger.debug(f"Request params: {params}")
+                logger.debug(f"Response: {error_msg[:500]}")  # Limit error message length
                 return self._get_solana_candles_from_memory(token_address, hours)
             
-            data = response.json()
+            try:
+                data = response.json()
+            except Exception as e:
+                logger.error(f"Failed to parse Helius API response as JSON for {token_address[:8]}...: {e}")
+                logger.debug(f"Response content: {response.text[:500]}")
+                return self._get_solana_candles_from_memory(token_address, hours)
+            
             swaps = data.get('transactions', [])
             
             if not swaps or len(swaps) < 2:
-                logger.debug(f"Insufficient swap data from Helius for {token_address[:8]}..., using price_memory")
+                logger.debug(f"Insufficient swap data from Helius for {token_address[:8]}... (got {len(swaps)} swaps), using price_memory")
+                logger.debug(f"Response keys: {list(data.keys()) if isinstance(data, dict) else 'not a dict'}")
                 return self._get_solana_candles_from_memory(token_address, hours)
             
             # Process swaps into hourly candles (pass target_timestamp for proper filtering)
@@ -1043,7 +1060,7 @@ class MarketDataFetcher:
             return self._get_solana_candles_from_memory(token_address, hours)
             
         except Exception as e:
-            logger.error(f"Error fetching Helius candlestick data: {e}")
+            logger.error(f"Error fetching Helius candlestick data for {token_address[:8]}...: {e}", exc_info=True)
             return self._get_solana_candles_from_memory(token_address, hours)
     
     def _process_helius_swaps_to_candles(self, swaps: List[Dict], hours: int, target_timestamp: Optional[float] = None) -> List[Dict]:
@@ -1234,16 +1251,185 @@ class MarketDataFetcher:
     
     def _get_candles_from_coingecko(self, token_address: str, chain_id: str, 
                                 hours: int, cache_key: str) -> Optional[List[Dict]]:
-        """Get candlesticks from CoinGecko (sparingly, only when needed)"""
+        """Get candlesticks from CoinGecko for Ethereum/Base tokens (sparingly, only when needed)"""
         # Check cache first
         if cache_key in self.candlestick_cache_coingecko:
             cached = self.candlestick_cache_coingecko[cache_key]
             if time.time() - cached['timestamp'] < self.coingecko_cache_duration:
                 return cached['data']
         
-        # This would require CoinGecko token ID mapping
-        # For now, return None to avoid CoinGecko calls
-        logger.debug(f"Skipping CoinGecko fetch for {token_address[:8]}... (use Helius/The Graph instead)")
+        # For Ethereum/Base, we'd need CoinGecko token ID mapping
+        # This is a placeholder - implement if needed for Ethereum tokens
+        logger.debug(f"Skipping CoinGecko fetch for {token_address[:8]}... (Ethereum/Base not yet implemented)")
+        return None
+    
+    def _get_solana_candles_from_coingecko(self, token_address: str, hours: int, 
+                                          cache_key: str, force_fetch: bool = False,
+                                          target_timestamp: Optional[float] = None) -> Optional[List[Dict]]:
+        """
+        Get Solana candlestick data from CoinGecko using OHLC endpoint.
+        First looks up the CoinGecko token ID from the Solana mint address.
+        """
+        # Check cache first
+        if not force_fetch and cache_key in self.candlestick_cache_coingecko:
+            cached = self.candlestick_cache_coingecko[cache_key]
+            cache_age = time.time() - cached['timestamp']
+            if cache_age < self.coingecko_cache_duration:
+                logger.debug(f"✅ Using cached CoinGecko candlestick data for {token_address[:8]}...")
+                return cached['data']
+        
+        # Look up CoinGecko token ID from Solana mint address
+        token_id = self._get_coingecko_token_id_from_solana_address(token_address)
+        if not token_id:
+            logger.warning(f"Could not find CoinGecko token ID for Solana address {token_address[:8]}...")
+            return None
+        
+        # Calculate time range
+        query_time = target_timestamp if target_timestamp else time.time()
+        end_time = int(query_time)
+        start_time = end_time - (hours * 3600)
+        
+        # Use CoinGecko OHLC endpoint for candlestick data
+        # days parameter: 1 = 24h, 7 = 7d, 14 = 14d, 30 = 30d, 90 = 90d, 180 = 180d, 365 = 1y, max = max
+        days = max(1, (hours // 24) + (1 if hours % 24 > 0 else 0))
+        if days > 365:
+            days = "max"
+        
+        url = f"{self._coingecko_base_url}coins/{token_id}/ohlc"
+        params = {
+            "vs_currency": "usd",
+            "days": str(days)
+        }
+        
+        headers = {}
+        if self.coingecko_api_key:
+            headers["x-cg-demo-api-key"] = self.coingecko_api_key
+        
+        try:
+            response = requests.get(url, params=params, headers=headers, timeout=15)
+            
+            if response.status_code != 200:
+                logger.error(f"CoinGecko API error {response.status_code} for {token_address[:8]}...")
+                logger.debug(f"Response: {response.text[:500]}")
+                return None
+            
+            data = response.json()
+            
+            if not isinstance(data, list) or len(data) == 0:
+                logger.warning(f"No OHLC data from CoinGecko for {token_address[:8]}...")
+                return None
+            
+            # Convert CoinGecko OHLC format to our candle format
+            # CoinGecko OHLC: [timestamp_ms, open, high, low, close]
+            candles = []
+            for ohlc in data:
+                if not isinstance(ohlc, list) or len(ohlc) < 5:
+                    continue
+                    
+                timestamp_ms = ohlc[0]
+                timestamp = timestamp_ms / 1000  # Convert to seconds
+                
+                # Filter by target_timestamp if provided
+                if target_timestamp and timestamp > target_timestamp:
+                    continue
+                
+                # Filter by start_time
+                if timestamp < start_time:
+                    continue
+                
+                candles.append({
+                    'time': int(timestamp),
+                    'timestamp': int(timestamp),
+                    'open': float(ohlc[1]),
+                    'high': float(ohlc[2]),
+                    'low': float(ohlc[3]),
+                    'close': float(ohlc[4]),
+                    'volume': 0.0  # CoinGecko OHLC doesn't include volume
+                })
+            
+            # Sort by timestamp
+            candles.sort(key=lambda x: x['time'])
+            
+            if len(candles) < 10:
+                logger.warning(f"Insufficient candles ({len(candles)}) from CoinGecko for {token_address[:8]}...")
+                return None
+            
+            # Cache the result
+            self.candlestick_cache_coingecko[cache_key] = {
+                'data': candles,
+                'timestamp': time.time(),
+                'source': 'coingecko'
+            }
+            self._save_candlestick_cache()
+            
+            # Track API call
+            self.api_call_tracker['coingecko'] = self.api_call_tracker.get('coingecko', 0) + 1
+            self._save_api_tracker()
+            
+            logger.info(f"✅ Got {len(candles)} candles from CoinGecko for {token_address[:8]}...")
+            return candles
+            
+        except Exception as e:
+            logger.error(f"Error fetching CoinGecko candlestick data: {e}", exc_info=True)
+            return None
+    
+    def _get_coingecko_token_id_from_solana_address(self, solana_address: str) -> Optional[str]:
+        """
+        Look up CoinGecko token ID from Solana mint address.
+        Uses CoinGecko's /coins/{platform}/{contract} endpoint.
+        """
+        # CoinGecko uses platform ID "solana" for Solana tokens
+        url = f"{self._coingecko_base_url}coins/solana/{solana_address.lower()}"
+        
+        headers = {}
+        if self.coingecko_api_key:
+            headers["x-cg-demo-api-key"] = self.coingecko_api_key
+        
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                token_id = data.get('id')
+                if token_id:
+                    logger.debug(f"Found CoinGecko token ID '{token_id}' for Solana address {solana_address[:8]}...")
+                    return token_id
+            
+            # If direct lookup fails, try search endpoint
+            return self._search_coingecko_token_id(solana_address)
+            
+        except Exception as e:
+            logger.debug(f"Error looking up CoinGecko token ID: {e}")
+            return self._search_coingecko_token_id(solana_address)
+    
+    def _search_coingecko_token_id(self, solana_address: str) -> Optional[str]:
+        """
+        Search for CoinGecko token ID using search endpoint.
+        This is a fallback if direct contract lookup fails.
+        """
+        url = f"{self._coingecko_base_url}search"
+        params = {"query": solana_address}
+        
+        headers = {}
+        if self.coingecko_api_key:
+            headers["x-cg-demo-api-key"] = self.coingecko_api_key
+        
+        try:
+            response = requests.get(url, params=params, headers=headers, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                coins = data.get('coins', [])
+                for coin in coins[:5]:  # Check first 5 results
+                    # Verify it's a Solana token
+                    platforms = coin.get('platforms', {})
+                    if 'solana' in platforms and platforms['solana'] == solana_address.lower():
+                        token_id = coin.get('id')
+                        if token_id:
+                            logger.debug(f"Found CoinGecko token ID '{token_id}' via search for {solana_address[:8]}...")
+                            return token_id
+        except Exception as e:
+            logger.debug(f"Error searching CoinGecko token ID: {e}")
+        
         return None
     
     def _process_swaps_to_candles(self, swaps: List[Dict], hours: int) -> List[Dict]:
