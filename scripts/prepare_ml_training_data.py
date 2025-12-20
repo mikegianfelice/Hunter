@@ -58,7 +58,8 @@ def parse_timestamp(timestamp_str: str) -> datetime:
 
 def fetch_historical_candles(token_address: str, entry_timestamp: datetime, chain_id: str, hours: int = 24) -> Optional[List[Dict]]:
     """
-    Fetch candlestick data for historical entry timestamp using Helius API
+    Fetch candlestick data for historical entry timestamp using Solana RPC
+    Queries blockchain directly for DEX swap transactions (no external API needed)
     """
     try:
         logger.info(f"Fetching candlestick data for {token_address[:8]}... at {entry_timestamp}")
@@ -67,7 +68,7 @@ def fetch_historical_candles(token_address: str, entry_timestamp: datetime, chai
         entry_ts = entry_timestamp.timestamp()
         
         # Fetch candlestick data using historical timestamp
-        # Helius API now supports historical queries via target_timestamp parameter
+        # Uses Solana RPC to query DEX swap transactions directly
         candles = market_data_fetcher.get_candlestick_data(
             token_address=token_address,
             chain_id=chain_id,
@@ -80,7 +81,7 @@ def fetch_historical_candles(token_address: str, entry_timestamp: datetime, chai
             logger.warning(f"No candlestick data for {token_address[:8]}...")
             return None
         
-        # Helius already returns data up to entry timestamp, but verify
+        # RPC returns data up to entry timestamp, but verify
         # Filter to ensure all candles are before or at entry time
         filtered_candles = []
         for candle in candles:

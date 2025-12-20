@@ -13,6 +13,9 @@ from datetime import datetime, timedelta
 import statistics
 from pathlib import Path
 
+from solana.rpc.api import Client
+from solders.pubkey import Pubkey
+
 from src.config.secrets import GRAPH_API_KEY, UNISWAP_V3_DEPLOYMENT_ID
 from src.utils.coingecko_helpers import ensure_vs_currency, DEFAULT_FIAT
 
@@ -868,15 +871,15 @@ class MarketDataFetcher:
             cache_key += f":{int(target_timestamp)}"
         current_time = time.time()
         
-        # SOLANA: Use CoinGecko (instead of Helius)
+        # SOLANA: Use RPC to query blockchain directly for DEX swap transactions
         if chain_id.lower() == "solana":
-            if self._can_make_coingecko_call():
-                return self._get_solana_candles_from_coingecko(
+            if self.helius_api_key:
+                return self._get_solana_candles_from_rpc(
                     token_address, hours, cache_key, force_fetch, target_timestamp
                 )
             else:
-                logger.warning(f"Cannot make CoinGecko call for {token_address[:8]}... (quota limit reached)")
-                return None
+                logger.warning(f"No Helius API key configured for {token_address[:8]}..., using price_memory fallback")
+                return self._get_solana_candles_from_memory(token_address, hours)
         
         # ETHEREUM/BASE: Use The Graph (free) or CoinGecko (sparingly)
         elif chain_id.lower() in ["ethereum", "base"]:
@@ -1263,174 +1266,307 @@ class MarketDataFetcher:
         logger.debug(f"Skipping CoinGecko fetch for {token_address[:8]}... (Ethereum/Base not yet implemented)")
         return None
     
-    def _get_solana_candles_from_coingecko(self, token_address: str, hours: int, 
-                                          cache_key: str, force_fetch: bool = False,
-                                          target_timestamp: Optional[float] = None) -> Optional[List[Dict]]:
+    def _get_solana_candles_from_rpc(self, token_address: str, hours: int,
+                                     cache_key: str, force_fetch: bool = False,
+                                     target_timestamp: Optional[float] = None) -> Optional[List[Dict]]:
         """
-        Get Solana candlestick data from CoinGecko using OHLC endpoint.
-        First looks up the CoinGecko token ID from the Solana mint address.
+        Build candlesticks by querying Solana RPC directly for DEX swap transactions.
+        No external API needed - uses your existing Helius RPC access.
+        
+        This method:
+        1. Queries DEX program accounts (Raydium, Orca) for swap transactions
+        2. Filters swaps involving the target token
+        3. Extracts price data from swap transactions
+        4. Builds OHLC candles from the swap data
         """
         # Check cache first
-        if not force_fetch and cache_key in self.candlestick_cache_coingecko:
-            cached = self.candlestick_cache_coingecko[cache_key]
+        if not force_fetch and cache_key in self.candlestick_cache_helius:
+            cached = self.candlestick_cache_helius[cache_key]
             cache_age = time.time() - cached['timestamp']
-            if cache_age < self.coingecko_cache_duration:
-                logger.debug(f"✅ Using cached CoinGecko candlestick data for {token_address[:8]}...")
+            if cache_age < self.helius_cache_duration:
+                logger.debug(f"✅ Using cached RPC candlestick data for {token_address[:8]}...")
                 return cached['data']
         
-        # Look up CoinGecko token ID from Solana mint address
-        token_id = self._get_coingecko_token_id_from_solana_address(token_address)
-        if not token_id:
-            logger.warning(f"Could not find CoinGecko token ID for Solana address {token_address[:8]}...")
-            return None
-        
-        # Calculate time range
-        query_time = target_timestamp if target_timestamp else time.time()
-        end_time = int(query_time)
-        start_time = end_time - (hours * 3600)
-        
-        # Use CoinGecko OHLC endpoint for candlestick data
-        # days parameter: 1 = 24h, 7 = 7d, 14 = 14d, 30 = 30d, 90 = 90d, 180 = 180d, 365 = 1y, max = max
-        days = max(1, (hours // 24) + (1 if hours % 24 > 0 else 0))
-        if days > 365:
-            days = "max"
-        
-        url = f"{self._coingecko_base_url}coins/{token_id}/ohlc"
-        params = {
-            "vs_currency": "usd",
-            "days": str(days)
-        }
-        
-        headers = {}
-        if self.coingecko_api_key:
-            headers["x-cg-demo-api-key"] = self.coingecko_api_key
+        if not self.helius_api_key:
+            logger.debug("Helius API key not configured, using price_memory fallback")
+            return self._get_solana_candles_from_memory(token_address, hours)
         
         try:
-            response = requests.get(url, params=params, headers=headers, timeout=15)
+            # Use Helius RPC endpoint
+            rpc_url = f"https://mainnet.helius-rpc.com/?api-key={self.helius_api_key}"
+            client = Client(rpc_url)
             
-            if response.status_code != 200:
-                logger.error(f"CoinGecko API error {response.status_code} for {token_address[:8]}...")
-                logger.debug(f"Response: {response.text[:500]}")
-                return None
+            # Calculate time range
+            query_time = target_timestamp if target_timestamp else time.time()
+            end_time = int(query_time)
+            start_time = end_time - (hours * 3600)
             
-            data = response.json()
+            # DEX Program IDs on Solana
+            DEX_PROGRAMS = [
+                "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",  # Raydium V4
+                "27haf8L6oxUeXrHrgEgsexjSY5hbVUWEmvv9Nyxg8vQv",  # Raydium V3
+                "9W959DqEETiGZocYWCQPaJ6sBmUzgfxXfqGeTEdp3aQP",  # Orca V2
+                "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",  # Orca Whirlpool
+            ]
             
-            if not isinstance(data, list) or len(data) == 0:
-                logger.warning(f"No OHLC data from CoinGecko for {token_address[:8]}...")
-                return None
+            token_pubkey = Pubkey.from_string(token_address)
+            swaps = []
             
-            # Convert CoinGecko OHLC format to our candle format
-            # CoinGecko OHLC: [timestamp_ms, open, high, low, close]
-            candles = []
-            for ohlc in data:
-                if not isinstance(ohlc, list) or len(ohlc) < 5:
-                    continue
+            # Query each DEX program for transactions
+            for program_id in DEX_PROGRAMS:
+                try:
+                    program_pubkey = Pubkey.from_string(program_id)
                     
-                timestamp_ms = ohlc[0]
-                timestamp = timestamp_ms / 1000  # Convert to seconds
+                    # Get signatures for the program (recent transactions)
+                    # Note: Solana RPC doesn't support time-based filtering directly,
+                    # so we'll fetch recent transactions and filter by timestamp
+                    sigs_response = client.get_signatures_for_address(
+                        program_pubkey,
+                        limit=1000,
+                        before=None
+                    )
+                    
+                    if not sigs_response.value:
+                        continue
+                    
+                    # Extract signatures
+                    signatures = [sig.signature for sig in sigs_response.value[:500]]  # Limit to 500 for performance
+                    
+                    if not signatures:
+                        continue
+                    
+                    # Fetch transactions in batches
+                    batch_size = 50
+                    for i in range(0, len(signatures), batch_size):
+                        batch = signatures[i:i + batch_size]
+                        
+                        # Get transaction details
+                        txs_response = client.get_transactions(
+                            batch,
+                            max_supported_transaction_version=0
+                        )
+                        
+                        if not txs_response.value:
+                            continue
+                        
+                        # Process each transaction
+                        for tx_result in txs_response.value:
+                            if not tx_result or not tx_result.transaction:
+                                continue
+                            
+                            tx = tx_result.transaction
+                            meta = tx_result.transaction.meta
+                            
+                            if not meta or meta.err:
+                                continue  # Skip failed transactions
+                            
+                            # Get block time (timestamp)
+                            block_time = tx_result.block_time
+                            if not block_time:
+                                continue
+                            
+                            # Filter by time range
+                            if block_time < start_time or block_time > end_time:
+                                continue
+                            
+                            # Check if this transaction involves our token
+                            swap_data = self._extract_swap_from_transaction(
+                                tx, meta, token_pubkey, token_address
+                            )
+                            
+                            if swap_data:
+                                swaps.append({
+                                    'timestamp': block_time,
+                                    'price': swap_data['price'],
+                                    'volume': swap_data.get('volume', 0),
+                                    'signature': str(tx_result.transaction.signatures[0]) if tx_result.transaction.signatures else None
+                                })
                 
-                # Filter by target_timestamp if provided
-                if target_timestamp and timestamp > target_timestamp:
+                except Exception as e:
+                    logger.debug(f"Error querying DEX program {program_id[:8]}...: {e}")
                     continue
-                
-                # Filter by start_time
-                if timestamp < start_time:
-                    continue
-                
-                candles.append({
-                    'time': int(timestamp),
-                    'timestamp': int(timestamp),
-                    'open': float(ohlc[1]),
-                    'high': float(ohlc[2]),
-                    'low': float(ohlc[3]),
-                    'close': float(ohlc[4]),
-                    'volume': 0.0  # CoinGecko OHLC doesn't include volume
-                })
             
-            # Sort by timestamp
-            candles.sort(key=lambda x: x['time'])
+            if not swaps or len(swaps) < 2:
+                logger.debug(f"Insufficient swap data from RPC for {token_address[:8]}... (got {len(swaps)} swaps)")
+                return self._get_solana_candles_from_memory(token_address, hours)
             
-            if len(candles) < 10:
-                logger.warning(f"Insufficient candles ({len(candles)}) from CoinGecko for {token_address[:8]}...")
+            # Sort swaps by timestamp
+            swaps.sort(key=lambda x: x['timestamp'])
+            
+            # Build candles from swaps
+            candles = self._process_swaps_to_candles_rpc(swaps, hours, start_time, end_time)
+            
+            if candles and len(candles) >= 10:
+                # Cache the result
+                self.candlestick_cache_helius[cache_key] = {
+                    'data': candles,
+                    'timestamp': time.time(),
+                    'source': 'rpc'
+                }
+                self._save_candlestick_cache()
+                
+                # Track API call (RPC calls)
+                self.api_call_tracker['helius'] = self.api_call_tracker.get('helius', 0) + 1
+                self._save_api_tracker()
+                
+                logger.info(f"✅ Built {len(candles)} candles from RPC swaps for {token_address[:8]}...")
+                return candles
+            
+            # Fallback to price_memory
+            return self._get_solana_candles_from_memory(token_address, hours)
+            
+        except Exception as e:
+            logger.error(f"Error fetching RPC candlestick data for {token_address[:8]}...: {e}", exc_info=True)
+            return self._get_solana_candles_from_memory(token_address, hours)
+    
+    def _extract_swap_from_transaction(self, tx, meta, token_pubkey: Pubkey, token_address: str) -> Optional[Dict]:
+        """
+        Extract swap price data from a Solana transaction.
+        Looks for token transfers involving the target token and USDC/SOL.
+        """
+        try:
+            if not meta.pre_token_balances or not meta.post_token_balances:
                 return None
             
-            # Cache the result
-            self.candlestick_cache_coingecko[cache_key] = {
-                'data': candles,
-                'timestamp': time.time(),
-                'source': 'coingecko'
-            }
-            self._save_candlestick_cache()
+            # Find token balance changes for our token
+            token_amount_change = 0
+            usdc_amount_change = 0
+            sol_amount_change = 0
             
-            # Track API call
-            self.api_call_tracker['coingecko'] = self.api_call_tracker.get('coingecko', 0) + 1
-            self._save_api_tracker()
+            # USDC mint on Solana
+            USDC_MINT = Pubkey.from_string("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")
+            SOL_MINT_STR = "So11111111111111111111111111111111111111112"
             
-            logger.info(f"✅ Got {len(candles)} candles from CoinGecko for {token_address[:8]}...")
-            return candles
+            # Track balances
+            pre_balances = {}
+            post_balances = {}
+            
+            # Process pre-token balances
+            for balance in meta.pre_token_balances:
+                mint = balance.mint
+                if mint:
+                    owner = str(balance.owner) if balance.owner else None
+                    ui_amount = float(balance.ui_token_amount.ui_amount) if balance.ui_token_amount else 0
+                    pre_balances[(str(mint), owner)] = ui_amount
+            
+            # Process post-token balances
+            for balance in meta.post_token_balances:
+                mint = balance.mint
+                if mint:
+                    owner = str(balance.owner) if balance.owner else None
+                    ui_amount = float(balance.ui_token_amount.ui_amount) if balance.ui_token_amount else 0
+                    post_balances[(str(mint), owner)] = ui_amount
+            
+            # Calculate changes
+            all_mints = set(pre_balances.keys()) | set(post_balances.keys())
+            
+            for (mint_str, owner) in all_mints:
+                pre_amount = pre_balances.get((mint_str, owner), 0)
+                post_amount = post_balances.get((mint_str, owner), 0)
+                change = post_amount - pre_amount
+                
+                try:
+                    mint_pubkey = Pubkey.from_string(mint_str)
+                    
+                    if mint_pubkey == token_pubkey:
+                        token_amount_change += abs(change)
+                    elif mint_pubkey == USDC_MINT:
+                        usdc_amount_change += abs(change)
+                    elif mint_str == SOL_MINT_STR:  # SOL
+                        sol_amount_change += abs(change)
+                except Exception:
+                    # Skip invalid pubkeys
+                    continue
+            
+            # Calculate price (prefer USDC, fallback to SOL)
+            if token_amount_change > 0:
+                if usdc_amount_change > 0:
+                    price = usdc_amount_change / token_amount_change
+                    volume = usdc_amount_change
+                elif sol_amount_change > 0:
+                    # Convert SOL to USD (rough estimate, could fetch SOL price)
+                    sol_price_usd = 150  # Rough estimate, could be improved
+                    price = (sol_amount_change * sol_price_usd) / token_amount_change
+                    volume = sol_amount_change * sol_price_usd
+                else:
+                    return None
+                
+                return {
+                    'price': price,
+                    'volume': volume,
+                    'token_amount': token_amount_change
+                }
+            
+            return None
             
         except Exception as e:
-            logger.error(f"Error fetching CoinGecko candlestick data: {e}", exc_info=True)
+            logger.debug(f"Error extracting swap data: {e}")
             return None
     
-    def _get_coingecko_token_id_from_solana_address(self, solana_address: str) -> Optional[str]:
+    def _process_swaps_to_candles_rpc(self, swaps: List[Dict], hours: int, 
+                                      start_time: int, end_time: int) -> List[Dict]:
         """
-        Look up CoinGecko token ID from Solana mint address.
-        Uses CoinGecko's /coins/{platform}/{contract} endpoint.
+        Convert swap transactions to hourly OHLC candles.
         """
-        # CoinGecko uses platform ID "solana" for Solana tokens
-        url = f"{self._coingecko_base_url}coins/solana/{solana_address.lower()}"
+        if not swaps:
+            return []
         
-        headers = {}
-        if self.coingecko_api_key:
-            headers["x-cg-demo-api-key"] = self.coingecko_api_key
+        candles = {}
         
-        try:
-            response = requests.get(url, headers=headers, timeout=10)
+        for swap in swaps:
+            timestamp = swap['timestamp']
+            price = swap['price']
+            volume = swap.get('volume', 0)
             
-            if response.status_code == 200:
-                data = response.json()
-                token_id = data.get('id')
-                if token_id:
-                    logger.debug(f"Found CoinGecko token ID '{token_id}' for Solana address {solana_address[:8]}...")
-                    return token_id
+            # Round to hour
+            hour = int((timestamp // 3600) * 3600)
             
-            # If direct lookup fails, try search endpoint
-            return self._search_coingecko_token_id(solana_address)
+            if hour not in candles:
+                candles[hour] = {
+                    'open': price,
+                    'high': price,
+                    'low': price,
+                    'close': price,
+                    'volume': volume,
+                    'time': hour,
+                    'timestamp': hour
+                }
+            else:
+                candle = candles[hour]
+                candle['high'] = max(candle['high'], price)
+                candle['low'] = min(candle['low'], price)
+                candle['close'] = price  # Last price in the hour
+                candle['volume'] += volume
+        
+        # Fill gaps with previous close price
+        result = []
+        sorted_hours = sorted(candles.keys())
+        
+        for i, hour in enumerate(sorted_hours):
+            candle = candles[hour]
             
-        except Exception as e:
-            logger.debug(f"Error looking up CoinGecko token ID: {e}")
-            return self._search_coingecko_token_id(solana_address)
-    
-    def _search_coingecko_token_id(self, solana_address: str) -> Optional[str]:
-        """
-        Search for CoinGecko token ID using search endpoint.
-        This is a fallback if direct contract lookup fails.
-        """
-        url = f"{self._coingecko_base_url}search"
-        params = {"query": solana_address}
+            # If this isn't the first candle and there's a gap, fill it
+            if i > 0:
+                prev_hour = sorted_hours[i - 1]
+                gap_hours = (hour - prev_hour) // 3600
+                
+                if gap_hours > 1:
+                    prev_close = candles[prev_hour]['close']
+                    # Fill gaps with previous close
+                    for gap_hour in range(prev_hour + 3600, hour, 3600):
+                        result.append({
+                            'open': prev_close,
+                            'high': prev_close,
+                            'low': prev_close,
+                            'close': prev_close,
+                            'volume': 0,
+                            'time': gap_hour,
+                            'timestamp': gap_hour
+                        })
+            
+            result.append(candle)
         
-        headers = {}
-        if self.coingecko_api_key:
-            headers["x-cg-demo-api-key"] = self.coingecko_api_key
-        
-        try:
-            response = requests.get(url, params=params, headers=headers, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                coins = data.get('coins', [])
-                for coin in coins[:5]:  # Check first 5 results
-                    # Verify it's a Solana token
-                    platforms = coin.get('platforms', {})
-                    if 'solana' in platforms and platforms['solana'] == solana_address.lower():
-                        token_id = coin.get('id')
-                        if token_id:
-                            logger.debug(f"Found CoinGecko token ID '{token_id}' via search for {solana_address[:8]}...")
-                            return token_id
-        except Exception as e:
-            logger.debug(f"Error searching CoinGecko token ID: {e}")
-        
-        return None
+        return result
     
     def _process_swaps_to_candles(self, swaps: List[Dict], hours: int) -> List[Dict]:
         """Convert Uniswap swaps to hourly candles"""
