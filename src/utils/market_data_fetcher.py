@@ -1270,14 +1270,14 @@ class MarketDataFetcher:
                                      cache_key: str, force_fetch: bool = False,
                                      target_timestamp: Optional[float] = None) -> Optional[List[Dict]]:
         """
-        Build candlesticks by querying Solana RPC directly for DEX swap transactions.
-        No external API needed - uses your existing Helius RPC access.
+        Optimized RPC approach: Query token mint address directly for swap transactions.
+        Much more efficient than querying DEX programs.
         
-        This method:
-        1. Queries DEX program accounts (Raydium, Orca) for swap transactions
-        2. Filters swaps involving the target token
-        3. Extracts price data from swap transactions
-        4. Builds OHLC candles from the swap data
+        Strategy:
+        1. Query token mint address directly (gets all transactions involving the token)
+        2. Filter for swap transactions by checking for DEX program interactions
+        3. Extract price data from swaps
+        4. Build OHLC candles
         """
         # Check cache first
         if not force_fetch and cache_key in self.candlestick_cache_helius:
@@ -1301,45 +1301,52 @@ class MarketDataFetcher:
             end_time = int(query_time)
             start_time = end_time - (hours * 3600)
             
-            # DEX Program IDs on Solana
-            DEX_PROGRAMS = [
-                "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",  # Raydium V4
-                "27haf8L6oxUeXrHrgEgsexjSY5hbVUWEmvv9Nyxg8vQv",  # Raydium V3
-                "9W959DqEETiGZocYWCQPaJ6sBmUzgfxXfqGeTEdp3aQP",  # Orca V2
-                "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",  # Orca Whirlpool
-            ]
-            
             token_pubkey = Pubkey.from_string(token_address)
             swaps = []
             
-            # Query each DEX program for transactions
-            for program_id in DEX_PROGRAMS:
-                try:
-                    program_pubkey = Pubkey.from_string(program_id)
+            # OPTIMIZATION: Query token mint address directly (much more efficient!)
+            # This gets all transactions involving the token, not all DEX transactions
+            logger.info(f"Querying token mint address {token_address[:8]}... for swap transactions")
+            
+            try:
+                # Get signatures for the token mint address
+                # Use 'before' parameter to paginate backwards in time
+                sigs_response = client.get_signatures_for_address(
+                    token_pubkey,
+                    limit=1000,  # Get up to 1000 transactions
+                    before=None  # Start from most recent
+                )
+                
+                if not sigs_response.value:
+                    logger.debug(f"No transactions found for token {token_address[:8]}...")
+                    return self._try_jupiter_price_fallback(token_address, hours, target_timestamp)
+                
+                # Extract signatures and filter by timestamp
+                signatures = []
+                for sig_info in sigs_response.value:
+                    # Check if we have block_time info
+                    if sig_info.block_time:
+                        if start_time <= sig_info.block_time <= end_time:
+                            signatures.append(sig_info.signature)
+                        elif sig_info.block_time < start_time:
+                            # We've gone too far back, stop
+                            break
+                    else:
+                        # No block_time, include it and filter later
+                        signatures.append(sig_info.signature)
+                
+                if not signatures:
+                    logger.debug(f"No transactions in time range for {token_address[:8]}...")
+                    return self._try_jupiter_price_fallback(token_address, hours, target_timestamp)
+                
+                logger.info(f"Found {len(signatures)} transactions, processing in batches...")
+                
+                # Fetch transactions in batches
+                batch_size = 50
+                for i in range(0, len(signatures), batch_size):
+                    batch = signatures[i:i + batch_size]
                     
-                    # Get signatures for the program (recent transactions)
-                    # Note: Solana RPC doesn't support time-based filtering directly,
-                    # so we'll fetch recent transactions and filter by timestamp
-                    sigs_response = client.get_signatures_for_address(
-                        program_pubkey,
-                        limit=1000,
-                        before=None
-                    )
-                    
-                    if not sigs_response.value:
-                        continue
-                    
-                    # Extract signatures
-                    signatures = [sig.signature for sig in sigs_response.value[:500]]  # Limit to 500 for performance
-                    
-                    if not signatures:
-                        continue
-                    
-                    # Fetch transactions in batches
-                    batch_size = 50
-                    for i in range(0, len(signatures), batch_size):
-                        batch = signatures[i:i + batch_size]
-                        
+                    try:
                         # Get transaction details
                         txs_response = client.get_transactions(
                             batch,
@@ -1369,26 +1376,33 @@ class MarketDataFetcher:
                             if block_time < start_time or block_time > end_time:
                                 continue
                             
-                            # Check if this transaction involves our token
-                            swap_data = self._extract_swap_from_transaction(
-                                tx, meta, token_pubkey, token_address
-                            )
-                            
-                            if swap_data:
-                                swaps.append({
-                                    'timestamp': block_time,
-                                    'price': swap_data['price'],
-                                    'volume': swap_data.get('volume', 0),
-                                    'signature': str(tx_result.transaction.signatures[0]) if tx_result.transaction.signatures else None
-                                })
-                
-                except Exception as e:
-                    logger.debug(f"Error querying DEX program {program_id[:8]}...: {e}")
-                    continue
+                            # Check if this is a swap transaction
+                            # Look for DEX program interactions in the transaction
+                            if self._is_swap_transaction(tx, meta):
+                                swap_data = self._extract_swap_from_transaction(
+                                    tx, meta, token_pubkey, token_address
+                                )
+                                
+                                if swap_data:
+                                    swaps.append({
+                                        'timestamp': block_time,
+                                        'price': swap_data['price'],
+                                        'volume': swap_data.get('volume', 0),
+                                        'signature': str(tx_result.transaction.signatures[0]) if tx_result.transaction.signatures else None
+                                    })
+                    
+                    except Exception as e:
+                        logger.debug(f"Error processing transaction batch: {e}")
+                        continue
+            
+            except Exception as e:
+                logger.error(f"Error querying token mint address: {e}", exc_info=True)
+                return self._try_jupiter_price_fallback(token_address, hours, target_timestamp)
             
             if not swaps or len(swaps) < 2:
                 logger.debug(f"Insufficient swap data from RPC for {token_address[:8]}... (got {len(swaps)} swaps)")
-                return self._get_solana_candles_from_memory(token_address, hours)
+                # Try Jupiter price API as fallback
+                return self._try_jupiter_price_fallback(token_address, hours, target_timestamp)
             
             # Sort swaps by timestamp
             swaps.sort(key=lambda x: x['timestamp'])
@@ -1412,12 +1426,12 @@ class MarketDataFetcher:
                 logger.info(f"✅ Built {len(candles)} candles from RPC swaps for {token_address[:8]}...")
                 return candles
             
-            # Fallback to price_memory
-            return self._get_solana_candles_from_memory(token_address, hours)
+            # Fallback to Jupiter or price_memory
+            return self._try_jupiter_price_fallback(token_address, hours, target_timestamp)
             
         except Exception as e:
             logger.error(f"Error fetching RPC candlestick data for {token_address[:8]}...: {e}", exc_info=True)
-            return self._get_solana_candles_from_memory(token_address, hours)
+            return self._try_jupiter_price_fallback(token_address, hours, target_timestamp)
     
     def _extract_swap_from_transaction(self, tx, meta, token_pubkey: Pubkey, token_address: str) -> Optional[Dict]:
         """
@@ -1502,6 +1516,75 @@ class MarketDataFetcher:
         except Exception as e:
             logger.debug(f"Error extracting swap data: {e}")
             return None
+    
+    def _is_swap_transaction(self, tx, meta) -> bool:
+        """
+        Check if a transaction is a swap by looking for DEX program interactions.
+        """
+        try:
+            # DEX Program IDs
+            DEX_PROGRAMS = [
+                "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",  # Raydium V4
+                "27haf8L6oxUeXrHrgEgsexjSY5hbVUWEmvv9Nyxg8vQv",  # Raydium V3
+                "9W959DqEETiGZocYWCQPaJ6sBmUzgfxXfqGeTEdp3aQP",  # Orca V2
+                "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",  # Orca Whirlpool
+                "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4",  # Jupiter V6
+            ]
+            
+            # Check transaction message for DEX program IDs
+            if hasattr(tx, 'message') and hasattr(tx.message, 'account_keys'):
+                account_keys = tx.message.account_keys
+                for account_key in account_keys:
+                    account_str = str(account_key)
+                    if account_str in DEX_PROGRAMS:
+                        return True
+            
+            # Also check if there are token balance changes (indicates swap)
+            if meta.pre_token_balances and meta.post_token_balances:
+                if len(meta.pre_token_balances) > 0 and len(meta.post_token_balances) > 0:
+                    # Check if balances changed (swap indicator)
+                    pre_total = sum(float(b.ui_token_amount.ui_amount) if b.ui_token_amount else 0 
+                                   for b in meta.pre_token_balances)
+                    post_total = sum(float(b.ui_token_amount.ui_amount) if b.ui_token_amount else 0 
+                                    for b in meta.post_token_balances)
+                    if abs(pre_total - post_total) > 0.0001:  # Significant change
+                        return True
+            
+            return False
+            
+        except Exception:
+            return False
+    
+    def _try_jupiter_price_fallback(self, token_address: str, hours: int,
+                                    target_timestamp: Optional[float] = None) -> Optional[List[Dict]]:
+        """
+        Try Jupiter Price API as fallback (provides current price, not historical).
+        For historical data, we'd need Jupiter swap history which may not be available.
+        Falls back to price_memory if Jupiter fails.
+        """
+        try:
+            # Jupiter Price API (public, no key needed)
+            url = "https://price.jup.ag/v4/price"
+            params = {"ids": token_address}
+            
+            response = requests.get(url, params=params, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json().get('data', {})
+                if token_address in data:
+                    price_info = data[token_address]
+                    current_price = float(price_info.get('price', 0))
+                    
+                    if current_price > 0:
+                        logger.info(f"Got current price from Jupiter: ${current_price:.6f} for {token_address[:8]}...")
+                        # Jupiter only provides current price, not historical
+                        # Return None to fall back to price_memory
+                        return None
+            
+            return None
+        except Exception as e:
+            logger.debug(f"Jupiter price API fallback failed: {e}")
+            return self._get_solana_candles_from_memory(token_address, hours)
     
     def _process_swaps_to_candles_rpc(self, swaps: List[Dict], hours: int, 
                                       start_time: int, end_time: int) -> List[Dict]:
