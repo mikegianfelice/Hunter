@@ -1304,99 +1304,112 @@ class MarketDataFetcher:
             token_pubkey = Pubkey.from_string(token_address)
             swaps = []
             
-            # OPTIMIZATION: Query token mint address directly (much more efficient!)
-            # This gets all transactions involving the token, not all DEX transactions
-            logger.info(f"Querying token mint address {token_address[:8]}... for swap transactions")
+            # OPTIMIZATION: Find liquidity pools containing the token, then query pool transactions
+            # Token mints don't have transactions - we need to query pool addresses
+            logger.info(f"Finding liquidity pools for token {token_address[:8]}...")
             
             try:
-                # Get signatures for the token mint address
-                # Use 'before' parameter to paginate backwards in time
-                sigs_response = client.get_signatures_for_address(
-                    token_pubkey,
-                    limit=1000,  # Get up to 1000 transactions
-                    before=None  # Start from most recent
-                )
+                # Step 1: Find pools containing this token using DexScreener
+                pool_addresses = self._find_pools_for_token(token_address)
                 
-                if not sigs_response.value:
-                    logger.debug(f"No transactions found for token {token_address[:8]}...")
+                if not pool_addresses:
+                    logger.debug(f"No pools found for token {token_address[:8]}...")
                     return self._try_jupiter_price_fallback(token_address, hours, target_timestamp)
                 
-                # Extract signatures and filter by timestamp
-                signatures = []
-                for sig_info in sigs_response.value:
-                    # Check if we have block_time info
-                    if sig_info.block_time:
-                        if start_time <= sig_info.block_time <= end_time:
-                            signatures.append(sig_info.signature)
-                        elif sig_info.block_time < start_time:
-                            # We've gone too far back, stop
-                            break
-                    else:
-                        # No block_time, include it and filter later
-                        signatures.append(sig_info.signature)
+                logger.info(f"Found {len(pool_addresses)} pools, querying transactions from pools...")
                 
-                if not signatures:
-                    logger.debug(f"No transactions in time range for {token_address[:8]}...")
-                    return self._try_jupiter_price_fallback(token_address, hours, target_timestamp)
-                
-                logger.info(f"Found {len(signatures)} transactions, processing in batches...")
-                
-                # Fetch transactions in batches
-                batch_size = 50
-                for i in range(0, len(signatures), batch_size):
-                    batch = signatures[i:i + batch_size]
-                    
+                # Step 2: Query transactions from pool addresses
+                for pool_address in pool_addresses[:5]:  # Limit to first 5 pools for performance
                     try:
-                        # Get transaction details
-                        txs_response = client.get_transactions(
-                            batch,
-                            max_supported_transaction_version=0
+                        pool_pubkey = Pubkey.from_string(pool_address)
+                        
+                        # Get signatures for the pool address
+                        sigs_response = client.get_signatures_for_address(
+                            pool_pubkey,
+                            limit=500,  # Get recent transactions from pool
+                            before=None
                         )
                         
-                        if not txs_response.value:
+                        if not sigs_response.value:
                             continue
                         
-                        # Process each transaction
-                        for tx_result in txs_response.value:
-                            if not tx_result or not tx_result.transaction:
-                                continue
+                        # Extract signatures and filter by timestamp
+                        signatures = []
+                        for sig_info in sigs_response.value:
+                            if sig_info.block_time:
+                                if start_time <= sig_info.block_time <= end_time:
+                                    signatures.append(sig_info.signature)
+                                elif sig_info.block_time < start_time:
+                                    # We've gone too far back, stop
+                                    break
+                            else:
+                                # No block_time, include it and filter later
+                                signatures.append(sig_info.signature)
+                        
+                        if not signatures:
+                            continue
+                        
+                        logger.debug(f"Processing {len(signatures)} transactions from pool {pool_address[:8]}...")
+                        
+                        # Fetch transactions in batches
+                        batch_size = 50
+                        for i in range(0, len(signatures), batch_size):
+                            batch = signatures[i:i + batch_size]
                             
-                            tx = tx_result.transaction
-                            meta = tx_result.transaction.meta
-                            
-                            if not meta or meta.err:
-                                continue  # Skip failed transactions
-                            
-                            # Get block time (timestamp)
-                            block_time = tx_result.block_time
-                            if not block_time:
-                                continue
-                            
-                            # Filter by time range
-                            if block_time < start_time or block_time > end_time:
-                                continue
-                            
-                            # Check if this is a swap transaction
-                            # Look for DEX program interactions in the transaction
-                            if self._is_swap_transaction(tx, meta):
-                                swap_data = self._extract_swap_from_transaction(
-                                    tx, meta, token_pubkey, token_address
+                            try:
+                                # Get transaction details
+                                txs_response = client.get_transactions(
+                                    batch,
+                                    max_supported_transaction_version=0
                                 )
                                 
-                                if swap_data:
-                                    swaps.append({
-                                        'timestamp': block_time,
-                                        'price': swap_data['price'],
-                                        'volume': swap_data.get('volume', 0),
-                                        'signature': str(tx_result.transaction.signatures[0]) if tx_result.transaction.signatures else None
-                                    })
+                                if not txs_response.value:
+                                    continue
+                                
+                                # Process each transaction
+                                for tx_result in txs_response.value:
+                                    if not tx_result or not tx_result.transaction:
+                                        continue
+                                    
+                                    tx = tx_result.transaction
+                                    meta = tx_result.transaction.meta
+                                    
+                                    if not meta or meta.err:
+                                        continue  # Skip failed transactions
+                                    
+                                    # Get block time (timestamp)
+                                    block_time = tx_result.block_time
+                                    if not block_time:
+                                        continue
+                                    
+                                    # Filter by time range
+                                    if block_time < start_time or block_time > end_time:
+                                        continue
+                                    
+                                    # Check if this is a swap transaction
+                                    if self._is_swap_transaction(tx, meta):
+                                        swap_data = self._extract_swap_from_transaction(
+                                            tx, meta, token_pubkey, token_address
+                                        )
+                                        
+                                        if swap_data:
+                                            swaps.append({
+                                                'timestamp': block_time,
+                                                'price': swap_data['price'],
+                                                'volume': swap_data.get('volume', 0),
+                                                'signature': str(tx_result.transaction.signatures[0]) if tx_result.transaction.signatures else None
+                                            })
+                            
+                            except Exception as e:
+                                logger.debug(f"Error processing transaction batch from pool: {e}")
+                                continue
                     
                     except Exception as e:
-                        logger.debug(f"Error processing transaction batch: {e}")
+                        logger.debug(f"Error querying pool {pool_address[:8]}...: {e}")
                         continue
             
             except Exception as e:
-                logger.error(f"Error querying token mint address: {e}", exc_info=True)
+                logger.error(f"Error finding pools or querying transactions: {e}", exc_info=True)
                 return self._try_jupiter_price_fallback(token_address, hours, target_timestamp)
             
             if not swaps or len(swaps) < 2:
@@ -1554,6 +1567,41 @@ class MarketDataFetcher:
             
         except Exception:
             return False
+    
+    def _find_pools_for_token(self, token_address: str) -> List[str]:
+        """
+        Find liquidity pool addresses that contain this token.
+        Uses DexScreener API to discover pools.
+        """
+        pool_addresses = []
+        
+        try:
+            # Use DexScreener API to find pools/pairs for this token
+            url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
+            response = requests.get(url, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                pairs = data.get('pairs', [])
+                
+                # Extract pool addresses from pairs
+                for pair in pairs[:10]:  # Get top 10 pairs
+                    pair_address = pair.get('pairAddress')
+                    if pair_address:
+                        pool_addresses.append(pair_address)
+                
+                if pool_addresses:
+                    logger.info(f"Found {len(pool_addresses)} pools from DexScreener for {token_address[:8]}...")
+                    return pool_addresses
+                else:
+                    logger.debug(f"No pool addresses found in DexScreener response for {token_address[:8]}...")
+            else:
+                logger.debug(f"DexScreener API returned status {response.status_code} for {token_address[:8]}...")
+        
+        except Exception as e:
+            logger.debug(f"DexScreener pool discovery failed for {token_address[:8]}...: {e}")
+        
+        return pool_addresses
     
     def _try_jupiter_price_fallback(self, token_address: str, hours: int,
                                     target_timestamp: Optional[float] = None) -> Optional[List[Dict]]:
