@@ -9,6 +9,24 @@ stop_loss: 0.08  # 8% (increased from 7% to reduce premature exits)
 use_dynamic_tp: true  # Enable dynamic take profit
 min_trade_amount_usd: 10  # Minimum trade amount for realistic scaling
 
+# === Trading Performance Optimizations ===
+# Batch processing configuration
+trading:
+  batch_size: 10  # Number of tokens to process in parallel (increased from 5 for better efficiency)
+  
+  # Adaptive cycle wait time (seconds)
+  cycle_wait_base_seconds: 300  # Base wait time: 5 minutes
+  cycle_wait_min_seconds: 120   # Minimum wait: 2 minutes (when market is active)
+  cycle_wait_max_seconds: 600   # Maximum wait: 10 minutes (when market is quiet)
+  
+  # Quality-based position sizing multipliers
+  enable_quality_based_sizing: true  # Enable quality-based position size scaling
+  quality_sizing_multipliers:
+    excellent: 1.8   # Quality 91+: 80% larger positions
+    very_high: 1.5   # Quality 81-90: 50% larger positions
+    high: 1.2        # Quality 71-80: 20% larger positions
+    base: 1.0        # Quality 65-70: Base size
+
 # === Advanced Trading Features ===
 # Order splitting for large trades
 enable_order_splitting: true

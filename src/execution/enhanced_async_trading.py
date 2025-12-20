@@ -74,7 +74,8 @@ class EnhancedAsyncTradingEngine:
         self.session: Optional[aiohttp.ClientSession] = None
         self.token_cache: Dict[str, Any] = {}
         self.cache_ttl = 300  # 5 minutes
-        self.batch_size = 5
+        # Make batch size configurable, default to 10 for better efficiency
+        self.batch_size = get_config_int("trading.batch_size", 10)
         # Make max_concurrent_trades configurable, default to max_concurrent_positions or 3
         max_positions = get_config_int("max_concurrent_positions", 6)
         self.max_concurrent_trades = get_config_int("max_concurrent_trades", min(max_positions, 5))
@@ -725,6 +726,49 @@ class EnhancedAsyncTradingEngine:
                 "error": str(e)
             }
     
+    def _filter_tokens_early(self, tokens: List[Dict]) -> List[Dict]:
+        """
+        Early filtering: Apply volume/liquidity filters BEFORE expensive AI analysis.
+        This saves significant API calls and processing time.
+        
+        Returns only tokens that pass basic quality thresholds.
+        """
+        min_volume = get_config_float("min_volume_24h_for_buy", 200000)
+        min_liquidity = get_config_float("min_liquidity_usd_for_buy", 200000)
+        min_price = get_config_float("min_price_usd", 0.000001)
+        
+        filtered_tokens = []
+        filtered_count = 0
+        
+        for token in tokens:
+            volume_24h = float(token.get("volume24h", 0))
+            liquidity = float(token.get("liquidity", 0))
+            price_usd = float(token.get("priceUsd", 0))
+            
+            # Apply early filters - reject tokens that don't meet basic requirements
+            if price_usd < min_price:
+                filtered_count += 1
+                continue
+            
+            if volume_24h < min_volume:
+                filtered_count += 1
+                continue
+            
+            if liquidity < min_liquidity:
+                filtered_count += 1
+                continue
+            
+            # Token passed early filters
+            filtered_tokens.append(token)
+        
+        if filtered_count > 0:
+            log_info("trading.early_filter", 
+                    f"Early filtering: {filtered_count} tokens filtered out before AI analysis "
+                    f"({len(filtered_tokens)}/{len(tokens)} passed)",
+                    {"filtered_out": filtered_count, "passed": len(filtered_tokens), "total": len(tokens)})
+        
+        return filtered_tokens
+    
     async def _analyze_buy_transaction(self, tx_hash: str, chain: str, dex: str, quoted_output_amount: Optional[int] = None) -> Dict[str, Any]:
         """Analyze buy transaction to extract fee data and actual slippage"""
         try:
@@ -899,8 +943,33 @@ class EnhancedAsyncTradingEngine:
                 else:
                     scaled_size = tier_base_size
                 
+                # OPTIMIZATION #3: Quality-based position sizing multiplier
+                # Higher quality tokens get larger position sizes (within tier limits)
+                quality_multiplier = 1.0
+                if quality_score >= 91:
+                    quality_multiplier = 1.8  # Excellent quality: 80% larger
+                elif quality_score >= 81:
+                    quality_multiplier = 1.5  # Very high quality: 50% larger
+                elif quality_score >= 71:
+                    quality_multiplier = 1.2  # High quality: 20% larger
+                # Quality 65-70: 1.0x (base size)
+                
+                # Apply quality multiplier to scaled size
+                quality_adjusted_size = scaled_size * quality_multiplier
+                
                 # Ensure position size is within tier bounds (safety check)
-                final_position_size = max(tier_base_size, min(scaled_size, tier_max_size))
+                final_position_size = max(tier_base_size, min(quality_adjusted_size, tier_max_size))
+                
+                # Log quality-based adjustment if it made a difference
+                if abs(final_position_size - scaled_size) > 0.01:
+                    log_info("trading.quality_sizing",
+                            f"Quality-based sizing for {token.get('symbol', 'UNKNOWN')}: "
+                            f"base=${scaled_size:.2f} × {quality_multiplier:.2f} (quality={quality_score:.1f}) = ${final_position_size:.2f}",
+                            symbol=token.get("symbol"),
+                            quality_score=quality_score,
+                            quality_multiplier=quality_multiplier,
+                            base_size=scaled_size,
+                            final_size=final_position_size)
                 
                 # Log the scaling
                 if abs(final_position_size - ai_recommended_size) > 0.01:
@@ -1292,6 +1361,50 @@ class EnhancedAsyncTradingEngine:
             return weighted_slippage / total_weight
         return 0.02
     
+    def _calculate_adaptive_wait_time(self, cycle_result: Dict[str, Any]) -> int:
+        """
+        Calculate adaptive wait time between cycles based on market conditions.
+        
+        Shorter waits when:
+        - Many tokens approved (active market)
+        - Trades executed (opportunities found)
+        - High volatility detected
+        
+        Longer waits when:
+        - No tokens approved (quiet market)
+        - No trades executed (no opportunities)
+        - Low activity
+        """
+        base_wait = get_config_int("trading.cycle_wait_base_seconds", 300)  # Default 5 minutes
+        min_wait = get_config_int("trading.cycle_wait_min_seconds", 120)  # Minimum 2 minutes
+        max_wait = get_config_int("trading.cycle_wait_max_seconds", 600)  # Maximum 10 minutes
+        
+        tokens_approved = cycle_result.get("tokens_approved", 0)
+        trades_executed = cycle_result.get("trades_executed", 0)
+        tokens_filtered_early = cycle_result.get("tokens_filtered_early", 0)
+        
+        # Calculate wait time adjustment
+        wait_time = base_wait
+        
+        # Reduce wait if many tokens approved (active market)
+        if tokens_approved >= 5:
+            wait_time = max(min_wait, wait_time - 120)  # Reduce by 2 minutes
+        elif tokens_approved >= 3:
+            wait_time = max(min_wait, wait_time - 60)  # Reduce by 1 minute
+        
+        # Reduce wait if trades were executed (opportunities found)
+        if trades_executed > 0:
+            wait_time = max(min_wait, wait_time - 60)  # Reduce by 1 minute
+        
+        # Increase wait if no tokens approved and many filtered early (quiet market)
+        if tokens_approved == 0 and tokens_filtered_early > 20:
+            wait_time = min(max_wait, wait_time + 120)  # Increase by 2 minutes
+        
+        # Ensure wait time is within bounds
+        wait_time = max(min_wait, min(wait_time, max_wait))
+        
+        return int(wait_time)
+    
     def _get_recent_avg_latency(self) -> float:
         """Get recent average execution latency in ms with time-based weighting"""
         if len(self.performance_window) == 0:
@@ -1469,12 +1582,22 @@ class EnhancedAsyncTradingEngine:
             log_info("trading.no_tokens", "😴 No tokens found this cycle")
             return {"success": True, "tokens_processed": 0}
         
-        # Process tokens in batches
+        # OPTIMIZATION #1: Early filtering - apply volume/liquidity filters BEFORE AI analysis
+        log_info("trading.early_filter_start", f"🔍 Applying early filters to {len(all_tokens)} tokens before AI analysis")
+        filtered_tokens = self._filter_tokens_early(all_tokens)
+        log_info("trading.early_filter_complete", 
+                f"✅ Early filtering complete: {len(filtered_tokens)}/{len(all_tokens)} tokens passed basic thresholds")
+        
+        if not filtered_tokens:
+            log_info("trading.no_filtered_tokens", "😴 No tokens passed early filters this cycle")
+            return {"success": True, "tokens_processed": 0, "tokens_filtered_early": len(all_tokens)}
+        
+        # Process tokens in batches (only tokens that passed early filters)
         approved_tokens = []
         batch_results = []
         
-        for i in range(0, len(all_tokens), self.batch_size):
-            batch = all_tokens[i:i + self.batch_size]
+        for i in range(0, len(filtered_tokens), self.batch_size):
+            batch = filtered_tokens[i:i + self.batch_size]
             batch_result = await self._process_token_batch(batch, regime_data)
             batch_results.extend(batch_result)
             
@@ -1522,6 +1645,7 @@ class EnhancedAsyncTradingEngine:
             "success": True,
             "cycle_time": cycle_time,
             "tokens_fetched": len(all_tokens),
+            "tokens_filtered_early": len(all_tokens) - len(filtered_tokens) if 'filtered_tokens' in locals() else 0,
             "tokens_analyzed": len(batch_results),
             "tokens_approved": len(approved_tokens),
             "trades_executed": len(trade_results),
@@ -1600,10 +1724,14 @@ async def run_enhanced_async_trading():
                     except Exception as e:
                         log_error("trading.position_count_error_after", f"Error checking position count after cycle: {e}")
                     
-                    # Wait between cycles
-                    wait_time = 300  # 5 minutes
+                    # OPTIMIZATION #2: Adaptive cycle wait time based on market conditions
+                    wait_time = engine._calculate_adaptive_wait_time(result)
                     wait_minutes = wait_time / 60
-                    log_info("trading.wait", f"⏰ Waiting {wait_minutes:.1f} minutes before next cycle...")
+                    log_info("trading.wait", 
+                            f"⏰ Waiting {wait_minutes:.1f} minutes before next cycle "
+                            f"(adaptive: {result.get('tokens_approved', 0)} approved, "
+                            f"{result.get('trades_executed', 0)} executed)",
+                            {"wait_seconds": wait_time, "wait_minutes": wait_minutes})
                     await asyncio.sleep(wait_time)
                     
                 except KeyboardInterrupt:
