@@ -187,11 +187,13 @@ The bot now features a sophisticated **tiered position sizing system** that scal
 #### **📈 Tier Structure**
 | Tier | Balance Range | Base Position | Max Position | Max Exposure | Description |
 |------|---------------|---------------|--------------|--------------|-------------|
-| **Tier 1** | $100 - $499 | $5 - $10 | $10 | $100 | Learning Phase - Conservative |
-| **Tier 2** | $500 - $4,999 | $25 - $50 | $50 | $500 | Scaling Phase - Moderate |
-| **Tier 3** | $5,000 - $19,999 | $50 - $100 | $100 | $1,000 | Acceleration Phase - Aggressive |
-| **Tier 4** | $20,000 - $99,999 | $100 - $200 | $200 | $2,000 | Professional Phase - Maximum |
-| **Tier 5** | $100,000+ | $200 - $500 | $500 | $5,000 | Institutional Phase - Elite |
+| **Tier 1** | $100 - $499 | 5% ($5-$25) | 12% ($12-$60) | 80% | Learning Phase - Higher leverage for rapid compounding |
+| **Tier 2** | $500 - $4,999 | 5% ($25-$250) | 10% ($50-$500) | 50% | Scaling Phase - Moderate |
+| **Tier 3** | $5,000 - $19,999 | 4% ($200-$800) | 8% ($400-$1,600) | 40% | Acceleration Phase - Aggressive |
+| **Tier 4** | $20,000 - $99,999 | 3% ($600-$3,000) | 6% ($1,200-$6,000) | 30% | Professional Phase - Maximum |
+| **Tier 5** | $100,000+ | 2% ($2,000+) | 5% ($5,000+) | 20% | Institutional Phase - Elite |
+
+*Note: Position sizes scale dynamically as percentages of wallet balance. Dollar amounts shown are examples at tier boundaries.*
 
 #### **🚀 Key Benefits**
 - **Unified Risk Management**: Total portfolio value determines your tier, not individual chain balances
@@ -206,16 +208,32 @@ The bot now features a sophisticated **tiered position sizing system** that scal
 enable_tiered_position_sizing: true
 tiered_position_scaling: true
 
-# Wallet tiers configuration
+# Wallet tiers configuration (percentage-based for dynamic scaling)
 wallet_tiers:
   tier_1:
     min_balance: 100
     max_balance: 499
-    base_position_size_usd: 5.0
-    max_position_size_usd: 10.0
-    max_total_exposure_usd: 100.0
+    base_position_size_percent: 0.05
+    max_position_size_percent: 0.12
+    max_total_exposure_percent: 0.8
+    max_wallet_usage_percent: 0.4
+    description: "Learning Phase - Higher leverage for rapid compounding"
+  tier_2:
+    min_balance: 500
+    max_balance: 4999
+    base_position_size_percent: 0.05
+    max_position_size_percent: 0.10
+    max_total_exposure_percent: 0.5
     max_wallet_usage_percent: 0.10
-    description: "Learning Phase - Conservative"
+    description: "Scaling Phase - Moderate"
+  tier_3:
+    min_balance: 5000
+    max_balance: 19999
+    base_position_size_percent: 0.04
+    max_position_size_percent: 0.08
+    max_total_exposure_percent: 0.4
+    max_wallet_usage_percent: 0.10
+    description: "Acceleration Phase - Aggressive"
   # ... additional tiers
 ```
 
