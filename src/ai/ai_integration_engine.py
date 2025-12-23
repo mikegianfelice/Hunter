@@ -1134,7 +1134,7 @@ class AIIntegrationEngine:
                 technical_score * weights["technical"]
             )
             
-            # Fix 2: Expand score range with dynamic scaling
+            # Fix 2: Expand score range with dynamic scaling (improved with bounds checking)
             component_scores = [
                 sentiment_score,
                 prediction_score,
@@ -1152,24 +1152,34 @@ class AIIntegrationEngine:
                 max_component = max(component_scores)
                 min_component = min(component_scores)
                 
-                # Shift score toward the best component
-                if max_component > 0.6:
-                    # Good components exist, boost score
-                    overall_score = overall_score + (max_component - overall_score) * 0.3
-                elif min_component < 0.4:
-                    # Poor components exist, reduce score
-                    overall_score = overall_score - (overall_score - min_component) * 0.3
+                # Only expand if there's meaningful difference (at least 10% spread)
+                if max_component - min_component > 0.1:
+                    if max_component > 0.6:
+                        # Good components exist, boost score (but cap expansion)
+                        expansion = min(0.2, (max_component - overall_score) * 0.3)
+                        overall_score = overall_score + expansion
+                    elif min_component < 0.4:
+                        # Poor components exist, reduce score (but cap reduction)
+                        reduction = min(0.2, (overall_score - min_component) * 0.3)
+                        overall_score = overall_score - reduction
             
             # Fix 5: Add minimum quality threshold enforcement (aligned with config.yaml)
             if market_data:
-                # Align with config.yaml trading thresholds
-                # Config: min_volume_24h_for_buy: 100000, min_liquidity_usd_for_buy: 100000
-                min_volume = 100000  # $100k - matches min_volume_24h_for_buy
-                min_liquidity = 100000  # $100k - matches min_liquidity_usd_for_buy
+                # Read thresholds from config.yaml instead of hardcoding
+                from src.config.config_loader import get_config_float
+                min_volume = get_config_float("min_volume_24h_for_buy", 200000)  # Default $200k
+                min_liquidity = get_config_float("min_liquidity_usd_for_buy", 200000)  # Default $200k
                 
                 if market_data.volume_24h < min_volume or market_data.liquidity < min_liquidity:
-                    # Penalize score for tokens below trading thresholds
-                    quality_penalty = 0.2
+                    # Graduated penalty: more severe the further below threshold
+                    vol_ratio = market_data.volume_24h / min_volume if min_volume > 0 else 0
+                    liq_ratio = market_data.liquidity / min_liquidity if min_liquidity > 0 else 0
+                    min_ratio = min(vol_ratio, liq_ratio)
+                    
+                    # Penalty ranges from 0.05 (close to threshold) to 0.3 (far below)
+                    # Formula: 0.3 at 0%, 0.05 at 100% of threshold
+                    quality_penalty = 0.3 - (min_ratio * 0.25)
+                    quality_penalty = max(0.05, min(0.3, quality_penalty))
                     overall_score = overall_score - quality_penalty
                     overall_score = max(0.0, overall_score)  # Don't go below 0
                 
@@ -1187,17 +1197,34 @@ class AIIntegrationEngine:
             return 0.5
     
     def _calculate_confidence(self, results: List[Any]) -> float:
-        """Calculate confidence based on analysis results"""
+        """Calculate confidence based on analysis results and their quality"""
         try:
-            # Count successful analyses
-            successful_analyses = sum(1 for result in results if not isinstance(result, Exception) and result)
-            total_analyses = len(results)
+            total_weight = 0.0
+            weighted_confidence = 0.0
             
-            # Base confidence on success rate
-            base_confidence = successful_analyses / total_analyses if total_analyses > 0 else 0.5
+            for result in results:
+                if isinstance(result, Exception) or not result:
+                    continue
+                
+                # Extract confidence from each result if available
+                if isinstance(result, dict):
+                    result_confidence = result.get("confidence", 0.5)
+                    # Weight by result quality (non-empty dict = quality indicator)
+                    weight = 1.0 if result else 0.5
+                else:
+                    result_confidence = 0.5
+                    weight = 0.5
+                
+                weighted_confidence += result_confidence * weight
+                total_weight += weight
             
-            # Adjust based on result quality (simplified)
-            confidence = base_confidence * 0.8 + 0.2  # Ensure minimum confidence
+            if total_weight > 0:
+                base_confidence = weighted_confidence / total_weight
+            else:
+                base_confidence = 0.5
+            
+            # Ensure minimum confidence
+            confidence = base_confidence * 0.8 + 0.2
             
             return max(0.0, min(1.0, confidence))
             
@@ -1244,15 +1271,19 @@ class AIIntegrationEngine:
                     if (0.5 <= vol_ratio <= 2.0 and 0.5 <= liq_ratio <= 2.0):
                         similar_trades.append(trade)
             
-            if len(similar_trades) >= 3:  # Need at least 3 similar trades
+            if len(similar_trades) >= 1:  # Allow with 1+ trade (was 3+)
                 # Calculate average PnL for similar trades
                 pnls = [t.get('pnl_percent', 0) for t in similar_trades if t.get('pnl_percent') is not None]
                 if pnls:
                     avg_pnl = sum(pnls) / len(pnls)
                     
+                    # Weight adjustment by sample size (more samples = higher confidence)
+                    # Full weight at 5+ samples, linearly scales down to 1 sample
+                    sample_weight = min(1.0, len(similar_trades) / 5.0)
+                    
                     # Adjust score based on historical performance
                     # Positive PnL = boost score, negative PnL = reduce score
-                    pnl_adjustment = (avg_pnl / 100) * 0.2  # Scale PnL to score adjustment
+                    pnl_adjustment = (avg_pnl / 100) * 0.2 * sample_weight
                     overall_score = overall_score + pnl_adjustment
                     overall_score = max(0.0, min(1.0, overall_score))
             

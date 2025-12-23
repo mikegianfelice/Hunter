@@ -880,12 +880,20 @@ class EnhancedAsyncTradingEngine:
             recommendation = analysis.get("trading_recommendation", {})
             action = recommendation.get("action", "unknown")
             confidence = recommendation.get("confidence", 0)
-            quality_score = analysis.get("quality_score", 0)
             
             # Extract additional AI signals for stricter gating
             price_pred = analysis.get("price_prediction", {})
             success_prob = price_pred.get("success_probability", 0.5)
-            risk_score = price_pred.get("risk_score", 0.5)
+            
+            # Get risk_score from risk_assessment, not price_prediction
+            risk_assessment = analysis.get("risk_assessment", {})
+            risk_score = risk_assessment.get("risk_score", 0.5)
+            
+            # Normalize quality_score to 0-1 scale (support legacy 0-100 scale)
+            quality_score = analysis.get("quality_score", 0)
+            if quality_score > 1.0:
+                quality_score = quality_score / 100.0
+            quality_score = max(0.0, min(1.0, quality_score))
             
             # Base quality threshold
             base_min_quality = get_config_float("min_quality_score", 65) / 100.0  # Convert to 0-1 scale
@@ -979,14 +987,15 @@ class EnhancedAsyncTradingEngine:
                 
                 # OPTIMIZATION #3: Quality-based position sizing multiplier
                 # Higher quality tokens get larger position sizes (within tier limits)
+                # FIX: Use 0-1 scale (0.91 = 91%, 0.81 = 81%, etc.)
                 quality_multiplier = 1.0
-                if quality_score >= 91:
+                if quality_score >= 0.91:  # 91% = 0.91
                     quality_multiplier = 1.8  # Excellent quality: 80% larger
-                elif quality_score >= 81:
+                elif quality_score >= 0.81:  # 81% = 0.81
                     quality_multiplier = 1.5  # Very high quality: 50% larger
-                elif quality_score >= 71:
+                elif quality_score >= 0.71:  # 71% = 0.71
                     quality_multiplier = 1.2  # High quality: 20% larger
-                # Quality 65-70: 1.0x (base size)
+                # Quality 0.65-0.70: 1.0x (base size)
                 
                 # Apply quality multiplier to scaled size
                 quality_adjusted_size = scaled_size * quality_multiplier
