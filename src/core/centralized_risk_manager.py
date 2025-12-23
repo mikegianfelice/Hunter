@@ -844,8 +844,19 @@ class CentralizedRiskManager:
             )
         
         # Check circuit breaker conditions (only for systemic failures)
+        # Calculate percentage-based daily loss limit (5% of wallet) to match gatekeeper logic
+        try:
+            from src.core.risk_manager import _get_combined_wallet_balance_usd
+            wallet_balance = _get_combined_wallet_balance_usd()
+            percentage_based_limit = wallet_balance * 0.05  # 5% of wallet
+            # Use config value as minimum floor (for very small wallets)
+            daily_loss_limit = max(self.config.trading.daily_loss_limit_usd, percentage_based_limit)
+        except Exception as e:
+            logger.warning(f"Failed to calculate percentage-based daily loss limit: {e}, using config value")
+            daily_loss_limit = self.config.trading.daily_loss_limit_usd
+        
         if (self.risk_state['losing_streak'] >= self.risk_thresholds['losing_streak_limit'] or
-            self.risk_state['daily_loss'] > self.config.trading.daily_loss_limit_usd):
+            self.risk_state['daily_loss'] > daily_loss_limit):
             self.risk_state['circuit_breaker_active'] = True
             self.risk_state['circuit_breaker_until'] = (
                 datetime.now() + timedelta(minutes=self.config.trading.circuit_breaker_minutes)
