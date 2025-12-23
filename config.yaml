@@ -1616,6 +1616,20 @@ fill_verifier:
   blacklist_minutes_on_fail: 30  # Blacklist token for 30 minutes on complete failure
   min_tokens_received_threshold: 0.000001  # Minimum tokens to consider valid fill
 
+# === PARTIAL FILL RETRY MANAGER ===
+# Enable automatic retry for partially filled positions
+enable_partial_fill_retry: true  # Enable partial fill retry
+partial_fill_retry:
+  min_unfilled_usd: 5.0  # Minimum $5 unfilled to trigger retry
+  min_fill_ratio: 0.95  # Only retry if less than 95% filled
+  max_retry_attempts: 2  # Maximum retry attempts per position
+  max_time_window_seconds: 300  # 5 minutes max window for retry
+  require_price_stability: true  # Check price hasn't moved significantly
+  max_price_change_pct: 0.05  # 5% max price change allowed
+  check_risk_limits: true  # Respect position/exposure limits before retry
+  check_token_tradeability: true  # Verify token still tradeable
+  retry_priority: "low"  # Process retries after new opportunities ("low" | "normal" | "high")
+
 # === AI PARTIAL TAKE PROFIT MANAGER ===
 # Enable AI-powered partial take-profit management
 enable_ai_partial_tp_manager: true  # Enable partial TP manager

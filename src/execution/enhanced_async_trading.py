@@ -1186,7 +1186,8 @@ class EnhancedAsyncTradingEngine:
                         "priceUsd": float(token.get("priceUsd") or 0.0),
                         "chainId": chain,
                         "symbol": symbol,
-                        "position_size_usd": position_size,
+                        "position_size_usd": position_size,  # Intended size
+                        "intended_position_size_usd": position_size,  # Track intended for partial fill detection
                     }
                     try:
                         from src.execution.multi_chain_executor import _log_position, _launch_monitor_detached
@@ -1503,6 +1504,81 @@ class EnhancedAsyncTradingEngine:
             log_info("trading.gate_not_recorded", 
                     f"Gate failure not recorded in scheduler (error_type=gate): {trade_result.get('error', 'Unknown')}")
     
+    async def _process_partial_fill_retries(self) -> List[Dict[str, Any]]:
+        """
+        Process partial fill retries for existing positions
+        
+        Returns:
+            List of retry trade results
+        """
+        try:
+            from .partial_fill_retry_manager import get_partial_fill_retry_manager
+            
+            retry_manager = get_partial_fill_retry_manager()
+            candidates = retry_manager.detect_partial_fills()
+            
+            if not candidates:
+                return []
+            
+            # Sort by priority if configured
+            if retry_manager.retry_priority == "high":
+                candidates.sort(key=lambda x: x["unfilled_amount"], reverse=True)
+            elif retry_manager.retry_priority == "low":
+                candidates.sort(key=lambda x: x["unfilled_amount"])
+            
+            retry_results = []
+            
+            for candidate in candidates:
+                try:
+                    # Prepare token for retry
+                    retry_token = retry_manager.prepare_retry_token(candidate)
+                    position_key = candidate["position_key"]
+                    
+                    log_info("partial_fill_retry.attempting",
+                            f"Attempting retry for {retry_token.get('symbol', '?')}: "
+                            f"${candidate['unfilled_amount']:.2f} unfilled",
+                            {
+                                "symbol": retry_token.get("symbol"),
+                                "unfilled_amount": candidate["unfilled_amount"],
+                                "retry_attempt": retry_token.get("retry_attempt", 1)
+                            })
+                    
+                    # Execute retry trade
+                    trade_result = await self._execute_trade_async(retry_token)
+                    
+                    # Mark retry attempt
+                    retry_manager.mark_retry_attempted(position_key, trade_result.get("success", False))
+                    
+                    if trade_result.get("success", False):
+                        # Update position with new total size
+                        retry_filled = trade_result.get("position_size", candidate["unfilled_amount"])
+                        new_total = candidate["actual_size"] + retry_filled
+                        retry_manager.update_position_after_retry(position_key, retry_filled, new_total)
+                        
+                        log_info("partial_fill_retry.success",
+                                f"✅ Retry successful for {retry_token.get('symbol', '?')}: "
+                                f"filled ${retry_filled:.2f}, new total: ${new_total:.2f}")
+                    else:
+                        log_info("partial_fill_retry.failed",
+                                f"❌ Retry failed for {retry_token.get('symbol', '?')}: "
+                                f"{trade_result.get('error', 'Unknown error')}")
+                    
+                    retry_results.append(trade_result)
+                    
+                    # Rate limit between retries
+                    await asyncio.sleep(2)
+                    
+                except Exception as e:
+                    log_error("partial_fill_retry.execution_error",
+                             f"Error executing retry for {candidate.get('position_key', 'unknown')}: {e}")
+                    continue
+            
+            return retry_results
+            
+        except Exception as e:
+            log_error("partial_fill_retry.process_error", f"Error processing partial fill retries: {e}")
+            return []
+    
     async def run_enhanced_trading_cycle(self) -> Dict[str, Any]:
         """Run a single enhanced trading cycle"""
         cycle_start = time.time()
@@ -1609,6 +1685,18 @@ class EnhancedAsyncTradingEngine:
         
         log_info("trading.approval", f"✅ Total approved tokens: {len(approved_tokens)}/{len(all_tokens)}")
         
+        # Process partial fill retries BEFORE new trades (if priority is high)
+        # Otherwise process after new trades
+        retry_results = []
+        try:
+            from .partial_fill_retry_manager import get_partial_fill_retry_manager
+            retry_manager = get_partial_fill_retry_manager()
+            
+            if retry_manager.retry_priority == "high":
+                retry_results = await self._process_partial_fill_retries()
+        except Exception as e:
+            log_error("trading.retry_error", f"Error processing retries: {e}")
+        
         # Execute trades for approved tokens (limit concurrent trades)
         trade_results = []
         if approved_tokens:
@@ -1637,6 +1725,13 @@ class EnhancedAsyncTradingEngine:
                     continue
                 await self._update_metrics(result)
         
+        # Process partial fill retries AFTER new trades (if priority is low/normal)
+        if not retry_results:
+            try:
+                retry_results = await self._process_partial_fill_retries()
+            except Exception as e:
+                log_error("trading.retry_error", f"Error processing retries: {e}")
+        
         # Calculate cycle metrics
         cycle_time = time.time() - cycle_start
         successful_trades = len([r for r in trade_results if isinstance(r, dict) and r.get("success", False)])
@@ -1650,6 +1745,8 @@ class EnhancedAsyncTradingEngine:
             "tokens_approved": len(approved_tokens),
             "trades_executed": len(trade_results),
             "trades_successful": successful_trades,
+            "retries_attempted": len(retry_results),
+            "retries_successful": len([r for r in retry_results if isinstance(r, dict) and r.get("success", False)]),
             "success_rate": successful_trades / len(trade_results) if trade_results else 0,
             "metrics": {
                 "total_trades": self.metrics.total_trades,

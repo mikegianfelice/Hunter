@@ -164,6 +164,10 @@ def _validate_and_update_position_size(token: dict, chain_id: str, token_address
             positions = load_positions()
             if position_key in positions:
                 position_data = positions[position_key]
+                # Preserve intended size if it exists
+                if "intended_position_size_usd" not in position_data:
+                    position_data["intended_position_size_usd"] = logged_position_size_usd
+                # Update actual size
                 position_data["position_size_usd"] = actual_position_size_usd
                 upsert_position(position_key, position_data)
                 
