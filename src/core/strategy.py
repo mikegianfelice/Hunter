@@ -1090,11 +1090,13 @@ def check_buy_signal(token: dict) -> bool:
     # Trusted tokens: slightly easier momentum threshold
     momentum_need = config['MIN_MOMENTUM_PCT'] if not is_trusted else max(0.003, config['MIN_MOMENTUM_PCT'] * 0.5)  # e.g. 0.3%
     
-    # Multi-chain tokens: require real (but slightly easier) momentum
+    # Multi-chain tokens: require real momentum (increased threshold for quality)
     if chain_id != "ethereum":
-        # Previously: momentum_need * 0.05 (≈0.01% threshold), far too loose.
-        # Now: require at least ~0.10-0.20% momentum.
-        momentum_need = max(0.001, momentum_need * 0.5)
+        # Previously: momentum_need * 0.5 (≈0.15% threshold), too loose.
+        # Now: require at least 0.2-0.225% momentum for better entry quality.
+        multichain_momentum_multiplier = config.get('multichain_momentum_multiplier', 0.75)  # 75% of ETH threshold
+        multichain_momentum_min = config.get('multichain_momentum_min', 0.002)  # Minimum 0.2%
+        momentum_need = max(multichain_momentum_min, momentum_need * multichain_momentum_multiplier)
         _log_trace(
             f"🔓 Multi-chain momentum threshold: {momentum_need*100:.4f}%",
             level="info",

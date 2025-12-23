@@ -30,11 +30,14 @@ class AIPartialTPManager:
     def __init__(self):
         self.enabled = get_config_bool("enable_ai_partial_tp_manager", True)
         self.first_take_pct = get_config_float("partial_tp_manager.first_take_pct", 0.50)
-        self.first_take_trigger_pct = get_config_float("partial_tp_manager.first_take_trigger_pct", 0.10)
-        self.trailing_stop_initial = get_config_float("partial_tp_manager.trailing_stop_initial", 0.06)
+        self.first_take_trigger_pct = get_config_float("partial_tp_manager.first_take_trigger_pct", 0.05)  # Default 5% (was 10%)
+        self.trailing_stop_initial = get_config_float("partial_tp_manager.trailing_stop_initial", 0.04)  # Default 4% (was 6%)
         self.trail_tighten_trigger_pct = get_config_float("partial_tp_manager.trail_tighten_trigger_pct", 0.15)
         self.trailing_stop_tightened = get_config_float("partial_tp_manager.trailing_stop_tightened", 0.05)
         self.hard_stop_loss_pct = get_config_float("partial_tp_manager.hard_stop_loss_pct", 0.07)
+        # Apply slippage buffer to hard stop loss
+        stop_loss_slippage_buffer = get_config_float("stop_loss_slippage_buffer", 0.15)
+        self.effective_hard_stop_loss_pct = self.hard_stop_loss_pct * (1 + stop_loss_slippage_buffer)
         
         # Track partial TP state per position
         self.position_states: Dict[str, Dict[str, Any]] = {}
@@ -80,14 +83,15 @@ class AIPartialTPManager:
         if current_price > state["peak_price"]:
             state["peak_price"] = current_price
         
-        # Check hard stop loss first
-        if pnl_pct <= -self.hard_stop_loss_pct:
+        # Check hard stop loss first (using effective stop loss with slippage buffer)
+        if pnl_pct <= -self.effective_hard_stop_loss_pct:
             # Log the threshold, not the actual loss (which may be worse due to slippage/delays)
             threshold_pct = self.hard_stop_loss_pct * 100
+            effective_threshold_pct = self.effective_hard_stop_loss_pct * 100
             actions.append(PartialTPAction(
                 type="sell",
                 size_pct=1.0,
-                reason=f"hard_stop_loss_{threshold_pct:.1f}%_triggered_at_{pnl_pct:.2%}"
+                reason=f"hard_stop_loss_{threshold_pct:.1f}%_triggered_at_{pnl_pct:.2%}_effective_{effective_threshold_pct:.1f}%"
             ))
             log_info("partial_tp.hard_stop",
                     symbol=position.get("symbol", "?"),

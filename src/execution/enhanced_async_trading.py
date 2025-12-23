@@ -850,6 +850,19 @@ class EnhancedAsyncTradingEngine:
         """Process a batch of tokens with parallel AI analysis"""
         log_info("trading.batch", f"Processing batch of {len(batch)} tokens")
         
+        # Check market regime before processing batch
+        enable_regime_controls = get_config_bool("enable_regime_trading_controls", False)
+        if enable_regime_controls:
+            should_trade, reason = ai_market_regime_detector.should_trade_in_current_regime()
+            
+            if not should_trade:
+                log_info("trading.regime_pause", f"Trading paused due to market regime: {reason}")
+                return []  # Skip this batch
+            
+            # Get regime data for quality adjustments if not provided
+            if regime_data is None:
+                regime_data = ai_market_regime_detector.detect_market_regime()
+        
         # Create tasks for parallel AI analysis
         analysis_tasks = [self._analyze_token_ai(token, regime_data) for token in batch]
         analyses = await asyncio.gather(*analysis_tasks, return_exceptions=True)
@@ -874,8 +887,29 @@ class EnhancedAsyncTradingEngine:
             success_prob = price_pred.get("success_probability", 0.5)
             risk_score = price_pred.get("risk_score", 0.5)
             
+            # Base quality threshold
+            base_min_quality = get_config_float("min_quality_score", 65) / 100.0  # Convert to 0-1 scale
+            
+            # Apply regime adjustments if enabled
+            if enable_regime_controls and regime_data:
+                regime = regime_data.get("regime", "unknown")
+                if regime == "high_volatility":
+                    adjustment = get_config_float("regime_high_volatility_quality_adjustment", 25) / 100.0
+                    base_min_quality += adjustment
+                    log_info("trading.regime_adjustment",
+                            f"High volatility regime: quality threshold adjusted to {base_min_quality*100:.1f}%",
+                            regime=regime,
+                            adjustment=adjustment*100)
+                elif regime == "bear_market":
+                    adjustment = get_config_float("regime_bear_quality_adjustment", 10) / 100.0
+                    base_min_quality += adjustment
+                    log_info("trading.regime_adjustment",
+                            f"Bear market regime: quality threshold adjusted to {base_min_quality*100:.1f}%",
+                            regime=regime,
+                            adjustment=adjustment*100)
+            
             # Hard AI thresholds for trade approval
-            MIN_QUALITY_SCORE = 0.65    # 65%
+            MIN_QUALITY_SCORE = base_min_quality
             MIN_SUCCESS_PROB = 0.60     # 60%
             MAX_RISK_SCORE = 0.50       # 50%
             

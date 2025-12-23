@@ -6,6 +6,7 @@ trade_amount_usd: 6  # Adjusted to align with current USDC balance
 slippage: 0.03  # 3% slippage (tightened for better execution)
 take_profit: 0.12  # 12% (reduced from 13% to improve win rate)
 stop_loss: 0.08  # 8% (increased from 7% to reduce premature exits)
+stop_loss_slippage_buffer: 0.15  # 15% buffer to account for execution slippage (effective trigger = stop_loss * 1.15)
 use_dynamic_tp: true  # Enable dynamic take profit
 min_trade_amount_usd: 10  # Minimum trade amount for realistic scaling
 
@@ -63,6 +64,8 @@ min_pool_reserves_multiplier: 2.0  # Pool reserves must be 2x trade amount
 
 # === Strategy Thresholds ===
 min_momentum_pct: 0.003  # Increased momentum requirement for quality (raised from 0.002 to 0.003 - 0.3% minimum)
+multichain_momentum_multiplier: 0.75  # Multi-chain tokens require 75% of ETH momentum (was 50%)
+multichain_momentum_min: 0.002  # Minimum 0.2% momentum for multi-chain tokens (was 0.1%)
 min_volume_24h_for_buy: 200000   # Quality-first: $200k volume minimum for reliability (raised from $150k to improve win rate)
 min_liquidity_usd_for_buy: 200000  # Quality-first: $200k liquidity minimum for reliability (raised from $150k to improve win rate)
 min_price_usd: 0.000001  # MICRO TESTING - reduced minimum price for more opportunities
@@ -193,7 +196,7 @@ requote_delay_seconds: 10
 requote_slippage_buffer: 0.005
 
 # === Monitoring ===
-trailing_stop_percent: 0.06  # 6% trailing stop (tighter for faster profit capture)
+trailing_stop_percent: 0.05  # 5% trailing stop (activate earlier to lock in profits)
 
 # === Price Memory ===
 price_memory_ttl_minutes: 15
@@ -426,7 +429,7 @@ regime_recovery_position_multiplier: 0.9  # Position size multiplier for recover
 regime_bull_quality_adjustment: -5  # Quality threshold adjustment for bull market
 regime_bear_quality_adjustment: 10  # Quality threshold adjustment for bear market
 regime_sideways_quality_adjustment: 15  # Quality threshold adjustment for sideways market (increased from 0 to 15)
-regime_high_volatility_quality_adjustment: 20  # Quality threshold adjustment for high volatility (increased from 15 to 20)
+regime_high_volatility_quality_adjustment: 25  # Quality threshold adjustment for high volatility (increased from 20 to 25 for stricter filtering)
 regime_recovery_quality_adjustment: 5  # Quality threshold adjustment for recovery market
 
 # Market regime volume/liquidity adjustments
@@ -436,9 +439,9 @@ regime_bear_liquidity_multiplier: 1.5  # Liquidity requirement multiplier for be
 regime_high_volatility_liquidity_multiplier: 2.0  # Liquidity requirement multiplier for high volatility
 
 # Market regime trading controls
-enable_regime_trading_controls: false  # Disabled - too restrictive for opportunities
-pause_trading_high_volatility: false  # Disabled - allow trading in high volatility
-pause_trading_bear_market: false  # Disabled - allow trading in bear market
+enable_regime_trading_controls: true  # Enable regime-based filtering for better win rate
+pause_trading_high_volatility: true   # Pause trading in high volatility (safety first)
+pause_trading_bear_market: false  # Allow trading in bear market but with stricter filters
 regime_trading_pause_confidence: 0.8  # Confidence threshold for trading pauses
 
 # === AI Price Prediction ===
@@ -1635,8 +1638,8 @@ partial_fill_retry:
 enable_ai_partial_tp_manager: true  # Enable partial TP manager
 partial_tp_manager:
   first_take_pct: 0.50  # Take 50% at first TP trigger
-  first_take_trigger_pct: 0.06  # Trigger at +6% gain (half of 12% take profit target)
-  trailing_stop_initial: 0.05  # 5% trailing stop after partial (tightened from 6% to protect gains)
+  first_take_trigger_pct: 0.05  # Trigger at +5% gain (was 6% - activate earlier to lock in profits)
+  trailing_stop_initial: 0.04  # 4% trailing stop after partial (tightened from 5% to protect gains)
   trail_tighten_trigger_pct: 0.15  # Tighten trail at +15% gain
   trailing_stop_tightened: 0.05  # 5% trailing stop when tightened
   hard_stop_loss_pct: 0.08  # Hard stop loss at -8% (updated to match stop_loss)

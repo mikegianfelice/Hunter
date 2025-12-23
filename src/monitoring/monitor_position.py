@@ -1467,7 +1467,11 @@ def monitor_all_positions():
             continue  # move to next token
 
         # Hard stop-loss (only if not already handled by Partial TP Manager)
-        if not partial_tp_handled_stop_loss and gain <= -config['STOP_LOSS']:
+        # Calculate effective stop loss with slippage buffer to account for execution slippage
+        stop_loss_slippage_buffer = config.get('stop_loss_slippage_buffer', 0.15)
+        effective_stop_loss = config['STOP_LOSS'] * (1 + stop_loss_slippage_buffer)
+        # Trigger stop loss earlier to account for slippage
+        if not partial_tp_handled_stop_loss and gain <= -effective_stop_loss:
             print(f"\n{'='*60}")
             print(f"🛑 STOP-LOSS TRIGGERED!")
             print(f"Token: {symbol} ({token_address[:8]}...{token_address[-8:]})")
@@ -1476,6 +1480,7 @@ def monitor_all_positions():
             print(f"Current Price: ${current_price:.6f}")
             print(f"Gain/Loss: {gain * 100:.2f}%")
             print(f"Stop Loss Threshold: {config['STOP_LOSS'] * 100:.2f}%")
+            print(f"Effective Stop Loss (with slippage buffer): {effective_stop_loss * 100:.2f}%")
             
             # Check balance BEFORE attempting to sell - if already sold, clean up position
             print(f"🔍 [PRE-SELL CHECK] Verifying token balance before stop-loss sell...")
