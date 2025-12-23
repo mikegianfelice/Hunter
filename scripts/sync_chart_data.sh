@@ -165,13 +165,6 @@ if [ $FETCH_EXIT_CODE -ne 0 ]; then
     # Continue anyway - might be network issue or auth issue
 fi
 
-# Check if there are local changes to commit (both staged and unstaged)
-HAS_UNCOMMITTED=false
-if ! git diff --quiet data/performance_data.json data/trade_log.csv data/open_positions.json 2>/dev/null || \
-   ! git diff --cached --quiet data/performance_data.json data/trade_log.csv data/open_positions.json 2>/dev/null; then
-    HAS_UNCOMMITTED=true
-fi
-
 # Check if we're behind or diverged from remote and sync FIRST (before checking for changes)
 LOCAL=$(git rev-parse HEAD 2>/dev/null)
 REMOTE=$(git rev-parse origin/main 2>/dev/null 2>&1)
@@ -222,11 +215,19 @@ if [ -n "$REMOTE" ] && [ "$LOCAL" != "$REMOTE" ]; then
     fi
 fi
 
+# Check if there are local changes to commit AFTER pulling/rebasing
+# This ensures we check the current state, not the state before the pull
+HAS_UNCOMMITTED=false
+if ! git diff --quiet data/performance_data.json data/trade_log.csv 2>/dev/null || \
+   ! git diff --cached --quiet data/performance_data.json data/trade_log.csv 2>/dev/null; then
+    HAS_UNCOMMITTED=true
+fi
+
 # If we have uncommitted changes, commit them
 if [ "$HAS_UNCOMMITTED" = true ]; then
     # Stage the data files
     echo "📊 Staging performance data files..."
-    git add data/performance_data.json data/trade_log.csv data/open_positions.json
+    git add data/performance_data.json data/trade_log.csv
     
     # Commit with timestamp
     TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S")
