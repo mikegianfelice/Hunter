@@ -25,7 +25,7 @@ LOG_FILE = project_root / "logs" / "monitor_watchdog.log"
 CHECK_INTERVAL = 60  # Check every 60 seconds
 MAX_RESTART_ATTEMPTS = 5  # Maximum restart attempts within 5 minutes
 RESTART_WINDOW = 300  # 5 minutes in seconds
-RECONCILE_INTERVAL_SEC = 30 * 60  # 30 minutes
+RECONCILE_INTERVAL_SEC = 5 * 60  # 5 minutes
 
 _running = True
 _monitor_process = None
