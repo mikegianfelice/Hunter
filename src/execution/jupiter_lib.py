@@ -32,6 +32,10 @@ class JupiterCustomLib:
         self.private_key = private_key
         self.last_quote = None  # Store last quote for slippage calculation
         
+        # Transaction status cache to reduce redundant RPC calls
+        self._tx_status_cache: Dict[str, Tuple[bool, float]] = {}  # {tx_hash: (status, timestamp)}
+        self._tx_cache_ttl = 600  # 10 minutes cache
+        
         # Initialize wallet
         try:
             if self.private_key:
@@ -469,8 +473,18 @@ class JupiterCustomLib:
                     except BrokenPipeError:
                         pass
                     
-                    # CRITICAL: Wait for transaction confirmation
-                    confirmed = self.confirm_transaction(tx_hash, max_retries=30)
+                    # CRITICAL: Wait for transaction confirmation with optimized retry logic
+                    confirmed = self.confirm_transaction(tx_hash, max_retries=12)
+                    
+                    # If confirmed successfully, return immediately (no redundant verification needed)
+                    if confirmed is True:
+                        try:
+                            print(f"✅ Transaction {tx_hash} confirmed and cached")
+                        except BrokenPipeError:
+                            pass
+                        return tx_hash, True
+                    
+                    # Only verify if confirmation was uncertain (False or None)
                     if confirmed is False:
                         try:
                             print(f"⚠️ Transaction {tx_hash} initial confirmation check failed; performing final verification...")
@@ -484,59 +498,59 @@ class JupiterCustomLib:
                         except BrokenPipeError:
                             pass
                     
-                    # CRITICAL: Always verify transaction succeeded, even if confirmation check failed
-                    # This handles cases where RPC was slow but transaction actually succeeded
-                    try:
-                        print(f"🔍 Verifying transaction status...")
-                    except BrokenPipeError:
-                        pass
-                    
-                    # Give transaction a bit more time if confirmation failed/timeout
+                    # Only verify if confirmation was uncertain
                     if confirmed is not True:
                         try:
-                            print(f"⏳ Additional wait for transaction to propagate...")
+                            print(f"🔍 Verifying transaction status...")
                         except BrokenPipeError:
                             pass
-                        import time
-                        time.sleep(2)  # Wait 2 more seconds for transaction to confirm
-                    
-                    tx_success = self.verify_transaction_success(tx_hash)
-                    if tx_success is False:
-                        try:
-                            print(f"❌ Transaction {tx_hash} failed on-chain - NOT marking as completed")
-                        except BrokenPipeError:
-                            pass
-                        return tx_hash, False
-                    elif tx_success is True:
-                        try:
-                            print(f"✅ Transaction {tx_hash} verified as successful on-chain")
-                        except BrokenPipeError:
-                            pass
-                        return tx_hash, True
-                    elif tx_success is None:
-                        # Unable to verify - but we have a tx_hash, so transaction was at least submitted
-                        # If initial confirmation was False, we're uncertain - check one more time with delay
-                        if confirmed is False:
+                        
+                        # Give transaction a bit more time if confirmation failed/timeout
+                        if confirmed is None:
                             try:
-                                print(f"⚠️ Transaction {tx_hash} could not be verified; checking again after delay...")
+                                print(f"⏳ Additional wait for transaction to propagate...")
                             except BrokenPipeError:
                                 pass
                             import time
-                            time.sleep(3)  # Wait 3 more seconds
-                            # Final verification attempt
-                            final_check = self.verify_transaction_success(tx_hash)
-                            if final_check is True:
+                            time.sleep(2)  # Wait 2 more seconds for transaction to confirm
+                        
+                        tx_success = self.verify_transaction_success(tx_hash)
+                        if tx_success is False:
+                            try:
+                                print(f"❌ Transaction {tx_hash} failed on-chain - NOT marking as completed")
+                            except BrokenPipeError:
+                                pass
+                            return tx_hash, False
+                        elif tx_success is True:
+                            try:
+                                print(f"✅ Transaction {tx_hash} verified as successful on-chain")
+                            except BrokenPipeError:
+                                pass
+                            return tx_hash, True
+                        elif tx_success is None:
+                            # Unable to verify - but we have a tx_hash, so transaction was at least submitted
+                            # If initial confirmation was False, we're uncertain - check one more time with delay
+                            if confirmed is False:
                                 try:
-                                    print(f"✅ Transaction {tx_hash} verified successful after retry")
+                                    print(f"⚠️ Transaction {tx_hash} could not be verified; checking again after delay...")
                                 except BrokenPipeError:
                                     pass
-                                return tx_hash, True
-                            elif final_check is False:
-                                try:
-                                    print(f"❌ Transaction {tx_hash} confirmed as failed after retry - NOT marking as completed")
-                                except BrokenPipeError:
-                                    pass
-                                return tx_hash, False
+                                import time
+                                time.sleep(3)  # Wait 3 more seconds
+                                # Final verification attempt
+                                final_check = self.verify_transaction_success(tx_hash)
+                                if final_check is True:
+                                    try:
+                                        print(f"✅ Transaction {tx_hash} verified successful after retry")
+                                    except BrokenPipeError:
+                                        pass
+                                    return tx_hash, True
+                                elif final_check is False:
+                                    try:
+                                        print(f"❌ Transaction {tx_hash} confirmed as failed after retry - NOT marking as completed")
+                                    except BrokenPipeError:
+                                        pass
+                                    return tx_hash, False
                             else:
                                 # Still can't verify after retry - this is suspicious
                                 try:
@@ -604,8 +618,11 @@ class JupiterCustomLib:
                 pass
             return "", False
 
-    def confirm_transaction(self, tx_hash: str, max_retries: int = 30) -> Optional[bool]:
-        """Wait for transaction to be confirmed on-chain.
+    def confirm_transaction(self, tx_hash: str, max_retries: int = 12) -> Optional[bool]:
+        """Wait for transaction to be confirmed on-chain with exponential backoff.
+        
+        Uses exponential backoff to reduce RPC calls while maintaining responsiveness.
+        Caches confirmed statuses to avoid redundant checks.
 
         Returns:
             True if the transaction is confirmed without errors.
@@ -613,6 +630,15 @@ class JupiterCustomLib:
             None if the confirmation status could not be determined before timing out.
         """
         import time
+        
+        # Check cache first
+        if tx_hash in self._tx_status_cache:
+            status, timestamp = self._tx_status_cache[tx_hash]
+            if time.time() - timestamp < self._tx_cache_ttl:
+                return status
+        
+        # Exponential backoff intervals: 0.5s, 1s, 2s, 3s, 5s, then 5s
+        backoff_intervals = [0.5, 1.0, 2.0, 3.0, 5.0]
         
         for attempt in range(max_retries):
             try:
@@ -630,7 +656,7 @@ class JupiterCustomLib:
                     if value_list:
                         status = value_list[0]
                         if status is None:
-                            # Status not yet available, keep polling
+                            # Status not yet available, continue polling
                             pass
                         else:
                             err = status.get("err")
@@ -639,6 +665,9 @@ class JupiterCustomLib:
                                     print(f"❌ Transaction failed: {err}")
                                 except BrokenPipeError:
                                     pass
+                                # Cache failed status
+                                self._tx_status_cache[tx_hash] = (False, time.time())
+                                self._prune_tx_cache()
                                 return False
                             
                             confirmation_status = status.get("confirmationStatus")
@@ -650,11 +679,19 @@ class JupiterCustomLib:
                                     print(f"✅ Transaction confirmed on-chain")
                                 except BrokenPipeError:
                                     pass
+                                # Cache confirmed status
+                                self._tx_status_cache[tx_hash] = (True, time.time())
+                                self._prune_tx_cache()
                                 return True
                             # Otherwise, keep waiting
                 
+                # Exponential backoff: use interval based on attempt number
                 if attempt < max_retries - 1:
-                    time.sleep(1)
+                    if attempt < len(backoff_intervals):
+                        sleep_time = backoff_intervals[attempt]
+                    else:
+                        sleep_time = 5.0  # Cap at 5 seconds
+                    time.sleep(sleep_time)
                     
             except Exception as e:
                 try:
@@ -662,32 +699,55 @@ class JupiterCustomLib:
                 except BrokenPipeError:
                     pass
                 if attempt < max_retries - 1:
-                    time.sleep(1)
+                    sleep_time = backoff_intervals[min(attempt, len(backoff_intervals) - 1)]
+                    time.sleep(sleep_time)
         
-        try:
-            print(f"⚠️ Transaction confirmation timeout after {max_retries} attempts")
-        except BrokenPipeError:
-            pass
         try:
             print(f"⚠️ Transaction confirmation timeout after {max_retries} attempts")
         except BrokenPipeError:
             pass
         return None
+    
+    def _prune_tx_cache(self):
+        """Prune old cache entries to prevent memory growth"""
+        import time
+        if len(self._tx_status_cache) > 100:
+            current_time = time.time()
+            # Remove entries older than cache TTL
+            expired_keys = [
+                tx_hash for tx_hash, (_, timestamp) in self._tx_status_cache.items()
+                if current_time - timestamp >= self._tx_cache_ttl
+            ]
+            for key in expired_keys:
+                del self._tx_status_cache[key]
+            
+            # If still too many, remove oldest entries
+            if len(self._tx_status_cache) > 100:
+                sorted_items = sorted(self._tx_status_cache.items(), key=lambda x: x[1][1])
+                for tx_hash, _ in sorted_items[:len(self._tx_status_cache) - 100]:
+                    del self._tx_status_cache[tx_hash]
 
     def verify_transaction_success(self, tx_hash: str) -> Optional[bool]:
         """Verify transaction actually succeeded by checking transaction details.
         
-        Uses multiple verification methods:
-        1. getTransaction (most detailed)
-        2. getSignatureStatuses (more reliable for confirmation status)
-        3. Solscan API (external verification as fallback)
+        Uses multiple verification methods with caching to reduce RPC calls:
+        1. Check cache first (avoids redundant calls)
+        2. getTransaction (most detailed, doesn't use getSignatureStatuses)
+        3. getSignatureStatuses (more reliable for confirmation status)
+        4. Solscan API (external verification as fallback)
 
         Returns:
             True if the transaction is confirmed without errors.
             False if the transaction is confirmed with an on-chain error.
             None if the status cannot be determined (RPC timeout or missing data).
         """
-        # Method 1: Try getTransaction first (most detailed)
+        # Check cache first to avoid redundant RPC calls
+        if tx_hash in self._tx_status_cache:
+            status, timestamp = self._tx_status_cache[tx_hash]
+            if time.time() - timestamp < self._tx_cache_ttl:
+                return status
+        
+        # Method 1: Try getTransaction first (most detailed, doesn't use getSignatureStatuses)
         try:
             rpc_payload = {
                 "jsonrpc": "2.0",
@@ -714,8 +774,14 @@ class JupiterCustomLib:
                             print(f"❌ Transaction error in meta: {meta['err']}")
                         except BrokenPipeError:
                             pass
+                        # Cache failed status
+                        self._tx_status_cache[tx_hash] = (False, time.time())
+                        self._prune_tx_cache()
                         return False
                     
+                    # Cache successful result
+                    self._tx_status_cache[tx_hash] = (True, time.time())
+                    self._prune_tx_cache()
                     return True
         except Exception as e:
             try:
@@ -723,7 +789,7 @@ class JupiterCustomLib:
             except BrokenPipeError:
                 pass
         
-        # Method 2: Try getSignatureStatuses (more reliable for confirmation)
+        # Method 2: Try getSignatureStatuses only if getTransaction failed
         try:
             rpc_payload = {
                 "jsonrpc": "2.0",
@@ -744,12 +810,18 @@ class JupiterCustomLib:
                                 print(f"✅ Transaction confirmed via signature status check")
                             except BrokenPipeError:
                                 pass
+                            # Cache successful result
+                            self._tx_status_cache[tx_hash] = (True, time.time())
+                            self._prune_tx_cache()
                             return True
                         else:
                             try:
                                 print(f"❌ Transaction failed via signature status: {err}")
                             except BrokenPipeError:
                                 pass
+                            # Cache failed status
+                            self._tx_status_cache[tx_hash] = (False, time.time())
+                            self._prune_tx_cache()
                             return False
         except Exception as e:
             try:

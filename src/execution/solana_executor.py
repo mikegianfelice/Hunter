@@ -25,6 +25,10 @@ class SimpleSolanaExecutor:
         self.wallet_address = SOLANA_WALLET_ADDRESS
         self.private_key = SOLANA_PRIVATE_KEY
         
+        # Transaction status cache to reduce redundant RPC calls
+        self._tx_status_cache: Dict[str, Tuple[bool, float]] = {}  # {tx_hash: (status, timestamp)}
+        self._tx_cache_ttl = 600  # 10 minutes cache
+        
         # Initialize wallet
         try:
             if self.private_key:
@@ -277,22 +281,18 @@ class SimpleSolanaExecutor:
                                 tx_hash = rpc_result["result"]
                                 print(f"✅ Transaction sent: {tx_hash}")
                                 
-                                # CRITICAL: Wait for transaction confirmation
+                                # CRITICAL: Wait for transaction confirmation with optimized retry logic
                                 print(f"⏳ Waiting for transaction confirmation...")
-                                confirmed = self._confirm_transaction(tx_hash, max_retries=30)
-                                if not confirmed:
-                                    print(f"❌ Transaction {tx_hash} failed to confirm or was rejected")
-                                    return tx_hash, False
+                                confirmed = self._confirm_transaction(tx_hash, max_retries=12)
                                 
-                                # Verify transaction succeeded
-                                print(f"🔍 Verifying transaction status...")
-                                tx_success = self._verify_transaction_success(tx_hash)
-                                if not tx_success:
-                                    print(f"❌ Transaction {tx_hash} failed on-chain")
-                                    return tx_hash, False
+                                # If confirmed successfully, return immediately (no redundant verification needed)
+                                if confirmed:
+                                    print(f"✅ Transaction confirmed and successful: {tx_hash}")
+                                    return tx_hash, True
                                 
-                                print(f"✅ Transaction confirmed and successful: {tx_hash}")
-                                return tx_hash, True
+                                # Only verify if confirmation failed
+                                print(f"❌ Transaction {tx_hash} failed to confirm or was rejected")
+                                return tx_hash, False
                             elif "error" in rpc_result:
                                 error_msg = rpc_result["error"]
                                 print(f"❌ RPC error: {error_msg}")
@@ -372,17 +372,18 @@ class SimpleSolanaExecutor:
                             tx_hash = rpc_result["result"]
                             print(f"✅ Transaction sent (alternative): {tx_hash}")
                             
-                            # CRITICAL: Wait for transaction confirmation
+                            # CRITICAL: Wait for transaction confirmation with optimized retry logic
                             print(f"⏳ Waiting for transaction confirmation...")
-                            confirmed = self._confirm_transaction(tx_hash, max_retries=30)
-                            if not confirmed:
-                                print(f"❌ Transaction {tx_hash} failed to confirm or was rejected")
-                                return tx_hash, False
+                            confirmed = self._confirm_transaction(tx_hash, max_retries=12)
                             
-                            # Verify transaction succeeded
-                            print(f"🔍 Verifying transaction status...")
-                            tx_success = self._verify_transaction_success(tx_hash)
-                            if not tx_success:
+                            # If confirmed successfully, return immediately (no redundant verification needed)
+                            if confirmed:
+                                print(f"✅ Transaction confirmed and successful: {tx_hash}")
+                                return tx_hash, True
+                            
+                            # Only verify if confirmation failed
+                            print(f"❌ Transaction {tx_hash} failed to confirm or was rejected")
+                            return tx_hash, False
                                 print(f"❌ Transaction {tx_hash} failed on-chain")
                                 return tx_hash, False
                             
@@ -551,9 +552,18 @@ class SimpleSolanaExecutor:
             print(f"❌ Error getting SOL balance: {e}")
             return 0.0
 
-    def _confirm_transaction(self, tx_hash: str, max_retries: int = 30) -> bool:
-        """Wait for transaction to be confirmed on-chain"""
+    def _confirm_transaction(self, tx_hash: str, max_retries: int = 12) -> bool:
+        """Wait for transaction to be confirmed on-chain with exponential backoff"""
         import time
+        
+        # Check cache first
+        if tx_hash in self._tx_status_cache:
+            status, timestamp = self._tx_status_cache[tx_hash]
+            if time.time() - timestamp < self._tx_cache_ttl:
+                return status
+        
+        # Exponential backoff intervals: 0.5s, 1s, 2s, 3s, 5s, then 5s
+        backoff_intervals = [0.5, 1.0, 2.0, 3.0, 5.0]
         
         for attempt in range(max_retries):
             try:
@@ -574,26 +584,64 @@ class SimpleSolanaExecutor:
                             if err is None:
                                 # Transaction confirmed without error
                                 print(f"✅ Transaction confirmed on-chain")
+                                # Cache confirmed status
+                                self._tx_status_cache[tx_hash] = (True, time.time())
+                                self._prune_tx_cache()
                                 return True
                             else:
                                 # Transaction failed
                                 print(f"❌ Transaction failed: {err}")
+                                # Cache failed status
+                                self._tx_status_cache[tx_hash] = (False, time.time())
+                                self._prune_tx_cache()
                                 return False
                 
-                # Transaction not yet confirmed, wait and retry
+                # Exponential backoff: use interval based on attempt number
                 if attempt < max_retries - 1:
-                    time.sleep(1)
+                    if attempt < len(backoff_intervals):
+                        sleep_time = backoff_intervals[attempt]
+                    else:
+                        sleep_time = 5.0  # Cap at 5 seconds
+                    time.sleep(sleep_time)
                     
             except Exception as e:
                 print(f"⚠️ Error checking transaction status: {e}")
                 if attempt < max_retries - 1:
-                    time.sleep(1)
+                    sleep_time = backoff_intervals[min(attempt, len(backoff_intervals) - 1)]
+                    time.sleep(sleep_time)
         
         print(f"⚠️ Transaction confirmation timeout after {max_retries} attempts")
         return False
+    
+    def _prune_tx_cache(self):
+        """Prune old cache entries to prevent memory growth"""
+        import time
+        if len(self._tx_status_cache) > 100:
+            current_time = time.time()
+            # Remove entries older than cache TTL
+            expired_keys = [
+                tx_hash for tx_hash, (_, timestamp) in self._tx_status_cache.items()
+                if current_time - timestamp >= self._tx_cache_ttl
+            ]
+            for key in expired_keys:
+                del self._tx_status_cache[key]
+            
+            # If still too many, remove oldest entries
+            if len(self._tx_status_cache) > 100:
+                sorted_items = sorted(self._tx_status_cache.items(), key=lambda x: x[1][1])
+                for tx_hash, _ in sorted_items[:len(self._tx_status_cache) - 100]:
+                    del self._tx_status_cache[tx_hash]
 
     def _verify_transaction_success(self, tx_hash: str) -> bool:
-        """Verify transaction actually succeeded by checking transaction details"""
+        """Verify transaction actually succeeded by checking transaction details with caching"""
+        import time
+        
+        # Check cache first to avoid redundant RPC calls
+        if tx_hash in self._tx_status_cache:
+            status, timestamp = self._tx_status_cache[tx_hash]
+            if time.time() - timestamp < self._tx_cache_ttl:
+                return status
+        
         try:
             rpc_payload = {
                 "jsonrpc": "2.0",
@@ -618,9 +666,15 @@ class SimpleSolanaExecutor:
                     # Check if transaction succeeded
                     if meta.get("err") is not None:
                         print(f"❌ Transaction error in meta: {meta['err']}")
+                        # Cache failed status
+                        self._tx_status_cache[tx_hash] = (False, time.time())
+                        self._prune_tx_cache()
                         return False
                     
                     # Transaction succeeded
+                    # Cache successful result
+                    self._tx_status_cache[tx_hash] = (True, time.time())
+                    self._prune_tx_cache()
                     return True
             
             return False
