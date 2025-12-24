@@ -163,11 +163,15 @@ class AIMarketRegimeDetector:
         return indicators
     
     def _analyze_btc_trend(self) -> float:
-        """Analyze Bitcoin trend (0-1 scale)"""
+        """Analyze Bitcoin trend (0-1 scale) using extended timeframe"""
         try:
-            # Use real BTC price data
+            # Use real BTC price data with extended timeframe for regime detection
             from src.utils.market_data_fetcher import market_data_fetcher
-            btc_trend = market_data_fetcher.get_btc_trend(hours=24)
+            from src.config.config_loader import get_config
+            
+            # Use extended timeframe (default 7 days) for better accuracy
+            hours = get_config('market_analysis_timeframes.btc_trend_hours', 168)
+            btc_trend = market_data_fetcher.get_btc_trend(hours=hours)
             return btc_trend
             
         except Exception as e:
@@ -175,11 +179,15 @@ class AIMarketRegimeDetector:
             return 0.5
     
     def _analyze_eth_trend(self) -> float:
-        """Analyze Ethereum trend (0-1 scale)"""
+        """Analyze Ethereum trend (0-1 scale) using extended timeframe"""
         try:
-            # Use real ETH price data
+            # Use real ETH price data with extended timeframe for regime detection
             from src.utils.market_data_fetcher import market_data_fetcher
-            eth_trend = market_data_fetcher.get_eth_trend(hours=24)
+            from src.config.config_loader import get_config
+            
+            # Use extended timeframe (default 7 days) for better accuracy
+            hours = get_config('market_analysis_timeframes.eth_trend_hours', 168)
+            eth_trend = market_data_fetcher.get_eth_trend(hours=hours)
             return eth_trend
             
         except Exception as e:
@@ -187,10 +195,11 @@ class AIMarketRegimeDetector:
             return 0.5
     
     def _analyze_market_correlation(self) -> float:
-        """Analyze market correlation (0-1 scale)"""
+        """Analyze market correlation (0-1 scale) using extended timeframe"""
         try:
-            # Use real market data
+            # Use real market data with extended timeframe for statistical significance
             from src.utils.market_data_fetcher import market_data_fetcher
+            # Uses default 14 days (336 hours) for 60+ data points
             correlation = market_data_fetcher.get_market_correlation()
             return correlation
             
@@ -199,11 +208,12 @@ class AIMarketRegimeDetector:
             return 0.5
     
     def _calculate_volatility_index(self) -> float:
-        """Calculate market volatility index (0-1 scale)"""
+        """Calculate market volatility index (0-1 scale) using extended timeframe"""
         try:
-            # Use real market volatility data
+            # Use real market volatility data with extended timeframe
             from src.utils.market_data_fetcher import market_data_fetcher
-            volatility = market_data_fetcher.get_market_volatility(hours=24)
+            # Uses default 30 days (720 hours) for accurate volatility
+            volatility = market_data_fetcher.get_market_volatility()
             return volatility
             
         except Exception as e:
@@ -211,10 +221,11 @@ class AIMarketRegimeDetector:
             return 0.5
     
     def _analyze_volume_trends(self) -> float:
-        """Analyze volume trends (0-1 scale)"""
+        """Analyze volume trends (0-1 scale) using rolling averages"""
         try:
-            # Use real volume data
+            # Use real volume data with rolling average comparison
             from src.utils.market_data_fetcher import market_data_fetcher
+            # Uses default 14 days (336 hours) with 7-day rolling window
             volume_trend = market_data_fetcher.get_volume_trends()
             return volume_trend
             

@@ -1692,6 +1692,36 @@ technical_indicators_settings:
   enable_multi_timeframe_analysis: true  # Analyze multiple timeframes
   confidence_scoring_enabled: true  # Mark indicator confidence levels
 
+# === Market Analysis Extended Timeframes ===
+market_analysis_timeframes:
+  # Market regime detection needs 7-30 days for accurate classification
+  regime_detection_hours: 168  # 7 days default, can extend to 720 (30 days) for better accuracy
+  regime_detection_min_hours: 168  # Minimum 7 days
+  regime_detection_max_hours: 720  # Maximum 30 days
+  
+  # Correlation analysis needs 60+ data points for statistical significance
+  correlation_analysis_hours: 336  # 14 days for 60+ hourly data points
+  correlation_min_data_points: 60  # Minimum data points for reliable correlation
+  
+  # Volatility calculation needs 20-30 periods
+  volatility_calculation_hours: 720  # 30 days for accurate volatility
+  volatility_min_periods: 20  # Minimum periods for reliable volatility
+  
+  # Volume trend analysis needs historical comparison
+  volume_trend_hours: 336  # 14 days for rolling average comparison
+  volume_trend_rolling_window: 168  # 7-day rolling window for comparison
+  
+  # BTC/ETH trend analysis for regime detection
+  btc_trend_hours: 168  # 7 days for regime detection
+  eth_trend_hours: 168  # 7 days for regime detection
+
+# === Sentiment Analysis Confidence Scoring ===
+sentiment_analysis_settings:
+  enable_confidence_scoring: true  # Add confidence scores to sentiment analysis
+  min_mentions_for_confidence: 10  # Minimum mentions for high confidence
+  fallback_confidence_score: 0.3  # Confidence when using fallback sentiment
+  low_data_confidence_threshold: 0.4  # Confidence threshold for low data quality
+
 # === A/B Testing ===
 enable_ab_testing: false  # Set to true to enable
 ab_testing:

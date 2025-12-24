@@ -365,26 +365,48 @@ class AIPredictiveAnalyticsEngine:
             }
     
     def _analyze_volume_patterns(self, token: Dict) -> Dict:
-        """Analyze volume patterns for price prediction using real data"""
+        """Analyze volume patterns for price prediction using real data
+        
+        NOTE: This method uses approximations when historical volume data is unavailable.
+        For accurate volume pattern analysis, use candlestick data with historical comparison.
+        """
         try:
             symbol = token.get("symbol", "UNKNOWN")
             volume_24h = float(token.get("volume24h", 0))
             price_change_24h = float(token.get("priceChange24h", 0))
             liquidity = float(token.get("liquidity", 0))
             
+            # Try to get historical volume data for comparison
+            from src.utils.market_data_fetcher import market_data_fetcher
+            from src.config.config_loader import get_config
+            
+            # Attempt to get historical volume trend for comparison
+            try:
+                historical_volume_trend = market_data_fetcher.get_volume_trends()
+                # Use historical trend to improve volume spike calculation
+                # If historical trend shows increasing volume, current spike is more significant
+                volume_trend_multiplier = 0.5 + historical_volume_trend  # 0.5-1.5 range
+            except Exception:
+                volume_trend_multiplier = 1.0  # Neutral if historical data unavailable
+            
             # Calculate volume metrics based on real data
-            # Volume spike based on current volume vs average
-            volume_spike = min(3.0, max(1.0, volume_24h / 500000))  # 1-3x spike
+            # Volume spike based on current volume vs estimated average
+            # Using static baseline as fallback (should be replaced with rolling average when available)
+            estimated_avg_volume = 500000  # Static baseline (fallback)
+            volume_spike = min(3.0, max(1.0, (volume_24h / estimated_avg_volume) * volume_trend_multiplier))
             
             # Volume momentum based on price change and volume
             volume_momentum = min(1.0, (volume_24h / 1000000) * (1 + abs(price_change_24h) / 100))
             
-            # Volume trend based on price change direction
+            # Volume trend based on price change direction (approximation)
             volume_trend = 0.5 + (price_change_24h / 200)  # 0-1 range
             volume_trend = max(0.0, min(1.0, volume_trend))
             
             # Volume consistency based on liquidity
             volume_consistency = min(1.0, liquidity / 2000000)  # 30-60% consistency
+            
+            # Mark as approximation if we couldn't get historical data
+            is_approximation = volume_trend_multiplier == 1.0
             
             # Calculate volume quality score
             volume_quality = (
@@ -410,7 +432,7 @@ class AIPredictiveAnalyticsEngine:
             else:
                 momentum_characteristics = "weak_momentum"
             
-            return {
+            result = {
                 'volume_spike': volume_spike,
                 'volume_momentum': volume_momentum,
                 'volume_trend': volume_trend,
@@ -421,6 +443,26 @@ class AIPredictiveAnalyticsEngine:
                 'volume_signal': 'bullish' if volume_spike > 2.0 and volume_momentum > 0.6 else 'bearish' if volume_spike < 1.2 and volume_momentum < 0.4 else 'neutral'
             }
             
+            # Add data quality metadata
+            if is_approximation:
+                result['is_approximation'] = True
+                result['confidence_score'] = 0.4
+                result['data_quality'] = {
+                    'confidence_score': 0.4,
+                    'is_approximation': True,
+                    'warnings': ['Volume spike calculated using static baseline - historical comparison unavailable']
+                }
+            else:
+                result['is_approximation'] = False
+                result['confidence_score'] = 0.7
+                result['data_quality'] = {
+                    'confidence_score': 0.7,
+                    'is_approximation': False,
+                    'warnings': []
+                }
+            
+            return result
+            
         except Exception:
             return {
                 'volume_spike': 1.5,
@@ -430,7 +472,14 @@ class AIPredictiveAnalyticsEngine:
                 'volume_quality': 0.5,
                 'volume_characteristics': 'moderate_volume',
                 'momentum_characteristics': 'moderate_momentum',
-                'volume_signal': 'neutral'
+                'volume_signal': 'neutral',
+                'is_approximation': True,
+                'confidence_score': 0.3,
+                'data_quality': {
+                    'confidence_score': 0.3,
+                    'is_approximation': True,
+                    'warnings': ['Volume pattern analysis failed - using default values']
+                }
             }
     
     def _analyze_market_regime(self, token: Dict) -> Dict:

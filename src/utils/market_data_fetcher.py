@@ -178,8 +178,16 @@ class MarketDataFetcher:
         
         return None
     
-    def get_btc_trend(self, hours: int = 24) -> float:
-        """Get BTC trend over last N hours (0-1 scale)"""
+    def get_btc_trend(self, hours: int = None) -> float:
+        """Get BTC trend over last N hours (0-1 scale)
+        
+        Uses extended timeframe (7 days default) for regime detection accuracy.
+        """
+        # Default to 7 days (168 hours) for regime detection
+        if hours is None:
+            from src.config.config_loader import get_config
+            hours = get_config('market_analysis_timeframes.btc_trend_hours', 168)
+        
         try:
             data, from_timestamp, now = self._get_market_chart_range("bitcoin", hours)
 
@@ -210,8 +218,16 @@ class MarketDataFetcher:
         
         return 0.5  # Neutral trend if unable to fetch
     
-    def get_eth_trend(self, hours: int = 24) -> float:
-        """Get ETH trend over last N hours (0-1 scale)"""
+    def get_eth_trend(self, hours: int = None) -> float:
+        """Get ETH trend over last N hours (0-1 scale)
+        
+        Uses extended timeframe (7 days default) for regime detection accuracy.
+        """
+        # Default to 7 days (168 hours) for regime detection
+        if hours is None:
+            from src.config.config_loader import get_config
+            hours = get_config('market_analysis_timeframes.eth_trend_hours', 168)
+        
         try:
             data, from_timestamp, now = self._get_market_chart_range("ethereum", hours)
 
@@ -242,8 +258,20 @@ class MarketDataFetcher:
         
         return 0.5  # Neutral trend if unable to fetch
     
-    def get_market_volatility(self, hours: int = 24) -> float:
-        """Get market volatility index (0-1 scale)"""
+    def get_market_volatility(self, hours: int = None) -> float:
+        """Get market volatility index (0-1 scale)
+        
+        Uses extended timeframe (30 days default) for accurate volatility calculation.
+        Needs 20-30 periods for reliable volatility measurement.
+        """
+        # Default to 30 days (720 hours) for accurate volatility
+        if hours is None:
+            from src.config.config_loader import get_config
+            hours = get_config('market_analysis_timeframes.volatility_calculation_hours', 720)
+            min_periods = get_config('market_analysis_timeframes.volatility_min_periods', 20)
+        else:
+            min_periods = 20  # Default minimum
+        
         try:
             data, from_timestamp, now = self._get_market_chart_range("bitcoin", hours)
 
@@ -260,13 +288,31 @@ class MarketDataFetcher:
                         if point.get("priceUsd") is not None
                     ]
 
-            if len(prices) >= 2:
+            if len(prices) >= min_periods:
                 std_dev = statistics.stdev(prices)
                 mean_price = statistics.mean(prices)
 
                 if mean_price > 0:
                     volatility = std_dev / mean_price
                     volatility_normalized = min(1, volatility * 2)
+                    
+                    # Log confidence if we have less than ideal data
+                    if len(prices) < 30:
+                        confidence = len(prices) / 30.0
+                        logger.info(f"✅ Market volatility: {volatility_normalized:.3f} (confidence: {confidence:.2f}, {len(prices)} periods)")
+                    else:
+                        logger.info(f"✅ Market volatility: {volatility_normalized:.3f} ({len(prices)} periods)")
+                    
+                    return volatility_normalized
+            elif len(prices) >= 2:
+                # Fallback: calculate with limited data but warn
+                std_dev = statistics.stdev(prices)
+                mean_price = statistics.mean(prices)
+                if mean_price > 0:
+                    volatility = std_dev / mean_price
+                    volatility_normalized = min(1, volatility * 2)
+                    confidence = len(prices) / min_periods
+                    logger.warning(f"⚠️ Market volatility calculated with limited data: {volatility_normalized:.3f} (confidence: {confidence:.2f}, {len(prices)} < {min_periods} periods)")
                     return volatility_normalized
                         
         except Exception as e:
@@ -293,8 +339,20 @@ class MarketDataFetcher:
         
         return 0.5  # Neutral if unable to fetch
     
-    def get_market_correlation(self, hours: int = 24) -> float:
-        """Get market correlation between BTC and ETH (0-1 scale)"""
+    def get_market_correlation(self, hours: int = None) -> float:
+        """Get market correlation between BTC and ETH (0-1 scale)
+        
+        Uses extended timeframe (14 days default) for statistical significance.
+        Needs 60+ data points for reliable correlation calculation.
+        """
+        # Default to 14 days (336 hours) for statistical significance
+        if hours is None:
+            from src.config.config_loader import get_config
+            hours = get_config('market_analysis_timeframes.correlation_analysis_hours', 336)
+            min_data_points = get_config('market_analysis_timeframes.correlation_min_data_points', 60)
+        else:
+            min_data_points = 60  # Default minimum
+        
         try:
             btc_data, btc_from_timestamp, btc_now = self._get_market_chart_range("bitcoin", hours)
             eth_data, eth_from_timestamp, eth_now = self._get_market_chart_range("ethereum", hours)
@@ -327,9 +385,13 @@ class MarketDataFetcher:
                     }
 
             if not btc_prices or not eth_prices:
-                if hours > 6:
-                    logger.info(f"Retrying correlation with shorter time window ({hours}h -> 6h)")
-                    return self.get_market_correlation(hours=6)
+                # Try shorter window if we have very little data
+                if hours > 168:
+                    logger.info(f"Retrying correlation with shorter time window ({hours}h -> 168h)")
+                    return self.get_market_correlation(hours=168)
+                elif hours > 24:
+                    logger.info(f"Retrying correlation with shorter time window ({hours}h -> 24h)")
+                    return self.get_market_correlation(hours=24)
                 logger.warning("Insufficient data for correlation calculation")
                 return 0.5
             
@@ -341,8 +403,10 @@ class MarketDataFetcher:
                         common_timestamps.append((btc_ts, eth_ts))
                         break
             
-            if len(common_timestamps) < 3:
-                logger.warning("Not enough common timestamps for correlation")
+            # Require minimum data points for statistical significance
+            if len(common_timestamps) < min_data_points:
+                logger.warning(f"Insufficient data points for correlation ({len(common_timestamps)} < {min_data_points})")
+                # Return neutral with reduced confidence
                 return 0.5
             
             # Calculate returns for both assets
@@ -365,8 +429,8 @@ class MarketDataFetcher:
                     btc_returns.append(btc_return)
                     eth_returns.append(eth_return)
             
-            if len(btc_returns) < 2:
-                logger.warning("Not enough return data for correlation")
+            if len(btc_returns) < min_data_points:
+                logger.warning(f"Not enough return data for reliable correlation ({len(btc_returns)} < {min_data_points})")
                 return 0.5
             
             # Calculate Pearson correlation coefficient
@@ -390,7 +454,11 @@ class MarketDataFetcher:
             # Where 0 = -1 correlation, 0.5 = 0 correlation, 1 = +1 correlation
             normalized = (correlation + 1) / 2
             
-            logger.info(f"✅ Market correlation (BTC/ETH): {correlation:.3f} (normalized: {normalized:.3f})")
+            # Calculate confidence based on data points
+            data_quality = min(1.0, len(btc_returns) / min_data_points)
+            confidence_note = f" (confidence: {data_quality:.2f}, {len(btc_returns)} data points)" if data_quality < 1.0 else ""
+            
+            logger.info(f"✅ Market correlation (BTC/ETH): {correlation:.3f} (normalized: {normalized:.3f}){confidence_note}")
             return max(0.0, min(1.0, normalized))
                 
         except Exception as e:
@@ -398,8 +466,19 @@ class MarketDataFetcher:
         
         return 0.5
     
-    def get_volume_trends(self, hours: int = 24) -> float:
-        """Get volume trends (0-1 scale) based on historical comparison"""
+    def get_volume_trends(self, hours: int = None) -> float:
+        """Get volume trends (0-1 scale) based on historical comparison
+        
+        Uses rolling average comparison (7-14 days) instead of static baselines.
+        """
+        # Default to 14 days (336 hours) with 7-day rolling window
+        if hours is None:
+            from src.config.config_loader import get_config
+            hours = get_config('market_analysis_timeframes.volume_trend_hours', 336)
+            rolling_window = get_config('market_analysis_timeframes.volume_trend_rolling_window', 168)
+        else:
+            rolling_window = hours // 2  # Use half the period as rolling window
+        
         try:
             # Get current total market volume with caching
             snapshot = self._get_global_market_snapshot()
@@ -418,14 +497,14 @@ class MarketDataFetcher:
             
             # Get historical volume data using BTC as proxy (most liquid asset)
             # We'll use BTC's volume history to estimate overall market trend
-            btc_data, from_timestamp, now = self._get_market_chart_range("bitcoin", hours * 2)
+            btc_data, from_timestamp, now = self._get_market_chart_range("bitcoin", hours)
 
             volumes: List[float] = []
             if btc_data and 'total_volumes' in btc_data:
                 volumes = [float(v[1]) for v in btc_data['total_volumes']]
 
             if not volumes:
-                interval = self._select_coincap_interval(hours * 2)
+                interval = self._select_coincap_interval(hours)
                 history = self._get_history_from_coincap("bitcoin", from_timestamp, now, interval)
                 if history:
                     volumes = [
@@ -448,13 +527,20 @@ class MarketDataFetcher:
                 else:
                     trend = 0.3 + ((current_volume - baseline_volume) / (max_volume - baseline_volume)) * 0.7
                 
-                logger.info(f"✅ Volume trend (estimated): {trend:.3f} (current: ${current_volume/1e9:.1f}B)")
+                logger.warning(f"⚠️ Volume trend (estimated with static baseline): {trend:.3f} (current: ${current_volume/1e9:.1f}B, insufficient historical data)")
                 return max(0.0, min(1.0, trend))
             
-            # Split into two periods: older half and recent half
-            mid_point = len(volumes) // 2
-            older_volumes = volumes[:mid_point] if mid_point > 0 else volumes[:len(volumes)//2]
-            recent_volumes = volumes[mid_point:] if mid_point > 0 else volumes[len(volumes)//2:]
+            # Use rolling average comparison instead of simple split
+            # Compare recent rolling average vs older rolling average
+            if len(volumes) < rolling_window * 2:
+                # Not enough data for rolling comparison, use simple split
+                mid_point = len(volumes) // 2
+                older_volumes = volumes[:mid_point] if mid_point > 0 else volumes[:len(volumes)//2]
+                recent_volumes = volumes[mid_point:] if mid_point > 0 else volumes[len(volumes)//2:]
+            else:
+                # Use rolling averages: compare last N periods vs previous N periods
+                recent_volumes = volumes[-rolling_window:]
+                older_volumes = volumes[-(rolling_window * 2):-rolling_window] if len(volumes) >= rolling_window * 2 else volumes[:rolling_window]
             
             if len(older_volumes) == 0 or len(recent_volumes) == 0:
                 logger.warning("Insufficient volume history for trend calculation")
@@ -474,7 +560,13 @@ class MarketDataFetcher:
             # More than +50% = 1.0, less than -50% = 0.0
             trend = max(0.0, min(1.0, 0.5 + volume_change_pct))
             
-            logger.info(f"✅ Volume trend: {trend:.3f} ({volume_change_pct*100:+.1f}% change, recent avg: ${recent_avg/1e9:.1f}B, older avg: ${older_avg/1e9:.1f}B)")
+            # Calculate confidence based on data quality
+            data_points = len(volumes)
+            ideal_points = hours  # Ideally one data point per hour
+            confidence = min(1.0, data_points / ideal_points) if ideal_points > 0 else 0.5
+            
+            confidence_note = f" (confidence: {confidence:.2f})" if confidence < 0.8 else ""
+            logger.info(f"✅ Volume trend (rolling avg): {trend:.3f} ({volume_change_pct*100:+.1f}% change, recent: ${recent_avg/1e9:.1f}B, older: ${older_avg/1e9:.1f}B){confidence_note}")
             return trend
                 
         except Exception as e:

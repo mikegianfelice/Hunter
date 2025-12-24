@@ -167,6 +167,12 @@ def get_sentiment_score(token):
         total_mentions = twitter["mentions"] + reddit["mentions"]
         raw_score = twitter["score"] + reddit["score"]
 
+        # Calculate confidence score based on data quality
+        from src.config.config_loader import get_config
+        min_mentions = get_config('sentiment_analysis_settings.min_mentions_for_confidence', 10)
+        fallback_confidence = get_config('sentiment_analysis_settings.fallback_confidence_score', 0.3)
+        low_data_threshold = get_config('sentiment_analysis_settings.low_data_confidence_threshold', 0.4)
+        
         # If both sources failed, use fallback
         if twitter["status"] == "fallback" and reddit["status"] == "error":
             print(f"🔄 Using fallback sentiment for {symbol}")
@@ -176,7 +182,14 @@ def get_sentiment_score(token):
                 "mentions": fallback["mentions"],
                 "score": fallback["score"],
                 "source": "fallback",
-                "status": "fallback"
+                "status": "fallback",
+                "confidence_score": fallback_confidence,
+                "is_approximation": True,
+                "data_quality": {
+                    "confidence_score": fallback_confidence,
+                    "is_approximation": True,
+                    "warnings": ["Using fallback sentiment - no real data available"]
+                }
             }
         
         # If we have very low mentions and scores, use fallback
@@ -188,29 +201,69 @@ def get_sentiment_score(token):
                 "mentions": fallback["mentions"],
                 "score": fallback["score"],
                 "source": "fallback",
-                "status": "fallback"
+                "status": "fallback",
+                "confidence_score": fallback_confidence,
+                "is_approximation": True,
+                "data_quality": {
+                    "confidence_score": fallback_confidence,
+                    "is_approximation": True,
+                    "warnings": [f"Low sentiment data (mentions: {total_mentions}, score: {raw_score}) - using fallback"]
+                }
             }
 
         # Normalize score between 0–100
         normalized_score = max(0, min(raw_score * 5, 100))
+        
+        # Calculate confidence based on data quality
+        # High confidence: both sources OK and sufficient mentions
+        if twitter["status"] == "ok" and reddit["status"] == "ok" and total_mentions >= min_mentions:
+            confidence = 0.9
+            is_approximation = False
+        # Medium confidence: at least one source OK and some mentions
+        elif (twitter["status"] == "ok" or reddit["status"] == "ok") and total_mentions >= min_mentions // 2:
+            confidence = 0.6
+            is_approximation = False
+        # Low confidence: limited data
+        elif total_mentions >= min_mentions // 4:
+            confidence = low_data_threshold
+            is_approximation = True
+        else:
+            confidence = fallback_confidence
+            is_approximation = True
 
         sentiment = {
             "symbol": symbol,
             "mentions": total_mentions,
             "score": normalized_score,
             "source": f"{twitter['source']}+{reddit['source']}",
-            "status": "ok" if twitter["status"] == "ok" and reddit["status"] == "ok" else "partial"
+            "status": "ok" if twitter["status"] == "ok" and reddit["status"] == "ok" else "partial",
+            "confidence_score": confidence,
+            "is_approximation": is_approximation,
+            "data_quality": {
+                "confidence_score": confidence,
+                "is_approximation": is_approximation,
+                "warnings": [] if confidence >= 0.6 else [f"Limited sentiment data (mentions: {total_mentions}, need {min_mentions}+ for high confidence)"]
+            }
         }
         
         return sentiment
         
     except Exception as e:
         print(f"⚠️ Sentiment analysis failed for {symbol}: {e}")
+        from src.config.config_loader import get_config
+        fallback_confidence = get_config('sentiment_analysis_settings.fallback_confidence_score', 0.3)
         fallback = get_fallback_sentiment(symbol)
         return {
             "symbol": symbol,
             "mentions": fallback["mentions"],
             "score": fallback["score"],
             "source": "fallback",
-            "status": "fallback"
+            "status": "fallback",
+            "confidence_score": fallback_confidence,
+            "is_approximation": True,
+            "data_quality": {
+                "confidence_score": fallback_confidence,
+                "is_approximation": True,
+                "warnings": [f"Sentiment analysis failed: {str(e)} - using fallback"]
+            }
         }
