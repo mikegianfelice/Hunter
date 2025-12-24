@@ -12,6 +12,7 @@ from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
 from collections import defaultdict
 import statistics
+from src.config.config_loader import get_config
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -431,7 +432,7 @@ class AIPricePredictor:
         }
     
     def _get_technical_indicators(self, token: Dict) -> Dict:
-        """Fetch candlestick data and calculate technical indicators"""
+        """Fetch candlestick data and calculate technical indicators with extended timeframe"""
         try:
             from src.utils.technical_indicators import technical_indicators
             from src.utils.market_data_fetcher import market_data_fetcher
@@ -444,33 +445,43 @@ class AIPricePredictor:
             liquidity = float(token.get('liquidity', 0))
             price = float(token.get('priceUsd', 0))
             
-            # Only fetch candlestick data if token passes basic filters
-            min_volume = 100000  # $100k minimum
-            min_liquidity = 100000  # $100k minimum
+            # Get config values for extended timeframes
+            min_volume = get_config('technical_indicators_settings.min_volume_for_candlestick_fetch', 100000)
+            min_liquidity = get_config('technical_indicators_settings.min_liquidity_for_candlestick_fetch', 100000)
+            default_hours = get_config('technical_indicators_settings.default_candlestick_hours', 168)  # 7 days default
+            extended_hours = get_config('technical_indicators_settings.extended_candlestick_hours', 168)
+            min_candles = get_config('technical_indicators_settings.min_candles_required', 10)
             
             if volume_24h < min_volume or liquidity < min_liquidity or price <= 0:
                 logger.debug(f"Skipping candlestick fetch for low-quality token {token.get('symbol', 'UNKNOWN')}")
-                return {}  # Return empty, will use simple indicators
+                return {'is_approximation': True, 'confidence_score': 0.0}  # Return empty with approximation flag
             
-            # Fetch candlestick data (with aggressive caching)
+            # Use extended timeframe for better accuracy (168 hours = 7 days)
+            # This provides enough data for accurate MACD (35+ periods) and MA-50 (50 periods)
             candles = market_data_fetcher.get_candlestick_data(
                 address, 
                 chain_id, 
-                hours=24,
+                hours=extended_hours,  # Use extended timeframe
                 force_fetch=False  # Use cache if available
             )
             
-            if not candles or len(candles) < 10:
-                logger.debug(f"Insufficient candlestick data for {token.get('symbol', 'UNKNOWN')}")
-                return {}  # Will fall back to simple indicators
+            if not candles or len(candles) < min_candles:
+                logger.debug(f"Insufficient candlestick data for {token.get('symbol', 'UNKNOWN')} (got {len(candles) if candles else 0} candles, need {min_candles}+)")
+                return {'is_approximation': True, 'confidence_score': 0.0}  # Mark as approximation
             
-            # Calculate all indicators
-            indicators = technical_indicators.calculate_all_indicators(candles)
+            # Calculate all indicators with confidence scores
+            indicators = technical_indicators.calculate_all_indicators(candles, include_confidence=True)
+            
+            # Add metadata about data quality
+            data_quality = indicators.get('data_quality', {})
+            if data_quality.get('is_approximation', False):
+                logger.debug(f"Technical indicators for {token.get('symbol', 'UNKNOWN')} are approximations due to limited data")
+            
             return indicators
             
         except Exception as e:
             logger.error(f"Error getting technical indicators: {e}")
-            return {}  # Fall back gracefully
+            return {'is_approximation': True, 'confidence_score': 0.0}  # Fall back gracefully with approximation flag
 
     def _calculate_enhanced_technical_score(self, indicators: Dict) -> float:
         """Calculate enhanced technical score using RSI, MACD, Bollinger Bands, and VWAP
@@ -479,9 +490,16 @@ class AIPricePredictor:
         - Price above VWAP suggests bullish momentum
         - Price below VWAP suggests bearish pressure
         - Distance from VWAP indicates potential overextension
+        
+        Now includes confidence weighting based on data quality
         """
-        if not indicators:
+        if not indicators or indicators.get('is_approximation', False):
+            # If indicators are approximations, reduce confidence
             return 0.5
+        
+        # Get confidence score to weight the technical score
+        data_quality = indicators.get('data_quality', {})
+        confidence = data_quality.get('confidence_score', 0.5)
         
         score = 0.5  # Base neutral score
         
@@ -554,6 +572,15 @@ class AIPricePredictor:
             bb_score * 0.24 +       # Reduced from 0.30
             vwap_score * 0.20       # New VWAP weight
         )
+        
+        # Apply confidence weighting: lower confidence reduces the deviation from neutral (0.5)
+        # High confidence (0.8+) = full score, Low confidence (<0.5) = closer to neutral
+        if confidence < 0.5:
+            # Low confidence: blend towards neutral
+            technical_score = 0.5 + (technical_score - 0.5) * confidence * 2
+        elif confidence < 0.8:
+            # Medium confidence: partial weighting
+            technical_score = 0.5 + (technical_score - 0.5) * (0.5 + (confidence - 0.5) * 1.0)
         
         return max(0.0, min(1.0, technical_score))
 

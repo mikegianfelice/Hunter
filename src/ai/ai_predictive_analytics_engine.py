@@ -174,7 +174,11 @@ class AIPredictiveAnalyticsEngine:
             return self._get_default_prediction_analysis(token, trade_amount)
     
     def _analyze_technical_indicators(self, token: Dict) -> Dict:
-        """Analyze technical indicators for price prediction using real data"""
+        """Analyze technical indicators for price prediction using real data
+        
+        NOTE: This method uses APPROXIMATIONS when real candlestick data is unavailable.
+        These approximations are marked with is_approximation=True and reduced confidence scores.
+        """
         try:
             symbol = token.get("symbol", "UNKNOWN")
             price = float(token.get("priceUsd", 0))
@@ -182,6 +186,8 @@ class AIPredictiveAnalyticsEngine:
             liquidity = float(token.get("liquidity", 0))
             price_change_24h = float(token.get("priceChange24h", 0))
             
+            # IMPORTANT: These are APPROXIMATIONS, not real technical indicators
+            # Real technical analysis requires historical candlestick data
             # Calculate technical indicators based on real data
             # RSI approximation based on price change and volume
             price_volatility = abs(price_change_24h) / 100  # Convert to decimal
@@ -214,6 +220,9 @@ class AIPredictiveAnalyticsEngine:
                 trend_strength * 0.1 +  # Trend strength
                 momentum * 0.1  # Momentum
             )
+            
+            # Mark as approximation with reduced confidence
+            # These are NOT real technical indicators, just estimates based on 24h metrics
             
             # Determine technical signals
             rsi_signal = 'oversold' if rsi < self.rsi_oversold else 'overbought' if rsi > self.rsi_overbought else 'neutral'
@@ -250,7 +259,15 @@ class AIPredictiveAnalyticsEngine:
                 'momentum': momentum,
                 'overall_signal': overall_signal,
                 'signal_strength': signal_strength,
-                'technical_indicators': ['RSI', 'MACD', 'Bollinger Bands', 'Support/Resistance', 'Trend', 'Momentum']
+                'technical_indicators': ['RSI', 'MACD', 'Bollinger Bands', 'Support/Resistance', 'Trend', 'Momentum'],
+                # IMPORTANT: Mark as approximation - these are NOT real technical indicators
+                'is_approximation': True,
+                'confidence_score': 0.3,  # Low confidence for approximations
+                'data_quality': {
+                    'is_approximation': True,
+                    'confidence_score': 0.3,
+                    'warnings': ['Using approximated indicators based on 24h metrics only. Real candlestick data not available.']
+                }
             }
             
         except Exception:

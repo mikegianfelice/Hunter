@@ -299,10 +299,18 @@ class TechnicalIndicators:
             'support_resistance': max(0.0, min(1.0, support_resistance))
         }
     
-    def calculate_all_indicators(self, candles: List[Dict]) -> Dict[str, any]:
-        """Calculate all technical indicators from candlestick data"""
+    def calculate_all_indicators(self, candles: List[Dict], include_confidence: bool = True) -> Dict[str, any]:
+        """Calculate all technical indicators from candlestick data with confidence scores"""
         if not candles or len(candles) < 2:
-            return self._get_default_indicators()
+            result = self._get_default_indicators()
+            if include_confidence:
+                result['data_quality'] = {
+                    'total_candles': 0,
+                    'confidence_score': 0.0,
+                    'is_approximation': True,
+                    'warnings': ['Insufficient data: less than 2 candles']
+                }
+            return result
         
         try:
             # Convert to pandas DataFrame
@@ -316,10 +324,19 @@ class TechnicalIndicators:
             df = df.dropna(subset=['close'])
             
             if len(df) < 2:
-                return self._get_default_indicators()
+                result = self._get_default_indicators()
+                if include_confidence:
+                    result['data_quality'] = {
+                        'total_candles': len(df),
+                        'confidence_score': 0.0,
+                        'is_approximation': True,
+                        'warnings': ['Insufficient data after cleaning']
+                    }
+                return result
             
             prices = df['close']
             volumes = df['volume']
+            num_candles = len(prices)
             
             # Calculate indicators
             rsi = self.calculate_rsi(prices)
@@ -329,7 +346,53 @@ class TechnicalIndicators:
             vwap = self.calculate_vwap(candles)
             price_action = self.calculate_price_action_patterns(candles)
             
-            return {
+            # Calculate confidence scores for each indicator
+            confidence_scores = {}
+            warnings = []
+            
+            # RSI confidence (needs 15+ periods)
+            rsi_confidence = min(1.0, num_candles / 15.0) if num_candles < 15 else 1.0
+            if num_candles < 15:
+                warnings.append(f'RSI calculated with limited data ({num_candles} candles, needs 15+)')
+            confidence_scores['rsi'] = rsi_confidence
+            
+            # MACD confidence (needs 35+ periods for accurate signal)
+            macd_confidence = min(1.0, num_candles / 35.0) if num_candles < 35 else 1.0
+            if num_candles < 35:
+                warnings.append(f'MACD calculated with limited data ({num_candles} candles, needs 35+)')
+            confidence_scores['macd'] = macd_confidence
+            
+            # Bollinger Bands confidence (needs 20+ periods)
+            bb_confidence = min(1.0, num_candles / 20.0) if num_candles < 20 else 1.0
+            if num_candles < 20:
+                warnings.append(f'Bollinger Bands calculated with limited data ({num_candles} candles, needs 20+)')
+            confidence_scores['bollinger'] = bb_confidence
+            
+            # MA-20 confidence
+            ma20_confidence = min(1.0, num_candles / 20.0) if num_candles < 20 else 1.0
+            confidence_scores['ma20'] = ma20_confidence
+            
+            # MA-50 confidence
+            ma50_confidence = min(1.0, num_candles / 50.0) if num_candles < 50 else 1.0
+            if num_candles < 50:
+                warnings.append(f'MA-50 calculated with limited data ({num_candles} candles, needs 50+)')
+            confidence_scores['ma50'] = ma50_confidence
+            
+            # VWAP confidence (works with any data, but better with more)
+            vwap_confidence = min(1.0, num_candles / 24.0) if num_candles < 24 else 1.0
+            confidence_scores['vwap'] = vwap_confidence
+            
+            # Overall confidence score (weighted average)
+            overall_confidence = (
+                rsi_confidence * 0.15 +
+                macd_confidence * 0.25 +
+                bb_confidence * 0.15 +
+                ma20_confidence * 0.15 +
+                ma50_confidence * 0.15 +
+                vwap_confidence * 0.15
+            )
+            
+            result = {
                 'rsi': rsi,
                 'macd': macd,
                 'bollinger_bands': bollinger,
@@ -342,9 +405,28 @@ class TechnicalIndicators:
                 'price_change_24h': ((prices.iloc[-1] - prices.iloc[0]) / prices.iloc[0] * 100) if prices.iloc[0] > 0 else 0.0
             }
             
+            if include_confidence:
+                result['data_quality'] = {
+                    'total_candles': num_candles,
+                    'confidence_score': overall_confidence,
+                    'is_approximation': overall_confidence < 0.7,
+                    'indicator_confidence': confidence_scores,
+                    'warnings': warnings if warnings else []
+                }
+            
+            return result
+            
         except Exception as e:
             logger.error(f"Error calculating technical indicators: {e}")
-            return self._get_default_indicators()
+            result = self._get_default_indicators()
+            if include_confidence:
+                result['data_quality'] = {
+                    'total_candles': 0,
+                    'confidence_score': 0.0,
+                    'is_approximation': True,
+                    'warnings': [f'Calculation error: {str(e)}']
+                }
+            return result
     
     def _get_default_indicators(self) -> Dict[str, any]:
         """Return default indicators when calculation fails"""
@@ -360,6 +442,53 @@ class TechnicalIndicators:
             'current_price': 0.0,
             'price_change_24h': 0.0
         }
+    
+    def calculate_multi_timeframe_indicators(self, candles_1h: List[Dict], 
+                                            candles_4h: Optional[List[Dict]] = None,
+                                            candles_24h: Optional[List[Dict]] = None) -> Dict[str, any]:
+        """Calculate indicators across multiple timeframes for better analysis"""
+        result = {
+            'timeframe_1h': self.calculate_all_indicators(candles_1h, include_confidence=True),
+            'timeframe_4h': None,
+            'timeframe_24h': None,
+            'multi_timeframe_summary': {}
+        }
+        
+        if candles_4h and len(candles_4h) >= 2:
+            result['timeframe_4h'] = self.calculate_all_indicators(candles_4h, include_confidence=True)
+        
+        if candles_24h and len(candles_24h) >= 2:
+            result['timeframe_24h'] = self.calculate_all_indicators(candles_24h, include_confidence=True)
+        
+        # Create summary across timeframes
+        if result['timeframe_1h']:
+            tf1h = result['timeframe_1h']
+            summary = {
+                'rsi_trend': 'neutral',
+                'macd_alignment': 'neutral',
+                'trend_consensus': 'neutral',
+                'confidence': tf1h.get('data_quality', {}).get('confidence_score', 0.0)
+            }
+            
+            # Check RSI trend across timeframes
+            rsi_values = []
+            if tf1h.get('rsi'):
+                rsi_values.append(('1h', tf1h['rsi']))
+            if result['timeframe_4h'] and result['timeframe_4h'].get('rsi'):
+                rsi_values.append(('4h', result['timeframe_4h']['rsi']))
+            if result['timeframe_24h'] and result['timeframe_24h'].get('rsi'):
+                rsi_values.append(('24h', result['timeframe_24h']['rsi']))
+            
+            if len(rsi_values) >= 2:
+                # Check if RSI is trending in same direction
+                if all(rsi < 50 for _, rsi in rsi_values):
+                    summary['rsi_trend'] = 'bearish'
+                elif all(rsi > 50 for _, rsi in rsi_values):
+                    summary['rsi_trend'] = 'bullish'
+            
+            result['multi_timeframe_summary'] = summary
+        
+        return result
 
 
 # Global instance

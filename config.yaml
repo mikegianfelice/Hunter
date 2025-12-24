@@ -1684,6 +1684,13 @@ technical_indicators_settings:
   min_volume_for_candlestick_fetch: 100000  # $100k minimum
   min_liquidity_for_candlestick_fetch: 100000  # $100k minimum
   fallback_to_simple_indicators: true
+  # Extended timeframe settings for better accuracy
+  default_candlestick_hours: 168  # 7 days for accurate MACD and MA-50
+  extended_candlestick_hours: 168  # Extended window for quality tokens
+  min_candles_for_accurate_macd: 35  # MACD needs 26+9 periods
+  min_candles_for_accurate_ma50: 50  # MA-50 needs 50 periods
+  enable_multi_timeframe_analysis: true  # Analyze multiple timeframes
+  confidence_scoring_enabled: true  # Mark indicator confidence levels
 
 # === A/B Testing ===
 enable_ab_testing: false  # Set to true to enable
