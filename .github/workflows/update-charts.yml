@@ -50,6 +50,11 @@ jobs:
         run: |
           python scripts/plot_wallet_value.py --days 90 --type percentage --save docs/performance_90d.png || echo "No data available for 90-day chart"
 
+      - name: Generate 180-day performance chart
+        continue-on-error: true
+        run: |
+          python scripts/plot_wallet_value.py --days 180 --type percentage --save docs/performance_180d.png || echo "No data available for 180-day chart"
+
       - name: Commit and push charts
         run: |
           git config --local user.email "action@github.com"
