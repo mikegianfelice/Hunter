@@ -33,7 +33,10 @@ class MarketDataFetcher:
         self._global_market_snapshot: Optional[Dict[str, Any]] = None
         self._global_snapshot_failure: Optional[float] = None
         self.market_chart_cache: Dict[str, Dict[str, Any]] = {}
-        self.market_chart_cache_duration = 60  # seconds
+        # Load cache duration from config (default 1 hour = 3600 seconds)
+        from src.config.config_loader import get_config
+        coingecko_cache_hours = get_config('api_rate_limiting.coingecko_cache_hours', 1)
+        self.market_chart_cache_duration = coingecko_cache_hours * 3600  # Convert hours to seconds
         self._market_chart_bucket_seconds = 60  # align range queries to minute buckets
         # Load CoinGecko API key from environment
         self.coingecko_api_key = (os.getenv("COINGECKO_API_KEY") or "").strip()
@@ -661,25 +664,56 @@ class MarketDataFetcher:
     
     def _get_market_chart_range(self, asset_id: str, hours: int) -> Tuple[Optional[Dict], int, int]:
         """
-        Retrieve and cache CoinGecko market_chart/range data for the requested asset.
+        Retrieve and cache market_chart/range data for the requested asset.
+        Uses CoinCap FIRST for BTC/ETH (free, unlimited), CoinGecko as fallback only.
         Returns a tuple of (data, from_timestamp, to_timestamp).
         """
         if hours <= 0:
             hours = 1
 
-        bucket_now = int(time.time() // self._market_chart_bucket_seconds) * self._market_chart_bucket_seconds
+        # Use hour-based buckets for longer timeframes (better cache efficiency)
+        if hours >= 24:
+            bucket_seconds = 3600  # 1 hour buckets for longer timeframes
+        else:
+            bucket_seconds = self._market_chart_bucket_seconds
+        
+        bucket_now = int(time.time() // bucket_seconds) * bucket_seconds
         from_timestamp = bucket_now - (hours * 3600)
         cache_key = f"market_chart:{asset_id}:{hours}:{bucket_now}"
 
-        # Optionally disable CoinGecko market_chart usage entirely to conserve quota.
-        # Callers will then fall back to CoinCap-only logic.
-        if not self.enable_coingecko_market_chart:
-            return None, from_timestamp, bucket_now
-
+        # Check cache first
         cached = self.market_chart_cache.get(cache_key)
         current_time = time.time()
         if cached and current_time - cached["timestamp"] < self.market_chart_cache_duration:
             return cached["data"], from_timestamp, bucket_now
+
+        # Try CoinCap FIRST for BTC/ETH (free, unlimited, reliable)
+        if asset_id in ["bitcoin", "ethereum"]:
+            interval = self._select_coincap_interval(hours)
+            history = self._get_history_from_coincap(asset_id, from_timestamp, bucket_now, interval)
+            if history and len(history) > 0:
+                # Convert CoinCap format to CoinGecko-like format for compatibility
+                prices = [[int(point["time"]), float(point["priceUsd"])] 
+                          for point in history if point.get("priceUsd") is not None]
+                volumes = [[int(point["time"]), float(point.get("volumeUsd", 0))] 
+                           for point in history if point.get("volumeUsd") is not None]
+                if prices:
+                    data = {"prices": prices}
+                    if volumes:
+                        data["total_volumes"] = volumes
+                    # Cache this CoinCap data (same format as CoinGecko)
+                    self.market_chart_cache[cache_key] = {"data": data, "timestamp": current_time}
+                    logger.debug(f"✅ Using CoinCap data for {asset_id} market chart ({len(prices)} points)")
+                    return data, from_timestamp, bucket_now
+
+        # Only use CoinGecko if CoinCap failed AND CoinGecko is enabled
+        if not self.enable_coingecko_market_chart:
+            return None, from_timestamp, bucket_now
+        
+        # Check rate limit before making CoinGecko call
+        if not self._can_make_coingecko_call():
+            logger.warning(f"CoinGecko rate limit reached ({self.api_call_tracker.get('coingecko', 0)}/330), skipping {asset_id} market chart fetch")
+            return None, from_timestamp, bucket_now
 
         # Prune stale cache entries opportunistically
         stale_keys = [
@@ -706,9 +740,17 @@ class MarketDataFetcher:
             "User-Agent": "HunterBot/1.0"
         }
         
+        # Check if this is a CoinGecko API call
+        is_coingecko_call = "coingecko.com" in url
+        
         # Add CoinGecko API key if available
-        if self.coingecko_api_key and "coingecko.com" in url:
+        if self.coingecko_api_key and is_coingecko_call:
             headers["x-cg-demo-api-key"] = self.coingecko_api_key
+            
+            # Check rate limit before making CoinGecko call
+            if not self._can_make_coingecko_call():
+                logger.warning(f"CoinGecko rate limit reached ({self.api_call_tracker.get('coingecko', 0)}/330), skipping {url[:60]}...")
+                return None
         
         backoff = 1.0
         
@@ -718,6 +760,10 @@ class MarketDataFetcher:
                 response = requests.get(url, timeout=self.api_timeout, headers=headers)
                 
                 if response.status_code == 200:
+                    # Track successful CoinGecko API calls
+                    if is_coingecko_call:
+                        self.api_call_tracker['coingecko'] = self.api_call_tracker.get('coingecko', 0) + 1
+                        self._save_api_tracker()
                     return response.json()
                 elif response.status_code == 429:
                     # Rate limited – log once and move on instead of retrying
