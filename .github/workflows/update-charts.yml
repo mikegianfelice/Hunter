@@ -40,11 +40,6 @@ jobs:
         run: |
           python scripts/plot_wallet_value.py --days 30 --type percentage --save docs/performance_chart.png || echo "No data available for 30-day chart"
 
-      - name: Generate 7-day performance chart
-        continue-on-error: true
-        run: |
-          python scripts/plot_wallet_value.py --days 7 --type percentage --save docs/performance_7d.png || echo "No data available for 7-day chart"
-
       - name: Generate 90-day performance chart
         continue-on-error: true
         run: |
