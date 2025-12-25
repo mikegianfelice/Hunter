@@ -353,8 +353,8 @@ The bot now features a significantly improved token discovery system that addres
 ### **📊 Key Improvements:**
 
 #### **1. Configurable Discovery Settings**
-- **Tokens Per Chain**: Configurable limit (default: 30, increased from 15)
-- **Maximum Total Tokens**: Safety cap across all chains (default: 80)
+- **Tokens Per Chain**: Configurable limit (default: 60, increased for more opportunities)
+- **Maximum Total Tokens**: Safety cap across all chains (default: 120)
 - **Configurable Queries**: Customize DexScreener search terms per chain
 - **Prefilter Thresholds**: Configurable volume/liquidity minimums during discovery
 - **Debug Statistics**: Comprehensive query stats logging for monitoring
@@ -584,8 +584,8 @@ use_dynamic_tp: true          # Enable dynamic take profit (8-20% range)
 
 # Token Discovery Configuration
 token_discovery:
-  tokens_per_chain: 30           # Number of tokens to fetch per chain (increased from 15)
-  max_tokens_total: 80           # Safety cap across all chains
+  tokens_per_chain: 60           # Number of tokens to fetch per chain (increased for more opportunities)
+  max_tokens_total: 120          # Safety cap across all chains
   prefilter_min_volume_24h: 5000  # Minimum volume during discovery (filters dead pairs)
   prefilter_min_liquidity_usd: 20000  # Minimum liquidity during discovery
   dexscreener_queries:
@@ -955,7 +955,7 @@ def _detect_delisted_token(token_address: str, consecutive_failures: int) -> boo
    - Verify API endpoints are accessible
    - Adjust trending thresholds in config.yaml
    - Check if tokens are being filtered as promotional
-   - **Increase discovery limits**: Adjust `token_discovery.tokens_per_chain` (default: 30)
+   - **Increase discovery limits**: Adjust `token_discovery.tokens_per_chain` (default: 60)
    - **Expand queries**: Add more search terms to `token_discovery.dexscreener_queries`
    - **Lower prefilters**: Reduce `token_discovery.prefilter_min_volume_24h` or `prefilter_min_liquidity_usd` if too restrictive
    - **Check query stats**: Review `trading.discovery_query_stats` logs to see where tokens are being filtered
