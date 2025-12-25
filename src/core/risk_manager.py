@@ -538,10 +538,18 @@ def _get_current_exposure_usd() -> float:
         print(f"⚠️ Failed to calculate exposure from positions store: {e}")
         return 0.0
 
-def allow_new_trade(trade_amount_usd: float, token_address: str = None, chain_id: str = "ethereum"):
+def allow_new_trade(trade_amount_usd: float, token_address: str = None, chain_id: str = "ethereum", 
+                    recommended_position_size: float = None, signal: str = None):
     """
     Gatekeeper before any new buy.
-    Returns (allowed: bool, reason: str)
+    Returns (allowed: bool, reason: str, is_add_to_position: bool, additional_amount: float)
+    
+    Args:
+        trade_amount_usd: Amount to trade in USD
+        token_address: Token address to check
+        chain_id: Chain ID
+        recommended_position_size: AI-recommended total position size (optional)
+        signal: Trading signal ('buy', 'sell', 'hold') (optional)
     """
     # Get combined wallet balance from all chains for tier-based limits
     combined_wallet_balance = _get_combined_wallet_balance_usd()
@@ -555,7 +563,7 @@ def allow_new_trade(trade_amount_usd: float, token_address: str = None, chain_id
 
     # paused by circuit breaker?
     if s.get("paused_until", 0) > _now_ts():
-        return False, f"circuit_breaker_active_until_{s['paused_until']}"
+        return False, f"circuit_breaker_active_until_{s['paused_until']}", False, 0.0
     
     # daily loss limit hit?
     if s.get("realized_pnl_usd", 0.0) <= -abs(config['DAILY_LOSS_LIMIT_USD']):
@@ -563,11 +571,11 @@ def allow_new_trade(trade_amount_usd: float, token_address: str = None, chain_id
         tomorrow = datetime.utcnow().replace(hour=23, minute=59, second=59, microsecond=0).timestamp()
         s["paused_until"] = int(tomorrow)
         _save_state(s)
-        return False, "daily_loss_limit_hit"
+        return False, "daily_loss_limit_hit", False, 0.0
 
     # per-trade size guard
     if trade_amount_usd > config['PER_TRADE_MAX_USD']:
-        return False, f"trade_amount_exceeds_cap_{config['PER_TRADE_MAX_USD']}"
+        return False, f"trade_amount_exceeds_cap_{config['PER_TRADE_MAX_USD']}", False, 0.0
 
     # Check wallet balance for specific chain (still need chain-specific balance for gas)
     chain_wallet_balance = _get_wallet_balance_usd(chain_id, use_cache_fallback=True)
@@ -577,8 +585,8 @@ def allow_new_trade(trade_amount_usd: float, token_address: str = None, chain_id
         # Check if we have a stale cache (exists but expired)
         cached_balance, is_valid = _get_cached_balance(chain_id)
         if cached_balance is not None and not is_valid:
-            return False, "balance_check_failed_cache_stale_requires_fresh_balance_check"
-        return False, "balance_check_failed_rate_limit_or_rpc_error_cannot_verify_balance"
+            return False, "balance_check_failed_cache_stale_requires_fresh_balance_check", False, 0.0
+        return False, "balance_check_failed_rate_limit_or_rpc_error_cannot_verify_balance", False, 0.0
     
     # When using cached balance, apply a conservative buffer for safety
     # Check if we're using cached balance (by checking if cache is valid)
@@ -591,13 +599,55 @@ def allow_new_trade(trade_amount_usd: float, token_address: str = None, chain_id
         print(f"⚠️ Using cached balance with {buffer_pct:.0f}% conservative buffer: ${conservative_balance:.2f} (from ${chain_wallet_balance:.2f})")
         chain_wallet_balance = conservative_balance
     
+    # Check if token is already held - NEW LOGIC: Allow adding if conditions met
+    if token_address and _is_token_already_held(token_address):
+        # Check if we should allow adding to existing position
+        if recommended_position_size is not None and signal == "buy":
+            positions = load_positions_store()
+            token_address_lower = token_address.lower().strip()
+            
+            # Find existing position
+            existing_position = None
+            existing_position_key = None
+            for position_key, payload in positions.items():
+                try:
+                    resolved = resolve_token_address(position_key, payload).lower().strip()
+                    if resolved == token_address_lower:
+                        existing_position = payload if isinstance(payload, dict) else {}
+                        existing_position_key = position_key
+                        break
+                except Exception:
+                    continue
+            
+            if existing_position:
+                current_position_size = float(existing_position.get("position_size_usd", 0.0) or 0.0)
+                
+                # Check if recommended size is higher than current position
+                if recommended_position_size > current_position_size:
+                    additional_amount = recommended_position_size - current_position_size
+                    
+                    # Check if we have enough balance for the additional amount
+                    required_amount = additional_amount + (chain_wallet_balance * config['MIN_WALLET_BALANCE_BUFFER'])
+                    if chain_wallet_balance >= required_amount:
+                        # Check total exposure limit (use current exposure + additional amount)
+                        max_total_exposure = config.get('MAX_TOTAL_EXPOSURE_USD', 100.0)
+                        current_exposure = _get_current_exposure_usd()
+                        if current_exposure + additional_amount <= max_total_exposure:
+                            print(f"✅ Adding to existing position: current=${current_position_size:.2f}, "
+                                  f"recommended=${recommended_position_size:.2f}, additional=${additional_amount:.2f}")
+                            return True, "ok_add_to_position", True, additional_amount
+                        else:
+                            return False, f"total_exposure_limit_exceeded_{current_exposure:.2f}_{max_total_exposure:.2f}", False, 0.0
+                    else:
+                        return False, f"insufficient_balance_for_addition_{chain_wallet_balance:.2f}_usd_needs_{required_amount:.2f}_usd", False, 0.0
+        
+        # Default: block duplicate buys
+        return False, "token_already_held", False, 0.0
+
+    # For new positions, check balance
     required_amount = trade_amount_usd + (chain_wallet_balance * config['MIN_WALLET_BALANCE_BUFFER'])  # Include buffer for gas
     if chain_wallet_balance < required_amount:
-        return False, f"insufficient_balance_{chain_wallet_balance:.2f}_usd_needs_{required_amount:.2f}_usd"
-
-    # Check if token is already held (prevent duplicate buys)
-    if token_address and _is_token_already_held(token_address):
-        return False, "token_already_held"
+        return False, f"insufficient_balance_{chain_wallet_balance:.2f}_usd_needs_{required_amount:.2f}_usd", False, 0.0
 
     # concurrent positions guard
     # CRITICAL: Always get fresh position count to ensure we see positions that were just closed
@@ -618,15 +668,15 @@ def allow_new_trade(trade_amount_usd: float, token_address: str = None, chain_id
                     print(f"   - {key[:20]}... ({symbol})")
         except Exception as e:
             print(f"⚠️ Error loading position details: {e}")
-        return False, f"max_concurrent_positions_reached_{open_count}_{max_concurrent}"
+        return False, f"max_concurrent_positions_reached_{open_count}_{max_concurrent}", False, 0.0
     
     # total exposure guard (tier-based) - uses combined balance for tier calculation
     max_total_exposure = config.get('MAX_TOTAL_EXPOSURE_USD', 100.0)
     current_exposure = _get_current_exposure_usd()
     if current_exposure + trade_amount_usd > max_total_exposure:
-        return False, f"total_exposure_limit_exceeded_{current_exposure:.2f}_{max_total_exposure:.2f}"
+        return False, f"total_exposure_limit_exceeded_{current_exposure:.2f}_{max_total_exposure:.2f}", False, 0.0
 
-    return True, "ok"
+    return True, "ok", False, trade_amount_usd
 
 def register_buy(usd_size: float):
     s = _load_state()

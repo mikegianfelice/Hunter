@@ -1080,17 +1080,56 @@ class EnhancedAsyncTradingEngine:
         # DEBUG: Log that we're entering the trade execution
         log_info("trading.debug", f"🔍 DEBUG: Entering _execute_trade_async for {symbol} on {chain}")
         
+        # Get action signal from AI analysis
+        action = token.get("ai_analysis", {}).get("recommendations", {}).get("action", "hold")
+        
         async with self.rate_limiter:
             start_time = time.time()
             
             try:
                 log_info("trading.execute", f"Executing trade for {symbol} on {chain}")
                 
+                # Check if we're adding to an existing position
+                is_adding_to_position = False
+                additional_amount = position_size
+                current_position_size = 0.0
+                existing_entry_price = 0.0
+                
                 # Pre-trade wallet/limits gate - check balance and position limits
                 try:
                     from src.core.risk_manager import allow_new_trade
-                    allowed, reason = allow_new_trade(position_size, token_address=address, chain_id=chain)
-                    if not allowed:
+                    from src.storage.positions import load_positions as load_positions_store
+                    from src.utils.position_sync import resolve_token_address, create_position_key
+                    
+                    # Check if token is already held and we should add to it
+                    allowed, reason, is_add_to_pos, add_amount = allow_new_trade(
+                        position_size, 
+                        token_address=address, 
+                        chain_id=chain,
+                        recommended_position_size=position_size,
+                        signal=action
+                    )
+                    
+                    if is_add_to_pos:
+                        is_adding_to_position = True
+                        additional_amount = add_amount
+                        
+                        # Get current position details
+                        positions = load_positions_store()
+                        position_key = create_position_key(address)
+                        existing_position = positions.get(position_key, {})
+                        current_position_size = float(existing_position.get("position_size_usd", 0.0) or 0.0)
+                        existing_entry_price = float(existing_position.get("entry_price", 0.0) or 0.0)
+                        
+                        log_info("trading.add_to_position",
+                                f"Adding to existing position for {symbol}: "
+                                f"current=${current_position_size:.2f}, additional=${additional_amount:.2f}, "
+                                f"target=${position_size:.2f}",
+                                symbol=symbol,
+                                current_size=current_position_size,
+                                additional=additional_amount,
+                                target_size=position_size)
+                    elif not allowed:
                         log_error("trading.risk_gate_blocked",
                                   symbol=symbol, chain=chain, amount_usd=position_size, reason=reason)
                         return {
@@ -1105,8 +1144,9 @@ class EnhancedAsyncTradingEngine:
                     # Continue if risk gate check fails (don't block on errors)
                 
                 # Risk assessment
+                trade_amount = additional_amount if is_adding_to_position else position_size
                 log_info("trading.risk_assessment_start", f"Starting risk assessment for {symbol}")
-                risk_result = await assess_trade_risk(token, position_size)
+                risk_result = await assess_trade_risk(token, trade_amount)
                 log_info("trading.risk_assessment_complete", 
                         f"Risk assessment complete for {symbol}: approved={risk_result.approved}, "
                         f"risk_score={risk_result.overall_risk_score:.2f}, reason={risk_result.reason}")
@@ -1125,8 +1165,11 @@ class EnhancedAsyncTradingEngine:
                     }
                 
                 # Execute real trade using DEX integrations
-                log_info("trading.trade_execution_start", f"Starting trade execution for {symbol} on {chain}")
-                trade_result = await self._execute_real_trade(token, position_size, chain)
+                trade_amount = additional_amount if is_adding_to_position else position_size
+                log_info("trading.trade_execution_start", 
+                        f"Starting trade execution for {symbol} on {chain} "
+                        f"({'adding to position' if is_adding_to_position else 'new position'})")
+                trade_result = await self._execute_real_trade(token, trade_amount, chain)
                 
                 # Log the trade result for debugging
                 log_info("trading.debug", f"Trade result for {symbol}: {trade_result}")
@@ -1149,15 +1192,79 @@ class EnhancedAsyncTradingEngine:
                     tx_hash = trade_result.get("tx_hash", "")
                     execution_time = (time.time() - start_time) * 1000
                     
-                    log_trade("buy", symbol, position_size, True, profit_loss, execution_time)
+                    log_trade("buy", symbol, trade_amount, True, profit_loss, execution_time)
                     log_info("trading.success", f"✅ Real trade successful: {symbol} - PnL: ${profit_loss:.2f} - TX: {tx_hash}")
                     
                     # Register buy with risk manager
                     try:
                         from src.core.risk_manager import register_buy
-                        register_buy(position_size)
+                        register_buy(trade_amount)
                     except Exception as e:
                         log_error("trading.register_buy_error", f"Failed to register buy: {e}")
+                    
+                    # Update position if adding to existing position
+                    if is_adding_to_position:
+                        try:
+                            from src.storage.positions import upsert_position, load_positions as load_positions_store
+                            from src.utils.position_sync import create_position_key
+                            
+                            # Get current price for weighted average calculation
+                            current_price = float(token.get("priceUsd") or 0.0)
+                            if current_price <= 0:
+                                # Fallback: try to fetch price from trade result or use entry price
+                                current_price = float(trade_result.get("price", 0.0) or 0.0)
+                                if current_price <= 0:
+                                    # Use existing entry price as fallback
+                                    current_price = existing_entry_price
+                            
+                            # Calculate weighted average entry price
+                            # Formula: (old_size * old_price + new_size * new_price) / (old_size + new_size)
+                            new_position_size = current_position_size + additional_amount
+                            if new_position_size > 0 and current_price > 0:
+                                weighted_entry_price = (
+                                    (current_position_size * existing_entry_price) + 
+                                    (additional_amount * current_price)
+                                ) / new_position_size
+                            else:
+                                weighted_entry_price = existing_entry_price if existing_entry_price > 0 else current_price
+                            
+                            # Update position
+                            position_key = create_position_key(address)
+                            positions = load_positions_store()
+                            existing_position = positions.get(position_key, {})
+                            
+                            # Update position data
+                            existing_position["position_size_usd"] = new_position_size
+                            existing_position["entry_price"] = weighted_entry_price
+                            existing_position["last_added_at"] = datetime.now().isoformat()
+                            existing_position["additions_count"] = existing_position.get("additions_count", 0) + 1
+                            
+                            # Preserve other fields
+                            if "symbol" not in existing_position:
+                                existing_position["symbol"] = symbol
+                            if "chain_id" not in existing_position:
+                                existing_position["chain_id"] = chain
+                            if "address" not in existing_position:
+                                existing_position["address"] = address
+                            
+                            upsert_position(position_key, existing_position)
+                            
+                            log_info("trading.position_updated",
+                                    f"Updated position for {symbol}: "
+                                    f"size=${new_position_size:.2f} (was ${current_position_size:.2f}), "
+                                    f"entry_price=${weighted_entry_price:.6f} (was ${existing_entry_price:.6f})",
+                                    symbol=symbol,
+                                    old_size=current_position_size,
+                                    new_size=new_position_size,
+                                    old_entry_price=existing_entry_price,
+                                    new_entry_price=weighted_entry_price)
+                            
+                            # Update position_size for logging below
+                            position_size = new_position_size
+                        except Exception as e:
+                            log_error("trading.position_update_error", 
+                                    f"Failed to update position after adding: {e}")
+                            # Don't fail the trade if position update fails
                     
                     # Log trade entry to performance tracker for status reports and analytics
                     # CRITICAL FIX: Verify execution succeeded before logging
@@ -1187,11 +1294,17 @@ class EnhancedAsyncTradingEngine:
                         tokens_received = fee_data.get('entry_tokens_received')
                         
                         # Only log if we have confirmed execution
+                        # For adding to position, don't create a new trade entry (position already exists)
                         if entry_amount_actual > 0 or (tokens_received is not None and tokens_received > 0):
-                            trade_id = performance_tracker.log_trade_entry(pt_token, position_size, quality_score, additional_data=fee_data)
-                            log_info("trading.performance_logged", 
-                                   f"✅ Trade entry logged to performance tracker for {symbol} "
-                                   f"(entry_amount_usd_actual=${entry_amount_actual:.2f}, tokens_received={tokens_received})")
+                            if not is_adding_to_position:
+                                trade_id = performance_tracker.log_trade_entry(pt_token, trade_amount, quality_score, additional_data=fee_data)
+                                log_info("trading.performance_logged", 
+                                       f"✅ Trade entry logged to performance tracker for {symbol} "
+                                       f"(entry_amount_usd_actual=${entry_amount_actual:.2f}, tokens_received={tokens_received})")
+                            else:
+                                log_info("trading.position_added",
+                                       f"✅ Added to existing position for {symbol} "
+                                       f"(additional_amount=${entry_amount_actual:.2f}, tokens_received={tokens_received})")
                         else:
                             # Transaction analysis may have failed - retry analysis
                             log_info("trading.execution_unverified", 
@@ -1207,10 +1320,15 @@ class EnhancedAsyncTradingEngine:
                                     if entry_amount_actual > 0 or (tokens_received is not None and tokens_received > 0):
                                         # Merge retry data with original fee_data
                                         fee_data.update(retry_fee_data)
-                                        trade_id = performance_tracker.log_trade_entry(pt_token, position_size, quality_score, additional_data=fee_data)
-                                        log_info("trading.performance_logged_retry", 
-                                               f"✅ Trade entry logged after retry for {symbol} "
-                                               f"(entry_amount_usd_actual=${entry_amount_actual:.2f})")
+                                        if not is_adding_to_position:
+                                            trade_id = performance_tracker.log_trade_entry(pt_token, trade_amount, quality_score, additional_data=fee_data)
+                                            log_info("trading.performance_logged_retry", 
+                                                   f"✅ Trade entry logged after retry for {symbol} "
+                                                   f"(entry_amount_usd_actual=${entry_amount_actual:.2f})")
+                                        else:
+                                            log_info("trading.position_added_retry",
+                                                   f"✅ Added to existing position after retry for {symbol} "
+                                                   f"(additional_amount=${entry_amount_actual:.2f})")
                                     else:
                                         log_error("trading.execution_failed", 
                                                 f"❌ Trade execution for {symbol} failed - no tokens received. TX: {tx_hash}")
@@ -1224,35 +1342,47 @@ class EnhancedAsyncTradingEngine:
                     # CRITICAL: This must succeed - retry if needed
                     position_logged = False
                     max_retries = 3
-                    position_token = {
-                        "address": address,
-                        "priceUsd": float(token.get("priceUsd") or 0.0),
-                        "chainId": chain,
-                        "symbol": symbol,
-                        "position_size_usd": position_size,  # Intended size
-                        "intended_position_size_usd": position_size,  # Track intended for partial fill detection
-                    }
-                    try:
-                        from src.execution.multi_chain_executor import _log_position, _launch_monitor_detached
-                        for attempt in range(max_retries):
-                            try:
-                                _log_position(position_token, trade_id=trade_id)
-                                _launch_monitor_detached()
-                                position_logged = True
-                                log_info("trading.position_logged", f"✅ Position logged for {symbol} on {chain}")
-                                break  # Success - exit retry loop
-                            except Exception as e:
-                                log_error(
-                                    "trading.position_log_error",
-                                    f"Failed to log position for {symbol} (attempt {attempt + 1}/{max_retries}): {e}"
-                                )
-                                if attempt < max_retries - 1:
-                                    time.sleep(0.5)  # Brief delay before retry
-                    except Exception as import_error:
-                        log_error(
-                            "trading.position_log_error",
-                            f"Failed to import position logger for {symbol}: {import_error}"
-                        )
+                    # Only log position if it's a new position (not adding to existing)
+                    # When adding to position, it's already updated above via upsert_position
+                    if not is_adding_to_position:
+                        position_token = {
+                            "address": address,
+                            "priceUsd": float(token.get("priceUsd") or 0.0),
+                            "chainId": chain,
+                            "symbol": symbol,
+                            "position_size_usd": position_size,  # Intended size
+                            "intended_position_size_usd": position_size,  # Track intended for partial fill detection
+                        }
+                        try:
+                            from src.execution.multi_chain_executor import _log_position, _launch_monitor_detached
+                            for attempt in range(max_retries):
+                                try:
+                                    _log_position(position_token, trade_id=trade_id)
+                                    _launch_monitor_detached()
+                                    position_logged = True
+                                    log_info("trading.position_logged", f"✅ Position logged for {symbol} on {chain}")
+                                    break  # Success - exit retry loop
+                                except Exception as e:
+                                    log_error(
+                                        "trading.position_log_error",
+                                        f"Failed to log position for {symbol} (attempt {attempt + 1}/{max_retries}): {e}"
+                                    )
+                                    if attempt < max_retries - 1:
+                                        time.sleep(0.5)  # Brief delay before retry
+                        except Exception as import_error:
+                            log_error(
+                                "trading.position_log_error",
+                                f"Failed to import position logger for {symbol}: {import_error}"
+                            )
+                    else:
+                        # Position already updated via upsert_position above, mark as logged
+                        position_logged = True
+                        # Launch monitor to ensure it's running
+                        try:
+                            from src.execution.multi_chain_executor import _launch_monitor_detached
+                            _launch_monitor_detached()
+                        except Exception as e:
+                            log_error("trading.monitor_launch_error", f"Failed to launch monitor: {e}")
                     
                     # If position logging still failed after retries, we'll sync from performance_data
                     # after it's logged there (see below in performance tracker section)
@@ -1262,7 +1392,7 @@ class EnhancedAsyncTradingEngine:
                     record_trade_metrics(
                         symbol=symbol,
                         chain=chain,
-                        amount_usd=position_size,
+                        amount_usd=trade_amount,
                         success=True,
                         execution_time_ms=execution_time,
                         profit_loss_usd=profit_loss,
@@ -1278,7 +1408,9 @@ class EnhancedAsyncTradingEngine:
                         "profit_loss": profit_loss,
                         "execution_time": execution_time,
                         "tx_hash": tx_hash,
-                        "chain": chain
+                        "chain": chain,
+                        "is_add_to_position": is_adding_to_position,
+                        "trade_amount": trade_amount
                     }
                 else:
                     # Failed real trade

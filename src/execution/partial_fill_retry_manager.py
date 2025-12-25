@@ -211,7 +211,7 @@ class PartialFillRetryManager:
             token_address = position_data.get("address")
             chain_id = position_data.get("chain_id", "solana")
             
-            allowed, reason = allow_new_trade(unfilled_amount, token_address, chain_id)
+            allowed, reason, is_add_to_pos, add_amount = allow_new_trade(unfilled_amount, token_address, chain_id)
             return allowed
             
         except Exception as e:
