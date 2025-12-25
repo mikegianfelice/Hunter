@@ -1483,6 +1483,9 @@ def monitor_all_positions():
                             remaining_size_pct = 1.0 - action.size_pct
                             remaining_position_size_usd = original_position_size * remaining_size_pct
                             
+                            # Log partial sell to trade log - ALWAYS log when transaction succeeds
+                            log_trade(token_address, entry_price, current_price, f"partial_tp_{action.size_pct:.0%}")
+                            
                             # Update position data with remaining size
                             if isinstance(position_data, dict):
                                 # Store original entry price if not already stored
@@ -1509,9 +1512,6 @@ def monitor_all_positions():
                                 
                                 print(f"📊 [PARTIAL TP] Updated position: remaining size=${remaining_position_size_usd:.2f} ({remaining_size_pct*100:.0f}%)")
                                 
-                                # Log partial sell to trade log
-                                log_trade(token_address, entry_price, current_price, f"partial_tp_{action.size_pct:.0%}")
-                                
                                 # Send Telegram notification
                                 send_telegram_message(
                                     f"💰 Partial Take-Profit Executed!\n"
@@ -1533,6 +1533,15 @@ def monitor_all_positions():
                                         reason=action.reason)
                             else:
                                 print(f"⚠️ [PARTIAL TP] Position data format not supported for partial sell tracking")
+                                # Still log to structured logger even if position_data format isn't supported
+                                log_info("partial_tp.executed",
+                                        symbol=symbol,
+                                        size_pct=action.size_pct,
+                                        remaining_pct=remaining_size_pct,
+                                        sell_price=current_price,
+                                        tx_hash=tx,
+                                        reason=action.reason,
+                                        note="Position data format not supported for tracking")
                         else:
                             print(f"❌ [PARTIAL TP] Partial sell failed, will retry on next cycle")
                             log_info("partial_tp.failed",
