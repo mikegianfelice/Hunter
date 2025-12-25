@@ -384,11 +384,6 @@ class SimpleSolanaExecutor:
                             # Only verify if confirmation failed
                             print(f"❌ Transaction {tx_hash} failed to confirm or was rejected")
                             return tx_hash, False
-                                print(f"❌ Transaction {tx_hash} failed on-chain")
-                                return tx_hash, False
-                            
-                            print(f"✅ Transaction confirmed and successful: {tx_hash}")
-                            return tx_hash, True
                         elif "error" in rpc_result:
                             print(f"❌ Alternative RPC error: {rpc_result['error']}")
                             return "", False

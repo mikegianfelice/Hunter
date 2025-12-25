@@ -364,13 +364,41 @@ def format_status_message(risk_summary, recent_summary, open_trades, market_regi
     
     # Helper to fetch current token price by chain/address
     def _current_price(chain: str, address: str) -> float:
+        import logging
         try:
             ch = (chain or 'ethereum').lower()
             if ch == 'solana':
                 # Use Solana executor price fetcher
-                from src.execution.solana_executor import get_token_price_usd
-                px = get_token_price_usd(address)
-                return float(px or 0.0)
+                try:
+                    from src.execution.solana_executor import get_token_price_usd
+                    px = get_token_price_usd(address)
+                    if px and px > 0:
+                        logging.debug(f"Got price from solana_executor for {address[:8]}...{address[-8:]}: ${px}")
+                        return float(px)
+                    else:
+                        # Try Jupiter executor as fallback
+                        logging.debug(f"solana_executor returned {px}, trying Jupiter fallback...")
+                        try:
+                            from src.execution.jupiter_executor import get_token_price_usd as jupiter_get_price
+                            px_jupiter = jupiter_get_price(address)
+                            if px_jupiter and px_jupiter > 0:
+                                logging.info(f"Got price from Jupiter fallback for {address[:8]}...{address[-8:]}: ${px_jupiter}")
+                                return float(px_jupiter)
+                        except Exception as e2:
+                            logging.debug(f"Jupiter price fallback failed: {e2}")
+                        return 0.0
+                except Exception as e:
+                    logging.warning(f"solana_executor.get_token_price_usd failed for {address[:8]}...{address[-8:]}: {e}")
+                    # Try Jupiter executor as fallback
+                    try:
+                        from src.execution.jupiter_executor import get_token_price_usd as jupiter_get_price
+                        px_jupiter = jupiter_get_price(address)
+                        if px_jupiter and px_jupiter > 0:
+                            logging.info(f"Got price from Jupiter fallback (after exception) for {address[:8]}...{address[-8:]}: ${px_jupiter}")
+                            return float(px_jupiter)
+                    except Exception as e2:
+                        logging.debug(f"Jupiter price fallback also failed: {e2}")
+                    return 0.0
             else:
                 # EVM and others fallback to utils fetcher (Uniswap subgraph etc.)
                 from src.utils.utils import fetch_token_price_usd
@@ -378,8 +406,7 @@ def format_status_message(risk_summary, recent_summary, open_trades, market_regi
                 return float(px or 0.0)
         except Exception as e:
             # Log the error for debugging
-            import logging
-            logging.warning(f"Failed to fetch price for {address} on {chain}: {e}")
+            logging.warning(f"Failed to fetch price for {address[:8]}...{address[-8:]} on {chain}: {e}", exc_info=True)
             return 0.0
     
     # Helper to load and calculate unrealized PnL from open_positions.json
@@ -413,7 +440,10 @@ def format_status_message(risk_summary, recent_summary, open_trades, market_regi
                     continue
                 
                 # Fetch current price using the actual address
+                import logging
+                logging.debug(f"Fetching price for {symbol} (chain={chain_id}, address={actual_address[:8]}...{actual_address[-8:]})")
                 current_price = _current_price(chain_id, actual_address)
+                logging.debug(f"Got price for {symbol}: {current_price}")
                 
                 if current_price > 0:
                     # Calculate PnL percentage
