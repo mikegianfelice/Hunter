@@ -376,7 +376,10 @@ def format_status_message(risk_summary, recent_summary, open_trades, market_regi
                 from src.utils.utils import fetch_token_price_usd
                 px = fetch_token_price_usd(address)
                 return float(px or 0.0)
-        except Exception:
+        except Exception as e:
+            # Log the error for debugging
+            import logging
+            logging.warning(f"Failed to fetch price for {address} on {chain}: {e}")
             return 0.0
     
     # Helper to load and calculate unrealized PnL from open_positions.json
@@ -396,18 +399,21 @@ def format_status_message(risk_summary, recent_summary, open_trades, market_regi
                     chain_id = position_data.get("chain_id", "ethereum").lower()
                     symbol = position_data.get("symbol", "?")
                     position_size_usd = float(position_data.get("position_size_usd", 0))
+                    # Use the address field if available, otherwise use the key
+                    actual_address = position_data.get("address", token_address)
                 else:
                     # Legacy format
                     entry_price = float(position_data)
                     chain_id = "ethereum"
                     symbol = "?"
                     position_size_usd = 0.0
+                    actual_address = token_address
                 
                 if entry_price <= 0:
                     continue
                 
-                # Fetch current price
-                current_price = _current_price(chain_id, token_address)
+                # Fetch current price using the actual address
+                current_price = _current_price(chain_id, actual_address)
                 
                 if current_price > 0:
                     # Calculate PnL percentage
