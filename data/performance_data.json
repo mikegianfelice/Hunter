@@ -3992,6 +3992,38 @@
       "pnl_usd": -0.24,
       "pnl_percent": -0.44,
       "status": "manual_close"
+    },
+    {
+      "id": "pippin_20251225_131500",
+      "symbol": "pippin",
+      "address": "Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump",
+      "chain": "solana",
+      "entry_time": "2025-12-25T13:15:00",
+      "entry_price": 0.495,
+      "position_size_usd": 50.0,
+      "exit_time": "2025-12-25T13:15:00",
+      "exit_price": 0.54,
+      "pnl_usd": 4.545,
+      "pnl_percent": 9.09,
+      "status": "partial_tp",
+      "take_profit_target": null,
+      "stop_loss_target": null,
+      "quality_score": null,
+      "volume_24h": null,
+      "liquidity": null,
+      "buy_tx_hash": null,
+      "entry_amount_usd_quoted": 50.0,
+      "entry_amount_usd_actual": null,
+      "entry_tokens_received": null,
+      "entry_gas_fee_usd": null,
+      "buy_slippage_actual": null,
+      "exit_gas_fee_usd": null,
+      "total_fees_usd": null,
+      "pnl_after_fees_usd": null,
+      "pnl_after_fees_percent": null,
+      "sell_tx_hash": null,
+      "partial_tp_percent": 50.0,
+      "reason": "partial_tp_50%"
     }
   ],
   "daily_stats": {
@@ -4022,5 +4054,5 @@
       }
     }
   },
-  "last_updated": "2025-12-25T14:56:57.680982"
+  "last_updated": "2025-12-25T14:58:30.001258"
 }
