@@ -1009,9 +1009,17 @@ class MarketDataFetcher:
             cache_key += f":{int(target_timestamp)}"
         current_time = time.time()
         
-        # SOLANA: Use RPC to query blockchain directly for DEX swap transactions
+        # SOLANA: Prefer DEX API (1 call) over RPC (many calls), fallback to RPC if needed
         if chain_id.lower() == "solana":
             if self.helius_api_key:
+                # Try DEX API first (more efficient - 1 call vs potentially 100+ RPC calls)
+                candles = self._get_solana_candles_from_helius(
+                    token_address, hours, cache_key, force_fetch, target_timestamp
+                )
+                if candles:
+                    return candles
+                # Fallback to RPC if DEX API fails or returns insufficient data
+                logger.debug(f"DEX API failed or insufficient data, trying RPC fallback for {token_address[:8]}...")
                 return self._get_solana_candles_from_rpc(
                     token_address, hours, cache_key, force_fetch, target_timestamp
                 )
@@ -1136,6 +1144,12 @@ class MarketDataFetcher:
         
         if not self.helius_api_key:
             logger.debug("Helius API key not configured, using price_memory fallback")
+            return self._get_solana_candles_from_memory(token_address, hours)
+        
+        # Check rate limit before making API call
+        if not self._can_make_helius_call():
+            helius_calls = self.api_call_tracker.get('helius', 0)
+            logger.warning(f"Helius rate limit reached ({helius_calls}/30000), using price_memory fallback for {token_address[:8]}...")
             return self._get_solana_candles_from_memory(token_address, hours)
         
         try:
@@ -1389,6 +1403,13 @@ class MarketDataFetcher:
         """Check if we can make a CoinGecko API call"""
         calls_today = self.api_call_tracker.get('coingecko', 0)
         return calls_today < 330
+    
+    def _can_make_helius_call(self) -> bool:
+        """Check if we can make a Helius API call"""
+        calls_today = self.api_call_tracker.get('helius', 0)
+        from src.config.config_loader import get_config_int
+        helius_max = get_config_int('api_rate_limiting.helius_max_daily', 30000)
+        return calls_today < helius_max
     
     def _get_candles_from_coingecko(self, token_address: str, chain_id: str, 
                                 hours: int, cache_key: str) -> Optional[List[Dict]]:

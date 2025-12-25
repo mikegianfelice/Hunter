@@ -142,6 +142,32 @@ class HeliusClient:
             "params": params or [],
         }
         response = post_json(self.endpoint, payload)
+        
+        # Track RPC call for rate limiting
+        try:
+            from pathlib import Path
+            import json
+            import time
+            tracker_file = Path("data/api_call_tracker.json")
+            if tracker_file.exists():
+                data = json.loads(tracker_file.read_text())
+                # Reset if new day
+                if time.time() - data.get('last_reset', 0) > 86400:
+                    data = {'helius': 0, 'coingecko': 0, 'last_reset': time.time()}
+                data['helius'] = data.get('helius', 0) + 1
+                tracker_file.parent.mkdir(parents=True, exist_ok=True)
+                tracker_file.write_text(json.dumps(data, indent=2))
+            else:
+                # Create tracker file if it doesn't exist
+                tracker_file.parent.mkdir(parents=True, exist_ok=True)
+                tracker_file.write_text(json.dumps({
+                    'helius': 1,
+                    'coingecko': 0,
+                    'last_reset': time.time()
+                }, indent=2))
+        except Exception:
+            pass  # Don't fail if tracking fails
+        
         if not isinstance(response, dict):
             return None
         if "error" in response:

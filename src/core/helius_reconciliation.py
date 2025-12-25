@@ -52,6 +52,41 @@ def reconcile_positions_and_pnl(limit: int = 200) -> Dict[str, Any]:
             "reason": "Missing HELIUS_API_KEY or SOLANA_WALLET_ADDRESS secrets",
         }
 
+    # Early exit if no Solana positions to reconcile
+    solana_trades = [t for t in performance_tracker.trades 
+                     if (t.get("chain") or "").lower() == "solana"]
+    if not solana_trades:
+        return {
+            "enabled": True,
+            "open_positions_closed": 0,
+            "open_positions_verified": 0,
+            "trades_updated": 0,
+            "issues": [],
+            "skipped": "No Solana positions to reconcile",
+        }
+    
+    # Check rate limit before making API calls
+    try:
+        from pathlib import Path
+        import json
+        import time as time_module
+        tracker_file = Path("data/api_call_tracker.json")
+        if tracker_file.exists():
+            data = json.loads(tracker_file.read_text())
+            helius_calls = data.get('helius', 0)
+            helius_max = 30000
+            if helius_calls >= helius_max * 0.95:  # Stop if at 95% of limit
+                return {
+                    "enabled": True,
+                    "open_positions_closed": 0,
+                    "open_positions_verified": 0,
+                    "trades_updated": 0,
+                    "issues": [],
+                    "skipped": f"Near Helius rate limit ({helius_calls}/{helius_max})",
+                }
+    except Exception:
+        pass  # Continue if check fails
+
     client = HeliusClient(HELIUS_API_KEY)
     context = _HeliusContext(client, SOLANA_WALLET_ADDRESS, limit=limit)
 
