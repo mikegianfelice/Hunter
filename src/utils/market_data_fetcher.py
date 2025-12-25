@@ -16,6 +16,17 @@ from pathlib import Path
 from solana.rpc.api import Client
 from solders.pubkey import Pubkey
 
+# Load environment variables from system/.env (same pattern as src/config/secrets.py)
+from dotenv import load_dotenv
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+system_env_path = PROJECT_ROOT / "system" / ".env"
+if system_env_path.exists():
+    try:
+        load_dotenv(system_env_path)
+    except PermissionError:
+        pass  # Silently skip if can't read
+load_dotenv()  # Also load from root .env as fallback
+
 from src.config.secrets import GRAPH_API_KEY, UNISWAP_V3_DEPLOYMENT_ID
 from src.utils.coingecko_helpers import ensure_vs_currency, DEFAULT_FIAT
 
@@ -40,8 +51,11 @@ class MarketDataFetcher:
         self._market_chart_bucket_seconds = 60  # align range queries to minute buckets
         # Load CoinGecko API key from environment
         self.coingecko_api_key = (os.getenv("COINGECKO_API_KEY") or "").strip()
+        # Load CoinCap API key from environment
+        self.coincap_api_key = (os.getenv("COINCAP_API_KEY") or "").strip()
         self._coingecko_base_url = "https://api.coingecko.com/api/v3/"
-        self._coincap_base_url = "https://api.coincap.io/v2/"
+        # CoinCap Pro API v3 (requires API key - all calls need bearer token)
+        self._coincap_base_url = "https://rest.coincap.io/v3/"
         self._binance_base_url = "https://api.binance.com/api/"
         self._coincap_available = True
         # Prefer non-CoinGecko sources to stay within free-tier limits
@@ -742,6 +756,8 @@ class MarketDataFetcher:
         
         # Check if this is a CoinGecko API call
         is_coingecko_call = "coingecko.com" in url
+        # Check if this is a CoinCap API call (v3 uses rest.coincap.io)
+        is_coincap_call = "rest.coincap.io" in url or "api.coincap.io" in url
         
         # Add CoinGecko API key if available
         if self.coingecko_api_key and is_coingecko_call:
@@ -750,6 +766,15 @@ class MarketDataFetcher:
             # Check rate limit before making CoinGecko call
             if not self._can_make_coingecko_call():
                 logger.warning(f"CoinGecko rate limit reached ({self.api_call_tracker.get('coingecko', 0)}/330), skipping {url[:60]}...")
+                return None
+        
+        # Add CoinCap API key if available (Bearer token format)
+        # CoinCap Pro API v3 REQUIRES API key for all calls
+        if is_coincap_call:
+            if self.coincap_api_key:
+                headers["Authorization"] = f"Bearer {self.coincap_api_key}"
+            else:
+                logger.warning("CoinCap API key not provided - CoinCap Pro API v3 requires API key for all calls")
                 return None
         
         backoff = 1.0
@@ -787,7 +812,7 @@ class MarketDataFetcher:
                     backoff = min(backoff * 2, 60)
             except requests.exceptions.RequestException as e:
                 logger.warning(f"Request error on attempt {attempt + 1}/{self.max_retries}: {e}")
-                if "api.coincap.io" in url:
+                if is_coincap_call:
                     if self._coincap_available:
                         logger.warning("Disabling CoinCap data source for this session due to network failures.")
                     self._coincap_available = False
@@ -853,16 +878,13 @@ class MarketDataFetcher:
         return None
 
     def _get_global_from_coincap(self) -> Optional[Dict]:
-        """Fetch global market metrics from CoinCap."""
-        if not self._coincap_available:
-            return None
-        try:
-            url = f"{self._coincap_base_url}global"
-            data = self._fetch_json(url)
-            if data and "data" in data:
-                return data["data"]
-        except Exception as exc:
-            logger.warning(f"CoinCap global metrics fetch failed: {exc}")
+        """Fetch global market metrics from CoinCap.
+        
+        Note: CoinCap Pro API v3 does not have a /global endpoint.
+        This method returns None to trigger fallback to CoinGecko.
+        """
+        # CoinCap Pro API v3 doesn't have a /global endpoint
+        # Return None to use CoinGecko fallback
         return None
 
     def _get_global_market_snapshot(self) -> Optional[Dict]:
