@@ -83,8 +83,8 @@ pre_buy_check_timeout: 10
 # === Token Discovery ===
 # Configuration for token discovery and filtering
 token_discovery:
-  tokens_per_chain: 30  # Number of tokens to fetch per chain (increased from hardcoded 15)
-  max_tokens_total: 80  # Safety cap across all chains to prevent excessive processing
+  tokens_per_chain: 60  # Number of tokens to fetch per chain (increased for more opportunities)
+  max_tokens_total: 120  # Safety cap across all chains to prevent excessive processing
   prefilter_min_volume_24h: 5000  # Minimum 24h volume to keep during discovery (filters out dead pairs)
   prefilter_min_liquidity_usd: 20000  # Minimum liquidity to keep during discovery (filters out low-liquidity pairs)
   
