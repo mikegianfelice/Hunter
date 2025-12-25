@@ -198,6 +198,25 @@ requote_slippage_buffer: 0.005
 # === Monitoring ===
 trailing_stop_percent: 0.05  # 5% trailing stop (activate earlier to lock in profits)
 
+# === Technical Indicator Exit Settings ===
+enable_technical_exit_signals: true  # Enable technical indicator-based exits
+technical_exit_rsi_overbought: 70  # RSI threshold for overbought exit
+technical_exit_rsi_oversold: 30  # RSI threshold for oversold exit (only if in loss)
+technical_exit_macd_bearish: true  # Exit on MACD bearish crossover
+technical_exit_bollinger_upper: 0.85  # Exit if price at 85% of Bollinger upper band
+technical_exit_vwap_below: true  # Exit if price below VWAP + declining volume
+technical_exit_min_profit_for_signal: 0.02  # Minimum 2% profit before technical exit triggers
+technical_exit_require_profit: true  # Only trigger technical exits if position is profitable
+
+# === Volume Deterioration Exit Settings ===
+enable_volume_deterioration_exit: true  # Enable volume deterioration exit
+volume_deterioration_threshold: 0.50  # Exit if volume drops 50% from entry average
+volume_deterioration_min_profit: 0.01  # Minimum 1% profit before volume exit triggers
+volume_deterioration_require_profit: true  # Only trigger if position is profitable
+volume_deterioration_lookback_hours: 24  # Compare current volume to last 24h average
+volume_deterioration_confirmations: 2  # Require 2 consecutive checks (1 minute) before triggering
+volume_cache_duration_seconds: 300  # Cache volume data for 5 minutes (same as candlestick cache)
+
 # === Price Memory ===
 price_memory_ttl_minutes: 15
 price_memory_prune_hours: 24

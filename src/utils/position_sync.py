@@ -322,9 +322,21 @@ def sync_position_from_performance_data_with_key(
         elif isinstance(existing_entry, dict) and existing_entry.get("position_size_usd"):
             position_data["position_size_usd"] = float(existing_entry.get("position_size_usd"))
 
+        # Store entry volume if not already present (for volume deterioration tracking)
+        if "entry_volume_24h_avg" not in position_data:
+            try:
+                from src.utils.market_data_fetcher import MarketDataFetcher
+                market_fetcher = MarketDataFetcher()
+                volume_24h = market_fetcher.get_token_volume_cached(token_address, chain_id)
+                if volume_24h and volume_24h > 0:
+                    position_data["entry_volume_24h_avg"] = float(volume_24h)
+            except Exception as e:
+                # Non-critical - log but don't fail
+                print(f"⚠️ Could not fetch entry volume for {symbol}: {e}")
+
         # Preserve additional metadata flags when present
         if isinstance(existing_entry, dict):
-            for key in ("discovered", "entry_price_estimated"):
+            for key in ("discovered", "entry_price_estimated", "entry_volume_24h_avg"):
                 if key in existing_entry and key not in position_data:
                     position_data[key] = existing_entry[key]
         
@@ -739,6 +751,17 @@ def reconcile_wallet_with_positions(
                         "entry_price_estimated": True,  # Flag to indicate entry price is estimated
                         "trade_id": trade_id,
                     }
+                    
+                    # Store entry volume for volume deterioration tracking
+                    try:
+                        from src.utils.market_data_fetcher import MarketDataFetcher
+                        market_fetcher = MarketDataFetcher()
+                        volume_24h = market_fetcher.get_token_volume_cached(token_address, chain_id)
+                        if volume_24h and volume_24h > 0:
+                            position_data["entry_volume_24h_avg"] = float(volume_24h)
+                    except Exception as e:
+                        # Non-critical - log but don't fail
+                        print(f"⚠️ Could not fetch entry volume for {symbol}: {e}")
 
                     open_positions[position_key] = position_data
 

@@ -1986,6 +1986,78 @@ class MarketDataFetcher:
             logger.error(f"Error calculating support/resistance: {e}")
             return {'support': None, 'resistance': None}
 
+    def get_token_volume_cached(self, token_address: str, chain_id: str) -> Optional[float]:
+        """
+        Get token 24h volume in USD with caching to reduce API calls.
+        
+        Uses DexScreener API which is free and doesn't require API key.
+        Caches results for 5 minutes (configurable) to match candlestick cache duration.
+        
+        Args:
+            token_address: Token contract address
+            chain_id: Chain identifier (solana, ethereum, base, etc.)
+            
+        Returns:
+            24h volume in USD, or None if unavailable
+        """
+        from src.config.config_loader import get_config_float
+        
+        cache_duration = get_config_float("volume_cache_duration_seconds", 300)  # Default 5 minutes
+        cache_key = f"volume:{chain_id}:{token_address.lower()}"
+        current_time = time.time()
+        
+        # Check cache first
+        if cache_key in self.cache:
+            cached_data = self.cache[cache_key]
+            if current_time - cached_data.get('timestamp', 0) < cache_duration:
+                volume = cached_data.get('volume')
+                if volume is not None:
+                    logger.debug(f"✅ Using cached volume for {token_address[:8]}... (age: {(current_time - cached_data['timestamp'])/60:.1f}m)")
+                    return float(volume)
+        
+        # Fetch fresh volume from DexScreener
+        try:
+            url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
+            response = requests.get(url, timeout=self.api_timeout)
+            
+            if response.status_code == 200:
+                data = response.json()
+                pairs = data.get("pairs", [])
+                
+                if pairs:
+                    # Find the pair with highest liquidity (most reliable)
+                    best_pair = max(
+                        pairs,
+                        key=lambda p: float(p.get("liquidity", {}).get("usd", 0) or 0)
+                    )
+                    
+                    # Get volume from volume.h24 field
+                    volume_data = best_pair.get("volume", {})
+                    volume_24h = volume_data.get("h24") if isinstance(volume_data, dict) else None
+                    
+                    if volume_24h:
+                        volume_usd = float(volume_24h)
+                        
+                        # Cache the result
+                        self.cache[cache_key] = {
+                            'volume': volume_usd,
+                            'timestamp': current_time
+                        }
+                        
+                        logger.debug(f"✅ Fetched volume for {token_address[:8]}...: ${volume_usd:,.0f}")
+                        return volume_usd
+                    else:
+                        logger.debug(f"⚠️ No volume data in DexScreener response for {token_address[:8]}...")
+                else:
+                    logger.debug(f"⚠️ No pairs found in DexScreener response for {token_address[:8]}...")
+            else:
+                logger.warning(f"DexScreener API returned status {response.status_code} for {token_address[:8]}...")
+                
+        except Exception as e:
+            logger.warning(f"Error fetching volume from DexScreener for {token_address[:8]}...: {e}")
+        
+        return None
+
 
 # Global instance
 market_data_fetcher = MarketDataFetcher()

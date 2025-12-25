@@ -30,6 +30,7 @@ from src.utils.position_sync import (
 from src.storage.positions import load_positions as load_positions_store, replace_positions
 from src.storage.performance import load_performance_data, replace_performance_data
 from src.storage.delist import load_delisted_state, save_delisted_state
+from src.monitoring.structured_logger import log_info
 
 # Dynamic config loading
 def get_monitor_config():
@@ -797,6 +798,235 @@ def _calculate_dynamic_take_profit_for_position(trade: Dict, config: Dict) -> fl
     print(f"  🎯 Dynamic TP: {tp*100:.0f}% (base: {config.get('BASE_TP', 0.12)*100:.0f}%)")
     return tp
 
+def _check_technical_exit_signals(
+    position: Dict[str, Any],
+    current_price: float,
+    gain: float,
+    token_address: str,
+    chain_id: str,
+    config: Dict[str, Any]
+) -> Optional[str]:
+    """
+    Check if technical indicators suggest exit signal
+    
+    Returns:
+        Exit reason string if signal detected, None otherwise
+    """
+    from src.config.config_loader import get_config_bool, get_config_float
+    
+    if not get_config_bool("enable_technical_exit_signals", True):
+        return None
+    
+    # Only check technical exits if position is profitable (unless configured otherwise)
+    require_profit = get_config_bool("technical_exit_require_profit", True)
+    min_profit = get_config_float("technical_exit_min_profit_for_signal", 0.02)
+    
+    if require_profit and gain < min_profit:
+        return None  # Don't exit on technical signals if not profitable
+    
+    try:
+        from src.utils.market_data_fetcher import MarketDataFetcher
+        from src.utils.technical_indicators import TechnicalIndicators
+        
+        # Fetch candlestick data for technical analysis
+        market_fetcher = MarketDataFetcher()
+        candles = market_fetcher.get_candlestick_data(
+            token_address,
+            chain_id,
+            hours=24,  # Get 24 hours of data
+            force_fetch=False
+        )
+        
+        if not candles or len(candles) < 20:  # Need minimum data
+            return None
+        
+        # Calculate technical indicators
+        tech_indicators = TechnicalIndicators()
+        indicators = tech_indicators.calculate_all_indicators(candles, include_confidence=True)
+        
+        # Check data quality
+        data_quality = indicators.get('data_quality', {})
+        if data_quality.get('is_approximation', False):
+            confidence = data_quality.get('confidence_score', 0.0)
+            if confidence < 0.5:  # Low confidence - skip
+                return None
+        
+        # 1. RSI Overbought Check
+        rsi = indicators.get('rsi', 50)
+        rsi_threshold = get_config_float("technical_exit_rsi_overbought", 70)
+        if rsi > rsi_threshold and gain > 0:
+            return f"rsi_overbought_{rsi:.1f}"
+        
+        # 2. MACD Bearish Crossover Check
+        if get_config_bool("technical_exit_macd_bearish", True):
+            macd_data = indicators.get('macd', {})
+            if isinstance(macd_data, dict):
+                macd_line = macd_data.get('macd', 0)
+                macd_signal = macd_data.get('signal', 0)
+                macd_histogram = macd_data.get('histogram', 0)
+                
+                # Bearish crossover: MACD line crosses below signal line
+                if macd_line < macd_signal and macd_histogram < 0:
+                    return f"macd_bearish_crossover"
+        
+        # 3. Bollinger Bands Upper Band Check
+        bollinger_threshold = get_config_float("technical_exit_bollinger_upper", 0.85)
+        bollinger = indicators.get('bollinger', {})
+        if isinstance(bollinger, dict):
+            bollinger_position = bollinger.get('position', 0.5)
+            if bollinger_position >= bollinger_threshold and gain > 0:
+                return f"bollinger_upper_band_{bollinger_position:.2f}"
+        
+        # 4. VWAP Below + Declining Volume Check
+        if get_config_bool("technical_exit_vwap_below", True):
+            vwap = indicators.get('vwap', {})
+            if isinstance(vwap, dict):
+                vwap_price = vwap.get('vwap', current_price)
+                if current_price < vwap_price:
+                    # Check if volume is declining
+                    volume_data = indicators.get('volume_profile', {})
+                    if isinstance(volume_data, dict):
+                        volume_trend = volume_data.get('trend', 'neutral')
+                        if volume_trend == 'declining' and gain > 0:
+                            return f"vwap_below_declining_volume"
+        
+        return None
+        
+    except Exception as e:
+        print(f"⚠️ Error checking technical exit signals: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+def _get_or_store_entry_volume(
+    position_data: Dict[str, Any],
+    token_address: str,
+    chain_id: str
+) -> Optional[float]:
+    """
+    Get entry volume from position data, or fetch and store if missing.
+    Uses cached volume fetch to minimize API calls.
+    
+    Returns:
+        Entry volume (24h average) in USD, or None if unavailable
+    """
+    # Check if entry volume already stored
+    if isinstance(position_data, dict):
+        entry_volume = position_data.get("entry_volume_24h_avg")
+        if entry_volume is not None:
+            return float(entry_volume)
+        
+        # If not stored, fetch current volume using cached method and store it
+        try:
+            from src.utils.market_data_fetcher import MarketDataFetcher
+            market_fetcher = MarketDataFetcher()
+            
+            # Use cached volume fetch (will cache for 5 minutes)
+            current_volume = market_fetcher.get_token_volume_cached(token_address, chain_id)
+            if current_volume and current_volume > 0:
+                # Store it for future reference
+                position_data["entry_volume_24h_avg"] = float(current_volume)
+                from src.storage.positions import upsert_position
+                from src.utils.position_sync import create_position_key
+                position_key = create_position_key(token_address)
+                upsert_position(position_key, position_data)
+                print(f"📊 Stored entry volume for {token_address[:8]}...: ${current_volume:,.0f}")
+                return float(current_volume)
+        except Exception as e:
+            print(f"⚠️ Error fetching/storing entry volume: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    return None
+
+def _check_volume_deterioration(
+    position_data: Dict[str, Any],
+    current_price: float,
+    gain: float,
+    token_address: str,
+    chain_id: str,
+    config: Dict[str, Any]
+) -> Optional[str]:
+    """
+    Check if volume has deteriorated significantly from entry.
+    Uses cached volume fetch to minimize API calls.
+    Requires confirmation (multiple consecutive checks) to avoid false exits.
+    
+    Returns:
+        Exit reason string if volume deteriorated, None otherwise
+    """
+    from src.config.config_loader import get_config_bool, get_config_float
+    
+    if not get_config_bool("enable_volume_deterioration_exit", True):
+        return None
+    
+    # Only check volume exits if position is profitable (unless configured otherwise)
+    require_profit = get_config_bool("volume_deterioration_require_profit", True)
+    min_profit = get_config_float("volume_deterioration_min_profit", 0.01)
+    
+    if require_profit and gain < min_profit:
+        return None  # Don't exit on volume deterioration if not profitable
+    
+    try:
+        # Get entry volume (fetch and store if missing)
+        entry_volume_avg = _get_or_store_entry_volume(position_data, token_address, chain_id)
+        if not entry_volume_avg or entry_volume_avg <= 0:
+            return None  # Can't compare without entry volume
+        
+        # Get current volume using CACHED method (reduces API calls)
+        from src.utils.market_data_fetcher import MarketDataFetcher
+        market_fetcher = MarketDataFetcher()
+        current_volume = market_fetcher.get_token_volume_cached(token_address, chain_id)
+        
+        if not current_volume or current_volume <= 0:
+            return None  # Can't determine if deteriorated
+        
+        # Calculate volume drop percentage
+        volume_drop_pct = (entry_volume_avg - current_volume) / entry_volume_avg
+        threshold = get_config_float("volume_deterioration_threshold", 0.50)
+        required_confirmations = int(get_config_float("volume_deterioration_confirmations", 2))
+        
+        # Track consecutive low-volume checks (requires confirmation)
+        if isinstance(position_data, dict):
+            low_volume_count = position_data.get("low_volume_count", 0)
+            
+            if volume_drop_pct >= threshold:
+                # Volume has dropped significantly - increment counter
+                low_volume_count += 1
+                position_data["low_volume_count"] = low_volume_count
+                
+                # Save updated position data
+                from src.storage.positions import upsert_position
+                from src.utils.position_sync import create_position_key
+                position_key = create_position_key(token_address)
+                upsert_position(position_key, position_data)
+                
+                print(f"📉 Volume deteriorated: {(volume_drop_pct*100):.1f}% (entry: ${entry_volume_avg:,.0f}, current: ${current_volume:,.0f}) - confirmation {low_volume_count}/{required_confirmations}")
+                
+                # Require multiple consecutive checks before triggering exit
+                if low_volume_count >= required_confirmations:
+                    # Reset counter before returning exit signal
+                    position_data["low_volume_count"] = 0
+                    upsert_position(position_key, position_data)
+                    drop_pct_display = volume_drop_pct * 100
+                    return f"volume_deterioration_{drop_pct_display:.1f}%"
+            else:
+                # Volume recovered or not deteriorated - reset counter
+                if position_data.get("low_volume_count", 0) > 0:
+                    position_data["low_volume_count"] = 0
+                    from src.storage.positions import upsert_position
+                    from src.utils.position_sync import create_position_key
+                    position_key = create_position_key(token_address)
+                    upsert_position(position_key, position_data)
+        
+        return None
+        
+    except Exception as e:
+        print(f"⚠️ Error checking volume deterioration: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
 def _sync_only_positions_with_balance():
     """
     Sync positions from performance_data.json, but ONLY if they actually have on-chain balances.
@@ -1319,6 +1549,130 @@ def monitor_all_positions():
             print(f"⚠️ Partial TP manager error: {e}")
             import traceback
             traceback.print_exc()
+
+        # Technical Indicator-Based Exit Signals
+        technical_exit_reason = _check_technical_exit_signals(
+            position_dict if isinstance(position_data, dict) else {},
+            current_price,
+            gain,
+            token_address,
+            chain_id,
+            config
+        )
+        
+        if technical_exit_reason:
+            print(f"📊 [TECHNICAL EXIT] Signal detected: {technical_exit_reason}")
+            print(f"💰 Current gain: {gain*100:.2f}%")
+            
+            # Check balance before selling
+            print(f"🔍 [PRE-SELL CHECK] Verifying token balance before technical exit sell...")
+            pre_sell_balance = _check_token_balance_on_chain(token_address, chain_id)
+            
+            if pre_sell_balance == -1.0:
+                print(f"⚠️ [PRE-SELL CHECK] Balance check failed, proceeding with sell attempt...")
+            elif pre_sell_balance <= 0.0 or pre_sell_balance < 0.000001:
+                print(f"✅ [PRE-SELL CHECK] Token already sold, cleaning up...")
+                log_trade(token_address, entry_price, current_price, f"technical_exit_{technical_exit_reason}")
+                if trade:
+                    position_size = trade.get('position_size_usd', 0)
+                    pnl_usd = gain * position_size
+                    from src.core.performance_tracker import performance_tracker
+                    performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, f"technical_exit_{technical_exit_reason}")
+                _cleanup_closed_position(position_key, token_address, chain_id)
+                closed_positions.append(position_key)
+                updated_positions.pop(position_key, None)
+                continue
+            else:
+                print(f"✅ [PRE-SELL CHECK] Token balance confirmed: {pre_sell_balance:.6f} - proceeding with sell...")
+            
+            # Execute sell
+            tx = _sell_token_multi_chain(token_address, chain_id, symbol)
+            if tx:
+                log_trade(token_address, entry_price, current_price, f"technical_exit_{technical_exit_reason}")
+                if trade:
+                    position_size = trade.get('position_size_usd', 0)
+                    pnl_usd = gain * position_size
+                    from src.core.performance_tracker import performance_tracker
+                    performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, f"technical_exit_{technical_exit_reason}")
+                
+                _cleanup_closed_position(position_key, token_address, chain_id)
+                
+                send_telegram_message(
+                    f"📊 Technical Exit Signal Triggered!\n"
+                    f"Token: {symbol} ({token_address[:8]}...{token_address[-8:]})\n"
+                    f"Chain: {chain_id.upper()}\n"
+                    f"Signal: {technical_exit_reason}\n"
+                    f"Entry: ${entry_price:.6f}\n"
+                    f"Exit: ${current_price:.6f} (+{gain * 100:.2f}%)\n"
+                    f"TX: {tx}"
+                )
+                closed_positions.append(position_key)
+                updated_positions.pop(position_key, None)
+                continue
+            else:
+                print(f"❌ [TECHNICAL EXIT] Sell failed, will retry on next cycle")
+
+        # Volume Deterioration Check
+        volume_exit_reason = _check_volume_deterioration(
+            position_data if isinstance(position_data, dict) else {},
+            current_price,
+            gain,
+            token_address,
+            chain_id,
+            config
+        )
+        
+        if volume_exit_reason:
+            print(f"📉 [VOLUME EXIT] Volume deteriorated: {volume_exit_reason}")
+            print(f"💰 Current gain: {gain*100:.2f}%")
+            
+            # Check balance before selling
+            print(f"🔍 [PRE-SELL CHECK] Verifying token balance before volume exit sell...")
+            pre_sell_balance = _check_token_balance_on_chain(token_address, chain_id)
+            
+            if pre_sell_balance == -1.0:
+                print(f"⚠️ [PRE-SELL CHECK] Balance check failed, proceeding with sell attempt...")
+            elif pre_sell_balance <= 0.0 or pre_sell_balance < 0.000001:
+                print(f"✅ [PRE-SELL CHECK] Token already sold, cleaning up...")
+                log_trade(token_address, entry_price, current_price, f"volume_exit_{volume_exit_reason}")
+                if trade:
+                    position_size = trade.get('position_size_usd', 0)
+                    pnl_usd = gain * position_size
+                    from src.core.performance_tracker import performance_tracker
+                    performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, f"volume_exit_{volume_exit_reason}")
+                _cleanup_closed_position(position_key, token_address, chain_id)
+                closed_positions.append(position_key)
+                updated_positions.pop(position_key, None)
+                continue
+            else:
+                print(f"✅ [PRE-SELL CHECK] Token balance confirmed: {pre_sell_balance:.6f} - proceeding with sell...")
+            
+            # Execute sell
+            tx = _sell_token_multi_chain(token_address, chain_id, symbol)
+            if tx:
+                log_trade(token_address, entry_price, current_price, f"volume_exit_{volume_exit_reason}")
+                if trade:
+                    position_size = trade.get('position_size_usd', 0)
+                    pnl_usd = gain * position_size
+                    from src.core.performance_tracker import performance_tracker
+                    performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, f"volume_exit_{volume_exit_reason}")
+                
+                _cleanup_closed_position(position_key, token_address, chain_id)
+                
+                send_telegram_message(
+                    f"📉 Volume Deterioration Exit!\n"
+                    f"Token: {symbol} ({token_address[:8]}...{token_address[-8:]})\n"
+                    f"Chain: {chain_id.upper()}\n"
+                    f"Reason: {volume_exit_reason}\n"
+                    f"Entry: ${entry_price:.6f}\n"
+                    f"Exit: ${current_price:.6f} (+{gain * 100:.2f}%)\n"
+                    f"TX: {tx}"
+                )
+                closed_positions.append(position_key)
+                updated_positions.pop(position_key, None)
+                continue
+            else:
+                print(f"❌ [VOLUME EXIT] Sell failed, will retry on next cycle")
 
         # Take-profit (full position)
         if gain >= take_profit_threshold:
