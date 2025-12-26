@@ -1483,8 +1483,26 @@ def monitor_all_positions():
                             remaining_size_pct = 1.0 - action.size_pct
                             remaining_position_size_usd = original_position_size * remaining_size_pct
                             
+                            # Calculate realized profit from partial sell
+                            sold_usd = original_position_size * action.size_pct
+                            realized_pnl_usd = gain * sold_usd
+                            
                             # Log partial sell to trade log - ALWAYS log when transaction succeeds
                             log_trade(token_address, entry_price, current_price, f"partial_tp_{action.size_pct:.0%}")
+                            
+                            # Send Telegram notification for partial take profit
+                            send_telegram_message(
+                                f"💵 Partial Take-Profit Executed!\n"
+                                f"Token: {symbol} ({token_address[:8]}...{token_address[-8:]})\n"
+                                f"Chain: {chain_id.upper()}\n"
+                                f"Entry: ${entry_price:.6f}\n"
+                                f"Exit: ${current_price:.6f} (+{gain * 100:.2f}%)\n"
+                                f"Sold: {action.size_pct*100:.0f}% (${sold_usd:.2f} USD)\n"
+                                f"Remaining: {remaining_size_pct*100:.0f}% (${remaining_position_size_usd:.2f} USD)\n"
+                                f"Realized PnL: ${realized_pnl_usd:.2f}\n"
+                                f"TX: {tx}",
+                                message_type="trade"
+                            )
                             
                             # Update position data with remaining size
                             if isinstance(position_data, dict):
@@ -1534,6 +1552,24 @@ def monitor_all_positions():
                                                     # Update position data
                                                     remaining_size_pct = 1.0 - action.size_pct
                                                     remaining_position_size_usd = original_position_size * remaining_size_pct
+                                                    
+                                                    # Calculate realized profit from partial sell
+                                                    sold_usd = original_position_size * action.size_pct
+                                                    realized_pnl_usd = gain * sold_usd
+                                                    
+                                                    # Send Telegram notification for unverified partial take profit
+                                                    send_telegram_message(
+                                                        f"💵 Partial Take-Profit Executed (Unverified)!\n"
+                                                        f"Token: {symbol} ({token_address[:8]}...{token_address[-8:]})\n"
+                                                        f"Chain: {chain_id.upper()}\n"
+                                                        f"Entry: ${entry_price:.6f}\n"
+                                                        f"Exit: ${current_price:.6f} (+{gain * 100:.2f}%)\n"
+                                                        f"Sold: {action.size_pct*100:.0f}% (${sold_usd:.2f} USD)\n"
+                                                        f"Remaining: {remaining_size_pct*100:.0f}% (${remaining_position_size_usd:.2f} USD)\n"
+                                                        f"Realized PnL: ${realized_pnl_usd:.2f}\n"
+                                                        f"TX: Unverified (balance check suggests success)",
+                                                        message_type="trade"
+                                                    )
                                                     
                                                     if isinstance(position_data, dict):
                                                         if "original_entry_price" not in position_data:
