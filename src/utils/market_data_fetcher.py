@@ -1176,18 +1176,13 @@ class MarketDataFetcher:
         
         try:
             # Use Helius DEX API to get swap transactions
+            # NOTE: Helius API requires 'mint' parameter, not 'before'/'after'/'limit' query params
             url = f"{self.helius_base_url}/addresses/{token_address}/transactions"
-            
-            # Calculate time range relative to target_timestamp (or current time)
-            end_time = int(query_time)  # Use target timestamp instead of time.time()
-            start_time = end_time - (hours * 3600)
             
             params = {
                 "api-key": self.helius_api_key,
+                "mint": token_address,  # Required: specify mint address
                 "type": "SWAP",  # Only get swap transactions
-                "before": end_time,  # Unix timestamp - Helius supports historical queries!
-                "after": start_time,  # Changed from "until" to "after" - correct Helius API parameter
-                "limit": 1000  # Get up to 1000 swaps
             }
             
             response = requests.get(url, params=params, timeout=15)
@@ -1207,11 +1202,28 @@ class MarketDataFetcher:
                 logger.debug(f"Response content: {response.text[:500]}")
                 return self._get_solana_candles_from_memory(token_address, hours)
             
-            swaps = data.get('transactions', [])
+            # Helius API returns a list directly, not a dict with 'transactions' key
+            if isinstance(data, list):
+                swaps = data
+            elif isinstance(data, dict):
+                swaps = data.get('transactions', [])
+            else:
+                swaps = []
+            
+            # Filter swaps by time range if target_timestamp is provided
+            if target_timestamp and swaps:
+                end_time = int(target_timestamp)
+                start_time = end_time - (hours * 3600)
+                filtered_swaps = []
+                for swap in swaps:
+                    swap_time = swap.get('timestamp') or swap.get('blockTime')
+                    if swap_time and start_time <= swap_time <= end_time:
+                        filtered_swaps.append(swap)
+                swaps = filtered_swaps
             
             if not swaps or len(swaps) < 2:
                 logger.debug(f"Insufficient swap data from Helius for {token_address[:8]}... (got {len(swaps)} swaps), using price_memory")
-                logger.debug(f"Response keys: {list(data.keys()) if isinstance(data, dict) else 'not a dict'}")
+                logger.debug(f"Response type: {type(data)}, keys: {list(data.keys()) if isinstance(data, dict) else 'list'}")
                 return self._get_solana_candles_from_memory(token_address, hours)
             
             # Process swaps into hourly candles (pass target_timestamp for proper filtering)
