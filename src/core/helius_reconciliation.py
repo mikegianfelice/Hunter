@@ -67,23 +67,19 @@ def reconcile_positions_and_pnl(limit: int = 200) -> Dict[str, Any]:
     
     # Check rate limit before making API calls
     try:
-        from pathlib import Path
-        import json
-        import time as time_module
-        tracker_file = Path("data/api_call_tracker.json")
-        if tracker_file.exists():
-            data = json.loads(tracker_file.read_text())
-            helius_calls = data.get('helius', 0)
-            helius_max = 30000
-            if helius_calls >= helius_max * 0.95:  # Stop if at 95% of limit
-                return {
-                    "enabled": True,
-                    "open_positions_closed": 0,
-                    "open_positions_verified": 0,
-                    "trades_updated": 0,
-                    "issues": [],
-                    "skipped": f"Near Helius rate limit ({helius_calls}/{helius_max})",
-                }
+        from src.utils.api_tracker import get_tracker
+        tracker = get_tracker()
+        helius_calls = tracker.get_count('helius')
+        helius_max = 30000
+        if helius_calls >= helius_max * 0.95:  # Stop if at 95% of limit
+            return {
+                "enabled": True,
+                "open_positions_closed": 0,
+                "open_positions_verified": 0,
+                "trades_updated": 0,
+                "issues": [],
+                "skipped": f"Near Helius rate limit ({helius_calls}/{helius_max})",
+            }
     except Exception:
         pass  # Continue if check fails
 

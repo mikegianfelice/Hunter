@@ -29,6 +29,7 @@ load_dotenv()  # Also load from root .env as fallback
 
 from src.config.secrets import GRAPH_API_KEY, UNISWAP_V3_DEPLOYMENT_ID
 from src.utils.coingecko_helpers import ensure_vs_currency, DEFAULT_FIAT
+from src.utils.api_tracker import get_tracker, track_coingecko_call, track_coincap_call, track_helius_call
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -79,8 +80,7 @@ class MarketDataFetcher:
         self.coingecko_cache_duration = 3600  # 1 hour (conservative for CoinGecko)
         
         # API call tracking
-        self.api_call_tracker_file = Path("data/api_call_tracker.json")
-        self.api_call_tracker = self._load_api_tracker()
+        self.api_tracker = get_tracker()
         
         # Load persistent cache
         self._load_candlestick_cache()
@@ -765,7 +765,7 @@ class MarketDataFetcher:
             
             # Check rate limit before making CoinGecko call
             if not self._can_make_coingecko_call():
-                logger.warning(f"CoinGecko rate limit reached ({self.api_call_tracker.get('coingecko', 0)}/330), skipping {url[:60]}...")
+                logger.warning(f"CoinGecko rate limit reached ({self.api_tracker.get_count('coingecko')}/330), skipping {url[:60]}...")
                 return None
         
         # Add CoinCap API key if available (Bearer token format)
@@ -785,10 +785,11 @@ class MarketDataFetcher:
                 response = requests.get(url, timeout=self.api_timeout, headers=headers)
                 
                 if response.status_code == 200:
-                    # Track successful CoinGecko API calls
+                    # Track successful API calls
                     if is_coingecko_call:
-                        self.api_call_tracker['coingecko'] = self.api_call_tracker.get('coingecko', 0) + 1
-                        self._save_api_tracker()
+                        track_coingecko_call()
+                    elif is_coincap_call:
+                        track_coincap_call()
                     return response.json()
                 elif response.status_code == 429:
                     # Rate limited – log once and move on instead of retrying
@@ -989,32 +990,6 @@ class MarketDataFetcher:
         except Exception as e:
             logger.error(f"Error saving candlestick cache: {e}")
 
-    def _load_api_tracker(self) -> Dict:
-        """Load API call tracking"""
-        if self.api_call_tracker_file.exists():
-            try:
-                data = json.loads(self.api_call_tracker_file.read_text())
-                # Reset if new day
-                last_reset = data.get('last_reset', 0)
-                if time.time() - last_reset > 86400:
-                    return {'helius': 0, 'coingecko': 0, 'last_reset': time.time()}
-                return data
-            except Exception:
-                pass
-        return {'helius': 0, 'coingecko': 0, 'last_reset': time.time()}
-
-    def _save_api_tracker(self):
-        """Save API call tracking"""
-        try:
-            # Reset if new day
-            if time.time() - self.api_call_tracker.get('last_reset', 0) > 86400:
-                self.api_call_tracker = {'helius': 0, 'coingecko': 0, 'last_reset': time.time()}
-            
-            self.api_call_tracker_file.parent.mkdir(parents=True, exist_ok=True)
-            self.api_call_tracker_file.write_text(json.dumps(self.api_call_tracker, indent=2))
-        except Exception as e:
-            logger.error(f"Error saving API tracker: {e}")
-
     def get_candlestick_data(self, token_address: str, chain_id: str = "ethereum", 
                             hours: int = 24, force_fetch: bool = False,
                             target_timestamp: Optional[float] = None) -> Optional[List[Dict]]:
@@ -1170,7 +1145,7 @@ class MarketDataFetcher:
         
         # Check rate limit before making API call
         if not self._can_make_helius_call():
-            helius_calls = self.api_call_tracker.get('helius', 0)
+            helius_calls = self.api_tracker.get_count('helius')
             logger.warning(f"Helius rate limit reached ({helius_calls}/30000), using price_memory fallback for {token_address[:8]}...")
             return self._get_solana_candles_from_memory(token_address, hours)
         
@@ -1239,8 +1214,7 @@ class MarketDataFetcher:
                 self._save_candlestick_cache()
                 
                 # Track API call
-                self.api_call_tracker['helius'] = self.api_call_tracker.get('helius', 0) + 1
-                self._save_api_tracker()
+                track_helius_call()
                 
                 logger.info(f"✅ Built {len(candles)} candles from Helius swaps for {token_address[:8]}...")
                 return candles
@@ -1435,15 +1409,13 @@ class MarketDataFetcher:
     
     def _can_make_coingecko_call(self) -> bool:
         """Check if we can make a CoinGecko API call"""
-        calls_today = self.api_call_tracker.get('coingecko', 0)
-        return calls_today < 330
+        return self.api_tracker.can_make_call('coingecko', 330)
     
     def _can_make_helius_call(self) -> bool:
         """Check if we can make a Helius API call"""
-        calls_today = self.api_call_tracker.get('helius', 0)
         from src.config.config_loader import get_config_int
         helius_max = get_config_int('api_rate_limiting.helius_max_daily', 30000)
-        return calls_today < helius_max
+        return self.api_tracker.can_make_call('helius', helius_max)
     
     def _get_candles_from_coingecko(self, token_address: str, chain_id: str, 
                                 hours: int, cache_key: str) -> Optional[List[Dict]]:
@@ -1664,8 +1636,7 @@ class MarketDataFetcher:
                 self._save_candlestick_cache()
                 
                 # Track API call (RPC calls)
-                self.api_call_tracker['helius'] = self.api_call_tracker.get('helius', 0) + 1
-                self._save_api_tracker()
+                track_helius_call()
                 
                 logger.info(f"✅ Built {len(candles)} candles from RPC swaps for {token_address[:8]}...")
                 return candles

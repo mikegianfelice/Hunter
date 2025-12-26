@@ -202,6 +202,8 @@ def get_sol_price_usd() -> float:
                 else:
                     price = float(data.get("solana", {}).get("usd", 0))
                     if price > 0:
+                        from src.utils.api_tracker import track_coingecko_call
+                        track_coingecko_call()
                         print(f"✅ SOL price from CoinGecko: ${price}")
                         _cache_sol_price(price)
                         return price

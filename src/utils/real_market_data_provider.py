@@ -33,6 +33,7 @@ import pandas as pd
 import requests
 
 from src.utils.coingecko_helpers import ensure_vs_currency, DEFAULT_FIAT
+from src.utils.api_tracker import track_coingecko_call, track_coincap_call
 
 logger = logging.getLogger(__name__)
 
@@ -332,9 +333,14 @@ class RealMarketDataProvider:
         attempt = 0
         while attempt < 3:
             try:
-                response = self._session.get(url, params=params, headers=headers, timeout=20)
-                if response.status_code == 200:
-                    return response.json()
+            response = self._session.get(url, params=params, headers=headers, timeout=20)
+            if response.status_code == 200:
+                # Track API calls
+                if "coingecko.com" in url:
+                    track_coingecko_call()
+                elif "coincap.io" in url or "rest.coincap.io" in url:
+                    track_coincap_call()
+                return response.json()
 
                 if response.status_code == 429:
                     sleep_for = 1 + attempt

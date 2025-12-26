@@ -120,6 +120,8 @@ class JupiterCustomExecutor:
                     headers["x-cg-demo-api-key"] = coingecko_key
                 data = get_json(url, headers=headers if headers else None, timeout=8, retries=1)
                 if data and coingecko_id in data and "usd" in data[coingecko_id]:
+                    from src.utils.api_tracker import track_coingecko_call
+                    track_coingecko_call()
                     price = float(data[coingecko_id]["usd"])
                     log_info("solana.price.coingecko", token=token_address, price=price)
                     return price

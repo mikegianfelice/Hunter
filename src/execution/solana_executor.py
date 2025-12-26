@@ -104,6 +104,7 @@ class SimpleSolanaExecutor:
         
         if token_address in token_mapping:
             import os
+            from src.utils.api_tracker import track_coingecko_call
             coingecko_key = os.getenv("COINGECKO_API_KEY", "").strip()
             for attempt in range(2):
                 try:
@@ -116,6 +117,7 @@ class SimpleSolanaExecutor:
                     
                     response = requests.get(url, headers=headers, timeout=15)
                     if response.status_code == 200:
+                        track_coingecko_call()
                         data = response.json()
                         if coingecko_id in data and "usd" in data[coingecko_id]:
                             price = float(data[coingecko_id]["usd"])
