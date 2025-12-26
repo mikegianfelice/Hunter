@@ -1499,51 +1499,60 @@ def monitor_all_positions():
                                 position_data["partial_sell_tx"] = tx
                                 position_data["partial_sell_price"] = current_price
                                 position_data["partial_sell_time"] = datetime.now().isoformat()
-                                
-                                # Keep original entry_price for proper PnL calculation
-                                # The remaining position still uses the original entry price
-                                
-                                # Save updated position
-                                updated_positions[position_key] = position_data
-                                
-                                # Also update in storage
-                                from src.storage.positions import upsert_position
-                                upsert_position(position_key, position_data)
-                                
-                                print(f"📊 [PARTIAL TP] Updated position: remaining size=${remaining_position_size_usd:.2f} ({remaining_size_pct*100:.0f}%)")
-                                
-                                # Send Telegram notification
-                                send_telegram_message(
-                                    f"💰 Partial Take-Profit Executed!\n"
-                                    f"Token: {symbol} ({token_address[:8]}...{token_address[-8:]})\n"
-                                    f"Chain: {chain_id.upper()}\n"
-                                    f"Sold: {action.size_pct*100:.0f}% at ${current_price:.6f}\n"
-                                    f"Gain: {gain*100:.2f}%\n"
-                                    f"Remaining: {remaining_size_pct*100:.0f}% (${remaining_position_size_usd:.2f})\n"
-                                    f"TX: {tx}\n"
-                                    f"Reason: {action.reason}"
-                                )
-                                
-                                log_info("partial_tp.executed",
-                                        symbol=symbol,
-                                        size_pct=action.size_pct,
-                                        remaining_pct=remaining_size_pct,
-                                        sell_price=current_price,
-                                        tx_hash=tx,
-                                        reason=action.reason)
-                            else:
-                                print(f"⚠️ [PARTIAL TP] Position data format not supported for partial sell tracking")
-                                # Still log to structured logger even if position_data format isn't supported
-                                log_info("partial_tp.executed",
-                                        symbol=symbol,
-                                        size_pct=action.size_pct,
-                                        remaining_pct=remaining_size_pct,
-                                        sell_price=current_price,
-                                        tx_hash=tx,
-                                        reason=action.reason,
-                                        note="Position data format not supported for tracking")
                         else:
-                            print(f"❌ [PARTIAL TP] Partial sell failed, will retry on next cycle")
+                            # Transaction verification failed, but sell may have succeeded on-chain
+                            # Log a warning and attempt to verify via balance check as fallback
+                            print(f"⚠️ [PARTIAL TP] Sell verification failed (tx=None), checking balance as fallback...")
+                            
+                            # Wait a bit for transaction to propagate
+                            import time
+                            time.sleep(5)
+                            
+                            # Check if balance decreased (indicating successful sell)
+                            try:
+                                from src.execution.jupiter_lib import JupiterCustomLib
+                                from src.config.secrets import SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY
+                                if chain_id == "solana":
+                                    lib = JupiterCustomLib(SOLANA_RPC_URL, SOLANA_WALLET_ADDRESS, SOLANA_PRIVATE_KEY)
+                                    balance_after = lib.get_token_balance(token_address)
+                                    
+                                    # Get original balance from position data if available
+                                    original_balance = None
+                                    if isinstance(position_data, dict):
+                                        # Try to estimate original balance from position size and price
+                                        if entry_price > 0:
+                                            original_balance_estimate = original_position_size / entry_price
+                                            # Check if balance decreased significantly (at least 10% for partial sell)
+                                            if balance_after is not None:
+                                                expected_balance_after = original_balance_estimate * (1.0 - action.size_pct)
+                                                # Allow some tolerance for price changes and rounding
+                                                if abs(balance_after - expected_balance_after) / expected_balance_after < 0.2:
+                                                    print(f"✅ [PARTIAL TP] Balance check suggests sell succeeded (balance: {balance_after:.8f}, expected: {expected_balance_after:.8f})")
+                                                    # Log the trade even though we don't have tx hash
+                                                    log_trade(token_address, entry_price, current_price, f"partial_tp_{action.size_pct:.0%}_unverified")
+                                                    
+                                                    # Update position data
+                                                    remaining_size_pct = 1.0 - action.size_pct
+                                                    remaining_position_size_usd = original_position_size * remaining_size_pct
+                                                    
+                                                    if isinstance(position_data, dict):
+                                                        if "original_entry_price" not in position_data:
+                                                            position_data["original_entry_price"] = entry_price
+                                                        position_data["position_size_usd"] = remaining_position_size_usd
+                                                        position_data["partial_sell_taken"] = True
+                                                        position_data["partial_sell_pct"] = action.size_pct
+                                                        position_data["partial_sell_tx"] = None  # No tx hash available
+                                                        position_data["partial_sell_price"] = current_price
+                                                        position_data["partial_sell_time"] = datetime.now().isoformat()
+                                                        updated_positions[position_key] = position_data
+                                                        from src.storage.positions import upsert_position
+                                                        upsert_position(position_key, position_data)
+                                                    print(f"⚠️ [PARTIAL TP] Trade logged as unverified - transaction may have succeeded but verification failed")
+                                                    continue
+                            except Exception as balance_check_error:
+                                print(f"⚠️ [PARTIAL TP] Balance check also failed: {balance_check_error}")
+                            
+                            print(f"❌ [PARTIAL TP] Partial sell failed or could not be verified - will retry on next cycle")
                             log_info("partial_tp.failed",
                                     symbol=symbol,
                                     size_pct=action.size_pct,
