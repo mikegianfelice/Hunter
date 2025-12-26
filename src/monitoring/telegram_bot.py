@@ -6,6 +6,8 @@ import sys
 import os
 import atexit
 from queue import Queue, Empty
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 # Add src to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 from src.config.secrets import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
@@ -15,6 +17,22 @@ from datetime import datetime
 from src.storage.positions import load_positions as load_positions_store
 
 _SESSION = requests.Session()
+
+# Configure session with retry strategy for better connection handling
+retry_strategy = Retry(
+    total=3,
+    backoff_factor=1,
+    status_forcelist=[429, 500, 502, 503, 504],
+    allowed_methods=["POST"]
+)
+adapter = HTTPAdapter(max_retries=retry_strategy)
+_SESSION.mount("https://", adapter)
+
+# Configure session headers for better connection handling
+_SESSION.headers.update({
+    'Connection': 'keep-alive',
+    'Keep-Alive': 'timeout=30, max=100'
+})
 
 class TelegramDispatcher:
     def __init__(self, max_retries: int = 2, base_backoff: float = 2.0, worker_name: str = "telegram-dispatcher"):
@@ -145,7 +163,39 @@ def _send_message_sync(job: dict) -> bool:
 
     try:
         response = _SESSION.post(url, json=payload, timeout=12)
+    except requests.exceptions.ConnectionError as e:
+        # Handle connection errors (including ConnectionResetError)
+        error_str = str(e).lower()
+        errno = None
+        # Try to extract errno from the exception or its cause
+        if hasattr(e, 'args') and e.args:
+            if hasattr(e.args[0], 'errno'):
+                errno = e.args[0].errno
+        if hasattr(e, '__cause__') and hasattr(e.__cause__, 'errno'):
+            errno = e.__cause__.errno
+        
+        # Check for specific connection errors
+        if errno == 32 or "broken pipe" in error_str:
+            log_warning(
+                "telegram.broken_pipe_request",
+                "Telegram broken pipe error (connection closed)",
+                context={"error": str(e), "message_type": message_type},
+            )
+        elif errno == 54 or "connection reset" in error_str:
+            log_warning(
+                "telegram.connection_reset",
+                "Telegram connection reset by peer (transient network error)",
+                context={"error": str(e), "message_type": message_type},
+            )
+        else:
+            log_warning(
+                "telegram.connection_error",
+                "Telegram connection error (will retry)",
+                context={"error": str(e), "message_type": message_type},
+            )
+        return False
     except requests.RequestException as e:
+        # Catch other request exceptions
         if hasattr(e, "errno") and e.errno == 32:
             log_warning(
                 "telegram.broken_pipe_request",
@@ -160,10 +210,17 @@ def _send_message_sync(job: dict) -> bool:
             )
         return False
     except OSError as e:
-        if getattr(e, "errno", None) == 32:
+        errno = getattr(e, "errno", None)
+        if errno == 32:
             log_warning(
                 "telegram.broken_pipe_os",
                 "Telegram broken pipe error (OS)",
+                context={"error": str(e), "message_type": message_type},
+            )
+        elif errno == 54:
+            log_warning(
+                "telegram.connection_reset_os",
+                "Telegram connection reset error (OS)",
                 context={"error": str(e), "message_type": message_type},
             )
         else:
