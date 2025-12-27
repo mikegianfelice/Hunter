@@ -48,7 +48,6 @@ API_CALL_LOG = project_root / "data" / "ml_api_calls.log"
 
 # Configuration
 DEXSCREENER_BASE_URL = "https://api.dexscreener.com"
-COINDESK_BASE_URL = "https://api.coindesk.com/v1"  # CoinDesk Data API
 WINDOW_BEFORE_ENTRY_HOURS = 24  # Hours before entry to fetch
 WINDOW_AFTER_EXIT_HOURS = 24    # Hours after exit to fetch
 FAST_MODE = False  # Set to True for ±6h window
@@ -56,10 +55,9 @@ if FAST_MODE:
     WINDOW_BEFORE_ENTRY_HOURS = 6
     WINDOW_AFTER_EXIT_HOURS = 6
 
-# Data source priority: on_chain_swaps > CoinDesk > CoinCap > market_data_fetcher (for non-Solana)
+# Data source priority: on_chain_swaps > market_data_fetcher (for non-Solana)
 # Note: For Solana tokens, market_data_fetcher uses Helius RPC, so it's skipped
 USE_ON_CHAIN_SWAPS = True  # Set to True to use on-chain swap events (recommended, no API limits)
-USE_COINDESK_API = True  # Set to False to skip CoinDesk and use CoinCap/market_data_fetcher only
 
 # ML Target Configuration
 TARGET_PCT = 5.0   # +5% target
@@ -207,172 +205,6 @@ def save_candles_to_cache(cache_key: str, candles: List[Dict]):
             }, f)
     except Exception as e:
         logger.debug(f"Error saving cache: {e}")
-
-
-def fetch_coindesk_candles(token_address: str, chain: str,
-                          start_time: datetime, end_time: datetime,
-                          interval: str = "1m", pair_address: str = None) -> Optional[List[Dict]]:
-    """
-    Fetch historical candles from CoinDesk Data API
-    
-    CoinDesk provides minute-by-minute historical data for 10,000+ coins.
-    Requires API key (set via COINDESK_API_KEY environment variable or config).
-    
-    Args:
-        token_address: Token address
-        chain: Chain ID
-        start_time: Start of time window
-        end_time: End of time window
-        interval: Desired interval (1m, 5m, 15m, 1h)
-        pair_address: Pair address (for caching)
-    """
-    try:
-        # Check cache first
-        start_ts = int(start_time.timestamp())
-        end_ts = int(end_time.timestamp())
-        cache_key = get_cache_key(pair_address or token_address, chain, interval, start_ts, end_ts)
-        
-        cached = load_cached_candles(cache_key)
-        if cached:
-            return cached
-        
-        # Get API key from .env file (COINDESK_API_KEY)
-        api_key = (os.getenv('COINDESK_API_KEY') or '').strip()
-        
-        if not api_key:
-            logger.debug("CoinDesk API key not found in .env (COINDESK_API_KEY), skipping CoinDesk API")
-            return None
-        
-        # Map interval to CoinDesk format
-        interval_map = {
-            '1m': '1m',
-            '5m': '5m',
-            '15m': '15m',
-            '1h': '1h',
-        }
-        coindesk_interval = interval_map.get(interval, '1m')
-        
-        # CoinDesk API endpoint format (check documentation for exact format)
-        # Note: This is a placeholder - actual endpoint may vary
-        # CoinDesk typically uses: /v1/data/ohlcv/{symbol}?start={start}&end={end}&interval={interval}
-        
-        # For now, we'll need to map token address to symbol
-        # This is a limitation - CoinDesk may need symbol mapping
-        # Try to get symbol from pair_info or use a mapping
-        
-        # Convert timestamps to ISO format or Unix timestamp (check API docs)
-        start_iso = start_time.isoformat()
-        end_iso = end_time.isoformat()
-        
-        # Try CoinDesk API endpoint
-        # Note: Endpoint format based on CoinDesk Data API documentation
-        # May need adjustment based on actual API structure
-        # CoinDesk typically requires symbol mapping (not token addresses)
-        # For DEX tokens, we may need to use pair identifier or symbol
-        
-        # Try multiple endpoint formats
-        endpoints_to_try = [
-            f"{COINDESK_BASE_URL}/data/ohlcv",
-            f"{COINDESK_BASE_URL}/ohlcv",
-            f"https://api.coindesk.com/v1/data/historical",
-        ]
-        
-        # Try to map token to symbol (simplified - may need proper mapping)
-        # For now, use token address as-is, but CoinDesk may require symbol
-        symbol = token_address  # Placeholder - may need symbol lookup
-        
-        response = None
-        successful_url = None
-        for url in endpoints_to_try:
-            # Try different parameter formats
-            param_variants = [
-                {
-                    'symbol': symbol,
-                    'start': start_iso,
-                    'end': end_iso,
-                    'interval': coindesk_interval,
-                },
-                {
-                    'symbol': symbol,
-                    'start': int(start_ts),
-                    'end': int(end_ts),
-                    'interval': coindesk_interval,
-                },
-            ]
-            
-            headers = {'X-API-Key': api_key} if api_key else {}
-            if api_key:
-                # Also try API key in params
-                for params in param_variants:
-                    params['api_key'] = api_key
-                    try:
-                        test_response = requests.get(url, params=params, headers=headers, timeout=10)
-                        if test_response.status_code == 200:
-                            response = test_response
-                            successful_url = url
-                            break
-                    except:
-                        continue
-                if response:
-                    break
-            
-            # Try without API key in params (only in headers)
-            for params in param_variants:
-                try:
-                    test_response = requests.get(url, params=params, headers=headers, timeout=10)
-                    if test_response.status_code == 200:
-                        response = test_response
-                        successful_url = url
-                        break
-                except:
-                    continue
-            if response:
-                break
-        
-        if response and response.status_code == 200:
-            data = response.json()
-            candles = data.get('data', data.get('candles', []))
-            
-            if candles:
-                # Convert to our format
-                formatted_candles = []
-                for candle in candles:
-                    # CoinDesk format may vary - adjust based on actual response
-                    formatted_candles.append({
-                        'time': candle.get('timestamp', candle.get('time', 0)),
-                        'timestamp': candle.get('timestamp', candle.get('time', 0)),
-                        'open': float(candle.get('open', 0)),
-                        'high': float(candle.get('high', 0)),
-                        'low': float(candle.get('low', 0)),
-                        'close': float(candle.get('close', 0)),
-                        'volume': float(candle.get('volume', 0)),
-                    })
-                
-                # Sort and filter
-                formatted_candles.sort(key=lambda x: x['time'])
-                formatted_candles = [c for c in formatted_candles 
-                                    if start_ts <= c['time'] <= end_ts]
-                
-                if len(formatted_candles) >= 10:
-                    save_candles_to_cache(cache_key, formatted_candles)
-                    logger.info(f"✅ Got {len(formatted_candles)} {interval} candles from CoinDesk")
-                    return formatted_candles
-        
-        logger.debug(f"CoinDesk API returned {response.status_code}, falling back")
-        return None
-        
-    except Exception as e:
-        logger.debug(f"CoinDesk API error: {e}")
-        return None
-
-
-# Note: CoinDesk API Integration
-# To use CoinDesk API:
-# 1. Register at https://developers.coindesk.com/ and get an API key
-# 2. Set COINDESK_API_KEY environment variable or add to config.yaml:
-#    coindesk_api_key: "your_api_key_here"
-# 3. Verify the API endpoint format matches your CoinDesk plan
-# 4. CoinDesk may require symbol mapping (not token addresses) - adjust as needed
 
 
 def fetch_on_chain_swap_candles(token_address: str, chain: str,
@@ -541,15 +373,16 @@ def _fetch_solana_swaps(token_address: str, start_time: datetime, end_time: date
                             swap_data = None
                     else:
                         swap_data = None
+                    
+                    # Check if we got valid swap data and add it
+                    if swap_data and swap_data.get('price', 0) > 0:
+                        swaps.append(swap_data)
+                        parsed_count += 1
                         
-                        if swap_data and swap_data.get('price', 0) > 0:
-                            swaps.append(swap_data)
-                            parsed_count += 1
-                            
-                            # Limit total swaps to avoid memory issues
-                            if len(swaps) >= 5000:
-                                logger.debug(f"Reached swap limit (5000), stopping")
-                                break
+                        # Limit total swaps to avoid memory issues
+                        if len(swaps) >= 5000:
+                            logger.debug(f"Reached swap limit (5000), stopping")
+                            break
                     
                     # Rate limiting: add small delay every N transactions
                     if parsed_count % 10 == 0 and parsed_count > 0:
@@ -929,60 +762,6 @@ def _swaps_to_candles(swaps: List[Dict], start_time: datetime, end_time: datetim
         return []
 
 
-def fetch_coincap_candles(token_address: str, chain: str,
-                          start_time: datetime, end_time: datetime,
-                          interval: str = "1m", pair_address: str = None) -> Optional[List[Dict]]:
-    """
-    Fetch historical candles from CoinCap API (primary data source).
-    
-    CoinCap provides historical price data for major cryptocurrencies.
-    Note: CoinCap only supports major tokens by asset ID, not arbitrary DEX token addresses.
-    
-    Args:
-        token_address: Token address (may need to map to CoinCap asset ID)
-        chain: Chain ID (solana, ethereum, etc.)
-        start_time: Start of time window
-        end_time: End of time window
-        interval: Desired interval (1m, 5m, 15m, 1h)
-        pair_address: Pair address (for caching)
-    """
-    try:
-        # Check cache first
-        start_ts = int(start_time.timestamp())
-        end_ts = int(end_time.timestamp())
-        cache_key = get_cache_key(pair_address or token_address, chain, interval, start_ts, end_ts)
-        
-        cached = load_cached_candles(cache_key)
-        if cached:
-            return cached
-        
-        # Import market_data_fetcher to use its CoinCap integration
-        from src.utils.market_data_fetcher import market_data_fetcher
-        
-        # CoinCap API requires asset IDs, not token addresses
-        # For major tokens, we can use market_data_fetcher's CoinCap integration
-        # Map common tokens to CoinCap asset IDs
-        asset_id_map = {
-            'bitcoin': 'bitcoin',
-            'ethereum': 'ethereum',
-            'solana': 'solana',
-            'usd-coin': 'usd-coin',
-            'cardano': 'cardano',
-            'polygon': 'polygon',
-            'chainlink': 'chainlink',
-            'uniswap': 'uniswap',
-        }
-        
-        # Try to get asset ID from token address (simplified - may need better mapping)
-        # For now, skip CoinCap for arbitrary DEX tokens
-        logger.debug(f"CoinCap requires asset IDs, not token addresses. Skipping for {token_address[:8]}...")
-        return None
-        
-    except Exception as e:
-        logger.debug(f"CoinCap API error: {e}")
-        return None
-
-
 def fetch_dexscreener_candles(pair_address: str, chain: str, 
                               start_time: datetime, end_time: datetime,
                               interval: str = "1m", token_address: str = None) -> Optional[List[Dict]]:
@@ -990,7 +769,7 @@ def fetch_dexscreener_candles(pair_address: str, chain: str,
     Step 2: Fetch historical candles
     
     Note: DexScreener free API doesn't provide historical candles endpoint.
-    Primary sources: On-chain swaps > CoinDesk API > CoinCap API > market_data_fetcher (The Graph/CoinGecko for Ethereum/Base only)
+    Primary sources: On-chain swaps > market_data_fetcher (The Graph/CoinGecko for Ethereum/Base only)
     
     Step A - On-chain price pipeline (recommended):
     - Fetches swap events directly from blockchain (no API limits)
@@ -1026,24 +805,6 @@ def fetch_dexscreener_candles(pair_address: str, chain: str,
             if swap_candles:
                 return swap_candles
         
-        # Try CoinDesk API if enabled
-        if USE_COINDESK_API and token_address:
-            logger.info(f"  Trying CoinDesk API for historical candles...")
-            coindesk_candles = fetch_coindesk_candles(
-                token_address, chain, start_time, end_time, interval, pair_address
-            )
-            if coindesk_candles:
-                return coindesk_candles
-        
-        # Try CoinCap API (requires asset ID mapping)
-        if token_address:
-            logger.info(f"  Trying CoinCap API for historical candles...")
-            coincap_candles = fetch_coincap_candles(
-                token_address, chain, start_time, end_time, interval, pair_address
-            )
-            if coincap_candles:
-                return coincap_candles
-        
         # For non-Solana chains, use market_data_fetcher (uses The Graph/CoinGecko, NOT Helius)
         if chain.lower() != "solana":
             logger.info(f"  Using market_data_fetcher (The Graph/CoinGecko) for {chain} chain")
@@ -1071,7 +832,7 @@ def fetch_dexscreener_candles(pair_address: str, chain: str,
         else:
             # For Solana tokens, market_data_fetcher uses Helius - skip it to avoid Helius
             logger.warning(f"  Skipping market_data_fetcher for Solana token {token_address[:8]}... (uses Helius RPC)")
-            logger.warning(f"  No alternative data source available for Solana DEX tokens (CoinCap/CoinDesk require asset IDs)")
+            logger.warning(f"  No alternative data source available for Solana DEX tokens")
             candles = None
         
         if not candles:
