@@ -1483,40 +1483,79 @@ def monitor_all_positions():
                             remaining_size_pct = 1.0 - action.size_pct
                             remaining_position_size_usd = original_position_size * remaining_size_pct
                             
+                            # Check if this is selling the remaining position (trailing stop after partial TP)
+                            # This happens when: 1) action is from trailing stop, OR 2) position already had partial sell
+                            is_remaining_sell = (
+                                "trailing_stop" in action.reason.lower() or
+                                (isinstance(position_data, dict) and position_data.get("partial_sell_taken", False))
+                            )
+                            
                             # Calculate realized profit from partial sell
                             sold_usd = original_position_size * action.size_pct
                             realized_pnl_usd = gain * sold_usd
                             
+                            # Determine log reason
+                            if is_remaining_sell:
+                                log_reason = f"remaining_sell_{action.size_pct:.0%}"
+                            else:
+                                log_reason = f"partial_tp_{action.size_pct:.0%}"
+                            
                             # Log partial sell to trade log - ALWAYS log when transaction succeeds
-                            log_trade(token_address, entry_price, current_price, f"partial_tp_{action.size_pct:.0%}")
+                            log_trade(token_address, entry_price, current_price, log_reason)
                             
-                            # Send Telegram notification for partial take profit
-                            send_telegram_message(
-                                f"💵 Partial Take-Profit Executed!\n"
-                                f"Token: {symbol} ({token_address[:8]}...{token_address[-8:]})\n"
-                                f"Chain: {chain_id.upper()}\n"
-                                f"Entry: ${entry_price:.6f}\n"
-                                f"Exit: ${current_price:.6f} (+{gain * 100:.2f}%)\n"
-                                f"Sold: {action.size_pct*100:.0f}% (${sold_usd:.2f} USD)\n"
-                                f"Remaining: {remaining_size_pct*100:.0f}% (${remaining_position_size_usd:.2f} USD)\n"
-                                f"Realized PnL: ${realized_pnl_usd:.2f}\n"
-                                f"TX: {tx}",
-                                message_type="trade"
-                            )
-                            
-                            # Update position data with remaining size
-                            if isinstance(position_data, dict):
-                                # Store original entry price if not already stored
-                                if "original_entry_price" not in position_data:
-                                    position_data["original_entry_price"] = entry_price
+                            if is_remaining_sell:
+                                # This is the final sell - close the position
+                                send_telegram_message(
+                                    f"✅ Position Fully Closed (Remaining Sell)!\n"
+                                    f"Token: {symbol} ({token_address[:8]}...{token_address[-8:]})\n"
+                                    f"Chain: {chain_id.upper()}\n"
+                                    f"Entry: ${entry_price:.6f}\n"
+                                    f"Exit: ${current_price:.6f} (+{gain * 100:.2f}%)\n"
+                                    f"Final Sell: {action.size_pct*100:.0f}% (${sold_usd:.2f} USD)\n"
+                                    f"Realized PnL: ${realized_pnl_usd:.2f}\n"
+                                    f"TX: {tx}",
+                                    message_type="trade"
+                                )
                                 
-                                # Update position size to remaining amount
-                                position_data["position_size_usd"] = remaining_position_size_usd
-                                position_data["partial_sell_taken"] = True
-                                position_data["partial_sell_pct"] = action.size_pct
-                                position_data["partial_sell_tx"] = tx
-                                position_data["partial_sell_price"] = current_price
-                                position_data["partial_sell_time"] = datetime.now().isoformat()
+                                # Update performance tracker and close position
+                                if trade:
+                                    position_size = trade.get('position_size_usd', 0)
+                                    pnl_usd = gain * position_size
+                                    from src.core.performance_tracker import performance_tracker
+                                    performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, log_reason)
+                                
+                                _cleanup_closed_position(position_key, token_address, chain_id)
+                                closed_positions.append(position_key)
+                                updated_positions.pop(position_key, None)
+                                continue  # Move to next position
+                            else:
+                                # Partial TP - keep position open
+                                send_telegram_message(
+                                    f"💵 Partial Take-Profit Executed!\n"
+                                    f"Token: {symbol} ({token_address[:8]}...{token_address[-8:]})\n"
+                                    f"Chain: {chain_id.upper()}\n"
+                                    f"Entry: ${entry_price:.6f}\n"
+                                    f"Exit: ${current_price:.6f} (+{gain * 100:.2f}%)\n"
+                                    f"Sold: {action.size_pct*100:.0f}% (${sold_usd:.2f} USD)\n"
+                                    f"Remaining: {remaining_size_pct*100:.0f}% (${remaining_position_size_usd:.2f} USD)\n"
+                                    f"Realized PnL: ${realized_pnl_usd:.2f}\n"
+                                    f"TX: {tx}",
+                                    message_type="trade"
+                                )
+                                
+                                # Update position data with remaining size
+                                if isinstance(position_data, dict):
+                                    # Store original entry price if not already stored
+                                    if "original_entry_price" not in position_data:
+                                        position_data["original_entry_price"] = entry_price
+                                    
+                                    # Update position size to remaining amount
+                                    position_data["position_size_usd"] = remaining_position_size_usd
+                                    position_data["partial_sell_taken"] = True
+                                    position_data["partial_sell_pct"] = action.size_pct
+                                    position_data["partial_sell_tx"] = tx
+                                    position_data["partial_sell_price"] = current_price
+                                    position_data["partial_sell_time"] = datetime.now().isoformat()
                         else:
                             # Transaction verification failed, but sell may have succeeded on-chain
                             # Log a warning and attempt to verify via balance check as fallback
@@ -1546,8 +1585,21 @@ def monitor_all_positions():
                                                 # Allow some tolerance for price changes and rounding
                                                 if abs(balance_after - expected_balance_after) / expected_balance_after < 0.2:
                                                     print(f"✅ [PARTIAL TP] Balance check suggests sell succeeded (balance: {balance_after:.8f}, expected: {expected_balance_after:.8f})")
+                                                    
+                                                    # Check if this is selling the remaining position
+                                                    is_remaining_sell = (
+                                                        "trailing_stop" in action.reason.lower() or
+                                                        (isinstance(position_data, dict) and position_data.get("partial_sell_taken", False))
+                                                    )
+                                                    
+                                                    # Determine log reason
+                                                    if is_remaining_sell:
+                                                        log_reason = f"remaining_sell_{action.size_pct:.0%}_unverified"
+                                                    else:
+                                                        log_reason = f"partial_tp_{action.size_pct:.0%}_unverified"
+                                                    
                                                     # Log the trade even though we don't have tx hash
-                                                    log_trade(token_address, entry_price, current_price, f"partial_tp_{action.size_pct:.0%}_unverified")
+                                                    log_trade(token_address, entry_price, current_price, log_reason)
                                                     
                                                     # Update position data
                                                     remaining_size_pct = 1.0 - action.size_pct
@@ -1557,32 +1609,58 @@ def monitor_all_positions():
                                                     sold_usd = original_position_size * action.size_pct
                                                     realized_pnl_usd = gain * sold_usd
                                                     
-                                                    # Send Telegram notification for unverified partial take profit
-                                                    send_telegram_message(
-                                                        f"💵 Partial Take-Profit Executed (Unverified)!\n"
-                                                        f"Token: {symbol} ({token_address[:8]}...{token_address[-8:]})\n"
-                                                        f"Chain: {chain_id.upper()}\n"
-                                                        f"Entry: ${entry_price:.6f}\n"
-                                                        f"Exit: ${current_price:.6f} (+{gain * 100:.2f}%)\n"
-                                                        f"Sold: {action.size_pct*100:.0f}% (${sold_usd:.2f} USD)\n"
-                                                        f"Remaining: {remaining_size_pct*100:.0f}% (${remaining_position_size_usd:.2f} USD)\n"
-                                                        f"Realized PnL: ${realized_pnl_usd:.2f}\n"
-                                                        f"TX: Unverified (balance check suggests success)",
-                                                        message_type="trade"
-                                                    )
-                                                    
-                                                    if isinstance(position_data, dict):
-                                                        if "original_entry_price" not in position_data:
-                                                            position_data["original_entry_price"] = entry_price
-                                                        position_data["position_size_usd"] = remaining_position_size_usd
-                                                        position_data["partial_sell_taken"] = True
-                                                        position_data["partial_sell_pct"] = action.size_pct
-                                                        position_data["partial_sell_tx"] = None  # No tx hash available
-                                                        position_data["partial_sell_price"] = current_price
-                                                        position_data["partial_sell_time"] = datetime.now().isoformat()
-                                                        updated_positions[position_key] = position_data
-                                                        from src.storage.positions import upsert_position
-                                                        upsert_position(position_key, position_data)
+                                                    if is_remaining_sell:
+                                                        # This is the final sell - close the position
+                                                        send_telegram_message(
+                                                            f"✅ Position Fully Closed (Remaining Sell - Unverified)!\n"
+                                                            f"Token: {symbol} ({token_address[:8]}...{token_address[-8:]})\n"
+                                                            f"Chain: {chain_id.upper()}\n"
+                                                            f"Entry: ${entry_price:.6f}\n"
+                                                            f"Exit: ${current_price:.6f} (+{gain * 100:.2f}%)\n"
+                                                            f"Final Sell: {action.size_pct*100:.0f}% (${sold_usd:.2f} USD)\n"
+                                                            f"Realized PnL: ${realized_pnl_usd:.2f}\n"
+                                                            f"TX: Unverified (balance check suggests success)",
+                                                            message_type="trade"
+                                                        )
+                                                        
+                                                        # Update performance tracker and close position
+                                                        trade = _find_open_trade_by_address(token_address, chain_id)
+                                                        if trade:
+                                                            position_size = trade.get('position_size_usd', 0)
+                                                            pnl_usd = gain * position_size
+                                                            from src.core.performance_tracker import performance_tracker
+                                                            performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, log_reason)
+                                                        
+                                                        _cleanup_closed_position(position_key, token_address, chain_id)
+                                                        closed_positions.append(position_key)
+                                                        updated_positions.pop(position_key, None)
+                                                    else:
+                                                        # Partial TP - keep position open
+                                                        send_telegram_message(
+                                                            f"💵 Partial Take-Profit Executed (Unverified)!\n"
+                                                            f"Token: {symbol} ({token_address[:8]}...{token_address[-8:]})\n"
+                                                            f"Chain: {chain_id.upper()}\n"
+                                                            f"Entry: ${entry_price:.6f}\n"
+                                                            f"Exit: ${current_price:.6f} (+{gain * 100:.2f}%)\n"
+                                                            f"Sold: {action.size_pct*100:.0f}% (${sold_usd:.2f} USD)\n"
+                                                            f"Remaining: {remaining_size_pct*100:.0f}% (${remaining_position_size_usd:.2f} USD)\n"
+                                                            f"Realized PnL: ${realized_pnl_usd:.2f}\n"
+                                                            f"TX: Unverified (balance check suggests success)",
+                                                            message_type="trade"
+                                                        )
+                                                        
+                                                        if isinstance(position_data, dict):
+                                                            if "original_entry_price" not in position_data:
+                                                                position_data["original_entry_price"] = entry_price
+                                                            position_data["position_size_usd"] = remaining_position_size_usd
+                                                            position_data["partial_sell_taken"] = True
+                                                            position_data["partial_sell_pct"] = action.size_pct
+                                                            position_data["partial_sell_tx"] = None  # No tx hash available
+                                                            position_data["partial_sell_price"] = current_price
+                                                            position_data["partial_sell_time"] = datetime.now().isoformat()
+                                                            updated_positions[position_key] = position_data
+                                                            from src.storage.positions import upsert_position
+                                                            upsert_position(position_key, position_data)
                                                     print(f"⚠️ [PARTIAL TP] Trade logged as unverified - transaction may have succeeded but verification failed")
                                                     continue
                             except Exception as balance_check_error:
