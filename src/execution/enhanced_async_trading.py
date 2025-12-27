@@ -1875,14 +1875,67 @@ class EnhancedAsyncTradingEngine:
         # Execute trades for approved tokens (limit concurrent trades)
         trade_results = []
         if approved_tokens:
-            # Sort by AI confidence, then by quality_score as tiebreaker for best execution order
+            # Initial sort by AI confidence, then by quality_score
             approved_tokens.sort(
                 key=lambda x: (
-                    x.get("ai_analysis", {}).get("trading_recommendation", {}).get("confidence", 0),
-                    x.get("ai_analysis", {}).get("quality_score", 0)
-                ),
-                reverse=True
+                    -x.get("ai_analysis", {}).get("trading_recommendation", {}).get("confidence", 0),
+                    -x.get("ai_analysis", {}).get("quality_score", 0)
+                )
             )
+            
+            # Check holder concentration for top 20 candidates to prioritize better distribution
+            top_candidates_count = min(len(approved_tokens), 20)
+            log_info("trading.holder_concentration_check", 
+                    f"Checking holder concentration for top {top_candidates_count} candidates")
+            
+            for token in approved_tokens[:top_candidates_count]:
+                if "holder_concentration_pct" not in token:
+                    try:
+                        from src.utils.holder_concentration_checker import check_holder_concentration
+                        
+                        token_address = token.get("address", "")
+                        chain_id = token.get("chainId", token.get("chain", "solana")).lower()
+                        symbol = token.get("symbol", "UNKNOWN")
+                        
+                        if token_address and get_config_bool("enable_holder_concentration_check", True):
+                            holder_check = check_holder_concentration(token_address, chain_id)
+                            if holder_check and not holder_check.get("error"):
+                                holder_concentration_pct = holder_check.get("top_10_percentage", 100.0)
+                                token["holder_concentration_pct"] = holder_concentration_pct
+                                log_info("trading.holder_concentration",
+                                        f"Holder concentration for {symbol}: {holder_concentration_pct:.2f}%",
+                                        symbol=symbol,
+                                        holder_concentration_pct=holder_concentration_pct)
+                            else:
+                                # If check failed, use high value (100%) so it ranks lower
+                                token["holder_concentration_pct"] = 100.0
+                                log_info("trading.holder_concentration",
+                                        f"Holder concentration check failed for {symbol}, defaulting to 100%",
+                                        symbol=symbol)
+                        else:
+                            token["holder_concentration_pct"] = 100.0
+                    except Exception as e:
+                        log_error("trading.holder_concentration_error",
+                                f"Error checking holder concentration for {token.get('symbol', 'UNKNOWN')}: {e}")
+                        # Use high value on error so it ranks lower
+                        token["holder_concentration_pct"] = 100.0
+            
+            # Set default holder_concentration_pct for tokens not checked (ranks lower)
+            for token in approved_tokens[top_candidates_count:]:
+                if "holder_concentration_pct" not in token:
+                    token["holder_concentration_pct"] = 100.0
+            
+            # Re-sort with holder concentration included (lower concentration = better distribution = higher rank)
+            approved_tokens.sort(
+                key=lambda x: (
+                    -x.get("ai_analysis", {}).get("trading_recommendation", {}).get("confidence", 0),
+                    -x.get("ai_analysis", {}).get("quality_score", 0),
+                    x.get("holder_concentration_pct", 100.0)  # Lower is better (better distribution)
+                )
+            )
+            
+            log_info("trading.sorting_complete",
+                    f"Re-sorted {len(approved_tokens)} approved tokens with holder concentration ranking")
             
             # Limit to max concurrent trades
             tokens_to_trade = approved_tokens[:self.max_concurrent_trades]
