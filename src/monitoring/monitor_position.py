@@ -163,6 +163,7 @@ def _cleanup_closed_position(position_key: str, token_address: str, chain_id: st
     1. open_positions.json (via remove_position)
     2. hunter_state.db (via remove_position)
     3. performance_data.json (mark trade as closed)
+    4. Partial TP manager state (clear tracking state)
     
     This ensures positions are completely removed when sells complete.
     """
@@ -172,6 +173,16 @@ def _cleanup_closed_position(position_key: str, token_address: str, chain_id: st
         # Remove from open_positions.json and hunter_state.db
         remove_position_from_db(position_key)
         print(f"✅ Removed position {position_key} from open_positions.json and hunter_state.db")
+        
+        # Clear partial TP manager state for this position
+        try:
+            from src.ai.ai_partial_take_profit_manager import get_partial_tp_manager
+            partial_tp_manager = get_partial_tp_manager()
+            partial_tp_manager.clear_position_state(position_key)
+            print(f"✅ Cleared partial TP state for {position_key}")
+        except Exception as e:
+            print(f"⚠️ Error clearing partial TP state: {e}")
+            # Don't fail cleanup if partial TP cleanup fails
         
         # Also try to find and mark as closed in performance_data.json
         # (We don't remove from performance_data to preserve historical records)
