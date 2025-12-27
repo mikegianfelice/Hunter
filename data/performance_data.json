@@ -4033,11 +4033,11 @@
       "entry_time": "2025-12-25T20:25:00",
       "entry_price": 0.5,
       "position_size_usd": 25.0,
-      "exit_time": "2025-12-25T20:25:00",
-      "exit_price": 0.53,
-      "pnl_usd": 0.75,
-      "pnl_percent": 6.0,
-      "status": "partial_tp",
+      "exit_time": "2025-12-27T08:50:00",
+      "exit_price": 0.458,
+      "pnl_usd": -6.203915335591207,
+      "pnl_percent": -9.288968112497525,
+      "status": "closed",
       "take_profit_target": null,
       "stop_loss_target": null,
       "quality_score": null,
@@ -4118,5 +4118,5 @@
       }
     }
   },
-  "last_updated": "2025-12-26T19:05:19.881815"
+  "last_updated": "2025-12-27T10:52:55.963169"
 }
