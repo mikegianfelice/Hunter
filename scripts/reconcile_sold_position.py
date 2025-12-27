@@ -218,6 +218,18 @@ def reconcile_position(tx_hash: str, token_address: str = None, trade_id: str = 
     except Exception as e:
         print(f"⚠️ Error updating performance tracker: {e}")
     
+    # Step 6: Log to trade_log.csv
+    print("\n📊 Step 6: Logging to trade_log.csv...")
+    try:
+        from src.monitoring.monitor_position import log_trade
+        pnl_pct = ((exit_price - entry_price) / entry_price * 100) if entry_price > 0 else 0
+        log_trade(token_address, entry_price, exit_price, f"reconciliation_sell_{pnl_pct:.2f}%")
+        print(f"✅ Logged to trade_log.csv")
+    except Exception as e:
+        print(f"⚠️ Error logging to trade_log.csv: {e}")
+        import traceback
+        traceback.print_exc()
+    
     print("\n✅ Reconciliation complete!")
     return True
 
