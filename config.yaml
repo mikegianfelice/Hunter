@@ -139,6 +139,14 @@ enable_helius_reconciliation: true  # Periodically sync Solana positions using H
 helius_reconciliation_interval_minutes: 60  # How often to run reconciliation (increased from 30 to reduce RPC calls)
 helius_reconciliation_tx_limit: 50  # Max transactions to request per reconciliation run (Helius caps at 100)
 
+# === Helius Candlestick Settings ===
+helius_candlestick_settings:
+  cache_duration_hours: 1  # Cache duration for candlestick data (1 hour = 3600 seconds)
+  max_pools_to_query: 2  # Max liquidity pools to query for RPC method (reduced from 5)
+  max_pagination_pages: 5  # Max pages per pool for RPC pagination (reduced from 20)
+  max_signatures_per_page: 100  # Max signatures per page for RPC (reduced from 500)
+  rate_limit_threshold: 25000  # Use fallback if Helius calls exceed this (83% of 30k limit)
+
 # === Balance Cache Settings ===
 balance_cache_enabled: true  # Enable balance caching as fallback during RPC failures
 balance_cache_ttl_seconds: 300  # Cache is valid for 5 minutes (300 seconds)

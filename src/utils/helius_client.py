@@ -141,12 +141,12 @@ class HeliusClient:
             "method": method,
             "params": params or [],
         }
-        response = post_json(self.endpoint, payload)
         
-        # Track RPC call using centralized tracker
-        if response and isinstance(response, dict) and "result" in response:
-            from src.utils.api_tracker import track_helius_call
-            track_helius_call()
+        # Track ALL API calls (including failures) BEFORE making the request
+        from src.utils.api_tracker import track_helius_call
+        track_helius_call()
+        
+        response = post_json(self.endpoint, payload)
         
         if not isinstance(response, dict):
             return None

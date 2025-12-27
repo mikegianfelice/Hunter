@@ -75,8 +75,9 @@ class MarketDataFetcher:
         self.candlestick_cache_coingecko: Dict[str, Dict[str, any]] = {}
         self.candlestick_cache_file = Path("data/candlestick_cache.json")
         
-        # Cache durations
-        self.helius_cache_duration = 300  # 5 minutes (Helius has plenty of quota)
+        # Cache durations - load from config with sensible defaults
+        helius_cache_hours = get_config('helius_candlestick_settings.cache_duration_hours', 1)
+        self.helius_cache_duration = helius_cache_hours * 3600  # Convert hours to seconds (default: 1 hour)
         self.coingecko_cache_duration = 3600  # 1 hour (conservative for CoinGecko)
         
         # API call tracking
@@ -1009,12 +1010,39 @@ class MarketDataFetcher:
         # SOLANA: Prefer DEX API (1 call) over RPC (many calls), fallback to RPC if needed
         if chain_id.lower() == "solana":
             if self.helius_api_key:
+                # Check rate limit before making expensive API calls
+                from src.config.config_loader import get_config_int
+                helius_calls = self.api_tracker.get_count('helius')
+                rate_limit_threshold = get_config_int('helius_candlestick_settings.rate_limit_threshold', 25000)
+                
+                if helius_calls >= rate_limit_threshold:
+                    logger.warning(
+                        f"Helius API usage high ({helius_calls}/30000), using cached/memory data for {token_address[:8]}..."
+                    )
+                    # Try cache first (even if expired, might have usable data)
+                    if cache_key in self.candlestick_cache_helius:
+                        cached = self.candlestick_cache_helius[cache_key]
+                        if cached.get('data'):
+                            logger.debug(f"Using cached data despite rate limit for {token_address[:8]}...")
+                            return cached['data']
+                    # Fallback to memory
+                    return self._get_solana_candles_from_memory(token_address, hours)
+                
                 # Try DEX API first (more efficient - 1 call vs potentially 100+ RPC calls)
                 candles = self._get_solana_candles_from_helius(
                     token_address, hours, cache_key, force_fetch, target_timestamp
                 )
                 if candles:
                     return candles
+                
+                # Check rate limit again before expensive RPC fallback
+                helius_calls = self.api_tracker.get_count('helius')
+                if helius_calls >= rate_limit_threshold:
+                    logger.warning(
+                        f"Helius API usage high ({helius_calls}/30000), skipping RPC fallback for {token_address[:8]}..."
+                    )
+                    return self._get_solana_candles_from_memory(token_address, hours)
+                
                 # Fallback to RPC if DEX API fails or returns insufficient data
                 logger.debug(f"DEX API failed or insufficient data, trying RPC fallback for {token_address[:8]}...")
                 return self._get_solana_candles_from_rpc(
@@ -1150,6 +1178,9 @@ class MarketDataFetcher:
             return self._get_solana_candles_from_memory(token_address, hours)
         
         try:
+            # Track API call BEFORE making request (counts all calls including failures)
+            track_helius_call()
+            
             # Use Helius DEX API to get swap transactions
             # NOTE: Helius API requires 'mint' parameter, not 'before'/'after'/'limit' query params
             url = f"{self.helius_base_url}/addresses/{token_address}/transactions"
@@ -1213,8 +1244,7 @@ class MarketDataFetcher:
                 }
                 self._save_candlestick_cache()
                 
-                # Track API call
-                track_helius_call()
+                # Note: API call already tracked before request above
                 
                 logger.info(f"✅ Built {len(candles)} candles from Helius swaps for {token_address[:8]}...")
                 return candles
@@ -1484,22 +1514,31 @@ class MarketDataFetcher:
                 logger.info(f"Found {len(pool_addresses)} pools, querying transactions from pools...")
                 
                 # Step 2: Query transactions from pool addresses with pagination
-                for pool_address in pool_addresses[:5]:  # Limit to first 5 pools for performance
+                # Load pagination limits from config with sensible defaults
+                from src.config.config_loader import get_config_int
+                max_pools = get_config_int('helius_candlestick_settings.max_pools_to_query', 2)
+                max_pages = get_config_int('helius_candlestick_settings.max_pagination_pages', 5)
+                max_sigs_per_page = get_config_int('helius_candlestick_settings.max_signatures_per_page', 100)
+                
+                for pool_address in pool_addresses[:max_pools]:  # Limit pools (default: 2, was 5)
                     try:
                         pool_pubkey = Pubkey.from_string(pool_address)
                         
-                        # Paginate backwards in time to reach November 2025
+                        # Paginate backwards in time to reach historical data
                         all_signatures = []
                         before_signature = None
-                        max_pages = 20  # Limit to 20 pages (10,000 transactions max) to avoid infinite loops
+                        # Reduced pagination limits (default: 5 pages = 500 transactions max, was 20 pages = 10,000)
                         
-                        logger.debug(f"Querying pool {pool_address[:8]}... with pagination to reach historical data")
+                        logger.debug(f"Querying pool {pool_address[:8]}... with pagination (max {max_pages} pages)")
                         
                         for page in range(max_pages):
+                            # Track RPC call before making request
+                            track_helius_call()
+                            
                             # Get signatures for the pool address, paginating backwards
                             sigs_response = client.get_signatures_for_address(
                                 pool_pubkey,
-                                limit=500,  # Get up to 500 transactions per page
+                                limit=max_sigs_per_page,  # Reduced limit (default: 100, was 500)
                                 before=before_signature  # Paginate using last signature from previous page
                             )
                             
@@ -1560,6 +1599,9 @@ class MarketDataFetcher:
                             batch = all_signatures[i:i + batch_size]
                             
                             try:
+                                # Track RPC call for transaction batch
+                                track_helius_call()
+                                
                                 # Get transaction details
                                 txs_response = client.get_transactions(
                                     batch,
@@ -1635,8 +1677,7 @@ class MarketDataFetcher:
                 }
                 self._save_candlestick_cache()
                 
-                # Track API call (RPC calls)
-                track_helius_call()
+                # Note: RPC calls already tracked above (get_signatures_for_address and get_transactions)
                 
                 logger.info(f"✅ Built {len(candles)} candles from RPC swaps for {token_address[:8]}...")
                 return candles
