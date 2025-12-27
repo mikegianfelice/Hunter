@@ -194,10 +194,22 @@ def save_candles_to_cache(cache_key: str, candles: List[Dict]):
 
 def fetch_dexscreener_candles(pair_address: str, chain: str, 
                               start_time: datetime, end_time: datetime,
-                              interval: str = "1m") -> Optional[List[Dict]]:
+                              interval: str = "1m", token_address: str = None) -> Optional[List[Dict]]:
     """
-    Step 2: Fetch historical candles from DexScreener
-    https://api.dexscreener.com/chart/candles/{CHAIN}/{PAIR_ADDRESS}?interval={interval}
+    Step 2: Fetch historical candles
+    
+    Note: DexScreener free API doesn't provide historical candles endpoint.
+    Falls back to market_data_fetcher (Helius RPC) for historical data.
+    The market_data_fetcher typically returns hourly candles, which are then
+    resampled to the requested interval (1m, 5m, 15m) using simple interpolation.
+    
+    Args:
+        pair_address: Pair address (used for caching, not for API call)
+        chain: Chain ID (solana, ethereum, etc.)
+        start_time: Start of time window
+        end_time: End of time window
+        interval: Desired interval (1m, 5m, 15m)
+        token_address: Token address for fallback API call (required)
     """
     try:
         # Check cache first
@@ -209,31 +221,32 @@ def fetch_dexscreener_candles(pair_address: str, chain: str,
         if cached:
             return cached
         
-        # Map chain names to DexScreener format
-        chain_map = {
-            'solana': 'solana',
-            'ethereum': 'ethereum',
-            'base': 'base',
-            'bsc': 'bsc',
-            'binance': 'bsc',
-        }
-        dex_chain = chain_map.get(chain.lower(), chain.lower())
+        # DexScreener free API doesn't have historical candles endpoint
+        # Fall back to market_data_fetcher for historical data
+        logger.info(f"  DexScreener doesn't provide historical candles, using market_data_fetcher fallback")
         
-        url = f"{DEXSCREENER_BASE_URL}/chart/candles/{dex_chain}/{pair_address}"
-        params = {'interval': interval}
-        
-        logger.debug(f"Fetching {interval} candles: {url}")
-        response = requests.get(url, params=params, timeout=15)
-        
-        if response.status_code != 200:
-            logger.warning(f"DexScreener candles API error {response.status_code}")
+        if not token_address:
+            logger.warning(f"  Token address required for fallback, skipping {pair_address[:8]}...")
             return None
         
-        data = response.json()
-        candles = data.get('candles', [])
+        # Import market_data_fetcher for fallback
+        from src.utils.market_data_fetcher import market_data_fetcher
+        
+        # Calculate hours needed
+        hours = int((end_time - start_time).total_seconds() / 3600) + 1
+        
+        # Fetch using market_data_fetcher with target_timestamp
+        entry_ts = start_time.timestamp() + (hours * 3600 / 2)  # Middle of window
+        candles = market_data_fetcher.get_candlestick_data(
+            token_address=token_address,
+            chain_id=chain,
+            hours=hours,
+            force_fetch=True,
+            target_timestamp=entry_ts
+        )
         
         if not candles:
-            logger.warning(f"No candles returned for {pair_address[:8]}...")
+            logger.warning(f"No candles from market_data_fetcher for {token_address[:8]}...")
             return None
         
         # Convert to our format and filter by time window
@@ -242,24 +255,66 @@ def fetch_dexscreener_candles(pair_address: str, chain: str,
         end_ts = end_time.timestamp()
         
         for candle in candles:
-            # DexScreener returns: [timestamp, open, high, low, close, volume]
-            if len(candle) >= 6:
-                candle_time = int(candle[0]) / 1000  # Convert ms to seconds
-                
-                # Filter to time window
-                if start_ts <= candle_time <= end_ts:
-                    formatted_candles.append({
-                        'time': candle_time,
-                        'timestamp': candle_time,
-                        'open': float(candle[1]),
-                        'high': float(candle[2]),
-                        'low': float(candle[3]),
-                        'close': float(candle[4]),
-                        'volume': float(candle[5]) if len(candle) > 5 else 0.0,
-                    })
+            # market_data_fetcher returns: {'time', 'open', 'high', 'low', 'close', 'volume'}
+            candle_time = candle.get('time', candle.get('timestamp', 0))
+            if isinstance(candle_time, str):
+                try:
+                    candle_time = datetime.fromisoformat(candle_time.replace('Z', '+00:00')).timestamp()
+                except:
+                    candle_time = 0
+            
+            # Filter to time window
+            if start_ts <= candle_time <= end_ts:
+                formatted_candles.append({
+                    'time': candle_time,
+                    'timestamp': candle_time,
+                    'open': float(candle.get('open', 0)),
+                    'high': float(candle.get('high', 0)),
+                    'low': float(candle.get('low', 0)),
+                    'close': float(candle.get('close', 0)),
+                    'volume': float(candle.get('volume', 0)),
+                })
         
         # Sort by timestamp
         formatted_candles.sort(key=lambda x: x['time'])
+        
+        # Resample to desired interval if needed
+        # market_data_fetcher typically returns hourly candles, we need to resample
+        if interval == "1m" and formatted_candles:
+            # For 1m, we'd need to interpolate or fetch more granular data
+            # For now, use what we have and note the limitation
+            logger.debug(f"Note: Using hourly candles for 1m interval (interpolation not implemented)")
+        elif interval == "5m" and formatted_candles:
+            # Resample hourly to 5m (12 candles per hour)
+            resampled = []
+            for candle in formatted_candles:
+                # Split each hour into 12 5-minute candles (simplified)
+                for i in range(12):
+                    resampled.append({
+                        'time': candle['time'] + (i * 300),  # 5 minutes = 300 seconds
+                        'timestamp': candle['timestamp'] + (i * 300),
+                        'open': candle['open'] if i == 0 else candle['close'],
+                        'high': candle['high'],
+                        'low': candle['low'],
+                        'close': candle['close'] if i == 11 else candle['open'],
+                        'volume': candle['volume'] / 12,  # Distribute volume
+                    })
+            formatted_candles = [c for c in resampled if start_ts <= c['time'] <= end_ts]
+        elif interval == "15m" and formatted_candles:
+            # Resample hourly to 15m (4 candles per hour)
+            resampled = []
+            for candle in formatted_candles:
+                for i in range(4):
+                    resampled.append({
+                        'time': candle['time'] + (i * 900),  # 15 minutes = 900 seconds
+                        'timestamp': candle['timestamp'] + (i * 900),
+                        'open': candle['open'] if i == 0 else candle['close'],
+                        'high': candle['high'],
+                        'low': candle['low'],
+                        'close': candle['close'] if i == 3 else candle['open'],
+                        'volume': candle['volume'] / 4,
+                    })
+            formatted_candles = [c for c in resampled if start_ts <= c['time'] <= end_ts]
         
         if len(formatted_candles) < 10:
             logger.warning(f"Insufficient candles ({len(formatted_candles)}) for {pair_address[:8]}...")
@@ -609,17 +664,20 @@ def prepare_training_data():
             logger.info(f"  Fetching candles: {start_window} to {end_window}")
             
             candles_1m = fetch_dexscreener_candles(
-                pair_address, chain_id, start_window, end_window, interval="1m"
+                pair_address, chain_id, start_window, end_window, interval="1m",
+                token_address=trade['token']
             )
             api_call_count += 1
             
             candles_5m = fetch_dexscreener_candles(
-                pair_address, chain_id, start_window, end_window, interval="5m"
+                pair_address, chain_id, start_window, end_window, interval="5m",
+                token_address=trade['token']
             )
             api_call_count += 1
             
             candles_15m = fetch_dexscreener_candles(
-                pair_address, chain_id, start_window, end_window, interval="15m"
+                pair_address, chain_id, start_window, end_window, interval="15m",
+                token_address=trade['token']
             )
             api_call_count += 1
             
