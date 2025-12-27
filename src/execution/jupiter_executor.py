@@ -151,7 +151,7 @@ class JupiterCustomExecutor:
                         log_error("solana.trade.insufficient_sol_for_fees",
                                   token=token_address, available_sol=round(available_sol, 6),
                                   required_sol=round(min_sol_for_fees, 6))
-                        return "", False
+                        return "", False, None
                     
                     # Check base currency balance for trading
                     if base_currency == "USDC":
@@ -167,7 +167,7 @@ class JupiterCustomExecutor:
                             log_error("solana.trade.insufficient_usdc_balance",
                                       token=token_address, available_usdc=round(available_usdc, 2),
                                       required_usdc=round(required_with_buffer, 2))
-                            return "", False
+                            return "", False, None
                         
                         log_info("solana.trade.balance_check_passed", 
                                 available_usdc=round(available_usdc, 2),
@@ -189,7 +189,7 @@ class JupiterCustomExecutor:
                         sol_price = get_sol_price_usd()
                         if sol_price <= 0:
                             log_error("solana.trade.error_no_sol_price", "Cannot get SOL price - aborting trade")
-                            return "", False
+                            return "", False, None
                         
                         available_usd = float(available_sol) * float(sol_price)
                         buffer_pct = 0.05
@@ -199,11 +199,11 @@ class JupiterCustomExecutor:
                             log_error("solana.trade.insufficient_balance",
                                       token=token_address, available_usd=round(available_usd, 2),
                                       required_usd=round(required_usd, 2))
-                            return "", False
+                            return "", False, None
                 except Exception as e:
                     log_error("solana.trade.balance_gate_error", error=str(e))
                     # Fail safe: block the trade if we can't verify balance
-                    return "", False
+                    return "", False, None
             
             # Get token liquidity to adjust trade amount
             try:
@@ -242,7 +242,7 @@ class JupiterCustomExecutor:
                     sol_price = get_sol_price_usd()
                     if sol_price <= 0:
                         log_error("solana.trade.error_no_sol_price", "Cannot get SOL price - aborting trade")
-                        return "", False
+                        return "", False, None
                     
                     sol_amount = amount_usd / sol_price
                     sol_amount_lamports = int(sol_amount * 1_000_000_000)  # SOL has 9 decimals
@@ -261,11 +261,11 @@ class JupiterCustomExecutor:
                 if raw_token_balance is None:
                     print(f"❌ [ERROR] [SELL] Raw token balance is None - RPC call failed or token not found")
                     log_error("solana.trade.no_token_balance", token=token_address)
-                    return "", False
+                    return "", False, None
                 elif raw_token_balance <= 0:
                     print(f"❌ [ERROR] [SELL] Raw token balance is <= 0: {raw_token_balance}")
                     log_error("solana.trade.no_token_balance", token=token_address)
-                    return "", False
+                    return "", False, None
                 
                 print(f"✅ [SELL] Raw token balance OK: {raw_token_balance}")
                 input_mint = token_address
@@ -305,7 +305,7 @@ class JupiterCustomExecutor:
             import traceback
             print(f"🔍 [DEBUG] Exception traceback:\n{traceback.format_exc()}")
             log_error("solana.trade.exception", error=str(e))
-            return "", False
+            return "", False, None
 
     def get_solana_balance(self) -> float:
         """Get SOL balance"""
