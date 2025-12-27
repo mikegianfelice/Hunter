@@ -5,7 +5,7 @@ test_mode: false  # LIVE TRADING ENABLED - Realistic Scaling
 trade_amount_usd: 6  # Adjusted to align with current USDC balance
 slippage: 0.03  # 3% slippage (tightened for better execution)
 take_profit: 0.12  # 12% (reduced from 13% to improve win rate)
-stop_loss: 0.08  # 8% (increased from 7% to reduce premature exits)
+stop_loss: 0.07  # 7% stop loss
 stop_loss_slippage_buffer: 0.15  # 15% buffer to account for execution slippage (effective trigger = stop_loss * 1.15)
 use_dynamic_tp: true  # Enable dynamic take profit
 min_trade_amount_usd: 10  # Minimum trade amount for realistic scaling
@@ -1669,7 +1669,7 @@ partial_tp_manager:
   trailing_stop_initial: 0.04  # 4% trailing stop after partial (tightened from 5% to protect gains)
   trail_tighten_trigger_pct: 0.15  # Tighten trail at +15% gain
   trailing_stop_tightened: 0.05  # 5% trailing stop when tightened
-  hard_stop_loss_pct: 0.08  # Hard stop loss at -8% (updated to match stop_loss)
+  hard_stop_loss_pct: 0.07  # Hard stop loss at -7% (updated to match stop_loss)
 
 # === AI TIME WINDOW SCHEDULER ===
 # Enable AI-powered time window scheduling for optimal entry timing
