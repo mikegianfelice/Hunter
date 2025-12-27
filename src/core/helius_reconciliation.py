@@ -117,12 +117,38 @@ def reconcile_positions_and_pnl(limit: int = 200) -> Dict[str, Any]:
         if status == "open":
             if balance <= BALANCE_EPSILON:
                 # No tokens left – mark as manual close.
+                entry_price = trade.get("entry_price", 0.0) or 0.0
+                exit_price = entry_price  # Use entry price as fallback if we can't determine exit price
+                
+                # Try to get actual exit price from recent transactions
+                exit_tx = context.find_matching_transaction(trade, mint, direction="sell")
+                if exit_tx:
+                    # Extract exit price from transaction if possible
+                    transfers = exit_tx.get("tokenTransfers") or []
+                    mint_lower = mint.lower()
+                    usdc_received = _aggregate_token_amount(
+                        transfers, SOLANA_WALLET_ADDRESS, USDC_MINT.lower(), incoming=True
+                    )
+                    tokens_sold = _aggregate_token_amount(
+                        transfers, SOLANA_WALLET_ADDRESS, mint_lower, incoming=False
+                    )
+                    if tokens_sold > BALANCE_EPSILON and usdc_received > 0:
+                        exit_price = usdc_received / tokens_sold
+                
                 performance_tracker.log_trade_exit(
                     trade_id,
-                    trade.get("entry_price", 0.0) or 0.0,
+                    exit_price,
                     0.0,
                     status="manual_close",
                 )
+                
+                # Also log to trade_log.csv
+                try:
+                    from src.monitoring.monitor_position import log_trade
+                    log_trade(mint, entry_price, exit_price, "reconciliation_close")
+                except Exception as e:
+                    print(f"⚠️ Failed to log trade to trade_log.csv: {e}")
+                
                 summary["open_positions_closed"] += 1
                 trades_changed = True
                 if _remove_position_for_trade(open_positions, trade_id, mint):
