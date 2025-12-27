@@ -31,6 +31,9 @@ class AIPartialTPManager:
         self.enabled = get_config_bool("enable_ai_partial_tp_manager", True)
         self.first_take_pct = get_config_float("partial_tp_manager.first_take_pct", 0.50)
         self.first_take_trigger_pct = get_config_float("partial_tp_manager.first_take_trigger_pct", 0.05)  # Default 5% (was 10%)
+        # Add second take profit trigger - defaults to main take_profit (12%)
+        base_take_profit = get_config_float("take_profit", 0.12)
+        self.second_take_trigger_pct = get_config_float("partial_tp_manager.second_take_trigger_pct", base_take_profit)
         self.trailing_stop_initial = get_config_float("partial_tp_manager.trailing_stop_initial", 0.04)  # Default 4% (was 6%)
         self.trail_tighten_trigger_pct = get_config_float("partial_tp_manager.trail_tighten_trigger_pct", 0.15)
         self.trailing_stop_tightened = get_config_float("partial_tp_manager.trailing_stop_tightened", 0.05)
@@ -117,6 +120,25 @@ class AIPartialTPManager:
                     entry_price=entry_price,
                     current_price=current_price)
         
+        # Check for second take-profit (remaining sell at 12%) - PRIORITY over trailing stop
+        if state["partial_taken"] and pnl_pct >= self.second_take_trigger_pct:
+            remaining_size_pct = 1.0 - self.first_take_pct
+            actions.append(PartialTPAction(
+                type="sell",
+                size_pct=remaining_size_pct,
+                reason=f"remaining_sell_at_{self.second_take_trigger_pct:.0%}_tp"
+            ))
+            log_info("partial_tp.second_take",
+                    symbol=position.get("symbol", "?"),
+                    pnl_pct=pnl_pct,
+                    remaining_size_pct=remaining_size_pct,
+                    entry_price=entry_price,
+                    current_price=current_price)
+            # Clear trailing stop since we're selling remaining position at target
+            state["trailing_stop_active"] = False
+            self.position_states[position_key] = state
+            return actions
+        
         # Check for trail tightening
         if state["trailing_stop_active"] and not state["trail_tightened"]:
             if pnl_pct >= self.trail_tighten_trigger_pct:
@@ -133,7 +155,7 @@ class AIPartialTPManager:
                         pnl_pct=pnl_pct,
                         new_stop_price=state["trailing_stop_price"])
         
-        # Check trailing stop
+        # Check trailing stop (only if we haven't reached second TP yet - acts as safety mechanism)
         if state["trailing_stop_active"]:
             trailing_stop_price = state.get("trailing_stop_price", entry_price * (1 - self.trailing_stop_initial))
             

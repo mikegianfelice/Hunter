@@ -1666,6 +1666,7 @@ enable_ai_partial_tp_manager: true  # Enable partial TP manager
 partial_tp_manager:
   first_take_pct: 0.50  # Take 50% at first TP trigger
   first_take_trigger_pct: 0.05  # Trigger at +5% gain (was 6% - activate earlier to lock in profits)
+  second_take_trigger_pct: 0.12  # Sell remaining 50% at +12% gain (defaults to main take_profit)
   trailing_stop_initial: 0.04  # 4% trailing stop after partial (tightened from 5% to protect gains)
   trail_tighten_trigger_pct: 0.15  # Tighten trail at +15% gain
   trailing_stop_tightened: 0.05  # 5% trailing stop when tightened
