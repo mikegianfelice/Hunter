@@ -17,10 +17,20 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 import logging
 import hashlib
+from dotenv import load_dotenv
 
 # Add project root to path
 project_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(project_root))
+
+# Load environment variables from .env files (same pattern as rest of codebase)
+system_env_path = project_root / "system" / ".env"
+if system_env_path.exists():
+    try:
+        load_dotenv(system_env_path)
+    except PermissionError:
+        pass  # Silently skip if can't read
+load_dotenv()  # Also load from root .env as fallback
 
 # Configure logging
 logging.basicConfig(
@@ -37,12 +47,16 @@ API_CALL_LOG = project_root / "data" / "ml_api_calls.log"
 
 # Configuration
 DEXSCREENER_BASE_URL = "https://api.dexscreener.com"
+COINDESK_BASE_URL = "https://api.coindesk.com/v1"  # CoinDesk Data API
 WINDOW_BEFORE_ENTRY_HOURS = 24  # Hours before entry to fetch
 WINDOW_AFTER_EXIT_HOURS = 24    # Hours after exit to fetch
 FAST_MODE = False  # Set to True for ±6h window
 if FAST_MODE:
     WINDOW_BEFORE_ENTRY_HOURS = 6
     WINDOW_AFTER_EXIT_HOURS = 6
+
+# Data source priority: coindesk > market_data_fetcher
+USE_COINDESK_API = True  # Set to False to skip CoinDesk and use market_data_fetcher only
 
 # ML Target Configuration
 TARGET_PCT = 5.0   # +5% target
@@ -192,6 +206,172 @@ def save_candles_to_cache(cache_key: str, candles: List[Dict]):
         logger.debug(f"Error saving cache: {e}")
 
 
+def fetch_coindesk_candles(token_address: str, chain: str,
+                          start_time: datetime, end_time: datetime,
+                          interval: str = "1m", pair_address: str = None) -> Optional[List[Dict]]:
+    """
+    Fetch historical candles from CoinDesk Data API
+    
+    CoinDesk provides minute-by-minute historical data for 10,000+ coins.
+    Requires API key (set via COINDESK_API_KEY environment variable or config).
+    
+    Args:
+        token_address: Token address
+        chain: Chain ID
+        start_time: Start of time window
+        end_time: End of time window
+        interval: Desired interval (1m, 5m, 15m, 1h)
+        pair_address: Pair address (for caching)
+    """
+    try:
+        # Check cache first
+        start_ts = int(start_time.timestamp())
+        end_ts = int(end_time.timestamp())
+        cache_key = get_cache_key(pair_address or token_address, chain, interval, start_ts, end_ts)
+        
+        cached = load_cached_candles(cache_key)
+        if cached:
+            return cached
+        
+        # Get API key from .env file (COINDESK_API_KEY)
+        api_key = (os.getenv('COINDESK_API_KEY') or '').strip()
+        
+        if not api_key:
+            logger.debug("CoinDesk API key not found in .env (COINDESK_API_KEY), skipping CoinDesk API")
+            return None
+        
+        # Map interval to CoinDesk format
+        interval_map = {
+            '1m': '1m',
+            '5m': '5m',
+            '15m': '15m',
+            '1h': '1h',
+        }
+        coindesk_interval = interval_map.get(interval, '1m')
+        
+        # CoinDesk API endpoint format (check documentation for exact format)
+        # Note: This is a placeholder - actual endpoint may vary
+        # CoinDesk typically uses: /v1/data/ohlcv/{symbol}?start={start}&end={end}&interval={interval}
+        
+        # For now, we'll need to map token address to symbol
+        # This is a limitation - CoinDesk may need symbol mapping
+        # Try to get symbol from pair_info or use a mapping
+        
+        # Convert timestamps to ISO format or Unix timestamp (check API docs)
+        start_iso = start_time.isoformat()
+        end_iso = end_time.isoformat()
+        
+        # Try CoinDesk API endpoint
+        # Note: Endpoint format based on CoinDesk Data API documentation
+        # May need adjustment based on actual API structure
+        # CoinDesk typically requires symbol mapping (not token addresses)
+        # For DEX tokens, we may need to use pair identifier or symbol
+        
+        # Try multiple endpoint formats
+        endpoints_to_try = [
+            f"{COINDESK_BASE_URL}/data/ohlcv",
+            f"{COINDESK_BASE_URL}/ohlcv",
+            f"https://api.coindesk.com/v1/data/historical",
+        ]
+        
+        # Try to map token to symbol (simplified - may need proper mapping)
+        # For now, use token address as-is, but CoinDesk may require symbol
+        symbol = token_address  # Placeholder - may need symbol lookup
+        
+        response = None
+        successful_url = None
+        for url in endpoints_to_try:
+            # Try different parameter formats
+            param_variants = [
+                {
+                    'symbol': symbol,
+                    'start': start_iso,
+                    'end': end_iso,
+                    'interval': coindesk_interval,
+                },
+                {
+                    'symbol': symbol,
+                    'start': int(start_ts),
+                    'end': int(end_ts),
+                    'interval': coindesk_interval,
+                },
+            ]
+            
+            headers = {'X-API-Key': api_key} if api_key else {}
+            if api_key:
+                # Also try API key in params
+                for params in param_variants:
+                    params['api_key'] = api_key
+                    try:
+                        test_response = requests.get(url, params=params, headers=headers, timeout=10)
+                        if test_response.status_code == 200:
+                            response = test_response
+                            successful_url = url
+                            break
+                    except:
+                        continue
+                if response:
+                    break
+            
+            # Try without API key in params (only in headers)
+            for params in param_variants:
+                try:
+                    test_response = requests.get(url, params=params, headers=headers, timeout=10)
+                    if test_response.status_code == 200:
+                        response = test_response
+                        successful_url = url
+                        break
+                except:
+                    continue
+            if response:
+                break
+        
+        if response and response.status_code == 200:
+            data = response.json()
+            candles = data.get('data', data.get('candles', []))
+            
+            if candles:
+                # Convert to our format
+                formatted_candles = []
+                for candle in candles:
+                    # CoinDesk format may vary - adjust based on actual response
+                    formatted_candles.append({
+                        'time': candle.get('timestamp', candle.get('time', 0)),
+                        'timestamp': candle.get('timestamp', candle.get('time', 0)),
+                        'open': float(candle.get('open', 0)),
+                        'high': float(candle.get('high', 0)),
+                        'low': float(candle.get('low', 0)),
+                        'close': float(candle.get('close', 0)),
+                        'volume': float(candle.get('volume', 0)),
+                    })
+                
+                # Sort and filter
+                formatted_candles.sort(key=lambda x: x['time'])
+                formatted_candles = [c for c in formatted_candles 
+                                    if start_ts <= c['time'] <= end_ts]
+                
+                if len(formatted_candles) >= 10:
+                    save_candles_to_cache(cache_key, formatted_candles)
+                    logger.info(f"✅ Got {len(formatted_candles)} {interval} candles from CoinDesk")
+                    return formatted_candles
+        
+        logger.debug(f"CoinDesk API returned {response.status_code}, falling back")
+        return None
+        
+    except Exception as e:
+        logger.debug(f"CoinDesk API error: {e}")
+        return None
+
+
+# Note: CoinDesk API Integration
+# To use CoinDesk API:
+# 1. Register at https://developers.coindesk.com/ and get an API key
+# 2. Set COINDESK_API_KEY environment variable or add to config.yaml:
+#    coindesk_api_key: "your_api_key_here"
+# 3. Verify the API endpoint format matches your CoinDesk plan
+# 4. CoinDesk may require symbol mapping (not token addresses) - adjust as needed
+
+
 def fetch_dexscreener_candles(pair_address: str, chain: str, 
                               start_time: datetime, end_time: datetime,
                               interval: str = "1m", token_address: str = None) -> Optional[List[Dict]]:
@@ -222,8 +402,17 @@ def fetch_dexscreener_candles(pair_address: str, chain: str,
             return cached
         
         # DexScreener free API doesn't have historical candles endpoint
+        # Try CoinDesk API first, then fall back to market_data_fetcher
+        if USE_COINDESK_API and token_address:
+            logger.info(f"  Trying CoinDesk API for historical candles...")
+            coindesk_candles = fetch_coindesk_candles(
+                token_address, chain, start_time, end_time, interval, pair_address
+            )
+            if coindesk_candles:
+                return coindesk_candles
+        
         # Fall back to market_data_fetcher for historical data
-        logger.info(f"  DexScreener doesn't provide historical candles, using market_data_fetcher fallback")
+        logger.info(f"  Using market_data_fetcher fallback for historical data")
         
         if not token_address:
             logger.warning(f"  Token address required for fallback, skipping {pair_address[:8]}...")
