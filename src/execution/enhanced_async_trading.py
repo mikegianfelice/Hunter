@@ -1937,12 +1937,13 @@ class EnhancedAsyncTradingEngine:
             log_info("trading.sorting_complete",
                     f"Re-sorted {len(approved_tokens)} approved tokens with holder concentration ranking")
             
-            # Limit to max concurrent trades
-            tokens_to_trade = approved_tokens[:self.max_concurrent_trades]
+            # Execute all approved tokens (ranked by confidence, quality, and holder concentration)
+            # Best tokens execute first, but all approved tokens will attempt execution
+            tokens_to_trade = approved_tokens
             
-            log_info("trading.execute", f"🎯 Executing trades for {len(tokens_to_trade)} tokens")
+            log_info("trading.execute", f"🎯 Executing trades for {len(tokens_to_trade)} approved tokens (ranked best to worst)")
             
-            # Execute trades in parallel
+            # Execute trades in parallel (rate limiter controls concurrent executions)
             trade_tasks = [self._execute_trade_async(token) for token in tokens_to_trade]
             trade_results = await asyncio.gather(*trade_tasks, return_exceptions=True)
             
