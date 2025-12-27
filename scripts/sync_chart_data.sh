@@ -156,6 +156,20 @@ if [ -f ".git/index.lock" ]; then
     fi
 fi
 
+# IMPORTANT: Commit local changes FIRST before pulling, to avoid losing them
+# Check if there are local changes to commit BEFORE pulling
+HAS_UNCOMMITTED_BEFORE_PULL=false
+if ! git diff --quiet data/performance_data.json data/trade_log.csv 2>/dev/null || \
+   ! git diff --cached --quiet data/performance_data.json data/trade_log.csv 2>/dev/null; then
+    HAS_UNCOMMITTED_BEFORE_PULL=true
+    echo "📊 Found uncommitted changes - committing before pulling..."
+    git add data/performance_data.json data/trade_log.csv
+    TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S")
+    git commit -m "📈 Sync performance data for chart generation [$TIMESTAMP]" 2>&1 || {
+        echo "⚠️  Failed to commit changes before pull"
+    }
+fi
+
 # Fetch latest changes from remote (with improved error logging)
 echo "📥 Fetching latest changes from remote..."
 FETCH_OUTPUT=$(git fetch origin main 2>&1)
@@ -165,7 +179,7 @@ if [ $FETCH_EXIT_CODE -ne 0 ]; then
     # Continue anyway - might be network issue or auth issue
 fi
 
-# Check if we're behind or diverged from remote and sync FIRST (before checking for changes)
+# Check if we're behind or diverged from remote and sync
 LOCAL=$(git rev-parse HEAD 2>/dev/null)
 REMOTE=$(git rev-parse origin/main 2>/dev/null 2>&1)
 
@@ -216,7 +230,7 @@ if [ -n "$REMOTE" ] && [ "$LOCAL" != "$REMOTE" ]; then
 fi
 
 # Check if there are local changes to commit AFTER pulling/rebasing
-# This ensures we check the current state, not the state before the pull
+# (This handles cases where files changed during the pull/merge/rebase process)
 HAS_UNCOMMITTED=false
 if ! git diff --quiet data/performance_data.json data/trade_log.csv 2>/dev/null || \
    ! git diff --cached --quiet data/performance_data.json data/trade_log.csv 2>/dev/null; then
@@ -233,8 +247,7 @@ if [ "$HAS_UNCOMMITTED" = true ]; then
     TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S")
     if ! git commit -m "📈 Sync performance data for chart generation [$TIMESTAMP]" 2>&1; then
         echo "⚠️  No changes to commit or commit failed"
-        rm -f "$SYNC_LOCK_FILE"
-        exit 0
+        # Don't exit - continue to try pushing if there are commits
     fi
 else
     echo "✅ No uncommitted changes to data files"
