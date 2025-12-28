@@ -1464,6 +1464,15 @@ def monitor_all_positions():
             print(f"⚠️ Skipping stop loss check for {symbol} - price unavailable")
             continue
 
+        # Check if price is fallback value (0.000001) - indicates API failure, not actual price
+        # This prevents false stop-loss triggers when price APIs fail
+        FALLBACK_PRICE = 0.000001
+        if abs(current_price - FALLBACK_PRICE) < 1e-9:  # Use epsilon comparison for float
+            print(f"⚠️ Price is fallback value ({FALLBACK_PRICE}) - all price APIs failed")
+            print(f"⏳ Skipping stop-loss check for {symbol} to prevent false trigger")
+            print(f"🔄 Will retry price fetch on next cycle...")
+            continue
+
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         print(f"[{timestamp}] 📈 Current price: ${current_price:.6f}")
         
