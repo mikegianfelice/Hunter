@@ -1696,6 +1696,10 @@ technical_indicators:
   volume_profile_bins: 20
   min_candles_required: 10
 
+# === Token Verification ===
+require_jupiter_verified_tokens: false  # Set to true to block unverified tokens
+jupiter_token_list_cache_hours: 24  # Refresh token list daily
+
 # === API Rate Limiting ===
 api_rate_limiting:
   helius_max_daily: 30000  # Helius limit
