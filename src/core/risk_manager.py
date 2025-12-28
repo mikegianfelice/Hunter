@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from web3 import Web3
 
 from src.config.secrets import INFURA_URL, WALLET_ADDRESS
-from src.config.config_loader import get_config, get_config_int, get_config_float, get_config_bool
+from src.config.config_loader import get_config, get_config_int, get_config_float
 from src.storage.positions import load_positions as load_positions_store
 from src.storage.risk import (
     load_risk_state as load_risk_state_store,
@@ -560,25 +560,6 @@ def allow_new_trade(trade_amount_usd: float, token_address: str = None, chain_id
     tier_name = config.get('TIER_NAME', 'unknown')
     tier_description = config.get('TIER_DESCRIPTION', 'Unknown Tier')
     print(f"🎯 Risk Manager - Tier: {tier_name} ({tier_description}), Combined Balance: ${combined_wallet_balance:.2f}")
-
-    # Jupiter token verification check (for Solana tokens only)
-    if chain_id.lower() == "solana" and token_address:
-        try:
-            from src.utils.jupiter_token_verification import is_token_verified_jupiter
-            is_verified = is_token_verified_jupiter(token_address, chain_id)
-            
-            # Make this configurable - check config for requirement
-            require_verified = get_config_bool("require_jupiter_verified_tokens", False)
-            
-            if require_verified and not is_verified:
-                print(f"🚫 Token {token_address[:8]}...{token_address[-8:]} not verified on Jupiter (verification required)")
-                return False, "token_not_verified_jupiter", False, 0.0
-            elif not is_verified:
-                # Log warning but don't block (unless configured to require)
-                print(f"⚠️ Token {token_address[:8]}...{token_address[-8:]} not verified on Jupiter (trading allowed)")
-        except Exception as e:
-            # Don't block trades if verification check fails
-            print(f"⚠️ Jupiter verification check failed: {e}")
 
     # paused by circuit breaker?
     if s.get("paused_until", 0) > _now_ts():

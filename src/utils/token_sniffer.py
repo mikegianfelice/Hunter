@@ -20,17 +20,6 @@ def check_token_safety(token_address, chain_id="ethereum"):
     No assumptions - uses real market data only.
     """
     try:
-        # For Solana tokens, also check Jupiter verification
-        if chain_id.lower() == "solana":
-            try:
-                from src.utils.jupiter_token_verification import is_token_verified_jupiter
-                is_verified = is_token_verified_jupiter(token_address, chain_id)
-                if not is_verified:
-                    print(f"⚠️ Token not verified on Jupiter: {token_address[:8]}...{token_address[-8:]}")
-            except Exception as e:
-                # Don't fail safety check if verification check fails
-                print(f"⚠️ Jupiter verification check error: {e}")
-        
         # Get real trading pairs from DexScreener
         pairs = _get_dexscreener_pairs(token_address)
         
