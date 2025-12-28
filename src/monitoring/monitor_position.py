@@ -1233,7 +1233,24 @@ def monitor_all_positions():
                             gain = ((current_price - entry_price) / entry_price) if entry_price > 0 else 0
                             pnl_usd = gain * position_size
                             performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, "manual_close")
-                            print(f"📊 Updated performance tracker for manually closed position: {trade.get('symbol', '?')}")
+                            
+                            # Get symbol for logging and notification
+                            symbol = trade.get('symbol') or (old_position_data.get('symbol') if isinstance(old_position_data, dict) else '?')
+                            
+                            # Log to trade_log.csv
+                            log_trade(token_address, entry_price, current_price, "manual_close_detected")
+                            
+                            # Send detailed Telegram notification
+                            send_telegram_message(
+                                f"✅ Position Closed (Detected)\n"
+                                f"Token: {symbol} ({token_address})\n"
+                                f"Chain: {chain_id.upper()}\n"
+                                f"Entry: ${entry_price:.6f}\n"
+                                f"Exit: ${current_price:.6f} ({gain * 100:.2f}%)\n"
+                                f"Reason: Already sold (detected by balance check)"
+                            )
+                            
+                            print(f"📊 Updated performance tracker for manually closed position: {symbol}")
             except Exception as e:
                 print(f"⚠️ Failed to update performance tracker for reconciled positions: {e}")
     
