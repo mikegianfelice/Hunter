@@ -245,6 +245,7 @@ cacert.pem
 delisted_tokens.json
 delisted_tokens_backup.json
 data/balance_cache.json
+data/token_balance_cache.json
 data/api_call_tracker.json
 performance_data.json
 
