@@ -486,6 +486,12 @@ def _sell_token_multi_chain(token_address: str, chain_id: str, symbol: str = "?"
                     if success:
                         if tx_hash:
                             print(f"✅ [SUCCESS] Sell successful on attempt {attempt+1}: {tx_hash}")
+                            # Invalidate cache after successful sell
+                            try:
+                                from src.utils.balance_cache import invalidate_token_balance_cache
+                                invalidate_token_balance_cache(token_address, chain_id)
+                            except Exception as e:
+                                print(f"⚠️ Failed to invalidate balance cache: {e}")
                             return tx_hash
                         else:
                             # Success=True but no tx_hash - verify with balance check
@@ -495,6 +501,12 @@ def _sell_token_multi_chain(token_address: str, chain_id: str, symbol: str = "?"
                             if check_balance is not None and original_balance is not None:
                                 if check_balance < original_balance * 0.9 or check_balance == 0 or check_balance < 0.000001:
                                     print(f"✅ [BALANCE VERIFIED] Balance check confirms sell succeeded (balance: {check_balance})")
+                                    # Invalidate cache after successful sell
+                                    try:
+                                        from src.utils.balance_cache import invalidate_token_balance_cache
+                                        invalidate_token_balance_cache(token_address, chain_id)
+                                    except Exception as e:
+                                        print(f"⚠️ Failed to invalidate balance cache: {e}")
                                     # Return a placeholder since we don't have tx_hash
                                     return "verified_by_balance"
                             # If balance check fails but success=True, still assume success
@@ -519,6 +531,12 @@ def _sell_token_multi_chain(token_address: str, chain_id: str, symbol: str = "?"
                                 
                                 if verified is True:
                                     print(f"✅ [VERIFIED] Transaction {tx_hash} verified successful on-chain (attempt {verify_attempt+1})")
+                                    # Invalidate cache after successful sell
+                                    try:
+                                        from src.utils.balance_cache import invalidate_token_balance_cache
+                                        invalidate_token_balance_cache(token_address, chain_id)
+                                    except Exception as e:
+                                        print(f"⚠️ Failed to invalidate balance cache: {e}")
                                     return tx_hash
                                 elif verified is False:
                                     print(f"⚠️ [VERIFIED FAIL] Transaction {tx_hash} reported as failed on attempt {verify_attempt+1}")
@@ -556,9 +574,21 @@ def _sell_token_multi_chain(token_address: str, chain_id: str, symbol: str = "?"
                                 if new_balance is not None and original_balance is not None:
                                     if new_balance < original_balance * 0.9:  # Balance decreased by at least 10%
                                         print(f"✅ [BALANCE CHECK] Token balance decreased from {original_balance} to {new_balance} - sell likely succeeded")
+                                        # Invalidate cache after successful sell
+                                        try:
+                                            from src.utils.balance_cache import invalidate_token_balance_cache
+                                            invalidate_token_balance_cache(token_address, chain_id)
+                                        except Exception as e:
+                                            print(f"⚠️ Failed to invalidate balance cache: {e}")
                                         return tx_hash
                                     elif new_balance == 0 or new_balance < 0.000001:
                                         print(f"✅ [BALANCE CHECK] Token balance is zero/dust - sell succeeded")
+                                        # Invalidate cache after successful sell
+                                        try:
+                                            from src.utils.balance_cache import invalidate_token_balance_cache
+                                            invalidate_token_balance_cache(token_address, chain_id)
+                                        except Exception as e:
+                                            print(f"⚠️ Failed to invalidate balance cache: {e}")
                                         return tx_hash
                                     else:
                                         print(f"⚠️ [BALANCE CHECK] Token balance unchanged ({original_balance} -> {new_balance}) - will assume success with tx_hash")
@@ -587,6 +617,12 @@ def _sell_token_multi_chain(token_address: str, chain_id: str, symbol: str = "?"
                             # If we have a tx_hash, assume success (transaction was submitted)
                             # Verification errors are often due to RPC issues, not actual transaction failure
                             print(f"⚠️ Assuming success for transaction {tx_hash} (was submitted, verification error)")
+                            # Invalidate cache after successful sell
+                            try:
+                                from src.utils.balance_cache import invalidate_token_balance_cache
+                                invalidate_token_balance_cache(token_address, chain_id)
+                            except Exception as e:
+                                print(f"⚠️ Failed to invalidate balance cache: {e}")
                             return tx_hash
                     
                     # No tx_hash or verified failure - retry
@@ -629,13 +665,29 @@ def _detect_delisted_token(token_address: str, consecutive_failures: int) -> boo
     # Consider delisted after 5 consecutive failures (2.5 minutes of monitoring)
     return consecutive_failures >= 5
 
-def _check_token_balance_on_chain(token_address: str, chain_id: str) -> float:
+def _check_token_balance_on_chain(token_address: str, chain_id: str, use_cache: bool = True) -> float:
     """
-    Check token balance on the specified chain.
-    Returns balance amount (0.0 if balance is zero or check fails).
+    Check token balance on the specified chain with caching support.
+    Returns balance amount (0.0 if balance is zero, -1.0 if check failed).
+    
+    Args:
+        token_address: Token contract address
+        chain_id: Chain identifier
+        use_cache: If True, use cached balance if available and fresh
     """
+    # Try cache first if enabled
+    if use_cache:
+        from src.utils.balance_cache import get_cached_token_balance, update_token_balance_cache
+        from src.config.config_loader import get_config_bool
+        
+        if get_config_bool("balance_cache_enabled", True):
+            cached_balance, is_valid = get_cached_token_balance(token_address, chain_id)
+            if is_valid:
+                return float(cached_balance)
+    
     try:
         chain_lower = chain_id.lower()
+        balance = None
         
         if chain_lower == "solana":
             from src.execution.jupiter_lib import JupiterCustomLib
@@ -645,12 +697,12 @@ def _check_token_balance_on_chain(token_address: str, chain_id: str) -> float:
             # None means check failed (error) - return -1.0 to indicate unknown state
             if balance is None:
                 return -1.0
-            return float(balance)
+            balance = float(balance)
             
         elif chain_lower == "base":
             from src.execution.base_executor import get_token_balance
             balance = get_token_balance(token_address)
-            return float(balance or 0.0)
+            balance = float(balance or 0.0)
             
         elif chain_lower == "ethereum":
             # Use web3 to check ERC20 token balance
@@ -675,11 +727,19 @@ def _check_token_balance_on_chain(token_address: str, chain_id: str) -> float:
             balance_wei = token_contract.functions.balanceOf(wallet).call()
             decimals = token_contract.functions.decimals().call()
             balance = float(balance_wei) / (10 ** decimals)
-            return balance
             
         else:
             print(f"⚠️ Unsupported chain for balance check: {chain_id}")
             return 0.0
+        
+        # Cache successful balance check
+        if balance is not None and use_cache:
+            from src.utils.balance_cache import update_token_balance_cache
+            from src.config.config_loader import get_config_bool
+            if get_config_bool("balance_cache_enabled", True):
+                update_token_balance_cache(token_address, chain_id, balance)
+        
+        return balance
             
     except Exception as e:
         # If balance check fails, assume we can't verify - keep position
@@ -1114,13 +1174,26 @@ def _close_trade_record(trade: Dict[str, Any]) -> None:
 def monitor_all_positions():
     config = get_monitor_config()
     
-    # Load existing positions first (with balance validation to filter out manually closed positions)
-    positions = load_positions(validate_balances=True)
+    # Only validate balances every 10th cycle (every ~10 minutes with 60s interval)
+    # This reduces RPC calls while still catching manually closed positions
+    _monitor_cycle_count = getattr(monitor_all_positions, '_cycle_count', 0) + 1
+    monitor_all_positions._cycle_count = _monitor_cycle_count
+    
+    validate_balances = (_monitor_cycle_count % 10 == 0)  # Every 10th cycle
+    
+    # Load existing positions (with selective balance validation)
+    if validate_balances:
+        print(f"🔍 [CYCLE {_monitor_cycle_count}] Validating balances this cycle...")
+        positions = load_positions(validate_balances=True)
+    else:
+        positions = load_positions(validate_balances=False)  # Use cache instead
+    
     reconciled_closed = []  # Track manually closed positions
     
     # Auto-reconcile FIRST: Remove positions with zero on-chain balance (manual closes)
     # This prevents manually closed positions from being re-added
-    if positions:
+    # Only prune when validating balances (every 10th cycle) to reduce RPC calls
+    if positions and validate_balances:
         # Save original positions data before pruning (needed for performance tracker updates)
         original_positions_before_prune = dict(positions)
         
@@ -2328,7 +2401,7 @@ def _main_loop():
                 print(f"[{cycle_end}] Traceback:\n{traceback.format_exc()}")
                 print(f"[{cycle_end}] ⚠️ Continuing to next cycle...\n")
                 # Don't re-raise - allow loop to continue
-            time.sleep(30)  # poll interval
+            time.sleep(60)  # poll interval (increased from 30s to reduce RPC calls)
     finally:
         # Always remove lock on exit
         _remove_lock()

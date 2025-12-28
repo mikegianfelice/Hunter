@@ -149,7 +149,7 @@ helius_candlestick_settings:
 
 # === Balance Cache Settings ===
 balance_cache_enabled: true  # Enable balance caching as fallback during RPC failures
-balance_cache_ttl_seconds: 300  # Cache is valid for 5 minutes (300 seconds)
+balance_cache_ttl_seconds: 600  # Cache is valid for 10 minutes (600 seconds) - increased from 300 to reduce RPC calls
 balance_cache_conservative_buffer: 0.05  # Apply 5% conservative reduction when using cached balance
 
 # === Smart Cleanup ===

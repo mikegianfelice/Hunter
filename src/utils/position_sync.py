@@ -98,13 +98,29 @@ def resolve_token_address(position_key: str, position_data: Any) -> str:
     return address
 
 
-def _check_token_balance_on_chain(token_address: str, chain_id: str) -> float:
+def _check_token_balance_on_chain(token_address: str, chain_id: str, use_cache: bool = True) -> float:
     """
-    Check token balance on the specified chain.
+    Check token balance on the specified chain with caching support.
     Returns balance amount (0.0 if balance is zero, -1.0 if check failed).
+    
+    Args:
+        token_address: Token contract address
+        chain_id: Chain identifier
+        use_cache: If True, use cached balance if available and fresh
     """
+    # Try cache first if enabled
+    if use_cache:
+        from src.utils.balance_cache import get_cached_token_balance, update_token_balance_cache
+        from src.config.config_loader import get_config_bool
+        
+        if get_config_bool("balance_cache_enabled", True):
+            cached_balance, is_valid = get_cached_token_balance(token_address, chain_id)
+            if is_valid:
+                return float(cached_balance)
+    
     try:
         chain_lower = chain_id.lower()
+        balance = None
         
         if chain_lower == "solana":
             from src.execution.jupiter_lib import JupiterCustomLib
@@ -114,12 +130,12 @@ def _check_token_balance_on_chain(token_address: str, chain_id: str) -> float:
             # None means check failed (error) - return -1.0 to indicate unknown state
             if balance is None:
                 return -1.0
-            return float(balance)
+            balance = float(balance)
             
         elif chain_lower == "base":
             from src.execution.base_executor import get_token_balance
             balance = get_token_balance(token_address)
-            return float(balance or 0.0)
+            balance = float(balance or 0.0)
             
         elif chain_lower == "ethereum":
             # Use web3 to check ERC20 token balance
@@ -143,11 +159,19 @@ def _check_token_balance_on_chain(token_address: str, chain_id: str) -> float:
             balance_wei = token_contract.functions.balanceOf(wallet).call()
             decimals = token_contract.functions.decimals().call()
             balance = float(balance_wei) / (10 ** decimals)
-            return balance
             
         else:
             # For other chains, return -1.0 to indicate check not implemented
             return -1.0
+        
+        # Cache successful balance check
+        if balance is not None and use_cache:
+            from src.utils.balance_cache import update_token_balance_cache
+            from src.config.config_loader import get_config_bool
+            if get_config_bool("balance_cache_enabled", True):
+                update_token_balance_cache(token_address, chain_id, balance)
+        
+        return balance
             
     except Exception as e:
         # If balance check fails, return -1.0 to indicate unknown state
