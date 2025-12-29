@@ -624,7 +624,7 @@ def sell_token_solana(token_address: str, amount_usd: float, symbol: str = "", t
         return abort("balance_check_exception", f"Error checking balance: {e}", token=token_address)
 
     try:
-        tx_hash, success = executor.execute_trade(token_address, amount_usd, is_buy=False)
+        tx_hash, success, quoted_output_amount = executor.execute_trade(token_address, amount_usd, is_buy=False)
     except Exception as exc:
         return abort("execution_exception", "Executor raised exception", error=str(exc))
 
