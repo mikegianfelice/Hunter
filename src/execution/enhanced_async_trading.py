@@ -2041,6 +2041,94 @@ class EnhancedAsyncTradingEngine:
         cycle_time = time.time() - cycle_start
         successful_trades = len([r for r in trade_results if isinstance(r, dict) and r.get("success", False)])
         
+        # CRITICAL: Add wallet balance and risk metrics
+        wallet_metrics = {}
+        try:
+            from src.core.risk_manager import _get_combined_wallet_balance_usd, _get_wallet_balance_usd, get_tier_based_risk_limits, _get_current_exposure_usd, _load_state
+            combined_balance = _get_combined_wallet_balance_usd()
+            risk_config = get_tier_based_risk_limits(combined_balance)
+            current_exposure = _get_current_exposure_usd()
+            risk_state = _load_state()
+            
+            wallet_metrics = {
+                "combined_balance_usd": combined_balance,
+                "risk_tier": risk_config.get('TIER_NAME', 'unknown'),
+                "current_exposure_usd": current_exposure,
+                "max_exposure_usd": risk_config.get('MAX_TOTAL_EXPOSURE_USD', 0),
+                "exposure_utilization_pct": (current_exposure / risk_config.get('MAX_TOTAL_EXPOSURE_USD', 1)) * 100 if risk_config.get('MAX_TOTAL_EXPOSURE_USD', 0) > 0 else 0,
+                "daily_pnl_usd": risk_state.get("realized_pnl_usd", 0.0),
+                "daily_loss_limit_usd": risk_config.get('DAILY_LOSS_LIMIT_USD', 0),
+                "loss_limit_remaining_usd": risk_config.get('DAILY_LOSS_LIMIT_USD', 0) + risk_state.get("realized_pnl_usd", 0.0),  # Positive = remaining buffer
+            }
+            
+            # Per-chain balances
+            chain_balances = {}
+            for chain in self.config.chains.supported_chains:
+                try:
+                    chain_balance = _get_wallet_balance_usd(chain, use_cache_fallback=True)
+                    if chain_balance is not None:
+                        chain_balances[chain] = chain_balance
+                except Exception:
+                    pass
+            if chain_balances:
+                wallet_metrics["chain_balances"] = chain_balances
+        except Exception as e:
+            log_error("trading.wallet_metrics_error", f"Error collecting wallet metrics: {e}")
+        
+        # CRITICAL: Add API rate limit status
+        api_metrics = {}
+        try:
+            from src.utils.api_tracker import api_tracker
+            api_metrics = {
+                "helius_remaining": api_tracker.get_remaining("helius", 30000),
+                "coingecko_remaining": api_tracker.get_remaining("coingecko", 300),
+                "coincap_remaining": api_tracker.get_remaining("coincap", 130),
+            }
+        except Exception as e:
+            log_error("trading.api_metrics_error", f"Error collecting API metrics: {e}")
+        
+        # CRITICAL: Add price memory stats
+        price_memory_stats = {}
+        try:
+            from src.storage.price_memory import load_price_memory
+            price_mem = load_price_memory()
+            if price_mem:
+                timestamps = [entry.get("ts", 0) for entry in price_mem.values() if isinstance(entry, dict)]
+                if timestamps:
+                    now = int(time.time())
+                    oldest_age = now - min(timestamps) if timestamps else 0
+                    newest_age = now - max(timestamps) if timestamps else 0
+                    price_memory_stats = {
+                        "tokens_tracked": len(price_mem),
+                        "oldest_entry_hours": oldest_age / 3600,
+                        "newest_entry_hours": newest_age / 3600,
+                    }
+        except Exception as e:
+            log_error("trading.price_memory_stats_error", f"Error collecting price memory stats: {e}")
+        
+        # CRITICAL: Add position summary
+        position_summary = {}
+        try:
+            from src.storage.positions import load_positions as load_positions_store
+            positions = load_positions_store()
+            if positions:
+                position_sizes = []
+                for pos_data in positions.values():
+                    if isinstance(pos_data, dict):
+                        size = float(pos_data.get("position_size_usd", 0) or 0)
+                        if size > 0:
+                            position_sizes.append(size)
+                
+                if position_sizes:
+                    position_summary = {
+                        "total_positions": len(positions),
+                        "avg_position_size_usd": sum(position_sizes) / len(position_sizes),
+                        "largest_position_usd": max(position_sizes),
+                        "total_exposure_usd": sum(position_sizes),
+                    }
+        except Exception as e:
+            log_error("trading.position_summary_error", f"Error collecting position summary: {e}")
+        
         cycle_summary = {
             "success": True,
             "cycle_time": cycle_time,
@@ -2053,6 +2141,10 @@ class EnhancedAsyncTradingEngine:
             "retries_attempted": len(retry_results),
             "retries_successful": len([r for r in retry_results if isinstance(r, dict) and r.get("success", False)]),
             "success_rate": successful_trades / len(trade_results) if trade_results else 0,
+            "wallet_metrics": wallet_metrics,
+            "api_metrics": api_metrics,
+            "price_memory_stats": price_memory_stats,
+            "position_summary": position_summary,
             "metrics": {
                 "total_trades": self.metrics.total_trades,
                 "success_rate": self.metrics.success_rate,
