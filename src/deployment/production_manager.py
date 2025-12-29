@@ -572,6 +572,27 @@ class ProductionManager:
             # Setup health checks
             await self._setup_health_checks()
             
+            # Start swap indexer (if enabled)
+            indexer_task = None
+            try:
+                from src.config.config_loader import get_config
+                if get_config("swap_indexer.enabled", True):
+                    from src.indexing.swap_indexer import get_indexer
+                    indexer = get_indexer()
+                    indexer.start()
+                    log_info("production.indexer", "✅ Swap indexer started")
+                    
+                    # Add tokens from open positions to indexer
+                    from src.storage.positions import load_positions
+                    positions = load_positions()
+                    for pos_key, pos_data in positions.items():
+                        token_address = pos_data.get("address")
+                        if token_address:
+                            indexer.add_token(token_address)
+                            log_info("production.indexer", f"Added position token to indexer: {token_address[:8]}...")
+            except Exception as e:
+                log_error("production.indexer", f"Failed to start swap indexer: {e}")
+            
             # Start health monitoring
             health_task = asyncio.create_task(self.run_health_monitoring())
             
@@ -584,10 +605,11 @@ class ProductionManager:
             dashboard_task = asyncio.create_task(start_realtime_dashboard())
             
             # Wait for all tasks
+            tasks = [health_task, trading_task, dashboard_task]
+            if indexer_task:
+                tasks.append(indexer_task)
             await asyncio.gather(
-                health_task,
-                trading_task,
-                dashboard_task,
+                *tasks,
                 return_exceptions=True
             )
             

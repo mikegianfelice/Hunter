@@ -83,6 +83,9 @@ class MarketDataFetcher:
         # API call tracking
         self.api_tracker = get_tracker()
         
+        # Backfill rate limiting tracker (tracks tokens backfilled per cycle)
+        self._backfill_tracker: Dict[str, float] = {}
+        
         # Load persistent cache
         self._load_candlestick_cache()
         
@@ -1081,8 +1084,46 @@ class MarketDataFetcher:
             cache_key += f":{int(target_timestamp)}"
         current_time = time.time()
         
-        # SOLANA: Prefer DEX API (1 call) over RPC (many calls), fallback to RPC if needed
+        # SOLANA: Try indexed swaps first (fast, no API calls), then targeted backfill, then DEX API, then RPC
         if chain_id.lower() == "solana":
+            # First, try indexed swap events from SQLite (fastest, no API calls)
+            candles = self._get_solana_candles_from_indexed_swaps(
+                token_address, hours, target_timestamp
+            )
+            
+            # Check if we have sufficient data for accurate indicators
+            from src.config.config_loader import get_config_int
+            min_candles = get_config_int("swap_indexer.min_candles_for_accuracy", 35)
+            
+            if candles and len(candles) >= min_candles:
+                logger.debug(f"✅ Got {len(candles)} candles from indexed swaps for {token_address[:8]}... (sufficient for accuracy)")
+                return candles
+            
+            # If we have some data but not enough, try targeted backfill
+            if candles and len(candles) >= 10:
+                logger.debug(f"⚠️  Got {len(candles)} candles (need {min_candles}+), attempting targeted backfill for {token_address[:8]}...")
+                candles = self._try_targeted_backfill(token_address, hours, candles, target_timestamp)
+                if candles and len(candles) >= min_candles:
+                    logger.debug(f"✅ After backfill: {len(candles)} candles for {token_address[:8]}...")
+                    return candles
+                # If backfill didn't help enough, continue with what we have
+                if candles and len(candles) >= 10:
+                    logger.debug(f"Using {len(candles)} candles (acceptable but not optimal)")
+                    return candles
+            
+            # If no indexed data yet, add token to indexer for future cycles (defensive)
+            if not candles or len(candles) < 10:
+                try:
+                    from src.config.config_loader import get_config
+                    if get_config("swap_indexer.enabled", True):
+                        from src.indexing.swap_indexer import get_indexer
+                        indexer = get_indexer()
+                        if indexer.running:
+                            indexer.add_token(token_address)
+                            logger.debug(f"Added {token_address[:8]}... to swap indexer (no indexed data yet, will build in background)")
+                except Exception as e:
+                    logger.debug(f"Could not add token to indexer: {e}")
+            
             if self.helius_api_key:
                 # Check rate limit before making expensive API calls
                 from src.config.config_loader import get_config_int
@@ -1306,10 +1347,15 @@ class MarketDataFetcher:
                 logger.debug(f"Response type: {type(data)}, keys: {list(data.keys()) if isinstance(data, dict) else 'list'}")
                 return self._get_solana_candles_from_memory(token_address, hours)
             
-            # Process swaps into hourly candles (pass target_timestamp for proper filtering)
-            candles = self._process_helius_swaps_to_candles(swaps, hours, target_timestamp)
+            # Process swaps into hourly candles (pass target_timestamp and token_address for proper filtering)
+            candles = self._process_helius_swaps_to_candles(swaps, hours, target_timestamp, token_address)
             
-            if candles and len(candles) >= 10:
+            logger.debug(f"Processed {len(swaps)} swaps into {len(candles) if candles else 0} candles for {token_address[:8]}...")
+            
+            # Accept candles if we have at least 2 (for basic indicators) or 10+ (for full accuracy)
+            # This allows newer tokens with limited history to still get technical indicators
+            min_candles_required = 2  # Lowered from 10 to allow newer tokens
+            if candles and len(candles) >= min_candles_required:
                 # Cache the result
                 self.candlestick_cache_helius[cache_key] = {
                     'data': candles,
@@ -1324,13 +1370,200 @@ class MarketDataFetcher:
                 return candles
             
             # Fallback to price_memory if Helius data insufficient
+            logger.debug(f"Helius candles insufficient ({len(candles) if candles else 0} < 10), falling back to price_memory for {token_address[:8]}...")
             return self._get_solana_candles_from_memory(token_address, hours)
             
         except Exception as e:
             logger.error(f"Error fetching Helius candlestick data for {token_address[:8]}...: {e}", exc_info=True)
             return self._get_solana_candles_from_memory(token_address, hours)
     
-    def _process_helius_swaps_to_candles(self, swaps: List[Dict], hours: int, target_timestamp: Optional[float] = None) -> List[Dict]:
+    def _get_solana_candles_from_indexed_swaps(
+        self, token_address: str, hours: int, target_timestamp: Optional[float] = None
+    ) -> Optional[List[Dict]]:
+        """
+        Get candlestick data from indexed swap events in SQLite.
+        This is the fastest method - no API calls, just database queries.
+        
+        Returns tuple: (candles, missing_hours) where missing_hours is hours that need backfill
+        """
+        try:
+            from src.storage.swap_events import get_swap_events, get_latest_swap_time
+            
+            # Calculate time range
+            query_time = target_timestamp if target_timestamp else time.time()
+            end_time = query_time
+            start_time = end_time - (hours * 3600)
+            
+            # Query swap events from database
+            swaps = get_swap_events(
+                token_address=token_address,
+                start_time=start_time,
+                end_time=end_time,
+                limit=10000,  # Reasonable limit
+            )
+            
+            if not swaps or len(swaps) < 2:
+                logger.debug(f"No indexed swaps found for {token_address[:8]}... (need at least 2)")
+                return None
+            
+            # Convert swaps to candles
+            candles = self._process_swaps_to_candles_indexed(swaps, hours, start_time, end_time)
+            
+            if candles and len(candles) >= 2:
+                logger.debug(f"Built {len(candles)} candles from {len(swaps)} indexed swaps for {token_address[:8]}...")
+                return candles
+            
+            return None
+            
+        except Exception as e:
+            logger.debug(f"Error getting candles from indexed swaps: {e}")
+            return None
+    
+    def _get_missing_hours_for_backfill(
+        self, token_address: str, hours: int, target_timestamp: Optional[float] = None
+    ) -> Optional[float]:
+        """
+        Calculate how many hours of data are missing for accurate technical indicators.
+        Returns hours needed for backfill, or None if sufficient data exists.
+        """
+        try:
+            from src.storage.swap_events import get_latest_swap_time, get_swap_count
+            from src.config.config_loader import get_config_int
+            
+            min_candles = get_config_int("swap_indexer.min_candles_for_accuracy", 35)
+            query_time = target_timestamp if target_timestamp else time.time()
+            end_time = query_time
+            start_time = end_time - (hours * 3600)
+            
+            # Check how many candles we have
+            candles = self._get_solana_candles_from_indexed_swaps(
+                token_address, hours, target_timestamp
+            )
+            
+            if candles and len(candles) >= min_candles:
+                return None  # Sufficient data
+            
+            # Calculate missing hours
+            if candles:
+                missing_candles = min_candles - len(candles)
+                missing_hours = missing_candles  # 1 candle per hour
+            else:
+                missing_hours = hours
+            
+            # Check latest swap time to see how far back we need to go
+            latest_swap_time = get_latest_swap_time(token_address)
+            if latest_swap_time:
+                hours_since_latest = (end_time - latest_swap_time) / 3600
+                # If we have recent data, only backfill the gap
+                if hours_since_latest < hours:
+                    missing_hours = min(missing_hours, hours - hours_since_latest)
+            
+            return missing_hours if missing_hours > 0 else None
+            
+        except Exception as e:
+            logger.debug(f"Error calculating missing hours: {e}")
+            return hours  # Default to full backfill if error
+    
+    def _try_targeted_backfill(
+        self, token_address: str, hours: int, existing_candles: List[Dict], target_timestamp: Optional[float] = None
+    ) -> Optional[List[Dict]]:
+        """
+        Attempt targeted backfill for missing hours only.
+        Returns updated candles list with backfilled data, or None if backfill failed/limited.
+        """
+        try:
+            from src.config.config_loader import get_config, get_config_int
+            from src.indexing.swap_indexer import get_indexer
+            
+            if not get_config("swap_indexer.enabled", True):
+                return existing_candles
+            
+            # Check if we're allowed to backfill (rate limiting)
+            backfill_tracker = getattr(self, '_backfill_tracker', {})
+            current_time = time.time()
+            
+            # Clean old entries (older than 1 hour)
+            backfill_tracker = {
+                k: v for k, v in backfill_tracker.items()
+                if current_time - v < 3600
+            }
+            self._backfill_tracker = backfill_tracker
+            
+            max_per_cycle = get_config_int("swap_indexer.backfill_tokens_per_cycle", 2)
+            if len(backfill_tracker) >= max_per_cycle:
+                logger.debug(f"Skipping backfill for {token_address[:8]}... (rate limit: {len(backfill_tracker)}/{max_per_cycle} tokens this cycle)")
+                return existing_candles
+            
+            # Calculate missing hours
+            missing_hours = self._get_missing_hours_for_backfill(token_address, hours, target_timestamp)
+            if not missing_hours or missing_hours <= 0:
+                return existing_candles
+            
+            # Limit backfill to reasonable amount (max 48 hours per token)
+            missing_hours = min(missing_hours, 48)
+            
+            # Perform targeted backfill
+            indexer = get_indexer()
+            if not indexer.running:
+                return existing_candles
+            
+            stored = indexer.backfill_missing_hours(token_address, missing_hours)
+            if stored > 0:
+                # Track this backfill
+                self._backfill_tracker[token_address] = current_time
+                
+                # Re-query indexed swaps to get updated candles
+                updated_candles = self._get_solana_candles_from_indexed_swaps(
+                    token_address, hours, target_timestamp
+                )
+                if updated_candles:
+                    return updated_candles
+            
+            return existing_candles
+            
+        except Exception as e:
+            logger.debug(f"Error in targeted backfill: {e}")
+            return existing_candles
+    
+    def _process_swaps_to_candles_indexed(
+        self, swaps: List[Dict], hours: int, start_time: float, end_time: float
+    ) -> List[Dict]:
+        """Convert indexed swap events to hourly candles"""
+        if not swaps:
+            return []
+        
+        candles = {}
+        hour_start = int((start_time // 3600) * 3600)
+        
+        for swap in swaps:
+            timestamp = float(swap.get('block_time', 0))
+            price = float(swap.get('price_usd', 0))
+            volume = float(swap.get('volume_usd', 0) or 0)
+            
+            if timestamp < hour_start or price <= 0:
+                continue
+            
+            hour = int((timestamp // 3600) * 3600)
+            
+            if hour not in candles:
+                candles[hour] = {
+                    'open': price,
+                    'high': price,
+                    'low': price,
+                    'close': price,
+                    'volume': volume,
+                    'time': hour
+                }
+            else:
+                candle = candles[hour]
+                candle['high'] = max(candle['high'], price)
+                candle['low'] = min(candle['low'], price)
+                candle['close'] = price
+                candle['volume'] += volume
+        
+        return sorted(candles.values(), key=lambda x: x['time'])
+    
+    def _process_helius_swaps_to_candles(self, swaps: List[Dict], hours: int, target_timestamp: Optional[float] = None, token_address: Optional[str] = None) -> List[Dict]:
         """Convert Helius swap transactions to hourly candles"""
         if not swaps:
             return []
@@ -1341,15 +1574,21 @@ class MarketDataFetcher:
         query_time = target_timestamp if target_timestamp else time.time()
         hour_start = int(query_time - (hours * 3600))
         
+        processed_count = 0
+        skipped_timestamp = 0
+        skipped_price = 0
+        
         for swap in swaps:
             # Extract timestamp and price from Helius swap data
             timestamp = swap.get('timestamp', swap.get('blockTime', 0))
             if timestamp < hour_start:
+                skipped_timestamp += 1
                 continue
             
             # Extract price from swap
-            price = self._extract_price_from_helius_swap(swap)
+            price = self._extract_price_from_helius_swap(swap, token_address)
             if not price or price <= 0:
+                skipped_price += 1
                 continue
             
             hour = int((timestamp // 3600) * 3600)
@@ -1372,10 +1611,16 @@ class MarketDataFetcher:
             # Extract volume from swap
             volume_usd = self._extract_volume_from_helius_swap(swap)
             candles[hour]['volume'] += volume_usd
+            processed_count += 1
         
-        return sorted(candles.values(), key=lambda x: x['time'])
+        if processed_count == 0:
+            logger.debug(f"No swaps processed: {skipped_timestamp} skipped (timestamp), {skipped_price} skipped (price extraction)")
+        
+        result = sorted(candles.values(), key=lambda x: x['time'])
+        logger.debug(f"Processed {processed_count}/{len(swaps)} swaps into {len(result)} candles")
+        return result
     
-    def _extract_price_from_helius_swap(self, swap: Dict) -> Optional[float]:
+    def _extract_price_from_helius_swap(self, swap: Dict, token_address: Optional[str] = None) -> Optional[float]:
         """Extract price from Helius swap transaction"""
         try:
             # Helius provides token transfers with amounts
@@ -1384,24 +1629,64 @@ class MarketDataFetcher:
             if len(token_transfers) < 2:
                 return None
             
-            # Find USDC transfer (or SOL) and token transfer
-            usdc_amount = 0
-            token_amount = 0
-            
-            # USDC mint on Solana
+            # Supported base currencies (USDC, USDT, SOL)
             USDC_MINT = "epjfwdd5aufqssqem2qn1xzybapc8g4weggkzwytdt1v"
+            USDT_MINT = "es9vmfrzwaerbvgtle3i33zq3f3kmbo2fdymgzcan4"  # USDT on Solana
+            SOL_MINT = "so11111111111111111111111111111111111111112"  # Wrapped SOL
             
+            base_amount = 0
+            token_amount = 0
+            target_token_mint = None
+            
+            # Use provided token_address if available, otherwise try to identify it
+            if token_address:
+                target_token_mint = token_address.lower()
+            
+            # If no token_address provided, identify which token we're pricing (the one that's not a base currency)
+            base_mints = {USDC_MINT, USDT_MINT, SOL_MINT}
+            if not target_token_mint:
+                for transfer in token_transfers:
+                    mint = transfer.get('mint', '').lower()
+                    if mint not in base_mints:
+                        target_token_mint = mint
+                        break
+            
+            # Second pass: extract amounts
             for transfer in token_transfers:
                 mint = transfer.get('mint', '').lower()
                 amount = float(transfer.get('tokenAmount', 0))
                 
-                if mint == USDC_MINT:
-                    usdc_amount = amount
-                elif mint != USDC_MINT:
+                if mint == USDC_MINT or mint == USDT_MINT:
+                    # USDC/USDT are worth $1, so use directly
+                    base_amount = amount
+                elif mint == SOL_MINT:
+                    # SOL needs to be converted to USD - we'll need SOL price
+                    # For now, skip SOL-based swaps or use a fallback
+                    # TODO: Fetch SOL price and convert
+                    continue
+                elif mint == target_token_mint:
                     token_amount = amount
             
-            if usdc_amount > 0 and token_amount > 0:
-                return usdc_amount / token_amount
+            # If we have SOL-based swap, try to get SOL price
+            has_sol = any(t.get('mint', '').lower() == SOL_MINT for t in token_transfers)
+            if has_sol and not base_amount:
+                # Get real SOL price
+                try:
+                    from src.utils.utils import get_sol_price_usd
+                    sol_price_usd = get_sol_price_usd() or 150.0  # Fallback to $150 if fetch fails
+                except Exception:
+                    sol_price_usd = 150.0  # Fallback
+                
+                for transfer in token_transfers:
+                    mint = transfer.get('mint', '').lower()
+                    amount = float(transfer.get('tokenAmount', 0))
+                    if mint == SOL_MINT:
+                        base_amount = amount * sol_price_usd
+                    elif mint == target_token_mint:
+                        token_amount = amount
+            
+            if base_amount > 0 and token_amount > 0:
+                return base_amount / token_amount
             
             return None
             
@@ -1414,13 +1699,30 @@ class MarketDataFetcher:
         try:
             token_transfers = swap.get('tokenTransfers', [])
             USDC_MINT = "epjfwdd5aufqssqem2qn1xzybapc8g4weggkzwytdt1v"
+            USDT_MINT = "es9vmfrzwaerbvgtle3i33zq3f3kmbo2fdymgzcan4"  # USDT on Solana
+            SOL_MINT = "so11111111111111111111111111111111111111112"  # Wrapped SOL
             
-            # Sum USDC transfers
+            # Sum USDC/USDT transfers (both worth $1)
             volume = 0.0
+            sol_amount = 0.0
+            
             for transfer in token_transfers:
                 mint = transfer.get('mint', '').lower()
-                if mint == USDC_MINT:
-                    volume += float(transfer.get('tokenAmount', 0))
+                amount = float(transfer.get('tokenAmount', 0))
+                
+                if mint == USDC_MINT or mint == USDT_MINT:
+                    volume += amount  # USDC/USDT are worth $1
+                elif mint == SOL_MINT:
+                    sol_amount += amount
+            
+            # Convert SOL to USD
+            if sol_amount > 0:
+                try:
+                    from src.utils.utils import get_sol_price_usd
+                    sol_price_usd = get_sol_price_usd() or 150.0  # Fallback to $150 if fetch fails
+                except Exception:
+                    sol_price_usd = 150.0  # Fallback
+                volume += sol_amount * sol_price_usd
             
             return volume
             

@@ -850,6 +850,25 @@ class EnhancedAsyncTradingEngine:
         """Process a batch of tokens with parallel AI analysis"""
         log_info("trading.batch", f"Processing batch of {len(batch)} tokens")
         
+        # Add tokens to swap indexer for background indexing (they passed quality filters)
+        try:
+            from src.config.config_loader import get_config
+            if get_config("swap_indexer.enabled", True):
+                from src.indexing.swap_indexer import get_indexer
+                indexer = get_indexer()
+                if indexer.running:
+                    added_count = 0
+                    for token in batch:
+                        address = token.get('address')
+                        chain_id = token.get('chainId', '').lower()
+                        if address and chain_id == 'solana':
+                            indexer.add_token(address)
+                            added_count += 1
+                    if added_count > 0:
+                        log_info("trading.indexer", f"Added {added_count} Solana tokens to swap indexer for background indexing")
+        except Exception as e:
+            log_error("trading.indexer", f"Failed to add tokens to indexer: {e}")
+        
         # Check market regime before processing batch
         enable_regime_controls = get_config_bool("enable_regime_trading_controls", False)
         if enable_regime_controls:
@@ -1194,6 +1213,18 @@ class EnhancedAsyncTradingEngine:
                     
                     log_trade("buy", symbol, trade_amount, True, profit_loss, execution_time)
                     log_info("trading.success", f"✅ Real trade successful: {symbol} - PnL: ${profit_loss:.2f} - TX: {tx_hash}")
+                    
+                    # Add token to swap indexer for continuous tracking
+                    try:
+                        from src.config.config_loader import get_config
+                        if get_config("swap_indexer.enabled", True):
+                            from src.indexing.swap_indexer import get_indexer
+                            indexer = get_indexer()
+                            if address:
+                                indexer.add_token(address)
+                                log_info("trading.indexer", f"Added {symbol} to swap indexer")
+                    except Exception as e:
+                        log_error("trading.indexer", f"Failed to add token to indexer: {e}")
                     
                     # Register buy with risk manager
                     try:

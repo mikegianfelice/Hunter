@@ -147,6 +147,16 @@ helius_candlestick_settings:
   max_signatures_per_page: 100  # Max signatures per page for RPC (reduced from 500)
   rate_limit_threshold: 25000  # Use fallback if Helius calls exceed this (83% of 30k limit)
 
+# === Swap Indexer Settings ===
+swap_indexer:
+  enabled: true  # Enable continuous swap event indexing
+  index_interval_seconds: 60  # How often to check for new swaps (60 seconds)
+  max_pools_per_token: 1  # Only main pool for efficiency (was 5)
+  lookback_hours: 168  # 7 days lookback for accurate technical indicators (was 24)
+  cleanup_days: 30  # Delete swap events older than this many days
+  backfill_tokens_per_cycle: 2  # Max tokens to backfill per cycle (to stay within API limits)
+  min_candles_for_accuracy: 35  # Target candles for good technical indicator accuracy
+
 # === Balance Cache Settings ===
 balance_cache_enabled: true  # Enable balance caching as fallback during RPC failures
 balance_cache_ttl_seconds: 600  # Cache is valid for 10 minutes (600 seconds) - increased from 300 to reduce RPC calls
