@@ -2078,7 +2078,8 @@ class EnhancedAsyncTradingEngine:
         # CRITICAL: Add API rate limit status
         api_metrics = {}
         try:
-            from src.utils.api_tracker import api_tracker
+            from src.utils.api_tracker import get_tracker
+            api_tracker = get_tracker()
             api_metrics = {
                 "helius_remaining": api_tracker.get_remaining("helius", 30000),
                 "coingecko_remaining": api_tracker.get_remaining("coingecko", 300),
