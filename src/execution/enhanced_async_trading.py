@@ -882,6 +882,24 @@ class EnhancedAsyncTradingEngine:
             if regime_data is None:
                 regime_data = ai_market_regime_detector.detect_market_regime()
         
+        # OPTIMIZATION: Skip analysis if at max positions (saves API calls and compute)
+        try:
+            from src.core.risk_manager import _open_positions_count
+            open_count = _open_positions_count()
+            max_concurrent = get_config_int("max_concurrent_positions", 5)
+            
+            if open_count >= max_concurrent:
+                log_info("trading.max_positions_skip_analysis",
+                        f"Skipping analysis: {open_count} open positions >= max {max_concurrent}",
+                        open_count=open_count,
+                        max_positions=max_concurrent)
+                # Return empty results - no analysis performed
+                return []
+        except Exception as e:
+            log_error("trading.max_positions_check_error", 
+                     f"Error checking max positions before analysis: {e}")
+            # Continue with analysis if check fails (fail-safe)
+        
         # Create tasks for parallel AI analysis
         analysis_tasks = [self._analyze_token_ai(token, regime_data) for token in batch]
         analyses = await asyncio.gather(*analysis_tasks, return_exceptions=True)
