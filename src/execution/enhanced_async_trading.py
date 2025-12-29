@@ -882,6 +882,33 @@ class EnhancedAsyncTradingEngine:
             if regime_data is None:
                 regime_data = ai_market_regime_detector.detect_market_regime()
         
+        # Update price_memory for all tokens (builds price history even when analysis is skipped)
+        try:
+            from src.storage.price_memory import load_price_memory, save_price_memory
+            import time
+            mem = load_price_memory()
+            now_ts = int(time.time())
+            updated_count = 0
+            
+            for token in batch:
+                address = (token.get("address") or "").lower()
+                price = float(token.get("priceUsd") or 0.0)
+                
+                if address and price > 0:
+                    mem[address] = {"price": price, "ts": now_ts}
+                    updated_count += 1
+            
+            if updated_count > 0:
+                save_price_memory(mem)
+                log_info("trading.price_memory_update",
+                        f"Updated price_memory for {updated_count}/{len(batch)} tokens",
+                        updated_count=updated_count,
+                        batch_size=len(batch))
+        except Exception as e:
+            log_error("trading.price_memory_error", 
+                     f"Error updating price_memory: {e}")
+            # Continue even if price_memory update fails (non-critical)
+        
         # OPTIMIZATION: Skip analysis if at max positions (saves API calls and compute)
         try:
             from src.core.risk_manager import _open_positions_count
