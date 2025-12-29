@@ -16,10 +16,10 @@
       "sell_tx_hash": "sv24VVXizbfXs9rmJqWRqHMAczS7bj18LkSjuxZjsxuYkSbThMG6fgkuXcej2TtbHT4WV3Ed68pBh4k1B2toBYK",
       "exit_tokens_sold": 1586.981277,
       "actual_proceeds_usd": 63.26186800000005,
-      "exit_gas_fee_usd": 0.028401220760000002,
-      "total_fees_usd": 0.028401220760000002,
-      "pnl_after_fees_usd": 43.43346677924005,
-      "pnl_after_fees_percent": 219.36094332949517
+      "exit_gas_fee_usd": 0.029189122629999998,
+      "total_fees_usd": 0.029189122629999998,
+      "pnl_after_fees_usd": 43.43267887737005,
+      "pnl_after_fees_percent": 219.35696402712148
     },
     {
       "id": "pippin_20251215_062143",
@@ -72,10 +72,10 @@
       "sell_tx_hash": "4M2KAwAGWi5Jvs36cKaeNavPnnvE27JLoPnmqisuUJEwfvhS3ie6RCo5GYStqRC6ovpUE3cuUrDW7UvbjK312YNA",
       "exit_tokens_sold": 160.935822,
       "actual_proceeds_usd": 61.15033200000005,
-      "exit_gas_fee_usd": 0.0045756691200000005,
-      "total_fees_usd": 0.0045756691200000005,
-      "pnl_after_fees_usd": 3.9169780276800465,
-      "pnl_after_fees_percent": 6.84442013933578
+      "exit_gas_fee_usd": 0.00470260656,
+      "total_fees_usd": 0.00470260656,
+      "pnl_after_fees_usd": 3.9168510902400464,
+      "pnl_after_fees_percent": 6.844198332329299
     },
     {
       "id": "pippin_20251209_194503",
@@ -99,7 +99,7 @@
       "entry_amount_usd_quoted": 58.2472858868586,
       "entry_amount_usd_actual": 58.24728500000003,
       "entry_tokens_received": 193.45318,
-      "entry_gas_fee_usd": 0.00940875672,
+      "entry_gas_fee_usd": 0.00966977286,
       "buy_slippage_actual": null
     },
     {
@@ -124,7 +124,7 @@
       "entry_amount_usd_quoted": 44.48265018928016,
       "entry_amount_usd_actual": 11.120661999999925,
       "entry_tokens_received": 102.938542,
-      "entry_gas_fee_usd": 0.00356132656,
+      "entry_gas_fee_usd": 0.00366012428,
       "buy_slippage_actual": null
     },
     {
@@ -149,7 +149,7 @@
       "entry_amount_usd_quoted": 59.738203398195125,
       "entry_amount_usd_actual": 29.869101,
       "entry_tokens_received": 92.721847,
-      "entry_gas_fee_usd": 0.00211968416,
+      "entry_gas_fee_usd": 0.00217848808,
       "buy_slippage_actual": null
     },
     {
@@ -174,7 +174,7 @@
       "entry_amount_usd_quoted": 58.932980975304844,
       "entry_amount_usd_actual": 58.93297999999993,
       "entry_tokens_received": 211.276901,
-      "entry_gas_fee_usd": 0.00087512392,
+      "entry_gas_fee_usd": 0.00089940146,
       "buy_slippage_actual": null
     },
     {
@@ -199,7 +199,7 @@
       "entry_amount_usd_quoted": 57.95404980642573,
       "entry_amount_usd_actual": 57.95404899999994,
       "entry_tokens_received": 240.455471,
-      "entry_gas_fee_usd": 0.01334236332,
+      "entry_gas_fee_usd": 0.01371250491,
       "buy_slippage_actual": null
     },
     {
@@ -224,7 +224,7 @@
       "entry_amount_usd_quoted": 40.78178826260407,
       "entry_amount_usd_actual": 4.07817799999998,
       "entry_tokens_received": 341.683573,
-      "entry_gas_fee_usd": 0.019559724360000003,
+      "entry_gas_fee_usd": 0.02010234693,
       "buy_slippage_actual": null
     },
     {
@@ -249,7 +249,7 @@
       "entry_amount_usd_quoted": 53.29248853054001,
       "entry_amount_usd_actual": 53.29248799999999,
       "entry_tokens_received": 246.146451,
-      "entry_gas_fee_usd": 0.0222904374,
+      "entry_gas_fee_usd": 0.02290881495,
       "buy_slippage_actual": null
     },
     {
@@ -274,7 +274,7 @@
       "entry_amount_usd_quoted": 39.799637488960414,
       "entry_amount_usd_actual": 39.79963699999996,
       "entry_tokens_received": 399.309055,
-      "entry_gas_fee_usd": 0.014389223199999999,
+      "entry_gas_fee_usd": 0.014788406599999998,
       "buy_slippage_actual": null
     },
     {
@@ -299,7 +299,7 @@
       "entry_amount_usd_quoted": 54.74487648943704,
       "entry_amount_usd_actual": 54.74487600000003,
       "entry_tokens_received": 291.275551,
-      "entry_gas_fee_usd": 0.02674036464,
+      "entry_gas_fee_usd": 0.02748219132,
       "buy_slippage_actual": null
     },
     {
@@ -324,7 +324,7 @@
       "entry_amount_usd_quoted": 55.20824326903028,
       "entry_amount_usd_actual": 55.20824299999998,
       "entry_tokens_received": 270.547021,
-      "entry_gas_fee_usd": 0.00358939284,
+      "entry_gas_fee_usd": 0.00368896917,
       "buy_slippage_actual": null
     },
     {
@@ -349,7 +349,7 @@
       "entry_amount_usd_quoted": 39.904165023303236,
       "entry_amount_usd_actual": 19.95208199999996,
       "entry_tokens_received": 186.519703,
-      "entry_gas_fee_usd": 0.0044776226,
+      "entry_gas_fee_usd": 0.004601840049999999,
       "buy_slippage_actual": null
     },
     {
@@ -374,7 +374,7 @@
       "entry_amount_usd_quoted": 51.97874518997822,
       "entry_amount_usd_actual": 51.97874499999995,
       "entry_tokens_received": 291.936719,
-      "entry_gas_fee_usd": 0.0013709203199999999,
+      "entry_gas_fee_usd": 0.0014089521599999998,
       "buy_slippage_actual": null
     },
     {
@@ -399,7 +399,7 @@
       "entry_amount_usd_quoted": 39.90194022106269,
       "entry_amount_usd_actual": 39.901940000000025,
       "entry_tokens_received": 418.925607,
-      "entry_gas_fee_usd": 0.014276958079999999,
+      "entry_gas_fee_usd": 0.014673027039999998,
       "buy_slippage_actual": null
     },
     {
@@ -424,7 +424,7 @@
       "entry_amount_usd_quoted": 41.67500032515616,
       "entry_amount_usd_actual": 41.67500000000001,
       "entry_tokens_received": 265.155796,
-      "entry_gas_fee_usd": 0.0078894684,
+      "entry_gas_fee_usd": 0.0081083367,
       "buy_slippage_actual": null
     },
     {
@@ -449,7 +449,7 @@
       "entry_amount_usd_quoted": 54.379449824434985,
       "entry_amount_usd_actual": 13.594862000000035,
       "entry_tokens_received": 145.869826,
-      "entry_gas_fee_usd": 0.00295759244,
+      "entry_gas_fee_usd": 0.00303964147,
       "buy_slippage_actual": null
     },
     {
@@ -474,7 +474,7 @@
       "entry_amount_usd_quoted": 56.69964773779503,
       "entry_amount_usd_actual": 28.349823000000015,
       "entry_tokens_received": 74.477838,
-      "entry_gas_fee_usd": 0.00082183508,
+      "entry_gas_fee_usd": 0.00084463429,
       "buy_slippage_actual": null
     },
     {
@@ -499,7 +499,7 @@
       "entry_amount_usd_quoted": 54.71970900999621,
       "entry_amount_usd_actual": 5.471969999999942,
       "entry_tokens_received": 53.803741,
-      "entry_gas_fee_usd": 0.02322688676,
+      "entry_gas_fee_usd": 0.023871243129999997,
       "buy_slippage_actual": null
     },
     {
@@ -524,7 +524,7 @@
       "entry_amount_usd_quoted": 54.857831254036114,
       "entry_amount_usd_actual": 27.428915000000075,
       "entry_tokens_received": 66.532311,
-      "entry_gas_fee_usd": 0.0009384276,
+      "entry_gas_fee_usd": 0.0009644613,
       "buy_slippage_actual": null
     },
     {
@@ -549,7 +549,7 @@
       "entry_amount_usd_quoted": 55.40821650921984,
       "entry_amount_usd_actual": 5.540820999999937,
       "entry_tokens_received": 234.059038,
-      "entry_gas_fee_usd": 0.00097848696,
+      "entry_gas_fee_usd": 0.00100563198,
       "buy_slippage_actual": null
     },
     {
@@ -574,7 +574,7 @@
       "entry_amount_usd_quoted": 57.59430648372056,
       "entry_amount_usd_actual": 28.79715299999998,
       "entry_tokens_received": 257.762938,
-      "entry_gas_fee_usd": 0.0017338037199999998,
+      "entry_gas_fee_usd": 0.0017819026099999999,
       "buy_slippage_actual": null
     },
     {
@@ -599,7 +599,7 @@
       "entry_amount_usd_quoted": 54.50970580172056,
       "entry_amount_usd_actual": 27.254852000000028,
       "entry_tokens_received": 227.601297,
-      "entry_gas_fee_usd": 0.25306833024,
+      "entry_gas_fee_usd": 0.26008890912,
       "buy_slippage_actual": null
     },
     {
@@ -624,7 +624,7 @@
       "entry_amount_usd_quoted": 54.716742798885306,
       "entry_amount_usd_actual": 13.679184999999961,
       "entry_tokens_received": 60.406665,
-      "entry_gas_fee_usd": 0.0036467618000000004,
+      "entry_gas_fee_usd": 0.00374792965,
       "buy_slippage_actual": null
     },
     {
@@ -649,7 +649,7 @@
       "entry_amount_usd_quoted": 54.381016187664684,
       "entry_amount_usd_actual": 5.438101000000074,
       "entry_tokens_received": 21.630339,
-      "entry_gas_fee_usd": 0.023069369399999998,
+      "entry_gas_fee_usd": 0.023709355949999997,
       "buy_slippage_actual": null
     },
     {
@@ -674,7 +674,7 @@
       "entry_amount_usd_quoted": 54.8144266614683,
       "entry_amount_usd_actual": 54.81442599999997,
       "entry_tokens_received": 203.062587,
-      "entry_gas_fee_usd": 0.0007419636399999999,
+      "entry_gas_fee_usd": 0.00076254707,
       "buy_slippage_actual": null
     },
     {
@@ -699,7 +699,7 @@
       "entry_amount_usd_quoted": 54.07587261799563,
       "entry_amount_usd_actual": 54.075872000000004,
       "entry_tokens_received": 229.192586,
-      "entry_gas_fee_usd": 0.060464781960000005,
+      "entry_gas_fee_usd": 0.06214218573,
       "buy_slippage_actual": null
     },
     {
@@ -724,7 +724,7 @@
       "entry_amount_usd_quoted": 54.61726371118995,
       "entry_amount_usd_actual": 54.61726299999998,
       "entry_tokens_received": 210.698684,
-      "entry_gas_fee_usd": 0.00131478776,
+      "entry_gas_fee_usd": 0.00135126238,
       "buy_slippage_actual": null
     },
     {
@@ -749,7 +749,7 @@
       "entry_amount_usd_quoted": 41.292413583308814,
       "entry_amount_usd_actual": 20.646206000000006,
       "entry_tokens_received": 197.962202,
-      "entry_gas_fee_usd": 0.00336993184,
+      "entry_gas_fee_usd": 0.00346341992,
       "buy_slippage_actual": null
     },
     {
@@ -774,7 +774,7 @@
       "entry_amount_usd_quoted": 53.114188196720264,
       "entry_amount_usd_actual": 53.114187999999956,
       "entry_tokens_received": 190.162638,
-      "entry_gas_fee_usd": 0.011694613040000001,
+      "entry_gas_fee_usd": 0.01201904302,
       "buy_slippage_actual": null
     },
     {
@@ -799,7 +799,7 @@
       "entry_amount_usd_quoted": 52.41502367567279,
       "entry_amount_usd_actual": 52.41502299999996,
       "entry_tokens_received": 215.985796,
-      "entry_gas_fee_usd": 0.0007419636399999999,
+      "entry_gas_fee_usd": 0.00076254707,
       "buy_slippage_actual": null
     },
     {
@@ -824,7 +824,7 @@
       "entry_amount_usd_quoted": 51.82837625110747,
       "entry_amount_usd_actual": 51.82837600000005,
       "entry_tokens_received": 239.762629,
-      "entry_gas_fee_usd": 0.0007419636399999999,
+      "entry_gas_fee_usd": 0.00076254707,
       "buy_slippage_actual": null
     },
     {
@@ -849,7 +849,7 @@
       "entry_amount_usd_quoted": 50.881948278328025,
       "entry_amount_usd_actual": 50.88089400000001,
       "entry_tokens_received": 263.1,
-      "entry_gas_fee_usd": 0.00082430788,
+      "entry_gas_fee_usd": 0.00084717569,
       "buy_slippage_actual": null
     },
     {
@@ -874,7 +874,7 @@
       "entry_amount_usd_quoted": 43.907763324728776,
       "entry_amount_usd_actual": 43.907763000000045,
       "entry_tokens_received": 3447.963151,
-      "entry_gas_fee_usd": 0.00497366628,
+      "entry_gas_fee_usd": 0.005111644889999999,
       "buy_slippage_actual": null
     },
     {
@@ -899,7 +899,7 @@
       "entry_amount_usd_quoted": 51.477266655286755,
       "entry_amount_usd_actual": 51.47726600000004,
       "entry_tokens_received": 302.968331,
-      "entry_gas_fee_usd": 0.00111733468,
+      "entry_gas_fee_usd": 0.0011483315899999999,
       "buy_slippage_actual": null
     },
     {
@@ -924,7 +924,7 @@
       "entry_amount_usd_quoted": 41.41993246624122,
       "entry_amount_usd_actual": 41.41993200000002,
       "entry_tokens_received": 367.39504,
-      "entry_gas_fee_usd": 0.055643069239999995,
+      "entry_gas_fee_usd": 0.05718670987,
       "buy_slippage_actual": null
     },
     {
@@ -949,7 +949,7 @@
       "entry_amount_usd_quoted": 42.08618173701706,
       "entry_amount_usd_actual": 21.043090000000007,
       "entry_tokens_received": 1514.316942,
-      "entry_gas_fee_usd": 0.02088254872,
+      "entry_gas_fee_usd": 0.02146186886,
       "buy_slippage_actual": null
     },
     {
@@ -974,7 +974,7 @@
       "entry_amount_usd_quoted": 51.58140909779444,
       "entry_amount_usd_actual": 25.79070399999995,
       "entry_tokens_received": 141.537522,
-      "entry_gas_fee_usd": 0.01194535496,
+      "entry_gas_fee_usd": 0.012276740979999999,
       "buy_slippage_actual": null
     },
     {
@@ -999,7 +999,7 @@
       "entry_amount_usd_quoted": 55.22242932427757,
       "entry_amount_usd_actual": 55.222429000000034,
       "entry_tokens_received": 3647.121134,
-      "entry_gas_fee_usd": 0.0136238916,
+      "entry_gas_fee_usd": 0.014001843299999999,
       "buy_slippage_actual": null
     },
     {
@@ -1024,7 +1024,7 @@
       "entry_amount_usd_quoted": 54.806947655123366,
       "entry_amount_usd_actual": 13.701734999999985,
       "entry_tokens_received": 299.512439,
-      "entry_gas_fee_usd": 0.032841627719999995,
+      "entry_gas_fee_usd": 0.03375271461,
       "buy_slippage_actual": null
     },
     {
@@ -1049,7 +1049,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 9.899999999999977,
       "entry_tokens_received": 48.600358,
-      "entry_gas_fee_usd": 0.00175098968,
+      "entry_gas_fee_usd": 0.0017995653399999999,
       "buy_slippage_actual": null
     },
     {
@@ -1074,7 +1074,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.799999999999955,
       "entry_tokens_received": 53.885403,
-      "entry_gas_fee_usd": 0.0016458956800000002,
+      "entry_gas_fee_usd": 0.00169155584,
       "buy_slippage_actual": null
     },
     {
@@ -1099,7 +1099,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.800000000000068,
       "entry_tokens_received": 1182.749032,
-      "entry_gas_fee_usd": 0.00794003716,
+      "entry_gas_fee_usd": 0.00816030833,
       "buy_slippage_actual": null
     },
     {
@@ -1124,7 +1124,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.799999999999955,
       "entry_tokens_received": 90.240264,
-      "entry_gas_fee_usd": 0.0007419636399999999,
+      "entry_gas_fee_usd": 0.00076254707,
       "buy_slippage_actual": null
     },
     {
@@ -1149,7 +1149,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.799999999999955,
       "entry_tokens_received": 105.49394,
-      "entry_gas_fee_usd": 0.0007419636399999999,
+      "entry_gas_fee_usd": 0.00076254707,
       "buy_slippage_actual": null
     },
     {
@@ -1174,7 +1174,7 @@
       "entry_amount_usd_quoted": 13.200000000000001,
       "entry_amount_usd_actual": 13.199999999999932,
       "entry_tokens_received": 83.616395,
-      "entry_gas_fee_usd": 0.0007419636399999999,
+      "entry_gas_fee_usd": 0.00076254707,
       "buy_slippage_actual": null
     },
     {
@@ -1199,7 +1199,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.799999999999955,
       "entry_tokens_received": 106.177774,
-      "entry_gas_fee_usd": 0.00813625384,
+      "entry_gas_fee_usd": 0.00836196842,
       "buy_slippage_actual": null
     },
     {
@@ -1224,7 +1224,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 1315.189439,
-      "entry_gas_fee_usd": 0.00733914676,
+      "entry_gas_fee_usd": 0.00754274813,
       "buy_slippage_actual": null
     },
     {
@@ -1249,7 +1249,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 98.096219,
-      "entry_gas_fee_usd": 0.25287854284,
+      "entry_gas_fee_usd": 0.25989385667,
       "buy_slippage_actual": null
     },
     {
@@ -1274,7 +1274,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 9.900000000000006,
       "entry_tokens_received": 44.434073,
-      "entry_gas_fee_usd": 0.00093706756,
+      "entry_gas_fee_usd": 0.00096306353,
       "buy_slippage_actual": null
     },
     {
@@ -1299,7 +1299,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 4.950000000000017,
       "entry_tokens_received": 15.127373,
-      "entry_gas_fee_usd": 0.0034872662,
+      "entry_gas_fee_usd": 0.0035840093499999994,
       "buy_slippage_actual": null
     },
     {
@@ -1324,7 +1324,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 1.9799999999999898,
       "entry_tokens_received": 10.309985,
-      "entry_gas_fee_usd": 0.00615492284,
+      "entry_gas_fee_usd": 0.00632567167,
       "buy_slippage_actual": null
     },
     {
@@ -1349,7 +1349,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.79909699999999,
       "entry_tokens_received": 93.34,
-      "entry_gas_fee_usd": 0.002336796,
+      "entry_gas_fee_usd": 0.002401623,
       "buy_slippage_actual": null
     },
     {
@@ -1374,7 +1374,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 167.55279,
-      "entry_gas_fee_usd": 0.0007419636399999999,
+      "entry_gas_fee_usd": 0.00076254707,
       "buy_slippage_actual": null
     },
     {
@@ -1399,7 +1399,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.799999999999983,
       "entry_tokens_received": 1486.277722,
-      "entry_gas_fee_usd": 0.17034983196,
+      "entry_gas_fee_usd": 0.17507564823,
       "buy_slippage_actual": null
     },
     {
@@ -1424,7 +1424,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.799999999999983,
       "entry_tokens_received": 87.284095,
-      "entry_gas_fee_usd": 0.0096989398,
+      "entry_gas_fee_usd": 0.00996800615,
       "buy_slippage_actual": null
     },
     {
@@ -1449,7 +1449,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.799999999999983,
       "entry_tokens_received": 79.778794,
-      "entry_gas_fee_usd": 0.01138069108,
+      "entry_gas_fee_usd": 0.01169641229,
       "buy_slippage_actual": null
     },
     {
@@ -1474,7 +1474,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.799999999999983,
       "entry_tokens_received": 1350.495582,
-      "entry_gas_fee_usd": 0.07447653224,
+      "entry_gas_fee_usd": 0.07654264762,
       "buy_slippage_actual": null
     },
     {
@@ -1499,7 +1499,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 9.900000000000006,
       "entry_tokens_received": 27.831188,
-      "entry_gas_fee_usd": 0.03523158892,
+      "entry_gas_fee_usd": 0.03620897771,
       "buy_slippage_actual": null
     },
     {
@@ -1524,7 +1524,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.799999999999983,
       "entry_tokens_received": 91.01382,
-      "entry_gas_fee_usd": 0.00291864584,
+      "entry_gas_fee_usd": 0.00299961442,
       "buy_slippage_actual": null
     },
     {
@@ -1549,7 +1549,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 101.552401,
-      "entry_gas_fee_usd": 0.06290593012,
+      "entry_gas_fee_usd": 0.06465105581,
       "buy_slippage_actual": null
     },
     {
@@ -1574,7 +1574,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 1505.483399,
-      "entry_gas_fee_usd": 0.14448607492,
+      "entry_gas_fee_usd": 0.14849438321,
       "buy_slippage_actual": null
     },
     {
@@ -1599,7 +1599,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 9.899999999999977,
       "entry_tokens_received": 47.298985,
-      "entry_gas_fee_usd": 0.021518305600000003,
+      "entry_gas_fee_usd": 0.0221152628,
       "buy_slippage_actual": null
     },
     {
@@ -1624,7 +1624,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000004,
       "entry_tokens_received": 62.526831,
-      "entry_gas_fee_usd": 0.0007419636399999999,
+      "entry_gas_fee_usd": 0.00076254707,
       "buy_slippage_actual": null
     },
     {
@@ -1649,7 +1649,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 62.048258,
-      "entry_gas_fee_usd": 0.0007419636399999999,
+      "entry_gas_fee_usd": 0.00076254707,
       "buy_slippage_actual": null
     },
     {
@@ -1674,7 +1674,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 61.703629,
-      "entry_gas_fee_usd": 0.0171834872,
+      "entry_gas_fee_usd": 0.017660188599999998,
       "buy_slippage_actual": null
     },
     {
@@ -1699,7 +1699,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 9.899999999999977,
       "entry_tokens_received": 474.707561,
-      "entry_gas_fee_usd": 0.0038691901600000004,
+      "entry_gas_fee_usd": 0.00397652858,
       "buy_slippage_actual": null
     },
     {
@@ -1724,7 +1724,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 9.900000000000006,
       "entry_tokens_received": 687.585948,
-      "entry_gas_fee_usd": 0.0066493592,
+      "entry_gas_fee_usd": 0.006833824599999999,
       "buy_slippage_actual": null
     },
     {
@@ -1749,7 +1749,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 4.950000000000017,
       "entry_tokens_received": 215.232694,
-      "entry_gas_fee_usd": 0.24789819999999999,
+      "entry_gas_fee_usd": 0.25477534999999996,
       "buy_slippage_actual": null
     },
     {
@@ -1774,7 +1774,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.799999999999983,
       "entry_tokens_received": 960.988629,
-      "entry_gas_fee_usd": 0.0441172248,
+      "entry_gas_fee_usd": 0.0453411174,
       "buy_slippage_actual": null
     },
     {
@@ -1799,7 +1799,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 61.755374,
-      "entry_gas_fee_usd": 0.00237376436,
+      "entry_gas_fee_usd": 0.00243961693,
       "buy_slippage_actual": null
     },
     {
@@ -1824,7 +1824,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 4.950000000000017,
       "entry_tokens_received": 25.508076,
-      "entry_gas_fee_usd": 0.01624617236,
+      "entry_gas_fee_usd": 0.01669687093,
       "buy_slippage_actual": null
     },
     {
@@ -1849,7 +1849,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 1.9799999999999898,
       "entry_tokens_received": 49.892002,
-      "entry_gas_fee_usd": 0.017003591,
+      "entry_gas_fee_usd": 0.017475301749999998,
       "buy_slippage_actual": null
     },
     {
@@ -1874,7 +1874,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 131.179863,
-      "entry_gas_fee_usd": 0.026735542680000002,
+      "entry_gas_fee_usd": 0.02747723559,
       "buy_slippage_actual": null
     },
     {
@@ -1899,7 +1899,7 @@
       "entry_amount_usd_quoted": 13.200000000000001,
       "entry_amount_usd_actual": 13.199999999999989,
       "entry_tokens_received": 1030.900257,
-      "entry_gas_fee_usd": 0.027220829680000003,
+      "entry_gas_fee_usd": 0.02797598534,
       "buy_slippage_actual": null
     },
     {
@@ -1924,7 +1924,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 148.268409,
-      "entry_gas_fee_usd": 0.24789819999999999,
+      "entry_gas_fee_usd": 0.25477534999999996,
       "buy_slippage_actual": null
     },
     {
@@ -1949,7 +1949,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 132.987572,
-      "entry_gas_fee_usd": 0.0322953862,
+      "entry_gas_fee_usd": 0.03319131935,
       "buy_slippage_actual": null
     },
     {
@@ -1974,7 +1974,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.799999999999983,
       "entry_tokens_received": 132.97124,
-      "entry_gas_fee_usd": 0.01242309992,
+      "entry_gas_fee_usd": 0.012767739459999998,
       "buy_slippage_actual": null
     },
     {
@@ -1999,7 +1999,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 9.900000000000006,
       "entry_tokens_received": 38.005626,
-      "entry_gas_fee_usd": 0.0313062662,
+      "entry_gas_fee_usd": 0.03217475935,
       "buy_slippage_actual": null
     },
     {
@@ -2024,7 +2024,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 114.44106,
-      "entry_gas_fee_usd": 0.00539886424,
+      "entry_gas_fee_usd": 0.005548638619999999,
       "buy_slippage_actual": null
     },
     {
@@ -2049,7 +2049,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 105.275937,
-      "entry_gas_fee_usd": 0.01224456376,
+      "entry_gas_fee_usd": 0.01258425038,
       "buy_slippage_actual": null
     },
     {
@@ -2074,7 +2074,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 9.900000000000006,
       "entry_tokens_received": 59.952281,
-      "entry_gas_fee_usd": 0.00160385808,
+      "entry_gas_fee_usd": 0.00164835204,
       "buy_slippage_actual": null
     },
     {
@@ -2099,7 +2099,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.799999999999983,
       "entry_tokens_received": 110.470191,
-      "entry_gas_fee_usd": 0.24789819999999999,
+      "entry_gas_fee_usd": 0.25477534999999996,
       "buy_slippage_actual": null
     },
     {
@@ -2124,7 +2124,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 361.251726,
-      "entry_gas_fee_usd": 0.00400494688,
+      "entry_gas_fee_usd": 0.00411605144,
       "buy_slippage_actual": null
     },
     {
@@ -2149,7 +2149,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 69.066869,
-      "entry_gas_fee_usd": 0.016545875720000002,
+      "entry_gas_fee_usd": 0.01700488861,
       "buy_slippage_actual": null
     },
     {
@@ -2174,7 +2174,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 9.900000000000006,
       "entry_tokens_received": 32.142247,
-      "entry_gas_fee_usd": 0.2959626318,
+      "entry_gas_fee_usd": 0.30417317715,
       "buy_slippage_actual": null
     },
     {
@@ -2199,7 +2199,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 135.158225,
-      "entry_gas_fee_usd": 0.00946291104,
+      "entry_gas_fee_usd": 0.00972542952,
       "buy_slippage_actual": null
     },
     {
@@ -2224,7 +2224,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 9.900000000000006,
       "entry_tokens_received": 74.448761,
-      "entry_gas_fee_usd": 0.0043607828,
+      "entry_gas_fee_usd": 0.0044817589,
       "buy_slippage_actual": null
     },
     {
@@ -2249,7 +2249,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 161.692998,
-      "entry_gas_fee_usd": 0.25287854284,
+      "entry_gas_fee_usd": 0.25989385667,
       "buy_slippage_actual": null
     },
     {
@@ -2274,7 +2274,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 1.9800000000000182,
       "entry_tokens_received": 16.081125,
-      "entry_gas_fee_usd": 0.0725136236,
+      "entry_gas_fee_usd": 0.0745252843,
       "buy_slippage_actual": null
     },
     {
@@ -2299,7 +2299,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 9.900000000000006,
       "entry_tokens_received": 568.802721,
-      "entry_gas_fee_usd": 0.27545001396,
+      "entry_gas_fee_usd": 0.28309150173,
       "buy_slippage_actual": null
     },
     {
@@ -2324,7 +2324,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 131.741045,
-      "entry_gas_fee_usd": 0.15125635404,
+      "entry_gas_fee_usd": 0.15545248227,
       "buy_slippage_actual": null
     },
     {
@@ -2349,15 +2349,15 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 4.950000000000017,
       "entry_tokens_received": 112.733459,
-      "entry_gas_fee_usd": 0.27455263484000003,
+      "entry_gas_fee_usd": 0.28216922767,
       "buy_slippage_actual": null,
       "sell_tx_hash": "SwpJjk3RqiVxEDeAF8e6L2ZEtDAm8NE7BoBQtWdCNMuhFLryMox6y6Kfd6b7nbu3sYheFZH3ZwBFnkdcB6NziqL",
       "exit_tokens_sold": 84.550095,
       "actual_proceeds_usd": 3.4628629999999987,
-      "exit_gas_fee_usd": 0.02187488336,
-      "total_fees_usd": 0.2964275182,
-      "pnl_after_fees_usd": -1.7835645182000184,
-      "pnl_after_fees_percent": -36.03160642828308
+      "exit_gas_fee_usd": 0.022481732679999998,
+      "total_fees_usd": 0.30465096035,
+      "pnl_after_fees_usd": -1.7917879603500184,
+      "pnl_after_fees_percent": -36.19773657272752
     },
     {
       "id": "pippin_20251130_021928",
@@ -2381,15 +2381,15 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 162.770914,
-      "entry_gas_fee_usd": 0.0021907771600000003,
+      "entry_gas_fee_usd": 0.00225155333,
       "buy_slippage_actual": null,
       "sell_tx_hash": "dzSXAjtKLfc1aRGbptJcQ7QAsuNd4mrnCFv5jDbDvw7kV1AtAy6s2z9E3TZhjyLqsRjniC1acgGzmr3uwvS8e3J",
       "exit_tokens_sold": 324.597189,
       "actual_proceeds_usd": 43.84687200000002,
-      "exit_gas_fee_usd": 0.00350432852,
-      "total_fees_usd": 0.00569510568,
-      "pnl_after_fees_usd": 24.041176894320007,
-      "pnl_after_fees_percent": 121.42008532484844
+      "exit_gas_fee_usd": 0.00360154501,
+      "total_fees_usd": 0.00585309834,
+      "pnl_after_fees_usd": 24.041018901660006,
+      "pnl_after_fees_percent": 121.41928738212118
     },
     {
       "id": "pippin_20251129_191648",
@@ -2413,7 +2413,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 190.031975,
-      "entry_gas_fee_usd": 0.010186328679999999,
+      "entry_gas_fee_usd": 0.010468916089999999,
       "buy_slippage_actual": null
     },
     {
@@ -2438,7 +2438,7 @@
       "entry_amount_usd_quoted": 13.200000000000001,
       "entry_amount_usd_actual": 13.200000000000017,
       "entry_tokens_received": 850.921986,
-      "entry_gas_fee_usd": 0.25287854284,
+      "entry_gas_fee_usd": 0.25989385667,
       "buy_slippage_actual": null
     },
     {
@@ -2463,7 +2463,7 @@
       "entry_amount_usd_quoted": 13.200000000000001,
       "entry_amount_usd_actual": 13.200000000000017,
       "entry_tokens_received": 114.953265,
-      "entry_gas_fee_usd": 0.0381454128,
+      "entry_gas_fee_usd": 0.0392036364,
       "buy_slippage_actual": null
     },
     {
@@ -2488,7 +2488,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 9.900000000000006,
       "entry_tokens_received": 582.603078,
-      "entry_gas_fee_usd": 0.00526236568,
+      "entry_gas_fee_usd": 0.005408353339999999,
       "buy_slippage_actual": null
     },
     {
@@ -2513,7 +2513,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 213.721519,
-      "entry_gas_fee_usd": 0.015366721040000001,
+      "entry_gas_fee_usd": 0.015793022020000002,
       "buy_slippage_actual": null
     },
     {
@@ -2538,7 +2538,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 247.862982,
-      "entry_gas_fee_usd": 0.03443336908,
+      "entry_gas_fee_usd": 0.035388613789999995,
       "buy_slippage_actual": null
     },
     {
@@ -2563,7 +2563,7 @@
       "entry_amount_usd_quoted": 13.200000000000001,
       "entry_amount_usd_actual": 13.199999999999989,
       "entry_tokens_received": 106.827778,
-      "entry_gas_fee_usd": 0.0065640476,
+      "entry_gas_fee_usd": 0.0067461463,
       "buy_slippage_actual": null
     },
     {
@@ -2588,7 +2588,7 @@
       "entry_amount_usd_quoted": 13.200000000000001,
       "entry_amount_usd_actual": 13.200000000000017,
       "entry_tokens_received": 298.26377,
-      "entry_gas_fee_usd": 0.02232097648,
+      "entry_gas_fee_usd": 0.02294020124,
       "buy_slippage_actual": null
     },
     {
@@ -2613,7 +2613,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 58.877999,
-      "entry_gas_fee_usd": 0.006555021879999999,
+      "entry_gas_fee_usd": 0.006736870189999999,
       "buy_slippage_actual": null
     },
     {
@@ -2638,7 +2638,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 9.899999999999977,
       "entry_tokens_received": 558.120668,
-      "entry_gas_fee_usd": 0.014803169920000001,
+      "entry_gas_fee_usd": 0.01521383696,
       "buy_slippage_actual": null
     },
     {
@@ -2663,7 +2663,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 4.949999999999989,
       "entry_tokens_received": 89.663138,
-      "entry_gas_fee_usd": 0.04956307224,
+      "entry_gas_fee_usd": 0.05093804262,
       "buy_slippage_actual": null
     },
     {
@@ -2688,7 +2688,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 1.9799999999999898,
       "entry_tokens_received": 104.171347,
-      "entry_gas_fee_usd": 0.00362796852,
+      "entry_gas_fee_usd": 0.0037286150099999998,
       "buy_slippage_actual": null
     },
     {
@@ -2713,7 +2713,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 322.062474,
-      "entry_gas_fee_usd": 0.02183816228,
+      "entry_gas_fee_usd": 0.02244399289,
       "buy_slippage_actual": null
     },
     {
@@ -2738,7 +2738,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 55.265835,
-      "entry_gas_fee_usd": 0.005486277719999999,
+      "entry_gas_fee_usd": 0.005638477109999999,
       "buy_slippage_actual": null
     },
     {
@@ -2763,7 +2763,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 1153.025213,
-      "entry_gas_fee_usd": 0.00243150424,
+      "entry_gas_fee_usd": 0.00249895862,
       "buy_slippage_actual": null
     },
     {
@@ -2788,7 +2788,7 @@
       "entry_amount_usd_quoted": 13.200000000000001,
       "entry_amount_usd_actual": 13.200000000000017,
       "entry_tokens_received": 99.906767,
-      "entry_gas_fee_usd": 0.03873121912,
+      "entry_gas_fee_usd": 0.03980569406,
       "buy_slippage_actual": null
     },
     {
@@ -2813,7 +2813,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.799999999999983,
       "entry_tokens_received": 1074.293123,
-      "entry_gas_fee_usd": 0.24789819999999999,
+      "entry_gas_fee_usd": 0.25477534999999996,
       "buy_slippage_actual": null
     },
     {
@@ -2838,7 +2838,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 298.08295,
-      "entry_gas_fee_usd": 0.02985423804,
+      "entry_gas_fee_usd": 0.03068244927,
       "buy_slippage_actual": null
     },
     {
@@ -2863,7 +2863,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.799999999999983,
       "entry_tokens_received": 1257.476746,
-      "entry_gas_fee_usd": 0.07610276916,
+      "entry_gas_fee_usd": 0.07821399933,
       "buy_slippage_actual": null
     },
     {
@@ -2888,7 +2888,7 @@
       "entry_amount_usd_quoted": 13.200000000000001,
       "entry_amount_usd_actual": 13.199999999999989,
       "entry_tokens_received": 113.874846,
-      "entry_gas_fee_usd": 0.0087988406,
+      "entry_gas_fee_usd": 0.00904293655,
       "buy_slippage_actual": null
     },
     {
@@ -2913,7 +2913,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 364.999416,
-      "entry_gas_fee_usd": 0.009485908080000001,
+      "entry_gas_fee_usd": 0.00974906454,
       "buy_slippage_actual": null
     },
     {
@@ -2938,7 +2938,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 61.780344,
-      "entry_gas_fee_usd": 0.02379995816,
+      "entry_gas_fee_usd": 0.024460212579999998,
       "buy_slippage_actual": null
     },
     {
@@ -2963,7 +2963,7 @@
       "entry_amount_usd_quoted": 13.200000000000001,
       "entry_amount_usd_actual": 13.199999999999989,
       "entry_tokens_received": 43.784273,
-      "entry_gas_fee_usd": 0.28061754776,
+      "entry_gas_fee_usd": 0.28840239238,
       "buy_slippage_actual": null
     },
     {
@@ -2988,7 +2988,7 @@
       "entry_amount_usd_quoted": 13.200000000000001,
       "entry_amount_usd_actual": 13.200000000000017,
       "entry_tokens_received": 1355.564074,
-      "entry_gas_fee_usd": 0.030546622040000002,
+      "entry_gas_fee_usd": 0.03139404127,
       "buy_slippage_actual": null
     },
     {
@@ -3013,7 +3013,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.799999999999983,
       "entry_tokens_received": 56.655114,
-      "entry_gas_fee_usd": 0.0841413474,
+      "entry_gas_fee_usd": 0.08647558244999999,
       "buy_slippage_actual": null
     },
     {
@@ -3038,7 +3038,7 @@
       "entry_amount_usd_quoted": 13.200000000000001,
       "entry_amount_usd_actual": 13.199999999999989,
       "entry_tokens_received": 17.204524,
-      "entry_gas_fee_usd": 0.29799329516,
+      "entry_gas_fee_usd": 0.30626017483,
       "buy_slippage_actual": null
     },
     {
@@ -3063,7 +3063,7 @@
       "entry_amount_usd_quoted": 13.200000000000001,
       "entry_amount_usd_actual": 13.199999999999989,
       "entry_tokens_received": 114.290323,
-      "entry_gas_fee_usd": 0.02307913696,
+      "entry_gas_fee_usd": 0.023719394479999996,
       "buy_slippage_actual": null
     },
     {
@@ -3088,15 +3088,15 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 9.900000000000034,
       "entry_tokens_received": 34.967784,
-      "entry_gas_fee_usd": 0.015850648,
+      "entry_gas_fee_usd": 0.016290374,
       "buy_slippage_actual": null,
       "sell_tx_hash": "GwiR4mLnPo7Mn8A4dBHgQjS3KTdZNoZ1nL7ofB9mpvaLQbuXMikLcG5nXrj2etrZC2zw4T8EpnGU1Lufe9KM4cm",
-      "exit_gas_fee_usd": 0.01063316364,
+      "exit_gas_fee_usd": 0.01092814707,
       "exit_tokens_sold": 70.071721,
       "actual_proceeds_usd": 23.576551999999992,
-      "total_fees_usd": 0.02648381164,
-      "pnl_after_fees_usd": 13.650068188359958,
-      "pnl_after_fees_percent": 137.87947665010012
+      "total_fees_usd": 0.02721852107,
+      "pnl_after_fees_usd": 13.649333478929957,
+      "pnl_after_fees_percent": 137.87205534272638
     },
     {
       "id": "1_20251125_213558",
@@ -3120,7 +3120,7 @@
       "entry_amount_usd_quoted": 13.200000000000001,
       "entry_amount_usd_actual": 13.200000000000017,
       "entry_tokens_received": 940.8918,
-      "entry_gas_fee_usd": 0.00080823468,
+      "entry_gas_fee_usd": 0.00083065659,
       "buy_slippage_actual": null
     },
     {
@@ -3145,7 +3145,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.799999999999983,
       "entry_tokens_received": 156.888488,
-      "entry_gas_fee_usd": 0.0149641492,
+      "entry_gas_fee_usd": 0.015379282099999999,
       "buy_slippage_actual": null
     },
     {
@@ -3170,7 +3170,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 1.9800000000000182,
       "entry_tokens_received": 32.58239,
-      "entry_gas_fee_usd": 0.0048052686,
+      "entry_gas_fee_usd": 0.00493857555,
       "buy_slippage_actual": null
     },
     {
@@ -3195,7 +3195,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 9.899999999999977,
       "entry_tokens_received": 142.75946,
-      "entry_gas_fee_usd": 0.06008557808,
+      "entry_gas_fee_usd": 0.06175246204,
       "buy_slippage_actual": null
     },
     {
@@ -3220,7 +3220,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 64.257169,
-      "entry_gas_fee_usd": 0.25287854284,
+      "entry_gas_fee_usd": 0.25989385667,
       "buy_slippage_actual": null
     },
     {
@@ -3245,7 +3245,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.799999999999955,
       "entry_tokens_received": 282.062907,
-      "entry_gas_fee_usd": 0.03113984676,
+      "entry_gas_fee_usd": 0.03200372313,
       "buy_slippage_actual": null
     },
     {
@@ -3270,7 +3270,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.799565,
       "entry_tokens_received": 296.4,
-      "entry_gas_fee_usd": 0.00230638056,
+      "entry_gas_fee_usd": 0.0023703637800000002,
       "buy_slippage_actual": null
     },
     {
@@ -3295,7 +3295,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.799999999999983,
       "entry_tokens_received": 173.643082,
-      "entry_gas_fee_usd": 0.09687119816,
+      "entry_gas_fee_usd": 0.09955858258,
       "buy_slippage_actual": null
     },
     {
@@ -3320,15 +3320,15 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 70.046366,
-      "entry_gas_fee_usd": 0.14322692516,
+      "entry_gas_fee_usd": 0.14720030232999998,
       "buy_slippage_actual": null,
       "sell_tx_hash": "2eps3iJf54hAuMN53yo8VqFaAiM7m4rJJARBDWSL7ZjWSZhxnP9kc3V5tph8B54Bsh5KagAP29pQP3EKJpH7hcn9",
       "exit_tokens_sold": 79.320484,
       "actual_proceeds_usd": 22.398097999999948,
-      "exit_gas_fee_usd": 0.09708447716,
-      "total_fees_usd": 0.24031140231999998,
-      "pnl_after_fees_usd": 2.357786597679936,
-      "pnl_after_fees_percent": 11.90801311959563
+      "exit_gas_fee_usd": 0.09977777833,
+      "total_fees_usd": 0.24697808066,
+      "pnl_after_fees_usd": 2.3511199193399364,
+      "pnl_after_fees_percent": 11.874343026969369
     },
     {
       "id": "pippin_20251124_181018",
@@ -3352,7 +3352,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 9.899999999999977,
       "entry_tokens_received": 152.660952,
-      "entry_gas_fee_usd": 0.014434104520000001,
+      "entry_gas_fee_usd": 0.01483453301,
       "buy_slippage_actual": null
     },
     {
@@ -3377,7 +3377,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 326.5632,
-      "entry_gas_fee_usd": 0.0110973082,
+      "entry_gas_fee_usd": 0.011405167849999998,
       "buy_slippage_actual": null
     },
     {
@@ -3402,15 +3402,15 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.799999999999983,
       "entry_tokens_received": 79.320484,
-      "entry_gas_fee_usd": 0.02436177832,
+      "entry_gas_fee_usd": 0.025037618659999997,
       "buy_slippage_actual": null,
       "sell_tx_hash": "2eps3iJf54hAuMN53yo8VqFaAiM7m4rJJARBDWSL7ZjWSZhxnP9kc3V5tph8B54Bsh5KagAP29pQP3EKJpH7hcn9",
       "exit_tokens_sold": 79.320484,
       "actual_proceeds_usd": 22.398097999999948,
-      "exit_gas_fee_usd": 0.09708447716,
-      "total_fees_usd": 0.12144625548,
-      "pnl_after_fees_usd": 2.4766517445199647,
-      "pnl_after_fees_percent": 12.508342144040235
+      "exit_gas_fee_usd": 0.09977777833,
+      "total_fees_usd": 0.12481539699,
+      "pnl_after_fees_usd": 2.473282603009965,
+      "pnl_after_fees_percent": 12.491326277828115
     },
     {
       "id": "pippin_20251124_080833",
@@ -3434,7 +3434,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 281.052839,
-      "entry_gas_fee_usd": 0.05529007704,
+      "entry_gas_fee_usd": 0.05682392502,
       "buy_slippage_actual": null
     },
     {
@@ -3459,15 +3459,15 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 702.623442,
-      "entry_gas_fee_usd": 0.02649926664,
+      "entry_gas_fee_usd": 0.02723440482,
       "buy_slippage_actual": null,
       "sell_tx_hash": "4zetzS2UTGWD3T1vZtHDgUvmjetsUBRKdeBeN6amBZ2HsiyLbkZx2prHV9YLTnrXiEi8V6zxfzZhepHHPpPJfgJp",
       "exit_tokens_sold": 672.046371,
       "actual_proceeds_usd": 18.166240999999985,
-      "exit_gas_fee_usd": 0.02636573544,
-      "total_fees_usd": 0.05286500208,
-      "pnl_after_fees_usd": -1.686624002080026,
-      "pnl_after_fees_percent": -8.518303040808208
+      "exit_gas_fee_usd": 0.027097169219999998,
+      "total_fees_usd": 0.05433157404,
+      "pnl_after_fees_usd": -1.688090574040026,
+      "pnl_after_fees_percent": -8.525709969899117
     },
     {
       "id": "FWOG_20251123_120150",
@@ -3491,7 +3491,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 9.900000000000006,
       "entry_tokens_received": 1096.960937,
-      "entry_gas_fee_usd": 0.07517942563999999,
+      "entry_gas_fee_usd": 0.07726504057,
       "buy_slippage_actual": null
     },
     {
@@ -3516,7 +3516,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.799999999999983,
       "entry_tokens_received": 541.36023,
-      "entry_gas_fee_usd": 0.00200754268,
+      "entry_gas_fee_usd": 0.00206323559,
       "buy_slippage_actual": null
     },
     {
@@ -3541,7 +3541,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000004,
       "entry_tokens_received": 1993.230625,
-      "entry_gas_fee_usd": 0.02317977992,
+      "entry_gas_fee_usd": 0.02382282946,
       "buy_slippage_actual": null
     },
     {
@@ -3566,7 +3566,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.799999999999955,
       "entry_tokens_received": 672.046371,
-      "entry_gas_fee_usd": 0.00496377508,
+      "entry_gas_fee_usd": 0.00510147929,
       "buy_slippage_actual": null
     },
     {
@@ -3591,15 +3591,15 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 90.481558,
-      "entry_gas_fee_usd": 0.00242878416,
+      "entry_gas_fee_usd": 0.0024961630799999997,
       "buy_slippage_actual": null,
       "sell_tx_hash": "2F7NTxE1bNybEnD7S6JDedcywJfi9LcvvSxnLXRE8xhdo4e5S6uGvurtqFLiT5CJf9p5PrmXDcMxowGLBY4XSKmd",
       "exit_tokens_sold": 36.434469,
       "actual_proceeds_usd": 7.68291099999999,
-      "exit_gas_fee_usd": 0.11373074856,
-      "total_fees_usd": 0.11615953272,
-      "pnl_after_fees_usd": -12.23324853272002,
-      "pnl_after_fees_percent": -61.78408349858593
+      "exit_gas_fee_usd": 0.11688584778,
+      "total_fees_usd": 0.11938201086,
+      "pnl_after_fees_usd": -12.236471010860022,
+      "pnl_after_fees_percent": -61.800358640707145
     },
     {
       "id": "pippin_20251122_203526",
@@ -3623,7 +3623,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 9.899999999999977,
       "entry_tokens_received": 274.096306,
-      "entry_gas_fee_usd": 0.15251352556,
+      "entry_gas_fee_usd": 0.15674453002999997,
       "buy_slippage_actual": null
     },
     {
@@ -3648,7 +3648,7 @@
       "entry_amount_usd_quoted": 13.200000000000001,
       "entry_amount_usd_actual": 13.199999999999989,
       "entry_tokens_received": 72.868939,
-      "entry_gas_fee_usd": 0.03415913556,
+      "entry_gas_fee_usd": 0.03510677253,
       "buy_slippage_actual": null
     },
     {
@@ -3698,7 +3698,7 @@
       "entry_amount_usd_quoted": 13.200000000000001,
       "entry_amount_usd_actual": 13.199999999999989,
       "entry_tokens_received": 2544.41702,
-      "entry_gas_fee_usd": 0.00607987336,
+      "entry_gas_fee_usd": 0.00624854018,
       "buy_slippage_actual": null
     },
     {
@@ -3723,7 +3723,7 @@
       "entry_amount_usd_quoted": 13.200000000000001,
       "entry_amount_usd_actual": 13.200000000000045,
       "entry_tokens_received": 2035.37054,
-      "entry_gas_fee_usd": 0.05808310464,
+      "entry_gas_fee_usd": 0.059694436319999995,
       "buy_slippage_actual": null
     },
     {
@@ -3748,15 +3748,15 @@
       "entry_amount_usd_quoted": 13.200000000000001,
       "entry_amount_usd_actual": 13.199999999999989,
       "entry_tokens_received": 1062.88501,
-      "entry_gas_fee_usd": 0.048638368679999995,
+      "entry_gas_fee_usd": 0.04998768609,
       "buy_slippage_actual": null,
       "sell_tx_hash": "3XZ3ikt7bDyTedy2k3FAxwozuEZpUMhv9PyziSDAkj2ktfKj2nXhKhSwYjQSCafJ49rh2qzZcNYWQwMqu3BnBb9",
       "exit_tokens_sold": 1062.88501,
       "actual_proceeds_usd": 12.240814,
-      "exit_gas_fee_usd": 0.06179700296,
-      "total_fees_usd": 0.11043537164,
-      "pnl_after_fees_usd": -1.0696213716399883,
-      "pnl_after_fees_percent": -8.103192209393857
+      "exit_gas_fee_usd": 0.06351136498,
+      "total_fees_usd": 0.11349905107,
+      "pnl_after_fees_usd": -1.0726850510699883,
+      "pnl_after_fees_percent": -8.126401902045373
     },
     {
       "id": "GIGA_20251120_062255",
@@ -3830,7 +3830,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.80000000000001,
       "entry_tokens_received": 4110.84088,
-      "entry_gas_fee_usd": 0.30950145908000004,
+      "entry_gas_fee_usd": 0.31808759629,
       "buy_slippage_actual": null
     },
     {
@@ -3905,7 +3905,7 @@
       "entry_amount_usd_quoted": 19.8,
       "entry_amount_usd_actual": 19.799999999999983,
       "entry_tokens_received": 158.527739,
-      "entry_gas_fee_usd": 0.00277645984,
+      "entry_gas_fee_usd": 0.0028534839199999998,
       "buy_slippage_actual": null,
       "exit_gas_fee_usd": null,
       "total_fees_usd": null,
@@ -3936,7 +3936,7 @@
       "entry_amount_usd_quoted": 13.200000000000001,
       "entry_amount_usd_actual": 13.200000000000017,
       "entry_tokens_received": 126.183275,
-      "entry_gas_fee_usd": 0.0031656785600000003,
+      "entry_gas_fee_usd": 0.00325350028,
       "buy_slippage_actual": null,
       "exit_gas_fee_usd": null,
       "total_fees_usd": null,
@@ -3967,7 +3967,7 @@
       "entry_amount_usd_quoted": 13.200000000000001,
       "entry_amount_usd_actual": 13.200000000000017,
       "entry_tokens_received": 117.307665,
-      "entry_gas_fee_usd": 0.0007419636399999999,
+      "entry_gas_fee_usd": 0.00076254707,
       "buy_slippage_actual": null,
       "exit_gas_fee_usd": null,
       "total_fees_usd": null,
@@ -4049,10 +4049,10 @@
       "entry_tokens_received": null,
       "entry_gas_fee_usd": null,
       "buy_slippage_actual": null,
-      "exit_gas_fee_usd": 0.00366060948,
-      "total_fees_usd": 0.00366060948,
-      "pnl_after_fees_usd": 0.6222623905199434,
-      "pnl_after_fees_percent": 2.4890495620797735,
+      "exit_gas_fee_usd": 0.0037621614899999998,
+      "total_fees_usd": 0.0037621614899999998,
+      "pnl_after_fees_usd": 0.6221608385099434,
+      "pnl_after_fees_percent": 2.4886433540397737,
       "sell_tx_hash": "2kbwgSjPbKig5sFTvo6YoPKGVErMQ8bt9UDBrALz4SZct7T3JhnJjSnaFo23LwRB4Vo97y2WyNoaMuehCXTRj4B3",
       "partial_tp_percent": 50.0,
       "reason": "partial_tp_50%",
@@ -4083,10 +4083,10 @@
       "entry_tokens_received": null,
       "entry_gas_fee_usd": null,
       "buy_slippage_actual": null,
-      "exit_gas_fee_usd": 0.00080897652,
-      "total_fees_usd": 0.00080897652,
-      "pnl_after_fees_usd": 23.560658023479924,
-      "pnl_after_fees_percent": 102.08257375857855,
+      "exit_gas_fee_usd": 0.00083141901,
+      "total_fees_usd": 0.00083141901,
+      "pnl_after_fees_usd": 23.56063558098992,
+      "pnl_after_fees_percent": 102.08247652075357,
       "sell_tx_hash": "2oL1jfEqbm4r5vRXpPGqqDjZdiM776A4qrMdoJdLM8X9MV3XihKw1S6jZNAnR2UEXhk9gENVJc28vJoRsyjcXHah",
       "partial_tp_percent": 50.0,
       "reason": "partial_tp_50%",
@@ -4122,5 +4122,5 @@
       }
     }
   },
-  "last_updated": "2025-12-28T18:33:20.326866"
+  "last_updated": "2025-12-28T19:36:19.360947"
 }
