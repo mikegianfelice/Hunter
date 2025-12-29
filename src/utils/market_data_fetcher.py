@@ -515,23 +515,41 @@ class MarketDataFetcher:
             
             # Get historical volume data using BTC as proxy (most liquid asset)
             # We'll use BTC's volume history to estimate overall market trend
+            logger.debug(f"🔍 Fetching BTC market chart data for {hours} hours...")
             btc_data, from_timestamp, now = self._get_market_chart_range("bitcoin", hours)
 
             volumes: List[float] = []
             if btc_data and 'total_volumes' in btc_data:
                 volumes = [float(v[1]) for v in btc_data['total_volumes']]
+                logger.debug(f"✅ Got {len(volumes)} volume data points from market_chart_range")
 
             if not volumes:
-                interval = self._select_coincap_interval(hours)
-                history = self._get_history_from_coincap("bitcoin", from_timestamp, now, interval)
-                if history:
-                    volumes = [
-                        float(point["volumeUsd"])
-                        for point in history
-                        if point.get("volumeUsd") is not None
-                    ]
+                logger.debug(f"⚠️ No volumes from market_chart_range (CoinCap /history endpoint doesn't provide volume data)")
+                logger.debug(f"🔍 Falling back to CoinGecko for volume data...")
+                
+                # CoinCap Pro API v3 /history endpoint doesn't include volume data
+                # We need to use CoinGecko market_chart/range for volume data
+                # Clear cache to force fresh CoinGecko fetch (since cache might have CoinCap data without volumes)
+                cache_key_to_clear = f"market_chart:bitcoin:{hours}:{int(time.time() // (3600 if hours >= 24 else 60)) * (3600 if hours >= 24 else 60)}"
+                if cache_key_to_clear in self.market_chart_cache:
+                    logger.debug(f"🔍 Clearing cached CoinCap data to force CoinGecko fetch for volumes")
+                    del self.market_chart_cache[cache_key_to_clear]
+                
+                if self.enable_coingecko_market_chart and self._can_make_coingecko_call():
+                    logger.debug(f"   CoinGecko available - fetching volume data...")
+                    coingecko_data, _, _ = self._get_market_chart_range("bitcoin", hours)
+                    if coingecko_data and 'total_volumes' in coingecko_data:
+                        volumes = [float(v[1]) for v in coingecko_data['total_volumes']]
+                        logger.debug(f"✅ Got {len(volumes)} volume data points from CoinGecko")
+                    else:
+                        logger.warning(f"⚠️ CoinGecko market_chart/range also failed to provide volume data")
+                else:
+                    coingecko_enabled = self.enable_coingecko_market_chart
+                    coingecko_can_call = self._can_make_coingecko_call() if hasattr(self, '_can_make_coingecko_call') else False
+                    logger.warning(f"⚠️ CoinGecko unavailable for volume fallback (enabled: {coingecko_enabled}, can_call: {coingecko_can_call})")
 
             if len(volumes) < 2:
+                logger.warning(f"⚠️ Insufficient volume data: {len(volumes)} data points (need at least 2)")
                 # Fallback: Use current volume relative to a reasonable baseline
                 # Typical crypto market volume ranges from $50B to $200B+
                 # Normalize assuming $50B = 0.0, $200B+ = 1.0
@@ -703,32 +721,46 @@ class MarketDataFetcher:
             return cached["data"], from_timestamp, bucket_now
 
         # Try CoinCap FIRST for BTC/ETH (free, unlimited, reliable)
+        # NOTE: CoinCap Pro API v3 /history endpoint doesn't include volume data
+        # So if we need volumes, we'll continue to CoinGecko below
+        coin_cap_prices = None
         if asset_id in ["bitcoin", "ethereum"]:
+            logger.debug(f"🔍 Attempting CoinCap fetch for {asset_id} (interval: {self._select_coincap_interval(hours)}, hours: {hours})")
+            logger.debug(f"   CoinCap API key present: {bool(self.coincap_api_key)}")
             interval = self._select_coincap_interval(hours)
             history = self._get_history_from_coincap(asset_id, from_timestamp, bucket_now, interval)
             if history and len(history) > 0:
                 # Convert CoinCap format to CoinGecko-like format for compatibility
-                prices = [[int(point["time"]), float(point["priceUsd"])] 
-                          for point in history if point.get("priceUsd") is not None]
-                volumes = [[int(point["time"]), float(point.get("volumeUsd", 0))] 
-                           for point in history if point.get("volumeUsd") is not None]
-                if prices:
-                    data = {"prices": prices}
-                    if volumes:
-                        data["total_volumes"] = volumes
-                    # Cache this CoinCap data (same format as CoinGecko)
+                coin_cap_prices = [[int(point["time"]), float(point["priceUsd"])] 
+                                   for point in history if point.get("priceUsd") is not None]
+                # CoinCap Pro API v3 /history endpoint doesn't include volumeUsd
+                # Check available fields for debugging
+                sample_point = history[0] if history else {}
+                logger.debug(f"🔍 CoinCap history sample fields: {list(sample_point.keys())}")
+                
+                # CoinCap doesn't provide volume data, so we'll need CoinGecko for volumes
+                # But if CoinCap provided prices and CoinGecko is disabled/rate-limited, return CoinCap prices
+                if coin_cap_prices and (not self.enable_coingecko_market_chart or not self._can_make_coingecko_call()):
+                    data = {"prices": coin_cap_prices}
                     self.market_chart_cache[cache_key] = {"data": data, "timestamp": current_time}
-                    logger.debug(f"✅ Using CoinCap data for {asset_id} market chart ({len(prices)} points)")
+                    logger.debug(f"✅ Using CoinCap data for {asset_id} market chart ({len(coin_cap_prices)} price points, 0 volume points - CoinGecko unavailable)")
                     return data, from_timestamp, bucket_now
+            else:
+                logger.warning(f"⚠️ CoinCap fetch failed or returned no data for {asset_id}")
 
         # Only use CoinGecko if CoinCap failed AND CoinGecko is enabled
         if not self.enable_coingecko_market_chart:
+            logger.debug(f"⚠️ CoinGecko market chart disabled, skipping fallback for {asset_id}")
             return None, from_timestamp, bucket_now
         
         # Check rate limit before making CoinGecko call
+        coingecko_count = self.api_tracker.get_count('coingecko')
         if not self._can_make_coingecko_call():
-            logger.warning(f"CoinGecko rate limit reached ({self.api_call_tracker.get('coingecko', 0)}/330), skipping {asset_id} market chart fetch")
+            logger.warning(f"⚠️ CoinGecko rate limit reached ({coingecko_count}/330), skipping {asset_id} market chart fetch")
             return None, from_timestamp, bucket_now
+        
+        logger.debug(f"🔍 Attempting CoinGecko fetch for {asset_id} (current calls: {coingecko_count}/330)")
+        logger.debug(f"   CoinGecko API key present: {bool(self.coingecko_api_key)}")
 
         # Prune stale cache entries opportunistically
         stale_keys = [
@@ -742,11 +774,35 @@ class MarketDataFetcher:
             f"{self._coingecko_base_url}coins/{asset_id}/market_chart/range"
             f"?vs_currency=usd&from={from_timestamp}&to={bucket_now}"
         )
-        data = self._fetch_json(url)
-        if data is not None:
-            self.market_chart_cache[cache_key] = {"data": data, "timestamp": current_time}
+        logger.debug(f"🔍 CoinGecko URL: {url[:100]}...")
+        coingecko_data = self._fetch_json(url)
+        if coingecko_data is not None:
+            if isinstance(coingecko_data, dict):
+                volume_count = len(coingecko_data.get('total_volumes', []))
+                price_count = len(coingecko_data.get('prices', []))
+                logger.debug(f"✅ CoinGecko returned data with {price_count} price points and {volume_count} volume points")
+                
+                # If we got CoinCap prices earlier but no volumes, merge CoinCap prices with CoinGecko volumes
+                if coin_cap_prices and volume_count > 0:
+                    logger.debug(f"🔗 Merging CoinCap prices ({len(coin_cap_prices)} points) with CoinGecko volumes ({volume_count} points)")
+                    coingecko_data["prices"] = coin_cap_prices  # Use CoinCap prices (more reliable)
+                    # Keep CoinGecko volumes
+                
+                if volume_count == 0:
+                    logger.warning(f"⚠️ CoinGecko data exists but has no volume points. Available keys: {list(coingecko_data.keys())}")
+            else:
+                logger.warning(f"⚠️ CoinGecko returned non-dict data: {type(coingecko_data)}")
+            self.market_chart_cache[cache_key] = {"data": coingecko_data, "timestamp": current_time}
+            return coingecko_data, from_timestamp, bucket_now
+        else:
+            logger.warning(f"⚠️ CoinGecko fetch returned None for {asset_id} (check rate limits or API key)")
+            # If we have CoinCap prices but CoinGecko failed, return CoinCap data anyway
+            if coin_cap_prices:
+                data = {"prices": coin_cap_prices}
+                logger.debug(f"⚠️ Returning CoinCap price data only (no volumes available)")
+                return data, from_timestamp, bucket_now
 
-        return data, from_timestamp, bucket_now
+        return None, from_timestamp, bucket_now
     
     def _fetch_json(self, url: str) -> Optional[Dict]:
         """Fetch JSON data with retry logic, rate limit handling, and proper headers"""
@@ -774,8 +830,9 @@ class MarketDataFetcher:
         if is_coincap_call:
             if self.coincap_api_key:
                 headers["Authorization"] = f"Bearer {self.coincap_api_key}"
+                logger.debug(f"🔑 CoinCap API key added to headers (length: {len(self.coincap_api_key)})")
             else:
-                logger.warning("CoinCap API key not provided - CoinCap Pro API v3 requires API key for all calls")
+                logger.warning("❌ CoinCap API key not provided - CoinCap Pro API v3 requires API key for all calls")
                 return None
         
         backoff = 1.0
@@ -791,18 +848,25 @@ class MarketDataFetcher:
                         track_coingecko_call()
                     elif is_coincap_call:
                         track_coincap_call()
+                    logger.debug(f"✅ API call successful: {url[:80]}...")
                     return response.json()
                 elif response.status_code == 429:
                     # Rate limited – log once and move on instead of retrying
+                    api_name = "CoinGecko" if is_coingecko_call else "CoinCap"
                     logger.warning(
-                        f"Rate limited (429) on {url[:60]}... Skipping retries to continue quickly"
+                        f"❌ Rate limited (429) on {api_name} API: {url[:60]}... Skipping retries"
                     )
                     return None
                 elif response.status_code == 403:
-                    logger.warning(f"Access forbidden (403) on {url[:60]}...")
+                    api_name = "CoinGecko" if is_coingecko_call else "CoinCap"
+                    logger.warning(f"❌ Access forbidden (403) on {api_name} API: {url[:60]}...")
                     return None
                 else:
-                    logger.warning(f"Non-200 status {response.status_code} on {url[:60]}... Response: {response.text[:200]}")
+                    # Log other error status codes
+                    api_name = "CoinGecko" if is_coingecko_call else "CoinCap"
+                    logger.warning(
+                        f"❌ {api_name} API returned status {response.status_code} for {url[:60]}... Response: {response.text[:200]}"
+                    )
                     if attempt < self.max_retries - 1:
                         time.sleep(backoff)
                         backoff = min(backoff * 2, 60)
@@ -862,6 +926,7 @@ class MarketDataFetcher:
     def _get_history_from_coincap(self, asset_id: str, start_ts: int, end_ts: int, interval: str = "h1") -> Optional[List[Dict]]:
         """Fetch historical price data from CoinCap."""
         if not self._coincap_available:
+            logger.warning(f"⚠️ CoinCap marked as unavailable")
             return None
         try:
             # CoinCap expects millisecond timestamps
@@ -871,12 +936,21 @@ class MarketDataFetcher:
                 f"{self._coincap_base_url}assets/{asset_id}/history"
                 f"?interval={interval}&start={start_ms}&end={end_ms}"
             )
+            logger.debug(f"🔍 CoinCap URL: {url[:100]}...")
             data = self._fetch_json(url)
-            if data and "data" in data and isinstance(data["data"], list) and data["data"]:
-                logger.info(f"✅ Retrieved {len(data['data'])} {asset_id} datapoints from CoinCap")
-                return data["data"]
+            if data:
+                if "data" in data and isinstance(data["data"], list):
+                    if data["data"]:
+                        logger.info(f"✅ Retrieved {len(data['data'])} {asset_id} datapoints from CoinCap")
+                        return data["data"]
+                    else:
+                        logger.warning(f"⚠️ CoinCap returned empty data list for {asset_id}")
+                else:
+                    logger.warning(f"⚠️ CoinCap response missing 'data' field or wrong type: {type(data.get('data'))}")
+            else:
+                logger.warning(f"⚠️ CoinCap _fetch_json returned None for {asset_id}")
         except Exception as exc:
-            logger.warning(f"CoinCap history fetch failed for {asset_id}: {exc}")
+            logger.warning(f"❌ CoinCap history fetch failed for {asset_id}: {exc}", exc_info=True)
         return None
 
     def _get_global_from_coincap(self) -> Optional[Dict]:
