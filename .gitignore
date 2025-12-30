@@ -250,6 +250,7 @@ data/api_call_tracker.json
 data/candlestick_cache.json
 data/helius_wallet_value_cache.json
 performance_data.json
+data/performance_data.json
 
 # Runtime data files - CSV files (but allow trade_log.csv for charts)
 trending_tokens.csv
@@ -257,9 +258,8 @@ trending_tokens.csv
 # Exception: Allow trade_log.csv for chart generation
 !data/trade_log.csv
 
-# Exception: Allow performance_data.json for chart generation
-# These files are needed by GitHub Actions workflow
-!data/performance_data.json
+# Note: performance_data.json is ignored (runtime state file)
+# Charts now use Helius data exclusively, so performance_data.json is no longer needed in git
 
 # ML training data (generated, can be regenerated)
 data/ml_training_data.json
