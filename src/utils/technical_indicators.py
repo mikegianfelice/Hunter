@@ -17,15 +17,17 @@ class TechnicalIndicators:
     """Calculate technical indicators from OHLCV data"""
     
     def __init__(self):
+        # Minimum periods required for accurate indicator calculation
+        # Note: These values are for reference only; actual calculations use standard parameters
         self.min_periods = {
-            'rsi': 14,
-            'macd': 26,  # Fast EMA period
-            'macd_signal': 9,  # Signal line period
-            'macd_slow': 12,  # Slow EMA period
-            'bollinger': 20,
-            'bollinger_std': 2,
-            'volume_profile': 20,
-            'price_action': 10
+            'rsi': 14,  # RSI period (standard)
+            'macd': 35,  # MACD minimum (slow=26 + signal=9 periods for accurate calculation)
+            'macd_signal': 9,  # MACD signal line period (standard)
+            'macd_slow': 26,  # MACD slow EMA period (standard, fast=12, slow=26, signal=9)
+            'bollinger': 20,  # Bollinger Bands period (standard)
+            'bollinger_std': 2,  # Bollinger Bands standard deviation multiplier (standard)
+            'volume_profile': 20,  # Volume profile minimum periods
+            'price_action': 10  # Price action pattern minimum periods
         }
     
     def calculate_rsi(self, prices: pd.Series, period: int = 14) -> float:
