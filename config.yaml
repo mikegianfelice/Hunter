@@ -5,7 +5,7 @@ test_mode: false  # LIVE TRADING ENABLED - Realistic Scaling
 trade_amount_usd: 6  # Adjusted to align with current USDC balance
 slippage: 0.03  # 3% slippage (tightened for better execution)
 take_profit: 0.12  # 12% (reduced from 13% to improve win rate)
-stop_loss: 0.07  # 7% stop loss
+stop_loss: 0.06  # 6% stop loss (tightened to improve risk/reward ratio)
 stop_loss_slippage_buffer: 0.15  # 15% buffer to account for execution slippage (effective trigger = stop_loss * 1.15)
 use_dynamic_tp: true  # Enable dynamic take profit
 min_trade_amount_usd: 10  # Minimum trade amount for realistic scaling
@@ -63,11 +63,11 @@ check_pool_reserves: true  # Verify pool has sufficient reserves
 min_pool_reserves_multiplier: 2.0  # Pool reserves must be 2x trade amount
 
 # === Strategy Thresholds ===
-min_momentum_pct: 0.005  # Increased momentum requirement for quality (raised to 0.5% minimum for better signal quality)
+min_momentum_pct: 0.008  # Increased momentum requirement for quality (raised to 0.8% minimum for stronger signals)
 multichain_momentum_multiplier: 0.8  # Multi-chain tokens require 80% of ETH momentum (was 75%)
-multichain_momentum_min: 0.004  # Minimum 0.4% momentum for multi-chain tokens (was 0.2%)
-min_volume_24h_for_buy: 200000   # Quality-first: $200k volume minimum for reliability (raised from $150k to improve win rate)
-min_liquidity_usd_for_buy: 200000  # Quality-first: $200k liquidity minimum for reliability (raised from $150k to improve win rate)
+multichain_momentum_min: 0.006  # Minimum 0.6% momentum for multi-chain tokens (raised from 0.4% for stronger signals)
+min_volume_24h_for_buy: 300000   # Quality-first: $300k volume minimum for reliability (raised from $200k to improve win rate)
+min_liquidity_usd_for_buy: 300000  # Quality-first: $300k liquidity minimum for reliability (raised from $200k to improve win rate)
 min_price_usd: 0.000001  # MICRO TESTING - reduced minimum price for more opportunities
 
 # Fast-path thresholds for first-seen tokens
@@ -124,7 +124,7 @@ solana_usdc_mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"  # USDC mint ad
 solana_min_sol_for_fees: 0.05  # Minimum SOL needed for transaction fees (separate from trading balance)
 
 # === Risk Management ===
-max_concurrent_positions: 5  # Increased from 4 to 5 to allow one additional open position
+max_concurrent_positions: 4  # Reduced from 5 to 4 for better focus and risk management
 max_concurrent_trades: 5  # Maximum number of trades to execute concurrently per cycle (defaults to min(max_concurrent_positions, 5) if not set)
 daily_loss_limit_usd: 10.0  # Minimum daily loss limit floor (actual limit is 5% of wallet balance, minimum $10)
 max_losing_streak: 3  # Stop after 3 losses
@@ -254,7 +254,7 @@ reset_state_now: false
 
 # === Sustainable Trading Settings ===
 # Quality scoring thresholds
-min_quality_score: 65  # Minimum quality score (0-100) - increased from 60 to 65 to improve win rate (filter weaker tokens)
+min_quality_score: 70  # Minimum quality score (0-100) - increased from 65 to 70 to improve win rate (filter weaker tokens)
 quality_volume_weight: 0.4  # 40% weight for volume in quality score
 quality_liquidity_weight: 0.4  # 40% weight for liquidity in quality score
 quality_price_weight: 0.2  # 20% weight for price stability in quality score
