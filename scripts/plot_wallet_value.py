@@ -5,9 +5,7 @@ Visualizes PnL by plotting wallet value over time
 Includes percentage-based charts optimized for marketing
 """
 
-import json
-import csv
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend for CI/headless environments
@@ -29,153 +27,6 @@ def get_project_root():
 
 PROJECT_ROOT = get_project_root()
 
-# Minimum date for chart display - bot started trading on this date
-MIN_CHART_DATE = datetime(2025, 11, 16, 0, 0, 0)
-
-def load_performance_data():
-    """Load performance data from JSON file"""
-    try:
-        data_file = PROJECT_ROOT / 'data' / 'performance_data.json'
-        with open(data_file, 'r') as f:
-            return json.load(f)
-    except Exception as e:
-        print(f"Error loading performance data: {e}")
-        return None
-
-def load_trade_log():
-    """Load trade log from CSV file"""
-    trades = []
-    try:
-        log_file = PROJECT_ROOT / 'data' / 'trade_log.csv'
-        with open(log_file, 'r') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                try:
-                    timestamp = datetime.strptime(row['timestamp'], '%Y-%m-%d %H:%M:%S')
-                    trades.append({
-                        'timestamp': timestamp,
-                        'token': row['token'],
-                        'entry_price': float(row['entry_price']),
-                        'exit_price': float(row['exit_price']),
-                        'pnl_pct': float(row['pnl_pct']),
-                        'reason': row['reason']
-                    })
-                except Exception as e:
-                    continue
-    except Exception as e:
-        print(f"Error loading trade log: {e}")
-    return trades
-
-def calculate_win_rate_from_trade_log(days=30):
-    """
-    Calculate win rate from trade_log.csv (closed trades only)
-    This is the accurate source of truth for win rate statistics
-    """
-    trade_log = load_trade_log()
-    
-    if not trade_log:
-        return 0.0, 0
-    
-    # Calculate date range
-    today = datetime.now()
-    start_date = today - timedelta(days=days)
-    
-    # Filter trades within date range
-    recent_trades = [t for t in trade_log if t['timestamp'] >= start_date]
-    
-    if not recent_trades:
-        return 0.0, 0
-    
-    # Count wins and losses (only closed trades with actual PnL)
-    wins = 0
-    losses = 0
-    
-    for trade in recent_trades:
-        pnl_pct = trade.get('pnl_pct', 0)
-        if pnl_pct > 0:
-            wins += 1
-        elif pnl_pct < 0:
-            losses += 1
-        # Breakeven trades (pnl_pct == 0) are not counted in win rate
-    
-    total_closed_trades = wins + losses
-    win_rate = (wins / total_closed_trades * 100) if total_closed_trades > 0 else 0.0
-    
-    return win_rate, total_closed_trades
-
-def load_position_sizes_from_performance_data():
-    """
-    Load actual position sizes from performance_data.json
-    Returns a dictionary mapping (token_address, date) -> position_size_usd
-    """
-    perf_data = load_performance_data()
-    if not perf_data:
-        return {}
-    
-    position_sizes = {}
-    trades = perf_data.get('trades', [])
-    
-    for trade in trades:
-        try:
-            entry_time_str = trade.get('entry_time', '')
-            if not entry_time_str:
-                continue
-            
-            # Parse entry time
-            entry_time = datetime.fromisoformat(entry_time_str.replace('Z', '+00:00').split('.')[0])
-            token = trade.get('address', '')
-            
-            # Get position size (try multiple fields)
-            pos_size = (
-                trade.get('position_size_usd') or 
-                trade.get('entry_amount_usd_actual') or 
-                trade.get('entry_amount_usd', 0)
-            )
-            
-            if token and pos_size and pos_size > 0:
-                # Use token + date as key (date only, not time, to match trades on same day)
-                key = (token, entry_time.date().isoformat())
-                position_sizes[key] = pos_size
-        except Exception as e:
-            continue
-    
-    return position_sizes
-
-def get_position_size_for_trade(trade, position_sizes_map, fallback_avg=None):
-    """
-    Get actual position size for a trade from performance data
-    Falls back to average if not found
-    """
-    token = trade.get('token', '')
-    trade_date = trade['timestamp'].date().isoformat()
-    key = (token, trade_date)
-    
-    if key in position_sizes_map:
-        return position_sizes_map[key]
-    
-    # If not found, try to find any trade for this token on this date
-    # (in case timestamp doesn't match exactly)
-    for (map_token, map_date), pos_size in position_sizes_map.items():
-        if map_token == token and map_date == trade_date:
-            return pos_size
-    
-    # Fallback to average of all known position sizes
-    if position_sizes_map and fallback_avg is None:
-        fallback_avg = sum(position_sizes_map.values()) / len(position_sizes_map)
-    
-    # Final fallback
-    return fallback_avg if fallback_avg else 13.2
-
-def estimate_position_size_from_trades(trades):
-    """Estimate average position size from trade data"""
-    position_sizes = []
-    for trade in trades:
-        if trade.get('position_size_usd'):
-            position_sizes.append(trade['position_size_usd'])
-    
-    if position_sizes:
-        return sum(position_sizes) / len(position_sizes)
-    return 13.2  # Default estimate based on config
 
 def calculate_wallet_value_over_time_from_helius_wrapper(days=5, initial_wallet_usd=None):
     """Calculate wallet value using Helius transaction data (more accurate)"""
@@ -191,22 +42,19 @@ def calculate_wallet_value_over_time_from_helius_wrapper(days=5, initial_wallet_
         
         from calculate_pnl_from_helius import calculate_wallet_value_over_time_from_helius
         
-        # Calculate date range
-        today = datetime.now()
-        start_date = today - timedelta(days=days)
-        
-        # Use Nov 17, 2025 as the start if before that (when bot started)
-        min_start = datetime(2025, 11, 17, 0, 0, 0)
-        if start_date < min_start:
-            start_date = min_start
+        # Calculate date range (use timezone-aware datetimes)
+        today = datetime.now(timezone.utc)
+        start_date = (today - timedelta(days=days)).replace(hour=0, minute=0, second=0, microsecond=0)
         
         # Set default initial wallet if not provided
         if initial_wallet_usd is None:
             initial_wallet_usd = 200.0
         
-        # Call Helius calculation function
+        # Call Helius calculation function (use a bit earlier start to ensure we have data)
+        # but we'll filter to the exact date range requested
+        helius_start_date = (start_date - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         result = calculate_wallet_value_over_time_from_helius(
-            start_date_str=start_date.strftime('%Y-%m-%d'),
+            start_date_str=helius_start_date.strftime('%Y-%m-%d'),
             end_date_str=today.strftime('%Y-%m-%d'),
             initial_wallet=initial_wallet_usd,
             force_refresh=False  # Use cache for efficiency
@@ -215,10 +63,61 @@ def calculate_wallet_value_over_time_from_helius_wrapper(days=5, initial_wallet_
         if not result:
             return None
         
-        # Convert Helius format to format expected by plotting functions
-        time_points = result['time_points']
-        wallet_values = result['wallet_values']
-        events_raw = result.get('events', [])
+        # Filter results to the exact date range requested
+        time_points_all = result['time_points']
+        wallet_values_all = result['wallet_values']
+        events_raw_all = result.get('events', [])
+        
+        # Ensure start_date is timezone-aware for comparison (Helius returns timezone-aware datetimes)
+        if time_points_all and isinstance(time_points_all[0], datetime):
+            if time_points_all[0].tzinfo is not None and start_date.tzinfo is None:
+                start_date = start_date.replace(tzinfo=timezone.utc)
+        
+        # Filter time_points and wallet_values to requested date range
+        time_points = []
+        wallet_values = []
+        for tp, wv in zip(time_points_all, wallet_values_all):
+            # Make sure tp is timezone-aware if start_date is
+            if isinstance(tp, datetime):
+                if start_date.tzinfo is not None and tp.tzinfo is None:
+                    tp = tp.replace(tzinfo=timezone.utc)
+                elif start_date.tzinfo is None and tp.tzinfo is not None:
+                    tp = tp.replace(tzinfo=None)
+            
+            if tp >= start_date:
+                time_points.append(tp)
+                wallet_values.append(wv)
+        
+        # Filter events to requested date range
+        events_raw = []
+        for e in events_raw_all:
+            event_time = e.get('time')
+            if event_time:
+                # Make sure event_time is comparable to start_date
+                if isinstance(event_time, datetime):
+                    if start_date.tzinfo is not None and event_time.tzinfo is None:
+                        event_time = event_time.replace(tzinfo=timezone.utc)
+                    elif start_date.tzinfo is None and event_time.tzinfo is not None:
+                        event_time = event_time.replace(tzinfo=None)
+                
+                if event_time >= start_date:
+                    events_raw.append(e)
+        
+        # If no data points in range, use the last point from before the range as starting point
+        if not time_points and time_points_all:
+            # Find the last point before start_date to use as initial value
+            for i in range(len(time_points_all) - 1, -1, -1):
+                tp = time_points_all[i]
+                if isinstance(tp, datetime):
+                    if start_date.tzinfo is not None and tp.tzinfo is None:
+                        tp = tp.replace(tzinfo=timezone.utc)
+                    elif start_date.tzinfo is None and tp.tzinfo is not None:
+                        tp = tp.replace(tzinfo=None)
+                
+                if tp < start_date:
+                    time_points.insert(0, start_date)
+                    wallet_values.insert(0, wallet_values_all[i])
+                    break
         
         # Convert events to format expected by plotting functions
         events = []
@@ -274,129 +173,16 @@ def calculate_wallet_value_over_time_from_helius_wrapper(days=5, initial_wallet_
 
 def calculate_wallet_value_over_time(days=5, initial_wallet_usd=None, use_helius=True):
     """
-    Calculate wallet value over time from trades.
-    Uses Helius data if use_helius=True (more accurate), otherwise falls back to trade_log.csv
+    Calculate wallet value over time from trades using Helius data (the source of truth).
     """
-    # Try Helius first if requested
-    if use_helius:
-        helius_result = calculate_wallet_value_over_time_from_helius_wrapper(days, initial_wallet_usd)
-        if helius_result:
-            return helius_result
-        print("⚠️  Helius calculation failed, falling back to trade_log.csv method")
+    if not use_helius:
+        raise ValueError("Helius data is required. Set use_helius=True (default).")
     
-    # Fallback to original method using trade_log.csv
-    # Use only trade_log.csv for consistency with calculate_sharpe_r2.py
-    trade_log = load_trade_log()
+    helius_result = calculate_wallet_value_over_time_from_helius_wrapper(days, initial_wallet_usd)
+    if not helius_result:
+        raise RuntimeError("Failed to calculate wallet value from Helius data. Please ensure Helius API is configured correctly.")
     
-    if not trade_log:
-        print("No trade data available")
-        return None
-    
-    # Load actual position sizes from performance data
-    position_sizes_map = load_position_sizes_from_performance_data()
-    
-    # Calculate average position size for fallback
-    avg_position_size = None
-    if position_sizes_map:
-        avg_position_size = sum(position_sizes_map.values()) / len(position_sizes_map)
-    else:
-        avg_position_size = 13.2  # Default estimate
-    
-    # Calculate date range
-    today = datetime.now()
-    start_date = today - timedelta(days=days)
-    
-    # Find the earliest trade date to set a minimum start date
-    # This prevents showing empty days before trading actually started
-    earliest_trade_date = None
-    
-    # Check trade log for earliest date
-    for trade in trade_log:
-        if trade.get('timestamp'):
-            if earliest_trade_date is None or trade['timestamp'] < earliest_trade_date:
-                earliest_trade_date = trade['timestamp']
-    
-    # Use the later of: calculated start_date, earliest trade date, or minimum chart date
-    # This ensures we don't show empty days before trading started
-    min_date = MIN_CHART_DATE
-    if earliest_trade_date:
-        min_date = max(MIN_CHART_DATE, earliest_trade_date.replace(hour=0, minute=0, second=0, microsecond=0))
-    start_date = max(start_date, min_date)
-    
-    # Filter trades within date range
-    recent_log_trades = [t for t in trade_log if t['timestamp'] >= start_date]
-    
-    # Estimate initial wallet value if not provided
-    if initial_wallet_usd is None:
-        initial_wallet_usd = 300.0  # Default starting value
-    
-    # Create time series of wallet value changes
-    # Collect all trade events (entries and exits)
-    events = []
-    
-    # Process trade log entries using actual position sizes
-    for trade in recent_log_trades:
-        # Get actual position size for this trade
-        position_size = get_position_size_for_trade(trade, position_sizes_map, avg_position_size)
-        pnl_usd = (trade['pnl_pct'] / 100) * position_size
-        events.append({
-            'time': trade['timestamp'],
-            'pnl_usd': pnl_usd,
-            'type': 'exit',
-            'symbol': trade.get('token', 'UNKNOWN')[:8] + '...'
-        })
-    
-    # Sort events by time
-    events.sort(key=lambda x: x['time'])
-    
-    # Calculate cumulative wallet value
-    time_points = [start_date]
-    wallet_values = [initial_wallet_usd]
-    
-    current_wallet = initial_wallet_usd
-    
-    # Add daily points even if no trades
-    for day_offset in range(1, days + 1):
-        day_start = start_date + timedelta(days=day_offset)
-        day_end = day_start + timedelta(days=1)
-        
-        # Process all events in this day
-        day_events = [e for e in events if day_start <= e['time'] < day_end]
-        
-        # Add PnL from events
-        for event in day_events:
-            current_wallet += event['pnl_usd']
-        
-        # Add point at end of day
-        time_points.append(day_end)
-        wallet_values.append(current_wallet)
-    
-    # Also add points for each trade event for smoother curve
-    detailed_time_points = [start_date]
-    detailed_wallet_values = [initial_wallet_usd]
-    current_detailed = initial_wallet_usd
-    
-    for event in events:
-        if event['time'] >= start_date:
-            detailed_time_points.append(event['time'])
-            current_detailed += event['pnl_usd']
-            detailed_wallet_values.append(current_detailed)
-    
-    # Add current time point
-    detailed_time_points.append(today)
-    detailed_wallet_values.append(current_detailed)
-    
-    return {
-        'daily_time_points': time_points,
-        'daily_wallet_values': wallet_values,
-        'detailed_time_points': detailed_time_points,
-        'detailed_wallet_values': detailed_wallet_values,
-        'events': events,
-        'initial_wallet': initial_wallet_usd,
-        'current_wallet': detailed_wallet_values[-1] if detailed_wallet_values else initial_wallet_usd,
-        'total_pnl': sum([e['pnl_usd'] for e in events]),
-        'total_trades': len(events)
-    }
+    return helius_result
 
 def plot_wallet_value(days=5, initial_wallet_usd=None, save_path=None, use_helius=True):
     """Plot wallet value over time"""
@@ -527,64 +313,87 @@ def plot_percentage_pnl(days=30, initial_wallet_usd=None, save_path=None, use_he
     
     # Calculate percentage returns over time using events (if available)
     # This accounts for deposits/withdrawals properly
+    # The first point should always be 0% (starting point)
     percentage_returns = []
     if 'raw_events' in data and data['raw_events']:
         # Sort events by time
         sorted_events = sorted(data['raw_events'], key=lambda x: x['time'])
         
-        # Build a dictionary of cumulative values at each event time
-        event_cumulative = {}  # time -> (trading_pnl, deposits, withdrawals)
-        cumulative_trading_pnl = 0.0
-        cumulative_deposits = 0.0
-        cumulative_withdrawals = 0.0
-        
-        # Process events once and build cumulative values
+        # Create a list of (time, trading_pnl_delta, deposit_delta, withdrawal_delta) for efficient lookup
+        event_deltas = []
         for event in sorted_events:
             if event.get('type') == 'sell':
-                cumulative_trading_pnl += event.get('pnl', 0.0)
+                event_deltas.append((event['time'], event.get('pnl', 0.0), 0.0, 0.0))
             elif event.get('type') == 'deposit':
-                cumulative_deposits += event.get('amount', 0.0)
+                event_deltas.append((event['time'], 0.0, event.get('amount', 0.0), 0.0))
             elif event.get('type') == 'withdrawal':
-                cumulative_withdrawals += event.get('amount', 0.0)
-            
-            event_cumulative[event['time']] = (cumulative_trading_pnl, cumulative_deposits, cumulative_withdrawals)
+                event_deltas.append((event['time'], 0.0, 0.0, event.get('amount', 0.0)))
         
-        # For each time point, find the most recent event and calculate percentage
+        # Process time points with events incrementally
+        # Since events are already filtered to the period, we can reset everything at the start
+        cumulative_trading_pnl_since_start = 0.0
+        cumulative_deposits_since_start = 0.0
+        cumulative_withdrawals_since_start = 0.0
+        event_index = 0
+        
+        # Get the wallet value at the start of the period (first data point)
+        # Use this as the starting capital base for percentage calculations
+        period_start_wallet_value = data['detailed_wallet_values'][0] if data['detailed_wallet_values'] else initial
+        period_start_capital_base = period_start_wallet_value
+        
         for time_point, wallet_value in zip(data['detailed_time_points'], data['detailed_wallet_values']):
-            # Find the most recent event up to this time point
-            most_recent_cumulative = (0.0, 0.0, 0.0)
-            most_recent_time = None
-            for event_time, cum_vals in event_cumulative.items():
-                if event_time <= time_point:
-                    if most_recent_time is None or event_time > most_recent_time:
-                        most_recent_time = event_time
-                        most_recent_cumulative = cum_vals
-            
-            cum_trading_pnl, cum_deposits, cum_withdrawals = most_recent_cumulative
-            
-            # Calculate adjusted capital base at this point
-            current_capital_base = initial + cum_deposits - cum_withdrawals
-            
-            # Calculate percentage return: trading PnL / capital base
-            if current_capital_base > 0:
-                pct_return = (cum_trading_pnl / current_capital_base) * 100
+            # First point should always be 0%
+            if len(percentage_returns) == 0:
+                percentage_returns.append(0.0)
+                # Don't process events at first point - they'll be counted from second point onward
             else:
-                pct_return = 0.0
-            
-            percentage_returns.append(pct_return)
+                # Process all events up to this time point (events during the period)
+                while event_index < len(event_deltas) and event_deltas[event_index][0] <= time_point:
+                    _, pnl_delta, deposit_delta, withdrawal_delta = event_deltas[event_index]
+                    cumulative_trading_pnl_since_start += pnl_delta
+                    cumulative_deposits_since_start += deposit_delta
+                    cumulative_withdrawals_since_start += withdrawal_delta
+                    event_index += 1
+                
+                # Calculate adjusted capital base at this point
+                # Starting base + deposits during period - withdrawals during period
+                current_capital_base = period_start_capital_base + cumulative_deposits_since_start - cumulative_withdrawals_since_start
+                
+                # Calculate percentage return: trading PnL since period start / current capital base
+                if current_capital_base > 0:
+                    pct_return = (cumulative_trading_pnl_since_start / current_capital_base) * 100
+                else:
+                    pct_return = 0.0
+                
+                percentage_returns.append(pct_return)
     else:
         # Fallback: use final trading PnL percentage if events not available
         final_pct = (trading_pnl / adjusted_capital_base * 100) if adjusted_capital_base > 0 else 0.0
         # Create linear approximation (not ideal but better than nothing)
+        # First point should always be 0%
         num_points = len(data['detailed_wallet_values'])
         if num_points > 0:
-            percentage_returns = [final_pct * (i / (num_points - 1)) for i in range(num_points)]
+            percentage_returns = [0.0] + [final_pct * (i / (num_points - 1)) for i in range(1, num_points)]
         else:
             percentage_returns = []
     
-    # Calculate win rate from trade_log.csv (closed trades only - accurate source)
-    win_rate, total_closed_trades = calculate_win_rate_from_trade_log(days)
-    total_trades = total_closed_trades  # Use closed trades count for display
+    # Calculate win rate from Helius sell events (always use Helius data)
+    win_rate = 0.0
+    total_trades = 0
+    if 'raw_events' in data and data['raw_events']:
+        sell_events = [e for e in data['raw_events'] if e.get('type') == 'sell']
+        wins = 0
+        losses = 0
+        for event in sell_events:
+            pnl = event.get('pnl', 0.0)
+            if pnl > 0:
+                wins += 1
+            elif pnl < 0:
+                losses += 1
+            # Breakeven trades (pnl == 0) are not counted in win rate
+        total_closed_trades = wins + losses
+        win_rate = (wins / total_closed_trades * 100) if total_closed_trades > 0 else 0.0
+        total_trades = total_closed_trades
     
     # Create professional figure with modern styling
     try:
@@ -653,36 +462,37 @@ def plot_percentage_pnl(days=30, initial_wallet_usd=None, save_path=None, use_he
     total_return = percentage_returns[-1] if percentage_returns else 0
     avg_daily_return = total_return / days if days > 0 else 0
     
-    # Calculate Sharpe ratio from daily returns
-    # Group wallet values by date to match calculate_sharpe_r2.py behavior
-    # This ensures we only calculate one return per day (not per trade) and exclude days with no trades
+    # Calculate Sharpe ratio from daily percentage returns
+    # Use percentage_returns which already accounts for deposits/withdrawals correctly
     sharpe_ratio = 0.0
-    detailed_values = data.get('detailed_wallet_values', [])
-    detailed_times = data.get('detailed_time_points', [])
-    
-    if len(detailed_values) > 1 and len(detailed_times) == len(detailed_values):
-        # Group by date to get end-of-day wallet values (one per day)
+    if len(percentage_returns) > 1 and len(data['detailed_time_points']) == len(percentage_returns):
+        # Group percentage returns by date to get one return per day (end of day)
         from collections import defaultdict
-        daily_end_values = {}
-        for i, (time_point, wallet_value) in enumerate(zip(detailed_times, detailed_values)):
-            date_key = time_point.date()
+        daily_end_percentages = {}
+        for i, (time_point, pct_return) in enumerate(zip(data['detailed_time_points'], percentage_returns)):
+            date_key = time_point.date() if hasattr(time_point, 'date') else time_point.date()
             # Keep the last value for each day (end of day)
-            daily_end_values[date_key] = wallet_value
+            daily_end_percentages[date_key] = pct_return
         
         # Sort by date and calculate daily returns
-        sorted_dates = sorted(daily_end_values.keys())
+        # Since percentage_returns are cumulative from period start, the difference between
+        # consecutive days gives us the incremental return for that day
+        sorted_dates = sorted(daily_end_percentages.keys())
         daily_returns = []
         for i in range(1, len(sorted_dates)):
             prev_date = sorted_dates[i-1]
             curr_date = sorted_dates[i]
-            prev_value = daily_end_values[prev_date]
-            curr_value = daily_end_values[curr_date]
+            prev_pct = daily_end_percentages[prev_date]
+            curr_pct = daily_end_percentages[curr_date]
             
-            # Skip days where portfolio value is zero or negative (can't calculate meaningful return)
-            # This ensures consistency with calculate_sharpe_r2.py and proper volatility calculations
-            if prev_value > 0:
-                daily_return = (curr_value - prev_value) / prev_value
-                daily_returns.append(daily_return)
+            # Calculate incremental percentage point change
+            # This represents the return for that day relative to the capital base
+            # Since percentage_returns account for deposits/withdrawals, this is the correct daily return
+            pct_point_change = curr_pct - prev_pct
+            
+            # Convert percentage points to decimal return (e.g., 1.5% -> 0.015)
+            daily_return = pct_point_change / 100.0
+            daily_returns.append(daily_return)
         
         # Calculate Sharpe ratio (annualized, risk-free rate = 0 for crypto)
         if len(daily_returns) > 1:
@@ -691,7 +501,7 @@ def plot_percentage_pnl(days=30, initial_wallet_usd=None, save_path=None, use_he
             std_return = np.std(returns_array, ddof=1)  # Sample standard deviation
             
             if std_return > 0:
-                # Annualize: daily returns * 365, volatility * sqrt(365)
+                # Annualize: mean daily return * 365, volatility * sqrt(365)
                 annualized_return = mean_return * 365
                 annualized_volatility = std_return * np.sqrt(365)
                 risk_free_rate = 0.0  # Assume 0% for crypto
@@ -746,18 +556,17 @@ if __name__ == "__main__":
     parser.add_argument('--save', type=str, default=None, help='Path to save plot (default: docs/performance_chart.png)')
     parser.add_argument('--type', type=str, choices=['percentage', 'value'], default='percentage',
                        help='Chart type: percentage (marketing) or value (detailed)')
-    parser.add_argument('--use-helius', action='store_true', default=True,
-                       help='Use Helius data for accurate chart generation (default: True)')
-    parser.add_argument('--no-helius', dest='use_helius', action='store_false',
-                       help='Use trade_log.csv instead of Helius data')
+    # Helius is always used (it's the source of truth)
+    # The use_helius parameter is kept for API compatibility but is always True
     
     args = parser.parse_args()
     
     try:
+        # Always use Helius (it's the source of truth)
         if args.type == 'percentage':
-            result = plot_percentage_pnl(days=args.days, initial_wallet_usd=args.initial, save_path=args.save, use_helius=args.use_helius)
+            result = plot_percentage_pnl(days=args.days, initial_wallet_usd=args.initial, save_path=args.save, use_helius=True)
         else:
-            result = plot_wallet_value(days=args.days, initial_wallet_usd=args.initial, save_path=args.save, use_helius=args.use_helius)
+            result = plot_wallet_value(days=args.days, initial_wallet_usd=args.initial, save_path=args.save, use_helius=True)
         
         if result is None:
             print("Warning: No data available to generate chart")
