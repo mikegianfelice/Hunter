@@ -367,11 +367,10 @@ performance_cleanup_days: 90  # Days to keep performance data
 track_quality_tiers: true  # Track performance by quality tiers
 track_daily_stats: true  # Track daily performance statistics
 
-# Auto-sync performance data to git for chart generation
-# When enabled, automatically commits and pushes performance_data.json and trade_log.csv
-# after each trade, so GitHub Actions workflow can generate up-to-date charts
-# Set to false to manually sync using: ./scripts/sync_chart_data.sh
-auto_sync_chart_data: true  # Auto-sync performance data to git (default: false)
+# NOTE: auto_sync_chart_data option removed - charts are now generated locally using Helius data
+# Charts are updated hourly via scripts/update_charts.sh which syncs the Helius cache to GitHub
+# This setting is no longer used and can be ignored
+# auto_sync_chart_data: false  # Removed - no longer needed
 track_win_rates: true  # Track win rates by quality and time period
 track_pnl_analysis: true  # Track PnL analysis and trends
 

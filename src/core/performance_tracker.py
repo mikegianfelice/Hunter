@@ -9,8 +9,6 @@ from typing import Dict, List, Optional, Tuple
 from collections import defaultdict
 import statistics
 import os
-import threading
-import time
 
 from src.storage.performance import (
     load_performance_data,
@@ -31,13 +29,6 @@ class PerformanceTracker:
             "average": (50, 59),
             "low": (0, 49)
         }
-
-        # --- sync single-flight guards (prevent concurrent sync spawns) ---
-        # Protects against multiple threads in this process starting syncs back-to-back.
-        self._sync_spawn_lock = threading.Lock()
-        self._last_sync_spawn_ts = 0.0
-        # Debounce window to avoid spawning multiple syncs during bursts of trades.
-        self._min_sync_spawn_interval_secs = 20.0
 
         self.load_data()
     
@@ -62,125 +53,8 @@ class PerformanceTracker:
                 'last_updated': datetime.now().isoformat()
             }
             replace_performance_data(data)
-            # Optionally sync to git for chart generation (non-blocking)
-            self._maybe_sync_to_git()
         except Exception as e:
             print(f"⚠️ Could not save performance data: {e}")
-    
-    def _maybe_sync_to_git(self):
-        """
-        Optionally sync performance data to git for chart generation.
-
-        This implementation enforces:
-        - Single-flight per process: only one sync spawn at a time.
-        - Debounce: avoid spawning multiple syncs during rapid trade bursts.
-        - Respect existing on-disk locks (.sync_chart_data.lock, .git/index.lock).
-        """
-        try:
-            # Check if auto-sync is enabled via environment variable
-            auto_sync_env = os.getenv('AUTO_SYNC_CHART_DATA', '').lower() == 'true'
-            
-            # Check config if available
-            auto_sync_config = False
-            try:
-                from src.config.config_loader import get_config_bool
-                auto_sync_config = get_config_bool('auto_sync_chart_data', False)
-            except Exception:
-                # Config loader not available or failed – fall back to env only
-                pass
-            
-            # Enable if either is set
-            if not (auto_sync_env or auto_sync_config):
-                return
-
-            # Single-flight: if another thread is already spawning/running a sync, skip.
-            if not self._sync_spawn_lock.acquire(blocking=False):
-                return
-
-            try:
-                import subprocess
-                from pathlib import Path
-
-                now = time.time()
-
-                # Debounce: don't spawn syncs more often than the configured interval.
-                if (now - self._last_sync_spawn_ts) < self._min_sync_spawn_interval_secs:
-                    return
-
-                # Get project root directory (where script should run from)
-                project_root = Path(__file__).parent.parent.parent
-                script_path = project_root / 'scripts' / 'sync_chart_data.sh'
-                
-                if not script_path.exists():
-                    print(f"⚠️ Sync script not found at {script_path}")
-                    return
-
-                sync_lock = project_root / '.sync_chart_data.lock'
-                git_index_lock = project_root / '.git' / 'index.lock'
-
-                # If a sync lock exists and is recent, assume another sync process is running.
-                if sync_lock.exists():
-                    try:
-                        lock_age = now - sync_lock.stat().st_mtime
-                        # Consider lock "active" for up to 10 minutes.
-                        if lock_age < 600:
-                            return
-                    except Exception:
-                        # If we can't stat the lock, be conservative and skip spawning.
-                        return
-
-                # If git index is locked and recent, don't spawn another git operation.
-                if git_index_lock.exists():
-                    try:
-                        lock_age = now - git_index_lock.stat().st_mtime
-                        if lock_age < 600:
-                            return
-                    except Exception:
-                        return
-
-                # Ensure script is executable
-                os.chmod(script_path, 0o755)
-                
-                # Run in background, but log to file for debugging
-                log_file = project_root / 'logs' / 'sync_chart_data.log'
-                log_file.parent.mkdir(exist_ok=True)
-                
-                timestamp_str = datetime.now().isoformat()
-                with open(log_file, 'a') as log:
-                    log.write(f"\n[{timestamp_str}] Starting sync...\n")
-                
-                # Mark spawn time BEFORE launching to prevent double-spawn races
-                self._last_sync_spawn_ts = now
-
-                # Run script with proper working directory
-                process = subprocess.Popen(
-                    ['bash', str(script_path)],
-                    cwd=str(project_root),  # Set working directory
-                    stdout=open(log_file, 'a'),
-                    stderr=subprocess.STDOUT,  # Redirect stderr to stdout
-                    start_new_session=True  # Detach from parent process
-                )
-                
-                # Log that we started the process
-                with open(log_file, 'a') as log:
-                    log.write(f"Sync process started with PID {process.pid}\n")
-            finally:
-                # Always release the lock, even if we early-returned or errored.
-                self._sync_spawn_lock.release()
-                
-        except Exception as e:
-            # Log error but don't interrupt trading
-            try:
-                from pathlib import Path
-                project_root = Path(__file__).parent.parent.parent
-                log_file = project_root / 'logs' / 'sync_chart_data.log'
-                log_file.parent.mkdir(exist_ok=True)
-                with open(log_file, 'a') as log:
-                    ts = datetime.now().isoformat()
-                    log.write(f"[{ts}] ERROR: {e}\n")
-            except Exception:
-                pass
-            print(f"⚠️ Failed to start sync script: {e}")
     
     def log_trade_entry(self, token: Dict, position_size: float, quality_score: float, 
                        additional_data: Dict = None):
