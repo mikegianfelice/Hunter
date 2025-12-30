@@ -248,6 +248,7 @@ data/balance_cache.json
 data/token_balance_cache.json
 data/api_call_tracker.json
 data/candlestick_cache.json
+data/helius_wallet_value_cache.json
 performance_data.json
 
 # Runtime data files - CSV files (but allow trade_log.csv for charts)
