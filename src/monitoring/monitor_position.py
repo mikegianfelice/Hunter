@@ -175,13 +175,18 @@ def _cleanup_closed_position(position_key: str, token_address: str, chain_id: st
         print(f"✅ Removed position {position_key} from open_positions.json and hunter_state.db")
         
         # Clear partial TP manager state for this position
+        # IMPORTANT: Use the key format that partial TP manager expects: "chain_id:address"
         try:
             from src.ai.ai_partial_take_profit_manager import get_partial_tp_manager
             partial_tp_manager = get_partial_tp_manager()
-            partial_tp_manager.clear_position_state(position_key)
-            print(f"✅ Cleared partial TP state for {position_key}")
+            # Convert position_key to the format partial TP manager uses
+            tp_position_key = f"{chain_id.lower()}:{token_address.lower()}"
+            partial_tp_manager.clear_position_state(tp_position_key)
+            print(f"✅ Cleared partial TP state for {tp_position_key}")
         except Exception as e:
             print(f"⚠️ Error clearing partial TP state: {e}")
+            import traceback
+            traceback.print_exc()
             # Don't fail cleanup if partial TP cleanup fails
         
         # Also try to find and mark as closed in performance_data.json
@@ -1692,16 +1697,62 @@ def monitor_all_positions():
                                             # Check if balance decreased significantly (at least 10% for partial sell)
                                             if balance_after is not None:
                                                 expected_balance_after = original_balance_estimate * (1.0 - action.size_pct)
-                                                # Allow some tolerance for price changes and rounding
-                                                if abs(balance_after - expected_balance_after) / expected_balance_after < 0.2:
-                                                    print(f"✅ [PARTIAL TP] Balance check suggests sell succeeded (balance: {balance_after:.8f}, expected: {expected_balance_after:.8f})")
-                                                    
-                                                    # Check if this is selling the remaining position
-                                                    is_remaining_sell = (
-                                                        "trailing_stop" in action.reason.lower() or
-                                                        (isinstance(position_data, dict) and position_data.get("partial_sell_taken", False))
-                                                    )
-                                                    
+                                                
+                                                # Check if this is selling the remaining position
+                                                is_remaining_sell = (
+                                                    "trailing_stop" in action.reason.lower() or
+                                                    (isinstance(position_data, dict) and position_data.get("partial_sell_taken", False))
+                                                )
+                                                
+                                                # For remaining sells, be more strict - balance should be near zero
+                                                if is_remaining_sell:
+                                                    # For remaining sells, balance should be essentially zero (dust only)
+                                                    DUST_THRESHOLD = 0.000001  # Very small dust threshold
+                                                    if balance_after <= DUST_THRESHOLD:
+                                                        print(f"✅ [PARTIAL TP] Remaining sell confirmed - balance is zero/dust ({balance_after:.8f})")
+                                                        balance_check_passed = True
+                                                    else:
+                                                        # Balance still exists - sell may have failed or been partial
+                                                        print(f"⚠️ [PARTIAL TP] Remaining sell verification failed - balance still exists: {balance_after:.8f} (expected: ~0)")
+                                                        balance_check_passed = False
+                                                        
+                                                        # Track failed attempt to prevent infinite retries
+                                                        if isinstance(position_data, dict):
+                                                            failed_remaining_sell_attempts = position_data.get("failed_remaining_sell_attempts", 0) + 1
+                                                            position_data["failed_remaining_sell_attempts"] = failed_remaining_sell_attempts
+                                                            position_data["last_remaining_sell_attempt"] = datetime.now().isoformat()
+                                                            
+                                                            # If we've tried multiple times, clear partial TP state to prevent loops
+                                                            if failed_remaining_sell_attempts >= 3:
+                                                                print(f"⚠️ [PARTIAL TP] Multiple failed remaining sell attempts ({failed_remaining_sell_attempts}) - clearing partial TP state to prevent loops")
+                                                                position_data["partial_sell_taken"] = False
+                                                                position_data.pop("failed_remaining_sell_attempts", None)
+                                                                position_data.pop("last_remaining_sell_attempt", None)
+                                                                # Clear partial TP manager state
+                                                                try:
+                                                                    from src.ai.ai_partial_take_profit_manager import get_partial_tp_manager
+                                                                    partial_tp_manager = get_partial_tp_manager()
+                                                                    # Use the same key format as partial TP manager
+                                                                    tp_position_key = f"{chain_id.lower()}:{token_address.lower()}"
+                                                                    partial_tp_manager.clear_position_state(tp_position_key)
+                                                                    print(f"✅ Cleared partial TP state for {tp_position_key}")
+                                                                except Exception as e:
+                                                                    print(f"⚠️ Error clearing partial TP state: {e}")
+                                                                    import traceback
+                                                                    traceback.print_exc()
+                                                                from src.storage.positions import upsert_position
+                                                                upsert_position(position_key, position_data)
+                                                else:
+                                                    # For partial sells (not remaining), use tolerance check
+                                                    # Allow some tolerance for price changes and rounding
+                                                    if abs(balance_after - expected_balance_after) / max(expected_balance_after, 0.000001) < 0.2:
+                                                        print(f"✅ [PARTIAL TP] Balance check suggests partial sell succeeded (balance: {balance_after:.8f}, expected: {expected_balance_after:.8f})")
+                                                        balance_check_passed = True
+                                                    else:
+                                                        print(f"⚠️ [PARTIAL TP] Balance check failed - balance mismatch (balance: {balance_after:.8f}, expected: {expected_balance_after:.8f})")
+                                                        balance_check_passed = False
+                                                
+                                                if balance_check_passed:
                                                     # Determine log reason
                                                     if is_remaining_sell:
                                                         log_reason = f"remaining_sell_{action.size_pct:.0%}_unverified"
@@ -1741,9 +1792,24 @@ def monitor_all_positions():
                                                             from src.core.performance_tracker import performance_tracker
                                                             performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, log_reason)
                                                         
+                                                        # Clear partial TP state BEFORE cleanup (using correct key format)
+                                                        try:
+                                                            from src.ai.ai_partial_take_profit_manager import get_partial_tp_manager
+                                                            partial_tp_manager = get_partial_tp_manager()
+                                                            # Use the same key format as partial TP manager expects
+                                                            tp_position_key = f"{chain_id.lower()}:{token_address.lower()}"
+                                                            partial_tp_manager.clear_position_state(tp_position_key)
+                                                            print(f"✅ Cleared partial TP state for {tp_position_key}")
+                                                        except Exception as e:
+                                                            print(f"⚠️ Error clearing partial TP state: {e}")
+                                                            import traceback
+                                                            traceback.print_exc()
+                                                        
                                                         _cleanup_closed_position(position_key, token_address, chain_id)
                                                         closed_positions.append(position_key)
                                                         updated_positions.pop(position_key, None)
+                                                        print(f"✅ [PARTIAL TP] Position closed after remaining sell")
+                                                        continue  # Move to next position
                                                     else:
                                                         # Partial TP - keep position open
                                                         send_telegram_message(
@@ -1768,11 +1834,28 @@ def monitor_all_positions():
                                                             position_data["partial_sell_tx"] = None  # No tx hash available
                                                             position_data["partial_sell_price"] = current_price
                                                             position_data["partial_sell_time"] = datetime.now().isoformat()
+                                                            # Clear any failed attempt counters
+                                                            position_data.pop("failed_remaining_sell_attempts", None)
+                                                            position_data.pop("last_remaining_sell_attempt", None)
                                                             updated_positions[position_key] = position_data
                                                             from src.storage.positions import upsert_position
                                                             upsert_position(position_key, position_data)
-                                                    print(f"⚠️ [PARTIAL TP] Trade logged as unverified - transaction may have succeeded but verification failed")
-                                                    continue
+                                                        print(f"✅ [PARTIAL TP] Trade logged as unverified - transaction may have succeeded but verification failed")
+                                                        continue
+                                                else:
+                                                    # Balance check failed
+                                                    print(f"❌ [PARTIAL TP] Balance check failed - sell may not have succeeded")
+                                                    if is_remaining_sell:
+                                                        # For remaining sells, don't retry immediately - wait for next cycle
+                                                        print(f"⚠️ [PARTIAL TP] Remaining sell verification failed - will retry on next cycle if conditions still met")
+                                                    else:
+                                                        print(f"⚠️ [PARTIAL TP] Partial sell verification failed - will retry on next cycle")
+                                            else:
+                                                print(f"⚠️ [PARTIAL TP] Could not get balance after sell")
+                                        else:
+                                            print(f"⚠️ [PARTIAL TP] Invalid entry price, cannot verify balance")
+                                    else:
+                                        print(f"⚠️ [PARTIAL TP] Position data not in expected format")
                             except Exception as balance_check_error:
                                 print(f"⚠️ [PARTIAL TP] Balance check also failed: {balance_check_error}")
                             
