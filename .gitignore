@@ -238,6 +238,12 @@ data/time_window_scheduler_state.json
 .sync_chart_data.lock
 .update_charts.lock
 
+# Matplotlib cache directory (system-specific, regenerated automatically)
+.matplotlib/
+
+# macOS launchd plist files (user-specific, contains absolute paths)
+scripts/com.hunter.update_charts.plist
+
 # Secrets and encryption keys
 .secret_key
 cacert.pem
