@@ -748,16 +748,29 @@ class AIIntegrationEngine:
             else:
                 volume_score = 0.1  # Very low, not 0.5 default
             
+            # Calculate confidence based on data quality and AI module success
+            confidence = 0.6  # Base confidence
+            # Higher confidence if we have good data
+            if market_data.liquidity > 100000 and market_data.volume_24h > 100000:
+                confidence += 0.2
+            elif market_data.liquidity > 50000 or market_data.volume_24h > 50000:
+                confidence += 0.1
+            # Boost confidence if AI module ran successfully
+            if "market_condition_guardian" in self.module_connector.modules and market_health in ["good", "fair"]:
+                confidence += 0.1
+            confidence = min(0.95, confidence)
+            
             return {
                 "market_health": market_health,
                 "liquidity_score": liquidity_score,
                 "volume_score": volume_score,
-                "market_trend": "bullish" if market_data.price_change_24h > 0 else "bearish"
+                "market_trend": "bullish" if market_data.price_change_24h > 0 else "bearish",
+                "confidence": confidence
             }
             
         except Exception as e:
             log_error(f"Error in market analysis: {e}")
-            return {"market_health": "unknown", "liquidity_score": 0.5, "volume_score": 0.5, "market_trend": "neutral"}
+            return {"market_health": "unknown", "liquidity_score": 0.5, "volume_score": 0.5, "market_trend": "neutral", "confidence": 0.5}
     
     async def _analyze_technical_indicators(self, market_data: MarketData) -> Dict[str, Any]:
         """Analyze technical indicators using AI modules"""
@@ -806,6 +819,10 @@ class AIIntegrationEngine:
             
             technical_score = min(1.0, max(0.0, technical_score))
             
+            # Calculate confidence based on data availability and AI module success
+            confidence = 0.6  # Base confidence
+            ai_module_success = False
+            
             # Enhance with AI module if available
             if "pattern_recognizer" in self.module_connector.modules:
                 try:
@@ -814,18 +831,31 @@ class AIIntegrationEngine:
                         ai_result = await module.analyze_patterns(market_data) if asyncio.iscoroutinefunction(module.analyze_patterns) else module.analyze_patterns(market_data)
                         if ai_result:
                             technical_score = ai_result.get("technical_score", technical_score)
+                            ai_module_success = True
                 except Exception as e:
                     log_error(f"Error in pattern recognizer module: {e}")
+            
+            # Higher confidence if we have technical indicators data
+            if market_data.technical_indicators and len(market_data.technical_indicators) > 0:
+                confidence += 0.2
+                # Extra boost if we have multiple signals
+                if len(signals) >= 3:
+                    confidence += 0.1
+            # Boost if AI module ran successfully
+            if ai_module_success:
+                confidence += 0.1
+            confidence = min(0.95, confidence)
             
             return {
                 "technical_score": technical_score,
                 "trend": "bullish" if technical_score > 0.6 else "bearish" if technical_score < 0.4 else "neutral",
-                "signals": signals if signals else []
+                "signals": signals if signals else [],
+                "confidence": confidence
             }
             
         except Exception as e:
             log_error(f"Error in technical analysis: {e}")
-            return {"technical_score": 0.5, "trend": "neutral", "signals": []}
+            return {"technical_score": 0.5, "trend": "neutral", "signals": [], "confidence": 0.5}
     
     async def _analyze_execution_optimization(self, market_data: MarketData) -> Dict[str, Any]:
         """Analyze execution optimization using AI modules"""
@@ -847,6 +877,10 @@ class AIIntegrationEngine:
             
             execution_score = min(1.0, execution_score)
             
+            # Calculate confidence based on liquidity/volume and AI module success
+            confidence = 0.6  # Base confidence
+            ai_module_success = False
+            
             # Enhance with AI module if available
             if "execution_optimizer" in self.module_connector.modules:
                 try:
@@ -855,18 +889,30 @@ class AIIntegrationEngine:
                         ai_result = await module.optimize_execution(market_data) if asyncio.iscoroutinefunction(module.optimize_execution) else module.optimize_execution(market_data)
                         if ai_result:
                             execution_score = ai_result.get("execution_score", execution_score)
+                            ai_module_success = True
                 except Exception as e:
                     log_error(f"Error in execution optimizer module: {e}")
+            
+            # Higher confidence with better liquidity and volume
+            if market_data.liquidity > 500000 and market_data.volume_24h > 1000000:
+                confidence += 0.2
+            elif market_data.liquidity > 100000 or market_data.volume_24h > 500000:
+                confidence += 0.1
+            # Boost if AI module ran successfully
+            if ai_module_success:
+                confidence += 0.1
+            confidence = min(0.95, confidence)
             
             return {
                 "execution_score": execution_score,
                 "recommended_slippage": max(0.01, 0.1 - execution_score * 0.08),
-                "optimal_timing": "immediate" if execution_score > 0.7 else "wait"
+                "optimal_timing": "immediate" if execution_score > 0.7 else "wait",
+                "confidence": confidence
             }
             
         except Exception as e:
             log_error(f"Error in execution analysis: {e}")
-            return {"execution_score": 0.5, "recommended_slippage": 0.05, "optimal_timing": "wait"}
+            return {"execution_score": 0.5, "recommended_slippage": 0.05, "optimal_timing": "wait", "confidence": 0.5}
     
     async def _analyze_market_context(
         self,
@@ -931,11 +977,27 @@ class AIIntegrationEngine:
                 except Exception as e:
                     log_error(f"Error in regime transition detector: {e}")
             
+            # Calculate confidence based on how many modules successfully ran
+            # Count successful results by checking which keys exist in context
+            result_keys = ["regime", "cycle", "liquidity", "anomaly", "regime_transition"]
+            modules_successful = sum(1 for key in result_keys if context.get(key) is not None)
+            
+            # Also count precomputed regime
+            if precomputed_regime:
+                modules_successful += 1
+            
+            total_modules = len(result_keys) + (1 if precomputed_regime else 0)
+            if total_modules > 0:
+                confidence = 0.5 + (modules_successful / total_modules) * 0.4  # 0.5 to 0.9 range
+            else:
+                confidence = 0.5
+            
+            context["confidence"] = min(0.95, confidence)
             return context
             
         except Exception as e:
             log_error(f"Error in market context analysis: {e}")
-            return {}
+            return {"confidence": 0.5}
     
     async def _analyze_predictive_analytics(self, token_data: Dict, market_data: MarketData, trade_amount: float) -> Dict[str, Any]:
         """Analyze predictive analytics: predictive engine, price predictor, microstructure"""
@@ -972,11 +1034,21 @@ class AIIntegrationEngine:
                 except Exception as e:
                     log_error(f"Error in multi-timeframe analyzer: {e}")
             
+            # Calculate confidence based on how many modules successfully ran
+            result_keys = ["predictive", "microstructure", "multi_timeframe"]
+            modules_successful = sum(1 for key in result_keys if analytics.get(key) is not None)
+            
+            if len(result_keys) > 0:
+                confidence = 0.5 + (modules_successful / len(result_keys)) * 0.4  # 0.5 to 0.9 range
+            else:
+                confidence = 0.5
+            
+            analytics["confidence"] = min(0.95, confidence)
             return analytics
             
         except Exception as e:
             log_error(f"Error in predictive analytics: {e}")
-            return {}
+            return {"confidence": 0.5}
     
     async def _analyze_risk_controls(self, token_data: Dict, market_data: MarketData, trade_amount: float) -> Dict[str, Any]:
         """Analyze risk controls: drawdown protection, risk prediction prevention, emergency stop"""
@@ -1015,11 +1087,21 @@ class AIIntegrationEngine:
                 except Exception as e:
                     log_error(f"Error in emergency stop system: {e}")
             
+            # Calculate confidence based on how many modules successfully ran
+            result_keys = ["drawdown", "risk_prediction", "emergency"]
+            modules_successful = sum(1 for key in result_keys if controls.get(key) is not None)
+            
+            if len(result_keys) > 0:
+                confidence = 0.5 + (modules_successful / len(result_keys)) * 0.4  # 0.5 to 0.9 range
+            else:
+                confidence = 0.5
+            
+            controls["confidence"] = min(0.95, confidence)
             return controls
             
         except Exception as e:
             log_error(f"Error in risk controls analysis: {e}")
-            return {}
+            return {"confidence": 0.5}
     
     async def _analyze_portfolio(self, token_data: Dict, market_data: MarketData, trade_amount: float) -> Dict[str, Any]:
         """Analyze portfolio: optimization, rebalancing"""
@@ -1048,11 +1130,21 @@ class AIIntegrationEngine:
                 except Exception as e:
                     log_error(f"Error in portfolio rebalancing: {e}")
             
+            # Calculate confidence based on how many modules successfully ran
+            result_keys = ["optimization", "rebalancing"]
+            modules_successful = sum(1 for key in result_keys if portfolio.get(key) is not None)
+            
+            if len(result_keys) > 0:
+                confidence = 0.5 + (modules_successful / len(result_keys)) * 0.4  # 0.5 to 0.9 range
+            else:
+                confidence = 0.5
+            
+            portfolio["confidence"] = min(0.95, confidence)
             return portfolio
             
         except Exception as e:
             log_error(f"Error in portfolio analysis: {e}")
-            return {}
+            return {"confidence": 0.5}
     
     async def _analyze_execution_optimization_full(self, token_data: Dict, market_data: MarketData, trade_amount: float) -> Dict[str, Any]:
         """Analyze execution optimization: monitor, position validation"""
@@ -1082,11 +1174,21 @@ class AIIntegrationEngine:
                 except Exception as e:
                     log_error(f"Error in position size validator: {e}")
             
+            # Calculate confidence based on how many modules successfully ran
+            result_keys = ["monitor", "position_validation"]
+            modules_successful = sum(1 for key in result_keys if optimization.get(key) is not None)
+            
+            if len(result_keys) > 0:
+                confidence = 0.5 + (modules_successful / len(result_keys)) * 0.4  # 0.5 to 0.9 range
+            else:
+                confidence = 0.5
+            
+            optimization["confidence"] = min(0.95, confidence)
             return optimization
             
         except Exception as e:
             log_error(f"Error in execution optimization: {e}")
-            return {}
+            return {"confidence": 0.5}
     
     def _calculate_overall_score(self, sentiment: Dict, prediction: Dict, risk: Dict, 
                                 market: Dict, technical: Dict, market_data: Optional[MarketData] = None) -> float:
@@ -1242,8 +1344,10 @@ class AIIntegrationEngine:
             weighted_confidence = 0.0
             results_with_explicit_confidence = 0
             total_results = 0
+            confidence_values = []  # Track individual confidence values for debugging
+            result_details = []  # Track which results contribute
             
-            for result in results:
+            for idx, result in enumerate(results):
                 if isinstance(result, Exception) or not result:
                     continue
                 
@@ -1254,6 +1358,28 @@ class AIIntegrationEngine:
                     # Check if confidence was explicitly provided (not using default)
                     has_explicit_confidence = "confidence" in result
                     result_confidence = result.get("confidence", 0.5)
+                    confidence_values.append(result_confidence)
+                    
+                    # Try to identify which module this is from
+                    module_name = "unknown"
+                    if "price_movement_probability" in result:
+                        module_name = "price_prediction"
+                    elif "category" in result and "score" in result:
+                        module_name = "sentiment"
+                    elif "risk_score" in result:
+                        module_name = "risk"
+                    elif "market_health" in result:
+                        module_name = "market_conditions"
+                    elif "technical_score" in result:
+                        module_name = "technical"
+                    elif "execution_quality" in result:
+                        module_name = "execution"
+                    
+                    result_details.append({
+                        "module": module_name,
+                        "has_explicit": has_explicit_confidence,
+                        "confidence": result_confidence
+                    })
                     
                     # Weight by result quality (non-empty dict = quality indicator)
                     # Since result passed the not result check above, it's non-empty
@@ -1264,6 +1390,12 @@ class AIIntegrationEngine:
                 else:
                     result_confidence = 0.5
                     weight = 0.5
+                    confidence_values.append(0.5)
+                    result_details.append({
+                        "module": f"non_dict_{idx}",
+                        "has_explicit": False,
+                        "confidence": 0.5
+                    })
                 
                 weighted_confidence += result_confidence * weight
                 total_weight += weight
@@ -1277,20 +1409,43 @@ class AIIntegrationEngine:
             # If most results use default (0.5), the confidence should reflect that uncertainty
             if total_results == 0:
                 confidence = 0.5
+                adjustment_path = "no_results"
             elif results_with_explicit_confidence == 0:
                 # No explicit confidence values - use lower baseline to reflect uncertainty
                 confidence = base_confidence * 0.7 + 0.15
+                adjustment_path = "no_explicit"
             elif results_with_explicit_confidence < total_results * 0.5:
                 # Less than half have explicit confidence - moderate adjustment
                 confidence = base_confidence * 0.85 + 0.1
+                adjustment_path = "partial_explicit"
             else:
                 # Most/all results have explicit confidence - use higher baseline
                 confidence = base_confidence * 0.9 + 0.1
+                adjustment_path = "full_explicit"
             
-            return max(0.0, min(1.0, confidence))
+            final_confidence = max(0.0, min(1.0, confidence))
+            
+            # Log the calculation for debugging
+            logger.debug(
+                f"Confidence calculation: base={base_confidence:.4f}, "
+                f"explicit_count={results_with_explicit_confidence}/{total_results}, "
+                f"adjustment={adjustment_path}, final={final_confidence:.4f}, "
+                f"values={confidence_values}"
+            )
+            
+            # Warn if confidence is exactly/near 0.58
+            if abs(final_confidence - 0.58) < 0.005:
+                logger.warning(
+                    f"⚠️ Confidence is exactly/near 0.58: base={base_confidence:.4f}, "
+                    f"adjustment={adjustment_path}, explicit={results_with_explicit_confidence}/{total_results}, "
+                    f"details={result_details}"
+                )
+            
+            return final_confidence
             
         except Exception as e:
             log_error(f"Error calculating confidence: {e}")
+            logger.exception(f"Full exception traceback for confidence calculation:")
             return 0.5
     
     def _apply_performance_calibration(self, overall_score: float, token_data: Dict) -> float:
