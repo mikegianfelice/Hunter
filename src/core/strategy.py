@@ -120,6 +120,20 @@ def _get_external_momentum(token: dict, config: dict):
     
     primary_timeframe = config.get('EXTERNAL_MOMENTUM_PRIMARY_TIMEFRAME', 'h1')
     use_multi = config.get('USE_MULTI_TIMEFRAME_MOMENTUM', True)
+    require_alignment = config.get('REQUIRE_MOMENTUM_ALIGNMENT', True)
+    require_24h_positive = config.get('REQUIRE_POSITIVE_24H_MOMENTUM', True)
+    
+    # Check momentum alignment requirement (5m and 1h both positive)
+    if require_alignment and pc_5m is not None and pc_1h is not None:
+        if pc_5m <= 0 or pc_1h <= 0:
+            # Timeframes not aligned - reject
+            return None, None
+    
+    # Check 24h momentum requirement (must be positive)
+    if require_24h_positive and pc_24h is not None:
+        if pc_24h <= 0:
+            # 24h momentum negative - reject
+            return None, None
     
     if use_multi and (pc_5m is not None or pc_1h is not None or pc_24h is not None):
         # Multi-timeframe weighted average
@@ -1115,9 +1129,83 @@ def check_buy_signal(token: dict) -> bool:
         )
         return True
 
+    # RSI filter - avoid overbought entries
+    if config.get('ENABLE_RSI_FILTER', True):
+        rsi_threshold = config.get('RSI_OVERBOUGHT_THRESHOLD', 70)
+        # Try to get RSI from token dict (if available from technical indicators)
+        rsi = token.get("rsi")
+        if rsi is None:
+            # Try to get from technical_indicators nested dict
+            tech_indicators = token.get("technical_indicators", {})
+            if isinstance(tech_indicators, dict):
+                rsi = tech_indicators.get("rsi")
+        if rsi is not None and rsi > rsi_threshold:
+            _log_trace(
+                f"❌ Token overbought (RSI: {rsi:.1f} > {rsi_threshold})",
+                level="info",
+                event="strategy.buy.rsi_overbought",
+                symbol=token.get("symbol"),
+                rsi=rsi,
+                threshold=rsi_threshold,
+            )
+            return False
+
+    # Volume momentum check - require increasing volume
+    if config.get('ENABLE_VOLUME_MOMENTUM_CHECK', True):
+        min_volume_change = config.get('MIN_VOLUME_CHANGE_1H', 0.1)
+        # Try to get volume change data (if available from DexScreener)
+        volume_change_1h = token.get("volumeChange1h")
+        if volume_change_1h is not None:
+            try:
+                volume_change_pct = float(volume_change_1h) / 100.0 if float(volume_change_1h) > 1 else float(volume_change_1h)
+                if volume_change_pct < min_volume_change:
+                    _log_trace(
+                        f"❌ Volume not increasing (1h change: {volume_change_pct*100:.1f}% < {min_volume_change*100:.1f}%)",
+                        level="info",
+                        event="strategy.buy.volume_momentum_fail",
+                        symbol=token.get("symbol"),
+                        volume_change=volume_change_pct,
+                        required_change=min_volume_change,
+                    )
+                    return False
+            except (ValueError, TypeError):
+                pass  # Skip if volume change data not parseable
+
     # Try external momentum first (DexScreener price change data)
     ext_momentum, ext_source = _get_external_momentum(token, config)
     if ext_momentum is not None:
+        # Check momentum acceleration (5m momentum must exceed 1h by threshold)
+        min_acceleration = config.get('MIN_MOMENTUM_ACCELERATION', 0.002)
+        price_change_5m = token.get("priceChange5m")
+        price_change_1h = token.get("priceChange1h")
+        
+        # Convert to decimal if needed
+        def to_decimal(pct_val):
+            if pct_val is None or pct_val == "" or str(pct_val).lower() == "none" or str(pct_val).strip() == "":
+                return None
+            try:
+                val = float(pct_val)
+                return val / 100.0 if val > 1 else val
+            except (ValueError, TypeError):
+                return None
+        
+        pc_5m = to_decimal(price_change_5m)
+        pc_1h = to_decimal(price_change_1h)
+        
+        # Check momentum acceleration
+        if pc_5m is not None and pc_1h is not None:
+            momentum_acceleration = pc_5m - pc_1h
+            if momentum_acceleration < min_acceleration:
+                _log_trace(
+                    f"❌ Momentum not accelerating (5m-1h: {momentum_acceleration*100:.2f}% < {min_acceleration*100:.2f}%)",
+                    level="info",
+                    event="strategy.buy.momentum_acceleration_fail",
+                    symbol=token.get("symbol"),
+                    acceleration=momentum_acceleration,
+                    required_acceleration=min_acceleration,
+                )
+                return False
+        
         _log_trace(
             f"📈 Momentum from {ext_source}: {ext_momentum*100:.4f}% (need ≥ {momentum_need*100:.4f}%)",
             level="info",

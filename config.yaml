@@ -63,11 +63,11 @@ check_pool_reserves: true  # Verify pool has sufficient reserves
 min_pool_reserves_multiplier: 2.0  # Pool reserves must be 2x trade amount
 
 # === Strategy Thresholds ===
-min_momentum_pct: 0.008  # Increased momentum requirement for quality (raised to 0.8% minimum for stronger signals)
+min_momentum_pct: 0.012  # Increased momentum requirement for quality (raised to 1.2% minimum for stronger signals - 50% increase from 0.8%)
 multichain_momentum_multiplier: 0.8  # Multi-chain tokens require 80% of ETH momentum (was 75%)
-multichain_momentum_min: 0.006  # Minimum 0.6% momentum for multi-chain tokens (raised from 0.4% for stronger signals)
-min_volume_24h_for_buy: 300000   # Quality-first: $300k volume minimum for reliability (raised from $200k to improve win rate)
-min_liquidity_usd_for_buy: 300000  # Quality-first: $300k liquidity minimum for reliability (raised from $200k to improve win rate)
+multichain_momentum_min: 0.010  # Minimum 1.0% momentum for multi-chain tokens (raised from 0.6% for stronger signals)
+min_volume_24h_for_buy: 500000   # Quality-first: $500k volume minimum for reliability (raised from $300k to improve win rate)
+min_liquidity_usd_for_buy: 500000  # Quality-first: $500k liquidity minimum for reliability (raised from $300k to improve win rate)
 min_price_usd: 0.000001  # MICRO TESTING - reduced minimum price for more opportunities
 
 # Fast-path thresholds for first-seen tokens
@@ -248,6 +248,13 @@ use_multi_timeframe_momentum: true  # Combine multiple timeframes for robustness
 external_momentum_m5_weight: 0.3  # Weight for 5m momentum (if multi-timeframe enabled)
 external_momentum_h1_weight: 0.5  # Weight for 1h momentum (if multi-timeframe enabled)
 external_momentum_h24_weight: 0.2  # Weight for 24h momentum (if multi-timeframe enabled)
+require_momentum_alignment: true  # Require 5m and 1h momentum to both be positive (not just weighted average)
+require_positive_24h_momentum: true  # Require 24h momentum to also be positive for entry
+min_momentum_acceleration: 0.002  # Require momentum acceleration: 5m momentum must exceed 1h by at least 0.2%
+enable_volume_momentum_check: true  # Check if volume is increasing (if volume change data available)
+min_volume_change_1h: 0.1  # Require at least 10% volume increase in 1h (if data available)
+enable_rsi_filter: true  # Filter out overbought tokens (RSI > 70)
+rsi_overbought_threshold: 70  # RSI threshold to consider overbought
 
 # === State Management ===
 reset_state_now: false

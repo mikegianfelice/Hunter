@@ -133,5 +133,12 @@ def get_config_values():
         'USE_MULTI_TIMEFRAME_MOMENTUM': get_config_bool("use_multi_timeframe_momentum", True),
         'EXTERNAL_MOMENTUM_M5_WEIGHT': get_config_float("external_momentum_m5_weight", 0.3),
         'EXTERNAL_MOMENTUM_H1_WEIGHT': get_config_float("external_momentum_h1_weight", 0.5),
-        'EXTERNAL_MOMENTUM_H24_WEIGHT': get_config_float("external_momentum_h24_weight", 0.2)
+        'EXTERNAL_MOMENTUM_H24_WEIGHT': get_config_float("external_momentum_h24_weight", 0.2),
+        'REQUIRE_MOMENTUM_ALIGNMENT': get_config_bool("require_momentum_alignment", True),
+        'REQUIRE_POSITIVE_24H_MOMENTUM': get_config_bool("require_positive_24h_momentum", True),
+        'MIN_MOMENTUM_ACCELERATION': get_config_float("min_momentum_acceleration", 0.002),
+        'ENABLE_VOLUME_MOMENTUM_CHECK': get_config_bool("enable_volume_momentum_check", True),
+        'MIN_VOLUME_CHANGE_1H': get_config_float("min_volume_change_1h", 0.1),
+        'ENABLE_RSI_FILTER': get_config_bool("enable_rsi_filter", True),
+        'RSI_OVERBOUGHT_THRESHOLD': get_config_float("rsi_overbought_threshold", 70)
     }
