@@ -76,8 +76,15 @@ class AIRiskAssessor:
             # Analyze various risk factors
             risk_analysis = self._analyze_risk_factors(token)
             
+            # Log intermediate calculation for debugging
+            logger.debug(f"Risk analysis dict keys: {list(risk_analysis.keys())}")
+            logger.debug(f"Risk analysis values: {risk_analysis}")
+            
             # Calculate overall risk score
             overall_risk_score = self._calculate_overall_risk_score(risk_analysis)
+            
+            # Log calculated overall risk score
+            logger.debug(f"Calculated overall_risk_score: {overall_risk_score}")
             
             # Determine risk category
             risk_category = self._determine_risk_category(overall_risk_score)
@@ -148,10 +155,22 @@ class AIRiskAssessor:
             # Market regime risk
             risk_factors['regime_risk'] = self._assess_regime_risk(token)
             
+            # Log the calculated risk factors for debugging
+            logger.debug(f"Risk factors calculated: {risk_factors}")
+            
+            # Verify all required factors are present
+            missing_factors = set(self.risk_factors.keys()) - set(risk_factors.keys())
+            if missing_factors:
+                logger.warning(f"Missing risk factors: {missing_factors}")
+                # Fill in missing factors with 0.5 (but log it)
+                for factor in missing_factors:
+                    risk_factors[factor] = 0.5
+                    logger.warning(f"Using default value 0.5 for missing factor: {factor}")
+            
             return risk_factors
             
         except Exception as e:
-            logger.error(f"Error analyzing risk factors: {e}")
+            logger.error(f"Error analyzing risk factors: {e}", exc_info=True)
             return {factor: 0.5 for factor in self.risk_factors.keys()}
     
     def _assess_volume_volatility_risk(self, token: Dict) -> float:
@@ -388,14 +407,31 @@ class AIRiskAssessor:
         """Calculate overall risk score using weighted factors"""
         try:
             overall_score = 0.0
+            total_weight = 0.0
             
             for factor, weight in self.risk_factors.items():
-                factor_score = risk_analysis.get(factor, 0.5)
-                overall_score += factor_score * weight
+                factor_score = risk_analysis.get(factor)
+                # Only add to calculation if factor exists and is not None
+                if factor_score is not None:
+                    overall_score += factor_score * weight
+                    total_weight += weight
+                else:
+                    # Log missing factor for debugging
+                    logger.warning(f"Missing risk factor '{factor}' in risk_analysis, skipping")
+            
+            # If no valid factors found, return default
+            if total_weight == 0.0:
+                logger.warning(f"No valid risk factors found in risk_analysis. Available keys: {list(risk_analysis.keys())}")
+                return 0.5
+            
+            # Normalize by actual weights used (in case some factors were missing)
+            if total_weight < 1.0:
+                overall_score = overall_score / total_weight if total_weight > 0 else 0.5
             
             return max(0.0, min(1.0, overall_score))
             
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error calculating overall risk score: {e}", exc_info=True)
             return 0.5  # Default medium risk
     
     def _determine_risk_category(self, risk_score: float) -> str:

@@ -635,6 +635,11 @@ class AIIntegrationEngine:
             
             # Use AI risk assessor module if available (tokens already filtered for volume/liquidity > $500k)
             if "risk_assessor" in self.module_connector.modules:
+                logger.debug(f"Risk assessor module found for {market_data.symbol}")
+            else:
+                logger.warning(f"Risk assessor module NOT found in connector. Available modules: {list(self.module_connector.modules.keys())}")
+            
+            if "risk_assessor" in self.module_connector.modules:
                 try:
                     module = self.module_connector.modules["risk_assessor"]
                     if hasattr(module, 'assess_token_risk'):
@@ -671,6 +676,10 @@ class AIIntegrationEngine:
                         if ai_result:
                             # Extract risk_score from AI result (it uses 'overall_risk_score')
                             risk_score = ai_result.get("overall_risk_score", 0.5)
+                            # Log what we got from the risk assessor
+                            logger.debug(f"Risk assessor returned overall_risk_score: {risk_score}, full result keys: {list(ai_result.keys())}")
+                            if risk_score == 0.5:
+                                logger.warning(f"Risk score is 0.5 (default value) for {market_data.symbol}. ai_result keys: {list(ai_result.keys())}, overall_risk_score present: {'overall_risk_score' in ai_result}")
                             # Extract risk factors from AI result
                             risk_insights = ai_result.get("risk_insights", [])
                             if risk_insights:
@@ -679,12 +688,17 @@ class AIIntegrationEngine:
                             risk_category = ai_result.get("risk_category", "")
                             if risk_category:
                                 risk_factors.append(f"AI Risk Category: {risk_category}")
+                        else:
+                            logger.warning(f"Risk assessor returned None/empty result for {market_data.symbol}")
+                            risk_score = 0.5  # Default if no result
                 except Exception as e:
                     log_error(f"Error in risk assessor module: {e}")
+                    logger.exception(f"Full exception traceback for risk assessor error:")
                     risk_score = 0.5  # Default to medium risk on error
             
             # If no AI module or it failed, default to medium risk
             if risk_score == 0.0 and not risk_factors:
+                logger.warning(f"Risk score was 0.0 with no risk factors for {market_data.symbol}, defaulting to 0.5")
                 risk_score = 0.5
             
             return {
