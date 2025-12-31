@@ -1205,7 +1205,14 @@ class EnhancedAsyncTradingEngine:
                         }
                 except Exception as e:
                     log_error("trading.risk_gate_error", f"Risk gate error: {e}")
-                    # Continue if risk gate check fails (don't block on errors)
+                    # BLOCK trade if risk gate check fails - fail-safe approach
+                    return {
+                        "success": False,
+                        "symbol": symbol,
+                        "error": f"Risk gate check failed: {e}",
+                        "error_type": "gate",  # Mark as gate failure
+                        "chain": chain
+                    }
                 
                 # Risk assessment
                 trade_amount = additional_amount if is_adding_to_position else position_size
