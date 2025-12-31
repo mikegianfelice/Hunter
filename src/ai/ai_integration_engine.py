@@ -663,7 +663,10 @@ class AIIntegrationEngine:
                                 }
                         
                         # Call the correct method (assess_token_risk, not assess_risk)
-                        ai_result = await module.assess_token_risk(token_dict) if asyncio.iscoroutinefunction(module.assess_token_risk) else module.assess_token_risk(token_dict)
+                        if asyncio.iscoroutinefunction(module.assess_token_risk):
+                            ai_result = await module.assess_token_risk(token_dict)
+                        else:
+                            ai_result = module.assess_token_risk(token_dict)
                         
                         if ai_result:
                             # Extract risk_score from AI result (it uses 'overall_risk_score')
