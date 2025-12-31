@@ -34,6 +34,14 @@ Before entering any trade, tokens must pass multiple analysis-driven checks:
 - **Quality Score** ≥ 65% (combines sentiment, technical analysis, price prediction)
 - **Success Probability** ≥ 60% (prediction of profitable outcome based on weighted analysis)
 - **Holder Concentration** < 65% (blocks tokens where top 10 holders own over 65%)
+- **Order-Flow Defense** (Solana only) - Blocks tokens with suspicious trading patterns:
+  - Minimum 55% buy dominance (more buyers than sellers)
+  - Maximum 20% from single wallet (prevents single-wallet pumps)
+  - Minimum 12 unique buyers (ensures diverse participation)
+  - Largest buy ≤ 4x median (prevents whale manipulation)
+  - Minimum $15k buy volume in last 2 minutes
+  - Minimum 25 total trades in lookback window
+  - **Zero API calls** - Uses indexed swap events from local database
 - **Risk Score** ≤ 50% (lower is safer)
 - **Recommendation** = "buy" with >70% confidence
 - **Momentum Requirements**:
@@ -97,6 +105,12 @@ All positions are monitored in real-time, and exits execute automatically on-cha
 
 ### **🛡️ Risk Management & Safety**
 - **Enhanced Risk Assessment** - Multi-factor risk analysis using weighted scoring
+- **Order-Flow Defense** (Solana) - Real-time analysis of swap transactions to block:
+  - Single-wallet pumps (one wallet dominating buys)
+  - Wash trading (fake volume patterns)
+  - Fake momentum spikes (artificial price movements)
+  - Whale manipulation (disproportionate large buys)
+  - Uses indexed swap events from local database (zero API calls)
 - **Manipulation Detection** - Advanced detection of pump/dump schemes, wash trading, and spoofing
 - **Whale Activity Monitoring** - Real-time whale trade detection and impact analysis
 - **Market Maker Intelligence** - Leverages market maker presence for execution stability
