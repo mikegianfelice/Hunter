@@ -1207,16 +1207,27 @@ class AIIntegrationEngine:
         try:
             total_weight = 0.0
             weighted_confidence = 0.0
+            results_with_explicit_confidence = 0
+            total_results = 0
             
             for result in results:
                 if isinstance(result, Exception) or not result:
                     continue
                 
+                total_results += 1
+                
                 # Extract confidence from each result if available
                 if isinstance(result, dict):
+                    # Check if confidence was explicitly provided (not using default)
+                    has_explicit_confidence = "confidence" in result
                     result_confidence = result.get("confidence", 0.5)
+                    
                     # Weight by result quality (non-empty dict = quality indicator)
-                    weight = 1.0 if result else 0.5
+                    # Since result passed the not result check above, it's non-empty
+                    weight = 1.0
+                    
+                    if has_explicit_confidence:
+                        results_with_explicit_confidence += 1
                 else:
                     result_confidence = 0.5
                     weight = 0.5
@@ -1229,8 +1240,19 @@ class AIIntegrationEngine:
             else:
                 base_confidence = 0.5
             
-            # Ensure minimum confidence
-            confidence = base_confidence * 0.8 + 0.2
+            # Adjust confidence based on how many results provided explicit confidence values
+            # If most results use default (0.5), the confidence should reflect that uncertainty
+            if total_results == 0:
+                confidence = 0.5
+            elif results_with_explicit_confidence == 0:
+                # No explicit confidence values - use lower baseline to reflect uncertainty
+                confidence = base_confidence * 0.7 + 0.15
+            elif results_with_explicit_confidence < total_results * 0.5:
+                # Less than half have explicit confidence - moderate adjustment
+                confidence = base_confidence * 0.85 + 0.1
+            else:
+                # Most/all results have explicit confidence - use higher baseline
+                confidence = base_confidence * 0.9 + 0.1
             
             return max(0.0, min(1.0, confidence))
             
