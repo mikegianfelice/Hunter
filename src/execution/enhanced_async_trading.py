@@ -704,6 +704,12 @@ class EnhancedAsyncTradingEngine:
                     "take_profit": recommendations.get("take_profit", 0.15),
                     "stop_loss": recommendations.get("stop_loss", 0.08)
                 },
+                "risk_assessment": {  # Include risk_assessment at top level for proper extraction
+                    "risk_score": risk.get("risk_score", 0.5),
+                    "risk_level": risk.get("risk_level", "medium"),
+                    "risk_factors": risk.get("risk_factors", []),
+                    "confidence": risk.get("confidence", 0.5)
+                },
                 "risk_factors": risk.get("risk_factors", []),
                 "technical_analysis": {
                     "technical_score": technical.get("technical_score", 0.5),
