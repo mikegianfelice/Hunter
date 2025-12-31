@@ -22,8 +22,8 @@ Hunter is a quant level crypto trading bot executing real on-chain trades with l
 
 ### **1. Token Selection** 🔍
 The bot continuously scans DexScreener for trending tokens across Solana using configurable discovery settings. It filters out low-quality tokens by requiring:
-- Minimum $200k daily volume (configurable)
-- Minimum $200k liquidity (configurable)
+- Minimum $500k daily volume (configurable)
+- Minimum $500k liquidity (configurable)
 - Active trading activity
 - No stablecoins or wrapped tokens
 
@@ -36,6 +36,13 @@ Before entering any trade, tokens must pass multiple analysis-driven checks:
 - **Holder Concentration** < 65% (blocks tokens where top 10 holders own over 65%)
 - **Risk Score** ≤ 50% (lower is safer)
 - **Recommendation** = "buy" with >70% confidence
+- **Momentum Requirements**:
+  - Minimum 1.2% momentum (weighted average across 5m, 1h, 24h timeframes)
+  - Both 5m and 1h momentum must be positive (alignment requirement)
+  - 24h momentum must be positive (longer-term trend confirmation)
+  - Momentum acceleration: 5m momentum must exceed 1h by at least 0.2%
+- **Volume Momentum**: Volume must be increasing (if volume change data available)
+- **RSI Filter**: Rejects overbought tokens (RSI > 70)
 
 Only tokens passing all criteria are considered for trading.
 
@@ -607,9 +614,9 @@ token_discovery:
 
 # Strategy Thresholds (Improved Entry Quality)
 min_quality_score: 65         # Minimum quality score (0-100) - raised from 60 to 65 to improve win rate
-min_volume_24h_for_buy: 200000   # $200k minimum 24h volume - raised from $150k
-min_liquidity_usd_for_buy: 200000 # $200k minimum liquidity - raised from $150k
-min_momentum_pct: 0.003       # 0.3% minimum momentum - raised from 0.2%
+min_volume_24h_for_buy: 500000   # $500k minimum 24h volume - raised from $300k to improve win rate
+min_liquidity_usd_for_buy: 500000 # $500k minimum liquidity - raised from $300k to improve win rate
+min_momentum_pct: 0.012       # 1.2% minimum momentum - raised from 0.8% (50% increase) for stronger signals
 
 # Risk Management (Current Settings)
 max_concurrent_positions: 4   # Maximum open positions (reduced from 6 to focus on quality)
