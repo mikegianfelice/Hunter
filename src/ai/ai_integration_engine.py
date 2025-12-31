@@ -506,12 +506,16 @@ class AIIntegrationEngine:
                 market_data=market_data, token_data=token_data
             )
             
-            # Generate recommendations with all modules
+            # Calculate confidence BEFORE generating recommendations so it can be used in recommendations
+            ai_confidence = self._calculate_confidence(results)
+            
+            # Generate recommendations with all modules (pass AI confidence)
             recommendations = self._generate_recommendations_comprehensive(
                 overall_score, sentiment_analysis, price_prediction, 
                 risk_assessment, market_analysis, technical_analysis,
                 market_context, predictive_analytics, risk_controls, portfolio_analysis,
-                token_data=token_data
+                token_data=token_data,
+                ai_confidence=ai_confidence
             )
             
             # Create comprehensive result
@@ -519,7 +523,7 @@ class AIIntegrationEngine:
                 symbol=symbol,
                 timestamp=datetime.now().isoformat(),
                 overall_score=overall_score,
-                confidence=self._calculate_confidence(results),
+                confidence=ai_confidence,
                 recommendations=recommendations,
                 risk_assessment=risk_assessment,
                 market_analysis=market_analysis,
@@ -1512,18 +1516,23 @@ class AIIntegrationEngine:
     def _generate_recommendations(self, overall_score: float, sentiment: Dict, 
                                  prediction: Dict, risk: Dict, market: Dict, 
                                  technical: Dict, base_position_size: float = 5.0,
-                                 token_data: Optional[Dict] = None) -> Dict[str, Any]:
+                                 token_data: Optional[Dict] = None,
+                                 ai_confidence: Optional[float] = None) -> Dict[str, Any]:
         """Generate trading recommendations based on analysis
         
         Args:
             base_position_size: Base position size from tier system (default 5.0 for backward compat)
             token_data: Optional token data dict containing momentum information
+            ai_confidence: Optional AI-calculated confidence value to use instead of threshold-based
         """
         try:
+            # Use AI confidence if provided, otherwise fall back to default 0.5
+            base_confidence = ai_confidence if ai_confidence is not None else 0.5
+            
             # Use tier base as the default instead of hardcoded 5.0
             recommendations = {
                 "action": "hold",
-                "confidence": 0.5,
+                "confidence": base_confidence,  # Use AI confidence instead of default 0.5
                 "position_size": base_position_size,
                 "take_profit": 0.15,
                 "stop_loss": 0.08,
@@ -1579,26 +1588,32 @@ class AIIntegrationEngine:
             # Scale recommendations relative to base position size
             # Old system: 5.0 base, recommendations were 10.0, 15.0, 20.0 (2x, 3x, 4x)
             # New system: use tier base, scale by same multipliers
+            # Use AI confidence as base, with minor adjustments based on action type
             if overall_score > 0.8:
                 recommendations["action"] = "strong_buy"
-                recommendations["confidence"] = 0.9
+                # Scale AI confidence up for strong buy (cap at 0.95)
+                recommendations["confidence"] = min(0.95, base_confidence * 1.1) if ai_confidence is not None else 0.9
                 recommendations["position_size"] = base_position_size * 4.0  # 4x base (was 20.0)
                 recommendations["reasoning"].append("High overall score")
             elif overall_score > 0.7:
                 recommendations["action"] = "buy"
-                recommendations["confidence"] = 0.8
+                # Use AI confidence directly for buy
+                recommendations["confidence"] = base_confidence if ai_confidence is not None else 0.8
                 recommendations["position_size"] = base_position_size * 3.0  # 3x base (was 15.0)
                 recommendations["reasoning"].append("Good overall score")
             elif overall_score > 0.6:
                 recommendations["action"] = "weak_buy"
-                recommendations["confidence"] = 0.6
+                # Slightly reduce AI confidence for weak buy
+                recommendations["confidence"] = base_confidence * 0.9 if ai_confidence is not None else 0.6
                 recommendations["position_size"] = base_position_size * 2.0  # 2x base (was 10.0)
                 recommendations["reasoning"].append("Moderate overall score")
             elif overall_score < 0.3:
                 recommendations["action"] = "avoid"
-                recommendations["confidence"] = 0.8
+                # High confidence in avoiding low-score tokens
+                recommendations["confidence"] = max(0.7, base_confidence) if ai_confidence is not None else 0.8
                 recommendations["position_size"] = 0.0
                 recommendations["reasoning"].append("Low overall score")
+            # For scores between 0.3-0.6, keep the base confidence (already set above)
             
             # Adjust based on risk (multipliers remain the same)
             risk_level = risk.get("risk_level", "medium")
@@ -1623,9 +1638,11 @@ class AIIntegrationEngine:
             
         except Exception as e:
             log_error(f"Error generating recommendations: {e}")
+            # Use AI confidence in error case if available
+            error_confidence = ai_confidence if ai_confidence is not None else 0.5
             return {
                 "action": "hold",
-                "confidence": 0.5,
+                "confidence": error_confidence,
                 "position_size": base_position_size,
                 "take_profit": 0.15,
                 "stop_loss": 0.08,
@@ -1739,18 +1756,21 @@ class AIIntegrationEngine:
                                               technical: Dict, market_context: Dict,
                                               predictive_analytics: Dict, risk_controls: Dict,
                                               portfolio_analysis: Dict, base_position_size: float = 5.0,
-                                              token_data: Optional[Dict] = None) -> Dict[str, Any]:
+                                              token_data: Optional[Dict] = None,
+                                              ai_confidence: Optional[float] = None) -> Dict[str, Any]:
         """Generate comprehensive trading recommendations with all modules
         
         Args:
             base_position_size: Base position size from tier system (default 5.0 for backward compat)
             token_data: Optional token data dict containing momentum information
+            ai_confidence: Optional AI-calculated confidence value to use instead of threshold-based
         """
         try:
-            # Start with base recommendations
+            # Start with base recommendations (pass AI confidence)
             recommendations = self._generate_recommendations(
                 overall_score, sentiment, prediction, risk, market, technical, base_position_size,
-                token_data=token_data
+                token_data=token_data,
+                ai_confidence=ai_confidence
             )
             
             # Adjust based on market context
