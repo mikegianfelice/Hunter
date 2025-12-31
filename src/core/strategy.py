@@ -1095,6 +1095,24 @@ def check_buy_signal(token: dict) -> bool:
         )
         return False
 
+    # Order-flow defense for Solana tokens (after liquidity/volume, before momentum)
+    if chain_id == "solana" and config.get('ENABLE_ORDER_FLOW_DEFENSE', True):
+        from src.utils.order_flow_defense_solana import evaluate_order_flow_solana
+        
+        order_flow_result = evaluate_order_flow_solana(address)
+        
+        if not order_flow_result.get("pass", False):
+            reasons = order_flow_result.get("reasons", [])
+            _log_trace(
+                f"🚫 Order-flow defense blocked: {', '.join(reasons)}",
+                level="warning",
+                event="strategy.buy.order_flow_blocked",
+                symbol=token.get("symbol"),
+                address=address,
+                metrics=order_flow_result.get("metrics", {})
+            )
+            return False
+
     mem = load_price_memory()
     entry = mem.get(address)
     now_ts = _now()

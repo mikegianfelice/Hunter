@@ -185,6 +185,19 @@ holder_concentration_cache_minutes: 10  # Cache holder data for 10 minutes
 holder_concentration_block_on_high_risk: true  # Hard block tokens when concentration exceeds threshold
 holder_concentration_fail_closed: true  # Block trades if holder concentration check fails (prevents risky tokens from passing)
 
+# === Order Flow Defense ===
+enable_order_flow_defense: true  # Enable order-flow defense for Solana tokens (blocks single-wallet pumps, wash trading, fake momentum)
+order_flow_lookback_seconds: 120  # 2 minute lookback window
+order_flow_buy_dom_min: 0.55  # Minimum 55% buy dominance
+order_flow_top_buyer_max: 0.20  # Max 20% from single wallet
+order_flow_min_unique_buyers: 12  # Minimum 12 unique buyers
+order_flow_max_buy_mult_median: 4.0  # Largest buy <= 4x median
+order_flow_min_buy_volume_usd: 15000  # Minimum $15k buy volume
+order_flow_min_trades: 25  # Minimum 25 total trades
+order_flow_max_txs_scanned: 200  # Max transactions to scan
+order_flow_fail_open: false  # Block trades if data unavailable (fail-closed)
+order_flow_cache_seconds: 30  # Cache results for 30 seconds
+
 # === Volume/Liquidity Safety ===
 max_volume_liquidity_ratio: 10.0  # Reject tokens where volume > 10× liquidity (manipulation/wash trading indicator)
 

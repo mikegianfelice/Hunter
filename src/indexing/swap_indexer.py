@@ -432,6 +432,9 @@ class SwapIndexer:
             meta = tx_data.get("meta", {})
             account_keys = tx_data.get("transaction", {}).get("message", {}).get("accountKeys", [])
             
+            # Extract signer wallet (first account is always the signer)
+            signer_wallet = account_keys[0] if account_keys else None
+            
             # Find DEX program
             dex_program = None
             for key in account_keys:
@@ -458,6 +461,7 @@ class SwapIndexer:
                 "base_mint": filter_token.lower() if filter_token else None,
                 "quote_mint": swap_data.get("quote_mint", "").lower() if swap_data.get("quote_mint") else None,
                 "dex_program": dex_program,
+                "signer_wallet": signer_wallet,
             }
         
         except Exception as e:

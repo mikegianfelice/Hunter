@@ -29,10 +29,16 @@ def _init_db() -> None:
                 base_mint TEXT,
                 quote_mint TEXT,
                 dex_program TEXT,
+                signer_wallet TEXT,
                 created_at REAL DEFAULT (strftime('%s','now'))
             )
             """
         )
+        # Add signer_wallet column if it doesn't exist (migration)
+        try:
+            conn.execute("ALTER TABLE swap_events ADD COLUMN signer_wallet TEXT")
+        except Exception:
+            pass  # Column already exists
         # Create indexes for fast queries
         conn.execute(
             """
@@ -66,6 +72,7 @@ def store_swap_event(
     base_mint: Optional[str] = None,
     quote_mint: Optional[str] = None,
     dex_program: Optional[str] = None,
+    signer_wallet: Optional[str] = None,
 ) -> bool:
     """
     Store a swap event in the database.
@@ -81,8 +88,8 @@ def store_swap_event(
                     """
                     INSERT OR IGNORE INTO swap_events 
                     (token_address, pool_address, tx_signature, block_time, price_usd, 
-                     volume_usd, amount_in, amount_out, base_mint, quote_mint, dex_program)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     volume_usd, amount_in, amount_out, base_mint, quote_mint, dex_program, signer_wallet)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         token_address.lower(),
@@ -96,6 +103,7 @@ def store_swap_event(
                         base_mint.lower() if base_mint else None,
                         quote_mint.lower() if quote_mint else None,
                         dex_program,
+                        signer_wallet.lower() if signer_wallet else None,
                     ),
                 )
                 # Check if row was inserted by checking lastrowid
@@ -167,6 +175,7 @@ def get_swap_events(
             "base_mint": row["base_mint"],
             "quote_mint": row["quote_mint"],
             "dex_program": row["dex_program"],
+            "signer_wallet": row.get("signer_wallet"),
         }
         for row in rows
     ]
