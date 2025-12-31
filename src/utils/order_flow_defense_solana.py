@@ -57,26 +57,35 @@ def _determine_side(swap: Dict, target_token: str) -> str:
     
     BUY: receiving target_token (quote -> base)
     SELL: sending target_token (base -> quote)
+    
+    NOTE: This function has a limitation - the swap_indexer stores absolute values
+    for token_amount and quote_amount, so directional information is lost. The current
+    implementation uses a heuristic that may not be accurate. A proper fix would require
+    storing directional information (positive/negative balance changes) in the database.
+    
+    Current heuristic:
+    - If quote_mint is the target token, treat as BUY
+    - Otherwise, assume SELL (since base_mint is typically the tracked token)
     """
     base_mint = swap.get("base_mint", "").lower() if swap.get("base_mint") else ""
     quote_mint = swap.get("quote_mint", "").lower() if swap.get("quote_mint") else ""
     target_token_lower = target_token.lower()
     
-    # If base_mint is target token, this is a SELL
+    # If quote_mint is target token, this is a BUY (unusual but possible)
+    if quote_mint == target_token_lower:
+        return "BUY"
+    
+    # Default: assume SELL when base_mint matches target_token
+    # NOTE: This is a heuristic limitation - we can't determine actual direction
+    # from absolute values stored in the database. The swap_indexer stores
+    # absolute balance changes, losing directional information.
+    # TODO: Fix swap_indexer to store directional balance changes to enable
+    # accurate buy/sell determination.
     if base_mint == target_token_lower:
         return "SELL"
-    # If quote_mint is target token, this is a BUY (unusual but possible)
-    elif quote_mint == target_token_lower:
-        return "BUY"
-    # Default: check amount direction
-    # If amount_out > amount_in, likely a BUY (receiving more tokens)
-    else:
-        amount_in = swap.get("amount_in", 0) or 0
-        amount_out = swap.get("amount_out", 0) or 0
-        # Heuristic: if we're tracking base_mint and amount_out is significant, it's a BUY
-        if base_mint == target_token_lower and amount_out > 0:
-            return "BUY"
-        return "SELL"
+    
+    # Fallback: default to SELL if we can't determine
+    return "SELL"
 
 
 def calculate_trade_size_usd(
