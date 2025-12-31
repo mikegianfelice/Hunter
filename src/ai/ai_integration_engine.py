@@ -443,7 +443,7 @@ class AIIntegrationEngine:
             core_tasks = [
                 self._analyze_sentiment(market_data),
                 self._analyze_price_prediction(market_data, features),
-                self._analyze_risk(market_data),
+                self._analyze_risk(market_data, token_data=token_data),
                 self._analyze_market_conditions(market_data),
                 self._analyze_technical_indicators(market_data),
                 self._analyze_execution_optimization(market_data)
@@ -627,46 +627,62 @@ class AIIntegrationEngine:
             log_error(f"Error in price prediction: {e}")
             return {"price_movement_probability": 0.5, "confidence": 0.5}
     
-    async def _analyze_risk(self, market_data: MarketData) -> Dict[str, Any]:
+    async def _analyze_risk(self, market_data: MarketData, token_data: Optional[Dict] = None) -> Dict[str, Any]:
         """Analyze risk using AI modules"""
         try:
-            # Basic risk analysis
             risk_factors = []
             risk_score = 0.0
             
-            # Volume risk
-            if market_data.volume_24h < 10000:
-                risk_factors.append("Low volume")
-                risk_score += 0.3
-            
-            # Liquidity risk
-            if market_data.liquidity < 50000:
-                risk_factors.append("Low liquidity")
-                risk_score += 0.2
-            
-            # Price volatility risk
-            if abs(market_data.price_change_24h) > 0.5:
-                risk_factors.append("High volatility")
-                risk_score += 0.2
-            
-            # Market cap risk
-            if market_data.market_cap < 1000000:
-                risk_factors.append("Small market cap")
-                risk_score += 0.3
-            
-            risk_score = min(1.0, risk_score)
-            
-            # Enhance with AI module if available
+            # Use AI risk assessor module if available (tokens already filtered for volume/liquidity > $500k)
             if "risk_assessor" in self.module_connector.modules:
                 try:
                     module = self.module_connector.modules["risk_assessor"]
-                    if hasattr(module, 'assess_risk'):
-                        ai_result = await module.assess_risk(market_data) if asyncio.iscoroutinefunction(module.assess_risk) else module.assess_risk(market_data)
+                    if hasattr(module, 'assess_token_risk'):
+                        # Convert MarketData to token dict format expected by AI risk assessor
+                        if token_data:
+                            # Use original token_data if available (better, may have more fields)
+                            token_dict = token_data.copy()
+                        else:
+                            # Convert MarketData back to token dict format
+                            token_dict = {
+                                "symbol": market_data.symbol,
+                                "volume24h": market_data.volume_24h,
+                                "liquidity": market_data.liquidity,
+                                "priceChange24h": market_data.price_change_24h,
+                                "marketCap": market_data.market_cap,
+                                "priceUsd": market_data.price,
+                                "volume1h": market_data.volume_24h / 24,  # Estimate 1h volume
+                                "holders": market_data.holders,
+                                "transactions24h": market_data.transactions_24h,
+                            }
+                            # Add sentiment if available
+                            if hasattr(market_data, 'news_sentiment') and market_data.news_sentiment:
+                                token_dict["ai_sentiment"] = {
+                                    "score": market_data.news_sentiment,
+                                    "confidence": 0.8
+                                }
+                        
+                        # Call the correct method (assess_token_risk, not assess_risk)
+                        ai_result = await module.assess_token_risk(token_dict) if asyncio.iscoroutinefunction(module.assess_token_risk) else module.assess_token_risk(token_dict)
+                        
                         if ai_result:
-                            risk_score = ai_result.get("risk_score", risk_score)
-                            risk_factors.extend(ai_result.get("risk_factors", []))
+                            # Extract risk_score from AI result (it uses 'overall_risk_score')
+                            risk_score = ai_result.get("overall_risk_score", 0.5)
+                            # Extract risk factors from AI result
+                            risk_insights = ai_result.get("risk_insights", [])
+                            if risk_insights:
+                                risk_factors.extend(risk_insights)
+                            # Also add risk category to factors
+                            risk_category = ai_result.get("risk_category", "")
+                            if risk_category:
+                                risk_factors.append(f"AI Risk Category: {risk_category}")
                 except Exception as e:
                     log_error(f"Error in risk assessor module: {e}")
+                    risk_score = 0.5  # Default to medium risk on error
+            
+            # If no AI module or it failed, default to medium risk
+            if risk_score == 0.0 and not risk_factors:
+                risk_score = 0.5
             
             return {
                 "risk_score": risk_score,
