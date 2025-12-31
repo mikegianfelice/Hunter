@@ -27,7 +27,9 @@
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <string>/Users/gianf/Desktop/Cursor/Hunter/.venv/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>MPLCONFIGDIR</key>
+        <string>/Users/gianf/Desktop/Cursor/Hunter/.matplotlib</string>
     </dict>
 
     <key>StandardOutPath</key>

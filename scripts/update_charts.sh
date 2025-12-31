@@ -24,6 +24,12 @@ cd "$PROJECT_ROOT" || {
     exit 1
 }
 
+# Activate virtual environment if it exists
+if [ -f "$PROJECT_ROOT/.venv/bin/activate" ]; then
+    source "$PROJECT_ROOT/.venv/bin/activate"
+    echo "✅ Activated virtual environment"
+fi
+
 # Check if git is available
 if ! command -v git &> /dev/null; then
     echo "❌ Error: git command not found" >&2
@@ -110,16 +116,22 @@ mkdir -p docs
 # Generate charts using Helius-based calculation
 echo "📊 Generating performance charts..."
 
+# Use python from venv if available, otherwise use system python3
+PYTHON_CMD="python3"
+if [ -f "$PROJECT_ROOT/.venv/bin/python" ]; then
+    PYTHON_CMD="$PROJECT_ROOT/.venv/bin/python"
+fi
+
 # Generate 30-day chart
-python3 scripts/plot_wallet_value.py --days 30 --type percentage --save docs/performance_chart.png --use-helius 2>&1
+$PYTHON_CMD scripts/plot_wallet_value.py --days 30 --type percentage --save docs/performance_chart.png 2>&1
 CHART30_EXIT=$?
 
 # Generate 90-day chart
-python3 scripts/plot_wallet_value.py --days 90 --type percentage --save docs/performance_90d.png --use-helius 2>&1
+$PYTHON_CMD scripts/plot_wallet_value.py --days 90 --type percentage --save docs/performance_90d.png 2>&1
 CHART90_EXIT=$?
 
 # Generate 180-day chart
-python3 scripts/plot_wallet_value.py --days 180 --type percentage --save docs/performance_180d.png --use-helius 2>&1
+$PYTHON_CMD scripts/plot_wallet_value.py --days 180 --type percentage --save docs/performance_180d.png 2>&1
 CHART180_EXIT=$?
 
 # Check if any charts were generated successfully
