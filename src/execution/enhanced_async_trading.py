@@ -311,6 +311,7 @@ class EnhancedAsyncTradingEngine:
                                         volume_24h = float(pair.get("volume", {}).get("h24", 0))
                                         liquidity_usd = float(pair.get("liquidity", {}).get("usd", 0))
                                         price_change_24h = float(pair.get("priceChange", {}).get("h24", 0))
+                                        price_change_1h = float(pair.get("priceChange", {}).get("h1", 0))
                                         
                                         # Skip tokens with poor metrics (using configurable thresholds)
                                         if price_usd <= 0 or volume_24h < min_vol or liquidity_usd < min_liq:
@@ -326,6 +327,7 @@ class EnhancedAsyncTradingEngine:
                                             "liquidity": liquidity_usd,
                                             "marketCap": float(pair.get("marketCap", 0)),
                                             "priceChange24h": price_change_24h,
+                                            "priceChange1h": price_change_1h,
                                             "holders": int(pair.get("holders", 0)),
                                             "transactions24h": int(pair.get("txns", {}).get("h24", {}).get("buys", 0)) + 
                                                              int(pair.get("txns", {}).get("h24", {}).get("sells", 0)),
@@ -992,14 +994,16 @@ class EnhancedAsyncTradingEngine:
             )
             
             # Log recommendation details for debugging
-            momentum = token.get("priceChange24h", 0)
+            momentum_24h = token.get("priceChange24h", 0)
+            momentum_1h = token.get("priceChange1h", 0)
             log_info("trading.recommendation_check",
                     f"Token {token.get('symbol', 'UNKNOWN')}: "
                     f"action={action}, confidence={confidence:.2f}, "
                     f"quality_score={quality_score:.2f}, "
                     f"success_prob={success_prob:.2f}, "
                     f"risk_score={risk_score:.2f}, "
-                    f"momentum={momentum:.2f}%, "
+                    f"momentum_24h={momentum_24h:.2f}%, "
+                    f"momentum_1h={momentum_1h:.2f}%, "
                     f"passes_ai_filters={passes_ai_filters}",
                     symbol=token.get("symbol"),
                     action=action,
@@ -1007,7 +1011,8 @@ class EnhancedAsyncTradingEngine:
                     quality_score=quality_score,
                     success_prob=success_prob,
                     risk_score=risk_score,
-                    momentum=momentum,
+                    momentum_24h=momentum_24h,
+                    momentum_1h=momentum_1h,
                     passes_ai_filters=passes_ai_filters)
             
             if action == "buy" and confidence > 0.7 and passes_ai_filters:
