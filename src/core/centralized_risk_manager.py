@@ -186,26 +186,105 @@ class CentralizedRiskManager:
         # Check holder concentration (optional hard block)
         fail_closed = get_config_bool("holder_concentration_fail_closed", True)
         block_on_high_risk = get_config_bool("holder_concentration_block_on_high_risk", True)
+        enable_check = get_config_bool("enable_holder_concentration_check", True)
+        
         try:
             from src.utils.holder_concentration_checker import check_holder_concentration
             
-            token_address = token.get("address", "")
+            token_address = token.get("address", "") or token.get("tokenAddress", "") or token.get("mint", "")
             chain_id = token.get("chainId", "solana")
+            symbol = token.get("symbol", "UNKNOWN")
             
-            if token_address and get_config_bool("enable_holder_concentration_check", True):
+            # Log configuration for debugging
+            logger.debug(f"Holder concentration check config for {symbol}: enable_check={enable_check}, "
+                        f"block_on_high_risk={block_on_high_risk}, fail_closed={fail_closed}, "
+                        f"token_address={token_address}, chain_id={chain_id}")
+            
+            if not token_address:
+                logger.warning(f"Holder concentration check skipped for {symbol}: no token address found in token dict. "
+                             f"Available keys: {list(token.keys())}")
+                if fail_closed:
+                    from src.monitoring.structured_logger import log_error
+                    log_error("risk.holder_concentration_blocked",
+                             f"Trade blocked: no token address available for holder concentration check for {symbol}",
+                             symbol=symbol,
+                             token_keys=list(token.keys()))
+                    return RiskAssessment(
+                        overall_risk_score=0.95,
+                        risk_level=RiskLevel.CRITICAL,
+                        approved=False,
+                        reason="Holder concentration check failed: no token address available",
+                        position_adjustment=0.0,
+                        risk_factors={
+                            'holder_concentration_error': 'no_token_address',
+                            'holder_concentration_blocked': True
+                        },
+                        recommendations=["Token address missing - cannot verify holder concentration"],
+                        timestamp=datetime.now().isoformat()
+                    )
+            
+            if enable_check and token_address:
                 holder_check = check_holder_concentration(token_address, chain_id)
                 
+                # Validate holder_check structure
+                if holder_check is None:
+                    logger.error(f"Holder concentration check returned None for {symbol} ({token_address})")
+                    if fail_closed:
+                        from src.monitoring.structured_logger import log_error
+                        log_error("risk.holder_concentration_blocked",
+                                 f"Trade blocked: holder concentration check returned None for {symbol}",
+                                 symbol=symbol,
+                                 token_address=token_address,
+                                 chain_id=chain_id)
+                        return RiskAssessment(
+                            overall_risk_score=0.95,
+                            risk_level=RiskLevel.CRITICAL,
+                            approved=False,
+                            reason="Holder concentration check returned None",
+                            position_adjustment=0.0,
+                            risk_factors={
+                                'holder_concentration_error': 'check_returned_none',
+                                'holder_concentration_blocked': True
+                            },
+                            recommendations=["Holder concentration check unavailable - trade blocked for safety"],
+                            timestamp=datetime.now().isoformat()
+                        )
+                
+                if not isinstance(holder_check, dict):
+                    logger.error(f"Holder concentration check returned invalid type for {symbol}: {type(holder_check)}")
+                    if fail_closed:
+                        from src.monitoring.structured_logger import log_error
+                        log_error("risk.holder_concentration_blocked",
+                                 f"Trade blocked: holder concentration check returned invalid type for {symbol}",
+                                 symbol=symbol,
+                                 token_address=token_address,
+                                 chain_id=chain_id,
+                                 check_type=str(type(holder_check)))
+                        return RiskAssessment(
+                            overall_risk_score=0.95,
+                            risk_level=RiskLevel.CRITICAL,
+                            approved=False,
+                            reason=f"Holder concentration check returned invalid type: {type(holder_check)}",
+                            position_adjustment=0.0,
+                            risk_factors={
+                                'holder_concentration_error': f'invalid_type_{type(holder_check)}',
+                                'holder_concentration_blocked': True
+                            },
+                            recommendations=["Holder concentration check unavailable - trade blocked for safety"],
+                            timestamp=datetime.now().isoformat()
+                        )
+                
                 # If we can't get holder percentage data, block trade when fail_closed is enabled
-                if holder_check and holder_check.get("error"):
+                if holder_check.get("error"):
                     error_type = holder_check.get("error_type", "unknown")
                     error_msg = holder_check['error']
                     
                     if fail_closed:
-                        logger.warning(f"Holder concentration check error (fail-closed) for {token_address} on {chain_id}: {error_msg}")
+                        logger.warning(f"Holder concentration check error (fail-closed) for {symbol} ({token_address}) on {chain_id}: {error_msg}")
                         from src.monitoring.structured_logger import log_error
                         log_error("risk.holder_concentration_blocked",
-                                 f"Trade blocked: holder concentration check failed for {token.get('symbol', 'UNKNOWN')}: {error_msg}",
-                                 symbol=token.get('symbol', 'UNKNOWN'),
+                                 f"Trade blocked: holder concentration check failed for {symbol}: {error_msg}",
+                                 symbol=symbol,
                                  token_address=token_address,
                                  chain_id=chain_id,
                                  error=error_msg,
@@ -224,21 +303,29 @@ class CentralizedRiskManager:
                             timestamp=datetime.now().isoformat()
                         )
                     else:
-                        logger.warning(f"Holder concentration check failed (fail-open) for {token_address} on {chain_id}: {error_msg}. Allowing trade to proceed.")
+                        logger.warning(f"Holder concentration check failed (fail-open) for {symbol} ({token_address}) on {chain_id}: {error_msg}. Allowing trade to proceed.")
                 
                 # If data is available, optionally hard-block on high concentration
-                if holder_check and not holder_check.get("error") and block_on_high_risk:
+                # FIXED: More robust check - ensure holder_check is dict, has no error, and block_on_high_risk is enabled
+                if isinstance(holder_check, dict) and not holder_check.get("error") and block_on_high_risk:
                     threshold = get_config_float("holder_concentration_threshold", 60.0)
                     percentage = holder_check.get("top_10_percentage", 0)
                     
+                    # Validate percentage is a number
+                    try:
+                        percentage = float(percentage) if percentage is not None else 0.0
+                    except (ValueError, TypeError):
+                        logger.error(f"Invalid holder concentration percentage for {symbol}: {percentage} (type: {type(percentage)})")
+                        percentage = 0.0
+                    
                     # Log the check result for debugging
-                    logger.info(f"Holder concentration check for {token.get('symbol', 'UNKNOWN')}: {percentage:.2f}% (threshold: {threshold:.2f}%)")
+                    logger.info(f"Holder concentration check for {symbol}: {percentage:.2f}% (threshold: {threshold:.2f}%)")
                     
                     if percentage >= threshold:
                         from src.monitoring.structured_logger import log_error
                         log_error("risk.holder_concentration_blocked",
-                                 f"Trade blocked: high holder concentration for {token.get('symbol', 'UNKNOWN')}: {percentage:.1f}% (threshold: {threshold:.1f}%)",
-                                 symbol=token.get('symbol', 'UNKNOWN'),
+                                 f"Trade blocked: high holder concentration for {symbol}: {percentage:.1f}% (threshold: {threshold:.1f}%)",
+                                 symbol=symbol,
                                  token_address=token_address,
                                  chain_id=chain_id,
                                  percentage=percentage,
@@ -257,6 +344,12 @@ class CentralizedRiskManager:
                             recommendations=["Token has high holder concentration - potential rug pull risk"],
                             timestamp=datetime.now().isoformat()
                         )
+                elif block_on_high_risk:
+                    # Log why the hard block check was skipped
+                    logger.warning(f"Holder concentration hard block check skipped for {symbol}: "
+                                 f"holder_check is dict={isinstance(holder_check, dict)}, "
+                                 f"has_error={holder_check.get('error') if isinstance(holder_check, dict) else 'N/A'}, "
+                                 f"block_on_high_risk={block_on_high_risk}")
         except Exception as e:
             # If fail_closed is True, block trades when check fails due to exception
             token_address = token.get("address", "")
@@ -302,18 +395,34 @@ class CentralizedRiskManager:
         )
         
         # Add holder concentration risk if available
+        # Note: This is a second check for risk weighting purposes
+        # The hard block should have already been handled above, but we still need to calculate risk weight
         holder_concentration_risk = 0.0
         holder_concentration_pct = 0.0
         try:
             from src.utils.holder_concentration_checker import check_holder_concentration
             
-            token_address = token.get("address", "")
+            token_address = token.get("address", "") or token.get("tokenAddress", "") or token.get("mint", "")
             chain_id = token.get("chainId", "solana")
+            symbol = token.get("symbol", "UNKNOWN")
             
-            if token_address and get_config_bool("enable_holder_concentration_check", True):
+            if token_address and enable_check:
                 holder_check = check_holder_concentration(token_address, chain_id)
                 
-                if holder_check and holder_check.get("error"):
+                # Validate holder_check structure
+                if holder_check is None:
+                    logger.warning(f"Holder concentration check returned None for risk weighting for {symbol}")
+                    if fail_closed:
+                        holder_concentration_risk = 1.0
+                        holder_concentration_pct = 0.0
+                        overall_risk += holder_concentration_risk * risk_weight
+                elif not isinstance(holder_check, dict):
+                    logger.warning(f"Holder concentration check returned invalid type for risk weighting for {symbol}: {type(holder_check)}")
+                    if fail_closed:
+                        holder_concentration_risk = 1.0
+                        holder_concentration_pct = 0.0
+                        overall_risk += holder_concentration_risk * risk_weight
+                elif holder_check.get("error"):
                     error_type = holder_check.get("error_type", "unknown")
                     error_msg = holder_check['error']
                     
@@ -321,13 +430,21 @@ class CentralizedRiskManager:
                     if fail_closed:
                         holder_concentration_risk = 1.0
                         holder_concentration_pct = 0.0
-                        logger.warning(f"Holder concentration risk weighting hit error (fail-closed) for {token_address} on {chain_id}: {error_msg}")
+                        logger.warning(f"Holder concentration risk weighting hit error (fail-closed) for {symbol} ({token_address}) on {chain_id}: {error_msg}")
                         overall_risk += holder_concentration_risk * risk_weight
                     else:
-                        logger.info(f"Holder concentration check failed (fail-open) for {token_address} on {chain_id}: {error_msg}. Not adding risk penalty.")
-                if holder_check and not holder_check.get("error"):
+                        logger.info(f"Holder concentration check failed (fail-open) for {symbol} ({token_address}) on {chain_id}: {error_msg}. Not adding risk penalty.")
+                elif not holder_check.get("error"):
                     threshold = get_config_float("holder_concentration_threshold", 60.0)
                     percentage = holder_check.get("top_10_percentage", 0)
+                    
+                    # Validate percentage is a number
+                    try:
+                        percentage = float(percentage) if percentage is not None else 0.0
+                    except (ValueError, TypeError):
+                        logger.error(f"Invalid holder concentration percentage for risk weighting for {symbol}: {percentage} (type: {type(percentage)})")
+                        percentage = 0.0
+                    
                     holder_concentration_pct = percentage
                     
                     # Calculate concentration risk (0.0 to 1.0)
@@ -344,21 +461,23 @@ class CentralizedRiskManager:
                     
                     # Add to overall risk
                     overall_risk += holder_concentration_risk * risk_weight
+                    logger.debug(f"Holder concentration risk weighting for {symbol}: {percentage:.2f}% -> risk={holder_concentration_risk:.2f}, added {holder_concentration_risk * risk_weight:.4f} to overall risk")
         except Exception as e:
-            logger.warning(f"Holder concentration check failed in risk calculation: {e}")
+            logger.warning(f"Holder concentration check failed in risk calculation for {token.get('symbol', 'UNKNOWN')}: {e}")
         
         overall_risk = min(1.0, overall_risk)
         
         # Yellow-zone logic for holder concentration:
         # - < 60%: generally OK (green zone)
-        # - 60-75%: yellow zone - allow only if other signals are strong, and reduce position size
-        # - >= 75%: red zone - already hard-blocked earlier via holder_concentration_threshold
+        # - 60% to threshold: yellow zone - allow only if other signals are strong, and reduce position size
+        # - >= threshold: red zone - already hard-blocked earlier via holder_concentration_threshold
         yellow_floor = 60.0
-        hard_block_threshold = get_config_float("holder_concentration_threshold", 75.0)
+        hard_block_threshold = get_config_float("holder_concentration_threshold", 65.0)  # Use same threshold as hard block
         holder_concentration_position_multiplier = 1.0
         yellow_zone = False
         
-        if holder_concentration_pct >= yellow_floor and holder_concentration_pct < hard_block_threshold:
+        # Only apply yellow zone logic if we have valid holder concentration data
+        if holder_concentration_pct > 0 and holder_concentration_pct >= yellow_floor and holder_concentration_pct < hard_block_threshold:
             yellow_zone = True
             # Require "other signals are strong": do NOT allow if overall risk is already high/critical
             if overall_risk >= 0.6:
