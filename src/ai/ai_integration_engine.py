@@ -1334,19 +1334,21 @@ class AIIntegrationEngine:
                     momentum_24h = None
                     momentum_1h = None
                 
-                # If both momentums are negative, block buy actions (regardless of overall_score)
+                # Block buy actions if 24h momentum < -5% AND 1h momentum < 1.5%
                 if momentum_24h is not None and momentum_1h is not None:
-                    if momentum_24h < 0 and momentum_1h < 0:
-                        # Override any buy action to hold when both momentums are negative
+                    # Normalize to percentage format for comparison (handle both decimal and percentage formats)
+                    # If value is between -1 and 1, it's likely a decimal, multiply by 100 for percentage
+                    mom_24h_pct = momentum_24h * 100 if abs(momentum_24h) <= 1 else momentum_24h
+                    mom_1h_pct = momentum_1h * 100 if abs(momentum_1h) <= 1 else momentum_1h
+                    
+                    # Block if 24h momentum < -5% AND 1h momentum < 1.5%
+                    if mom_24h_pct < -5.0 and mom_1h_pct < 1.5:
+                        # Override any buy action to hold when momentum conditions are met
                         # This gate applies regardless of overall_score to prevent buying into downtrends
                         recommendations["action"] = "hold"  # Override buy to hold
                         recommendations["momentum_blocked"] = True  # Mark as momentum-blocked
-                        # Format momentum for display (handle both decimal and percentage formats)
-                        # If value is between -1 and 1, it's likely a decimal, multiply by 100 for display
-                        mom_24h_display = momentum_24h * 100 if abs(momentum_24h) <= 1 else momentum_24h
-                        mom_1h_display = momentum_1h * 100 if abs(momentum_1h) <= 1 else momentum_1h
                         recommendations["reasoning"].append(
-                            f"Negative momentum blocks buy signal (24h: {mom_24h_display:.2f}%, 1h: {mom_1h_display:.2f}%)"
+                            f"Negative momentum blocks buy signal (24h: {mom_24h_pct:.2f}%, 1h: {mom_1h_pct:.2f}%)"
                         )
                         return recommendations
             
