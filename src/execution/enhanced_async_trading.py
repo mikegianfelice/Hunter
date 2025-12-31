@@ -992,12 +992,14 @@ class EnhancedAsyncTradingEngine:
             )
             
             # Log recommendation details for debugging
+            momentum = token.get("priceChange24h", 0)
             log_info("trading.recommendation_check",
                     f"Token {token.get('symbol', 'UNKNOWN')}: "
                     f"action={action}, confidence={confidence:.2f}, "
                     f"quality_score={quality_score:.2f}, "
                     f"success_prob={success_prob:.2f}, "
                     f"risk_score={risk_score:.2f}, "
+                    f"momentum={momentum:.2f}%, "
                     f"passes_ai_filters={passes_ai_filters}",
                     symbol=token.get("symbol"),
                     action=action,
@@ -1005,6 +1007,7 @@ class EnhancedAsyncTradingEngine:
                     quality_score=quality_score,
                     success_prob=success_prob,
                     risk_score=risk_score,
+                    momentum=momentum,
                     passes_ai_filters=passes_ai_filters)
             
             if action == "buy" and confidence > 0.7 and passes_ai_filters:
