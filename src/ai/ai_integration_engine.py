@@ -1317,7 +1317,8 @@ class AIIntegrationEngine:
                 "position_size": base_position_size,
                 "take_profit": 0.15,
                 "stop_loss": 0.08,
-                "reasoning": []
+                "reasoning": [],
+                "momentum_blocked": False  # Flag to track when momentum blocks buy actions
             }
             
             # MOMENTUM GATE: Block buy actions if momentum is negative
@@ -1333,20 +1334,21 @@ class AIIntegrationEngine:
                     momentum_24h = None
                     momentum_1h = None
                 
-                # If both momentums are negative, block buy actions
+                # If both momentums are negative, block buy actions (regardless of overall_score)
                 if momentum_24h is not None and momentum_1h is not None:
                     if momentum_24h < 0 and momentum_1h < 0:
                         # Override any buy action to hold when both momentums are negative
-                        if overall_score > 0.7:
-                            recommendations["action"] = "hold"  # Override buy to hold
-                            # Format momentum for display (handle both decimal and percentage formats)
-                            # If value is between -1 and 1, it's likely a decimal, multiply by 100 for display
-                            mom_24h_display = momentum_24h * 100 if abs(momentum_24h) <= 1 else momentum_24h
-                            mom_1h_display = momentum_1h * 100 if abs(momentum_1h) <= 1 else momentum_1h
-                            recommendations["reasoning"].append(
-                                f"Negative momentum blocks buy signal (24h: {mom_24h_display:.2f}%, 1h: {mom_1h_display:.2f}%)"
-                            )
-                            return recommendations
+                        # This gate applies regardless of overall_score to prevent buying into downtrends
+                        recommendations["action"] = "hold"  # Override buy to hold
+                        recommendations["momentum_blocked"] = True  # Mark as momentum-blocked
+                        # Format momentum for display (handle both decimal and percentage formats)
+                        # If value is between -1 and 1, it's likely a decimal, multiply by 100 for display
+                        mom_24h_display = momentum_24h * 100 if abs(momentum_24h) <= 1 else momentum_24h
+                        mom_1h_display = momentum_1h * 100 if abs(momentum_1h) <= 1 else momentum_1h
+                        recommendations["reasoning"].append(
+                            f"Negative momentum blocks buy signal (24h: {mom_24h_display:.2f}%, 1h: {mom_1h_display:.2f}%)"
+                        )
+                        return recommendations
             
             # Scale recommendations relative to base position size
             # Old system: 5.0 base, recommendations were 10.0, 15.0, 20.0 (2x, 3x, 4x)
@@ -1610,10 +1612,15 @@ class AIIntegrationEngine:
                         recommendations["reasoning"].append("Microstructure timing suggests waiting")
                     elif execution_recommendation in {"execute_immediately", "execute_optimal"}:
                         # Reinforce buy signal if microstructure strongly supports execution
-                        if recommendations["action"] in {"hold", "weak_buy"}:
+                        # BUT: Don't override if momentum blocked the action (momentum takes precedence)
+                        momentum_blocked = recommendations.get("momentum_blocked", False)
+                        
+                        if not momentum_blocked and recommendations["action"] in {"hold", "weak_buy"}:
                             recommendations["action"] = "buy"
-                        recommendations["confidence"] = max(recommendations.get("confidence", 0.5), 0.75)
-                        recommendations["reasoning"].append("Microstructure favors execution now")
+                            recommendations["confidence"] = max(recommendations.get("confidence", 0.5), 0.75)
+                            recommendations["reasoning"].append("Microstructure favors execution now")
+                        elif momentum_blocked:
+                            recommendations["reasoning"].append("Microstructure suggests execution, but negative momentum blocks buy signal")
             
             return recommendations
             
