@@ -1173,6 +1173,12 @@ The bot now includes sophisticated rule-based trading strategies for optimal exe
 
 ### 🛡️ **Enhanced Risk Management**
 - **Risk Assessment**: Multi-factor risk scoring and loss probability prediction
+- **Order-Flow Defense** (Solana): Real-time analysis of recent swap transactions (last 2 minutes) to detect and block:
+  - Single-wallet pumps (one wallet >20% of buy volume)
+  - Wash trading patterns (suspicious trade distribution)
+  - Fake momentum (artificial buy pressure)
+  - Whale manipulation (disproportionate large trades)
+  - Zero API calls - queries indexed swap events from local database
 - **Manipulation Detection**: Advanced detection of pump/dump schemes and wash trading
 - **Whale Activity Monitoring**: Real-time whale trade detection and impact analysis
 - **Market Maker Intelligence**: Leverages market maker presence for execution stability
