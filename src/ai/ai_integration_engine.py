@@ -510,7 +510,8 @@ class AIIntegrationEngine:
             recommendations = self._generate_recommendations_comprehensive(
                 overall_score, sentiment_analysis, price_prediction, 
                 risk_assessment, market_analysis, technical_analysis,
-                market_context, predictive_analytics, risk_controls, portfolio_analysis
+                market_context, predictive_analytics, risk_controls, portfolio_analysis,
+                token_data=token_data
             )
             
             # Create comprehensive result
@@ -1117,14 +1118,19 @@ class AIIntegrationEngine:
             technical_score = technical.get("technical_score", 0.5)
             if technical_score == 0.5 and market_data:  # Likely defaulted
                 # Calculate from price momentum and volatility
-                price_change = abs(getattr(market_data, 'price_change_24h', 0))
-                # Moderate positive momentum = good technical
-                if 0.02 < price_change < 0.15:  # 2-15% movement
-                    technical_score = 0.6
-                elif price_change > 0.15:  # Too volatile
+                # IMPORTANT: Don't use abs() - negative momentum should be penalized
+                price_change = getattr(market_data, 'price_change_24h', 0)
+                # Positive momentum = good technical, negative = bad
+                if price_change > 0.15:  # Too volatile (positive)
                     technical_score = 0.4
-                else:
+                elif price_change > 0.02:  # Moderate positive momentum = good (2-15%)
+                    technical_score = 0.6
+                elif price_change > -0.02:  # Near zero = neutral (-2% to +2%)
                     technical_score = 0.5
+                elif price_change > -0.15:  # Moderate negative momentum = bad (-2% to -15%)
+                    technical_score = 0.4
+                else:  # Very negative = very bad (< -15%)
+                    technical_score = 0.3
             
             overall_score = (
                 sentiment_score * weights["sentiment"] +
@@ -1295,11 +1301,13 @@ class AIIntegrationEngine:
     
     def _generate_recommendations(self, overall_score: float, sentiment: Dict, 
                                  prediction: Dict, risk: Dict, market: Dict, 
-                                 technical: Dict, base_position_size: float = 5.0) -> Dict[str, Any]:
+                                 technical: Dict, base_position_size: float = 5.0,
+                                 token_data: Optional[Dict] = None) -> Dict[str, Any]:
         """Generate trading recommendations based on analysis
         
         Args:
             base_position_size: Base position size from tier system (default 5.0 for backward compat)
+            token_data: Optional token data dict containing momentum information
         """
         try:
             # Use tier base as the default instead of hardcoded 5.0
@@ -1311,6 +1319,34 @@ class AIIntegrationEngine:
                 "stop_loss": 0.08,
                 "reasoning": []
             }
+            
+            # MOMENTUM GATE: Block buy actions if momentum is negative
+            if token_data:
+                momentum_24h = token_data.get("priceChange24h") or token_data.get("momentum_24h")
+                momentum_1h = token_data.get("priceChange1h") or token_data.get("momentum_1h")
+                
+                # Convert to float if they're strings or other types
+                try:
+                    momentum_24h = float(momentum_24h) if momentum_24h is not None else None
+                    momentum_1h = float(momentum_1h) if momentum_1h is not None else None
+                except (ValueError, TypeError):
+                    momentum_24h = None
+                    momentum_1h = None
+                
+                # If both momentums are negative, block buy actions
+                if momentum_24h is not None and momentum_1h is not None:
+                    if momentum_24h < 0 and momentum_1h < 0:
+                        # Override any buy action to hold when both momentums are negative
+                        if overall_score > 0.7:
+                            recommendations["action"] = "hold"  # Override buy to hold
+                            # Format momentum for display (handle both decimal and percentage formats)
+                            # If value is between -1 and 1, it's likely a decimal, multiply by 100 for display
+                            mom_24h_display = momentum_24h * 100 if abs(momentum_24h) <= 1 else momentum_24h
+                            mom_1h_display = momentum_1h * 100 if abs(momentum_1h) <= 1 else momentum_1h
+                            recommendations["reasoning"].append(
+                                f"Negative momentum blocks buy signal (24h: {mom_24h_display:.2f}%, 1h: {mom_1h_display:.2f}%)"
+                            )
+                            return recommendations
             
             # Scale recommendations relative to base position size
             # Old system: 5.0 base, recommendations were 10.0, 15.0, 20.0 (2x, 3x, 4x)
@@ -1474,16 +1510,19 @@ class AIIntegrationEngine:
                                               prediction: Dict, risk: Dict, market: Dict,
                                               technical: Dict, market_context: Dict,
                                               predictive_analytics: Dict, risk_controls: Dict,
-                                              portfolio_analysis: Dict, base_position_size: float = 5.0) -> Dict[str, Any]:
+                                              portfolio_analysis: Dict, base_position_size: float = 5.0,
+                                              token_data: Optional[Dict] = None) -> Dict[str, Any]:
         """Generate comprehensive trading recommendations with all modules
         
         Args:
             base_position_size: Base position size from tier system (default 5.0 for backward compat)
+            token_data: Optional token data dict containing momentum information
         """
         try:
             # Start with base recommendations
             recommendations = self._generate_recommendations(
-                overall_score, sentiment, prediction, risk, market, technical, base_position_size
+                overall_score, sentiment, prediction, risk, market, technical, base_position_size,
+                token_data=token_data
             )
             
             # Adjust based on market context
@@ -1580,7 +1619,7 @@ class AIIntegrationEngine:
             
         except Exception as e:
             log_error(f"Error generating comprehensive recommendations: {e}")
-            return self._generate_recommendations(overall_score, sentiment, prediction, risk, market, technical, base_position_size)
+            return self._generate_recommendations(overall_score, sentiment, prediction, risk, market, technical, base_position_size, token_data=token_data)
 
 # Global AI integration engine instance
 _ai_engine: Optional[AIIntegrationEngine] = None
