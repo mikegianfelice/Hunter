@@ -1010,90 +1010,160 @@ class EnhancedAsyncTradingEngine:
             if action == "buy" and confidence > 0.7 and passes_ai_filters:
                 enhanced_token["approved_for_trading"] = True
                 
-                # Get tier-based limits FIRST
+                # HARD BLOCK: Check holder concentration BEFORE approval
+                # This prevents tokens exceeding threshold from even attempting trades
                 try:
-                    from src.core.risk_manager import get_tier_based_risk_limits
-                    tier_limits = get_tier_based_risk_limits()
-                    tier_base_size = tier_limits.get("BASE_POSITION_SIZE_USD", 5.0)
-                    tier_max_size = tier_limits.get("PER_TRADE_MAX_USD", 25.0)
-                except Exception as e:
-                    log_error("trading.tier_limits_error", 
-                            f"Error getting tier limits: {e}")
-                    tier_base_size = 5.0
-                    tier_max_size = 25.0
-                
-                # Get AI-recommended position size
-                ai_recommended_size = recommendation.get("position_size", tier_base_size)
-                
-                # Scale AI recommendation to work within tier range (base to max)
-                # Old AI system: 5.0 base, recommendations were 10.0 (2x), 15.0 (3x), 20.0 (4x)
-                # New system: Map AI recommendations to tier range proportionally
-                OLD_AI_BASE = 5.0
-                OLD_AI_MAX = 20.0  # Strong buy was 4x base
-                tier_range = tier_max_size - tier_base_size
-                
-                if ai_recommended_size > 0:
-                    # Map old AI range (5.0-20.0) to tier range (base-max)
-                    # Formula: tier_base + (ai_size - old_base) / (old_max - old_base) * tier_range
-                    if ai_recommended_size >= OLD_AI_MAX:
-                        # Strong buy: use tier max
-                        scaled_size = tier_max_size
-                    elif ai_recommended_size <= OLD_AI_BASE:
-                        # Base or below: use tier base
-                        scaled_size = tier_base_size
+                    from src.utils.holder_concentration_checker import check_holder_concentration
+                    
+                    token_address = token.get("address", "")
+                    chain_id = token.get("chainId", token.get("chain", "solana")).lower()
+                    symbol = token.get("symbol", "UNKNOWN")
+                    
+                    if token_address and get_config_bool("enable_holder_concentration_check", True):
+                        holder_check = check_holder_concentration(token_address, chain_id)
+                        
+                        if holder_check and not holder_check.get("error"):
+                            holder_concentration_pct = holder_check.get("top_10_percentage", 100.0)
+                            threshold = get_config_float("holder_concentration_threshold", 65.0)
+                            
+                            if holder_concentration_pct >= threshold:
+                                # HARD BLOCK: Exceeds threshold, reject immediately
+                                log_error("trading.holder_concentration_blocked",
+                                        f"Token {symbol} BLOCKED: holder concentration {holder_concentration_pct:.2f}% >= threshold {threshold:.2f}%",
+                                        symbol=symbol,
+                                        holder_concentration_pct=holder_concentration_pct,
+                                        threshold=threshold)
+                                enhanced_token["approved_for_trading"] = False
+                                enhanced_token["holder_concentration_pct"] = holder_concentration_pct
+                                enhanced_token["rejection_reason"] = f"holder_concentration_exceeded_{holder_concentration_pct:.2f}_{threshold:.2f}"
+                            else:
+                                # Passes threshold, store for ranking later
+                                enhanced_token["holder_concentration_pct"] = holder_concentration_pct
+                                log_info("trading.holder_concentration",
+                                        f"Holder concentration for {symbol}: {holder_concentration_pct:.2f}% (below threshold {threshold:.2f}%)",
+                                        symbol=symbol,
+                                        holder_concentration_pct=holder_concentration_pct,
+                                        threshold=threshold)
+                        elif get_config_bool("holder_concentration_fail_closed", True):
+                            # Fail-closed: block if check fails
+                            log_error("trading.holder_concentration_blocked",
+                                    f"Token {symbol} BLOCKED: holder concentration check failed (fail-closed mode)",
+                                    symbol=symbol,
+                                    error=holder_check.get("error") if holder_check else "check_returned_none")
+                            enhanced_token["approved_for_trading"] = False
+                            enhanced_token["rejection_reason"] = "holder_concentration_check_failed"
+                            enhanced_token["holder_concentration_pct"] = 100.0
+                        else:
+                            # Fail-open: allow but mark as unknown
+                            enhanced_token["holder_concentration_pct"] = 100.0
+                            log_info("trading.holder_concentration",
+                                    f"Holder concentration check failed for {symbol} (fail-open mode), allowing trade",
+                                    symbol=symbol)
                     else:
-                        # Scale proportionally within tier range
-                        old_range = OLD_AI_MAX - OLD_AI_BASE
-                        proportion = (ai_recommended_size - OLD_AI_BASE) / old_range
-                        scaled_size = tier_base_size + (proportion * tier_range)
-                else:
-                    scaled_size = tier_base_size
+                        # Check disabled or no address, allow trade
+                        enhanced_token["holder_concentration_pct"] = 100.0
+                except Exception as e:
+                    # On exception, check fail-closed setting
+                    if get_config_bool("holder_concentration_fail_closed", True):
+                        log_error("trading.holder_concentration_blocked",
+                                f"Token {token.get('symbol', 'UNKNOWN')} BLOCKED: holder concentration check exception (fail-closed mode): {e}",
+                                symbol=token.get("symbol"),
+                                error=str(e))
+                        enhanced_token["approved_for_trading"] = False
+                        enhanced_token["rejection_reason"] = f"holder_concentration_exception_{str(e)}"
+                        enhanced_token["holder_concentration_pct"] = 100.0
+                    else:
+                        # Fail-open: allow trade on exception
+                        enhanced_token["holder_concentration_pct"] = 100.0
+                        log_error("trading.holder_concentration_error",
+                                f"Holder concentration check exception for {token.get('symbol', 'UNKNOWN')} (fail-open mode): {e}")
                 
-                # OPTIMIZATION #3: Quality-based position sizing multiplier
-                # Higher quality tokens get larger position sizes (within tier limits)
-                # FIX: Use 0-1 scale (0.91 = 91%, 0.81 = 81%, etc.)
-                quality_multiplier = 1.0
-                if quality_score >= 0.91:  # 91% = 0.91
-                    quality_multiplier = 1.8  # Excellent quality: 80% larger
-                elif quality_score >= 0.81:  # 81% = 0.81
-                    quality_multiplier = 1.5  # Very high quality: 50% larger
-                elif quality_score >= 0.71:  # 71% = 0.71
-                    quality_multiplier = 1.2  # High quality: 20% larger
-                # Quality 0.65-0.70: 1.0x (base size)
-                
-                # Apply quality multiplier to scaled size
-                quality_adjusted_size = scaled_size * quality_multiplier
-                
-                # Ensure position size is within tier bounds (safety check)
-                final_position_size = max(tier_base_size, min(quality_adjusted_size, tier_max_size))
-                
-                # Log quality-based adjustment if it made a difference
-                if abs(final_position_size - scaled_size) > 0.01:
-                    log_info("trading.quality_sizing",
-                            f"Quality-based sizing for {token.get('symbol', 'UNKNOWN')}: "
-                            f"base=${scaled_size:.2f} × {quality_multiplier:.2f} (quality={quality_score:.1f}) = ${final_position_size:.2f}",
-                            symbol=token.get("symbol"),
-                            quality_score=quality_score,
-                            quality_multiplier=quality_multiplier,
-                            base_size=scaled_size,
-                            final_size=final_position_size)
-                
-                # Log the scaling
-                if abs(final_position_size - ai_recommended_size) > 0.01:
-                    log_info("trading.position_size_scaled",
-                            f"Position size scaled for {token.get('symbol', 'UNKNOWN')}: "
-                            f"AI: ${ai_recommended_size:.2f} → Tier-scaled: ${scaled_size:.2f} → Final: ${final_position_size:.2f} "
-                            f"(tier base: ${tier_base_size:.2f}, tier max: ${tier_max_size:.2f})",
-                            symbol=token.get("symbol"),
-                            ai_recommended=ai_recommended_size,
-                            scaled=scaled_size,
-                            final=final_position_size,
-                            tier_base=tier_base_size,
-                            tier_max=tier_max_size)
-                
-                enhanced_token["recommended_position_size"] = final_position_size
-                
-                enhanced_token["recommended_tp"] = recommendation.get("take_profit", 0.15)
+                # Only proceed with position sizing if still approved after holder concentration check
+                if enhanced_token.get("approved_for_trading", False):
+                    # Get tier-based limits FIRST
+                    try:
+                        from src.core.risk_manager import get_tier_based_risk_limits
+                        tier_limits = get_tier_based_risk_limits()
+                        tier_base_size = tier_limits.get("BASE_POSITION_SIZE_USD", 5.0)
+                        tier_max_size = tier_limits.get("PER_TRADE_MAX_USD", 25.0)
+                    except Exception as e:
+                        log_error("trading.tier_limits_error", 
+                                f"Error getting tier limits: {e}")
+                        tier_base_size = 5.0
+                        tier_max_size = 25.0
+                    
+                    # Get AI-recommended position size
+                    ai_recommended_size = recommendation.get("position_size", tier_base_size)
+                    
+                    # Scale AI recommendation to work within tier range (base to max)
+                    # Old AI system: 5.0 base, recommendations were 10.0 (2x), 15.0 (3x), 20.0 (4x)
+                    # New system: Map AI recommendations to tier range proportionally
+                    OLD_AI_BASE = 5.0
+                    OLD_AI_MAX = 20.0  # Strong buy was 4x base
+                    tier_range = tier_max_size - tier_base_size
+                    
+                    if ai_recommended_size > 0:
+                        # Map old AI range (5.0-20.0) to tier range (base-max)
+                        # Formula: tier_base + (ai_size - old_base) / (old_max - old_base) * tier_range
+                        if ai_recommended_size >= OLD_AI_MAX:
+                            # Strong buy: use tier max
+                            scaled_size = tier_max_size
+                        elif ai_recommended_size <= OLD_AI_BASE:
+                            # Base or below: use tier base
+                            scaled_size = tier_base_size
+                        else:
+                            # Scale proportionally within tier range
+                            old_range = OLD_AI_MAX - OLD_AI_BASE
+                            proportion = (ai_recommended_size - OLD_AI_BASE) / old_range
+                            scaled_size = tier_base_size + (proportion * tier_range)
+                    else:
+                        scaled_size = tier_base_size
+                    
+                    # OPTIMIZATION #3: Quality-based position sizing multiplier
+                    # Higher quality tokens get larger position sizes (within tier limits)
+                    # FIX: Use 0-1 scale (0.91 = 91%, 0.81 = 81%, etc.)
+                    quality_multiplier = 1.0
+                    if quality_score >= 0.91:  # 91% = 0.91
+                        quality_multiplier = 1.8  # Excellent quality: 80% larger
+                    elif quality_score >= 0.81:  # 81% = 0.81
+                        quality_multiplier = 1.5  # Very high quality: 50% larger
+                    elif quality_score >= 0.71:  # 71% = 0.71
+                        quality_multiplier = 1.2  # High quality: 20% larger
+                    # Quality 0.65-0.70: 1.0x (base size)
+                    
+                    # Apply quality multiplier to scaled size
+                    quality_adjusted_size = scaled_size * quality_multiplier
+                    
+                    # Ensure position size is within tier bounds (safety check)
+                    final_position_size = max(tier_base_size, min(quality_adjusted_size, tier_max_size))
+                    
+                    # Log quality-based adjustment if it made a difference
+                    if abs(final_position_size - scaled_size) > 0.01:
+                        log_info("trading.quality_sizing",
+                                f"Quality-based sizing for {token.get('symbol', 'UNKNOWN')}: "
+                                f"base=${scaled_size:.2f} × {quality_multiplier:.2f} (quality={quality_score:.1f}) = ${final_position_size:.2f}",
+                                symbol=token.get("symbol"),
+                                quality_score=quality_score,
+                                quality_multiplier=quality_multiplier,
+                                base_size=scaled_size,
+                                final_size=final_position_size)
+                    
+                    # Log the scaling
+                    if abs(final_position_size - ai_recommended_size) > 0.01:
+                        log_info("trading.position_size_scaled",
+                                f"Position size scaled for {token.get('symbol', 'UNKNOWN')}: "
+                                f"AI: ${ai_recommended_size:.2f} → Tier-scaled: ${scaled_size:.2f} → Final: ${final_position_size:.2f} "
+                                f"(tier base: ${tier_base_size:.2f}, tier max: ${tier_max_size:.2f})",
+                                symbol=token.get("symbol"),
+                                ai_recommended=ai_recommended_size,
+                                scaled=scaled_size,
+                                final=final_position_size,
+                                tier_base=tier_base_size,
+                                tier_max=tier_max_size)
+                    
+                    enhanced_token["recommended_position_size"] = final_position_size
+                    
+                    enhanced_token["recommended_tp"] = recommendation.get("take_profit", 0.15)
             else:
                 enhanced_token["approved_for_trading"] = False
             
