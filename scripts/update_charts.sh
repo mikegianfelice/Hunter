@@ -30,6 +30,12 @@ if [ -f "$PROJECT_ROOT/.venv/bin/activate" ]; then
     echo "✅ Activated virtual environment"
 fi
 
+# Set matplotlib cache directory (fallback if not set in environment)
+if [ -z "$MPLCONFIGDIR" ]; then
+    export MPLCONFIGDIR="$PROJECT_ROOT/.matplotlib"
+    mkdir -p "$MPLCONFIGDIR"
+fi
+
 # Check if git is available
 if ! command -v git &> /dev/null; then
     echo "❌ Error: git command not found" >&2
