@@ -679,46 +679,46 @@ class EnhancedAsyncTradingEngine:
             recommendations = ai_result.recommendations or {}
             
             analysis = {
-                "quality_score": ai_result.overall_score,  # Use overall_score instead of quality_score
+                "quality_score": round(ai_result.overall_score, 3),  # Use overall_score instead of quality_score
                 "sentiment_analysis": {
                     "category": sentiment.get("category", "neutral"),
-                    "score": sentiment.get("score", 0.5),
-                    "confidence": sentiment.get("confidence", 0.5)
+                    "score": round(sentiment.get("score", 0.5), 3),
+                    "confidence": round(sentiment.get("confidence", 0.5), 3)
                 },
                 "price_prediction": {
-                    "success_probability": prediction.get("price_movement_probability", 0.5),
-                    "confidence_level": prediction.get("confidence", 0.5),
-                    "expected_return": prediction.get("expected_return", 0.1),
-                    "risk_score": risk.get("risk_score", 0.3)
+                    "success_probability": round(prediction.get("price_movement_probability", 0.5), 3),
+                    "confidence_level": round(prediction.get("confidence", 0.5), 3),
+                    "expected_return": round(prediction.get("expected_return", 0.1), 3),
+                    "risk_score": round(risk.get("risk_score", 0.3), 3)
                 },
                 "market_analysis": {
                     "trend": market.get("market_trend", "neutral"),
                     "volatility": "high" if abs(token.get("priceChange24h", 0)) > 0.1 else "low",
-                    "liquidity_score": market.get("liquidity_score", 0.5),
-                    "volume_score": market.get("volume_score", 0.5)
+                    "liquidity_score": round(market.get("liquidity_score", 0.5), 3),
+                    "volume_score": round(market.get("volume_score", 0.5), 3)
                 },
                 "trading_recommendation": {
                     "action": recommendations.get("action", "hold"),
-                    "confidence": recommendations.get("confidence", ai_result.confidence),
+                    "confidence": round(recommendations.get("confidence", ai_result.confidence), 3),
                     "position_size": recommendations.get("position_size", 10),
-                    "take_profit": recommendations.get("take_profit", 0.15),
-                    "stop_loss": recommendations.get("stop_loss", 0.08)
+                    "take_profit": round(recommendations.get("take_profit", 0.15), 3),
+                    "stop_loss": round(recommendations.get("stop_loss", 0.08), 3)
                 },
                 "risk_assessment": {  # Include risk_assessment at top level for proper extraction
-                    "risk_score": risk.get("risk_score", 0.5),
+                    "risk_score": round(risk.get("risk_score", 0.5), 3),
                     "risk_level": risk.get("risk_level", "medium"),
                     "risk_factors": risk.get("risk_factors", []),
-                    "confidence": risk.get("confidence", 0.5)
+                    "confidence": round(risk.get("confidence", 0.5), 3)
                 },
                 "risk_factors": risk.get("risk_factors", []),
                 "technical_analysis": {
-                    "technical_score": technical.get("technical_score", 0.5),
+                    "technical_score": round(technical.get("technical_score", 0.5), 3),
                     "trend": technical.get("trend", "neutral"),
                     "signals": technical.get("signals", [])
                 },
                 "execution_analysis": {
-                    "execution_score": execution.get("execution_score", 0.5),
-                    "recommended_slippage": execution.get("recommended_slippage", 0.05),
+                    "execution_score": round(execution.get("execution_score", 0.5), 3),
+                    "recommended_slippage": round(execution.get("recommended_slippage", 0.05), 3),
                     "optimal_timing": execution.get("optimal_timing", "wait")
                 },
                 "analysis_timestamp": datetime.now().isoformat()
@@ -1006,12 +1006,12 @@ class EnhancedAsyncTradingEngine:
                     f"Token {token.get('symbol', 'UNKNOWN')}: action={action}, passes_ai_filters={passes_ai_filters}",
                     symbol=token.get("symbol"),
                     action=action,
-                    confidence=confidence,
-                    quality_score=quality_score,
-                    success_prob=success_prob,
-                    risk_score=risk_score,
-                    momentum_24h=momentum_24h,
-                    momentum_1h=momentum_1h,
+                    confidence=round(confidence, 3),
+                    quality_score=round(quality_score, 3),
+                    success_prob=round(success_prob, 3),
+                    risk_score=round(risk_score, 3),
+                    momentum_24h=round(momentum_24h, 3),
+                    momentum_1h=round(momentum_1h, 3),
                     passes_ai_filters=passes_ai_filters)
             
             if action == "buy" and confidence > 0.7 and passes_ai_filters:
@@ -1150,10 +1150,10 @@ class EnhancedAsyncTradingEngine:
                                 f"Quality-based sizing for {token.get('symbol', 'UNKNOWN')}: "
                                 f"base=${scaled_size:.2f} × {quality_multiplier:.2f} (quality={quality_score:.1f}) = ${final_position_size:.2f}",
                                 symbol=token.get("symbol"),
-                                quality_score=quality_score,
-                                quality_multiplier=quality_multiplier,
-                                base_size=scaled_size,
-                                final_size=final_position_size)
+                                quality_score=round(quality_score, 3),
+                                quality_multiplier=round(quality_multiplier, 3),
+                                base_size=round(scaled_size, 3),
+                                final_size=round(final_position_size, 3))
                     
                     # Log the scaling
                     if abs(final_position_size - ai_recommended_size) > 0.01:

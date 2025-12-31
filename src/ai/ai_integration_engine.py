@@ -542,7 +542,7 @@ class AIIntegrationEngine:
             # Cache the result
             cache_set(cache_key, asdict(result), self.cache_ttl)
             
-            log_info("ai.analysis_complete", f"AI analysis complete for {symbol}: score={overall_score:.2f}, confidence={result.confidence:.2f}")
+            log_info("ai.analysis_complete", f"AI analysis complete for {symbol}: score={round(overall_score, 3)}, confidence={round(result.confidence, 3)}")
             return result
             
         except Exception as e:
@@ -1431,16 +1431,16 @@ class AIIntegrationEngine:
             
             # Log the calculation for debugging
             logger.debug(
-                f"Confidence calculation: base={base_confidence:.4f}, "
+                f"Confidence calculation: base={round(base_confidence, 3)}, "
                 f"explicit_count={results_with_explicit_confidence}/{total_results}, "
-                f"adjustment={adjustment_path}, final={final_confidence:.4f}, "
-                f"values={confidence_values}"
+                f"adjustment={adjustment_path}, final={round(final_confidence, 3)}, "
+                f"values={[round(v, 3) for v in confidence_values]}"
             )
             
             # Warn if confidence is exactly/near 0.58
             if abs(final_confidence - 0.58) < 0.005:
                 logger.warning(
-                    f"⚠️ Confidence is exactly/near 0.58: base={base_confidence:.4f}, "
+                    f"⚠️ Confidence is exactly/near 0.58: base={round(base_confidence, 3)}, "
                     f"adjustment={adjustment_path}, explicit={results_with_explicit_confidence}/{total_results}, "
                     f"details={result_details}"
                 )

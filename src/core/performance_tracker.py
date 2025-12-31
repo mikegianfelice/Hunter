@@ -67,7 +67,7 @@ class PerformanceTracker:
             'entry_time': datetime.now().isoformat(),
             'entry_price': float(token.get('priceUsd', 0)),
             'position_size_usd': position_size,
-            'quality_score': quality_score,
+            'quality_score': round(quality_score, 3),
             'volume_24h': float(token.get('volume24h', 0)),
             'liquidity': float(token.get('liquidity', 0)),
             'exit_time': None,
