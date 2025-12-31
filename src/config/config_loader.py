@@ -137,6 +137,7 @@ def get_config_values():
         'REQUIRE_MOMENTUM_ALIGNMENT': get_config_bool("require_momentum_alignment", True),
         'REQUIRE_POSITIVE_24H_MOMENTUM': get_config_bool("require_positive_24h_momentum", True),
         'MIN_MOMENTUM_ACCELERATION': get_config_float("min_momentum_acceleration", 0.002),
+        'MIN_MOMENTUM_5M_VELOCITY': get_config_float("min_momentum_5m_velocity", 0.025),  # NEW: 5m velocity check
         'ENABLE_VOLUME_MOMENTUM_CHECK': get_config_bool("enable_volume_momentum_check", True),
         'MIN_VOLUME_CHANGE_1H': get_config_float("min_volume_change_1h", 0.1),
         'ENABLE_RSI_FILTER': get_config_bool("enable_rsi_filter", True),

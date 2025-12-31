@@ -1206,6 +1206,29 @@ def check_buy_signal(token: dict) -> bool:
                 )
                 return False
         
+        # NEW: Velocity check - require 5m momentum ≥ 2.5-3% (fast moves only)
+        min_5m_velocity = config.get('MIN_MOMENTUM_5M_VELOCITY', 0.025)  # 2.5% minimum
+        if pc_5m is not None:
+            if pc_5m < min_5m_velocity:
+                _log_trace(
+                    f"❌ 5m momentum too weak for velocity check: {pc_5m*100:.2f}% < {min_5m_velocity*100:.2f}% (slow move, likely noise)",
+                    level="info",
+                    event="strategy.buy.momentum_velocity_fail",
+                    symbol=token.get("symbol"),
+                    momentum_5m=pc_5m,
+                    required_velocity=min_5m_velocity,
+                )
+                return False
+            else:
+                _log_trace(
+                    f"✅ 5m momentum velocity check passed: {pc_5m*100:.2f}% ≥ {min_5m_velocity*100:.2f}% (fast move)",
+                    level="info",
+                    event="strategy.buy.momentum_velocity_pass",
+                    symbol=token.get("symbol"),
+                    momentum_5m=pc_5m,
+                    required_velocity=min_5m_velocity,
+                )
+        
         _log_trace(
             f"📈 Momentum from {ext_source}: {ext_momentum*100:.4f}% (need ≥ {momentum_need*100:.4f}%)",
             level="info",

@@ -63,9 +63,9 @@ check_pool_reserves: true  # Verify pool has sufficient reserves
 min_pool_reserves_multiplier: 2.0  # Pool reserves must be 2x trade amount
 
 # === Strategy Thresholds ===
-min_momentum_pct: 0.012  # Increased momentum requirement for quality (raised to 1.2% minimum for stronger signals - 50% increase from 0.8%)
+min_momentum_pct: 0.025  # Raised to 2.5% minimum for $500k+ liquidity (was 1.2% - too low, gets eaten by bots)
 multichain_momentum_multiplier: 0.8  # Multi-chain tokens require 80% of ETH momentum (was 75%)
-multichain_momentum_min: 0.010  # Minimum 1.0% momentum for multi-chain tokens (raised from 0.6% for stronger signals)
+multichain_momentum_min: 0.020  # Minimum 2.0% momentum for multi-chain tokens (raised from 1.0% for quality)
 min_volume_24h_for_buy: 500000   # Quality-first: $500k volume minimum for reliability (raised from $300k to improve win rate)
 min_liquidity_usd_for_buy: 500000  # Quality-first: $500k liquidity minimum for reliability (raised from $300k to improve win rate)
 min_price_usd: 0.000001  # MICRO TESTING - reduced minimum price for more opportunities
@@ -245,12 +245,13 @@ external_momentum_primary_timeframe: "h1"  # Primary timeframe: "m5", "h1", "h24
 external_momentum_fallback_timeframe: "m5"  # Fallback if primary unavailable
 external_momentum_min_timeframe_weight: 0.3  # Minimum weight for primary timeframe
 use_multi_timeframe_momentum: true  # Combine multiple timeframes for robustness
-external_momentum_m5_weight: 0.3  # Weight for 5m momentum (if multi-timeframe enabled)
-external_momentum_h1_weight: 0.5  # Weight for 1h momentum (if multi-timeframe enabled)
-external_momentum_h24_weight: 0.2  # Weight for 24h momentum (if multi-timeframe enabled)
+external_momentum_m5_weight: 0.5  # Increased weight for 5m momentum (was 0.3) - prioritize velocity/fast moves
+external_momentum_h1_weight: 0.3  # Reduced weight for 1h momentum (was 0.5) - still important but less than 5m
+external_momentum_h24_weight: 0.2  # Weight for 24h momentum (unchanged)
 require_momentum_alignment: true  # Require 5m and 1h momentum to both be positive (not just weighted average)
 require_positive_24h_momentum: true  # Require 24h momentum to also be positive for entry
 min_momentum_acceleration: 0.002  # Require momentum acceleration: 5m momentum must exceed 1h by at least 0.2%
+min_momentum_5m_velocity: 0.025  # NEW: Require 5m momentum ≥ 2.5% for velocity check (fast moves only - filters slow pumps)
 enable_volume_momentum_check: true  # Check if volume is increasing (if volume change data available)
 min_volume_change_1h: 0.1  # Require at least 10% volume increase in 1h (if data available)
 enable_rsi_filter: true  # Filter out overbought tokens (RSI > 70)
@@ -983,7 +984,7 @@ predictive_analytics_very_negative_threshold: 0.2  # 20% very negative threshold
 
 # Volume analysis thresholds
 predictive_analytics_volume_spike_threshold: 2.0  # 2x volume spike threshold
-predictive_analytics_volume_momentum_threshold: 1.5  # 1.5x volume momentum threshold
+predictive_analytics_volume_momentum_threshold: 2.0  # Raised to 2x volume momentum threshold (was 1.5x - too low for $500k liquidity)
 predictive_analytics_volume_trend_threshold: 0.6  # 60% volume trend threshold
 
 # Market regime thresholds
