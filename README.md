@@ -56,7 +56,7 @@ Only tokens passing all criteria are considered for trading.
 ### **3. Exit Strategy** 💰
 The bot continuously monitors all open positions and automatically sells when:
 - **Take Profit** is hit: 12% gain (default, can be dynamic based on market conditions)
-- **Stop Loss** is triggered: 7% loss
+- **Stop Loss** is triggered: 6% loss
 - **Trailing Stop** activates: Locks in profits if price drops 6% from peak
 - **Volume Exit**: Exits if trading volume drops 50% from entry average (requires 1%+ profit, requires 2 confirmations to avoid false exits)
 - **Technical Exit Signals**: Exits based on technical indicators when profitable:
@@ -605,7 +605,7 @@ test_mode: false              # LIVE TRADING ENABLED
 trade_amount_usd: 6           # Position size (USD)
 slippage: 0.03                # 3% slippage tolerance
 take_profit: 0.12             # 12% take profit target (base)
-stop_loss: 0.07               # 7% stop loss
+stop_loss: 0.06               # 6% stop loss
 use_dynamic_tp: true          # Enable dynamic take profit (8-20% range)
 
 # Token Discovery Configuration
