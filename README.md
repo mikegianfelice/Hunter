@@ -34,14 +34,13 @@ Before entering any trade, tokens must pass multiple analysis-driven checks:
 - **Quality Score** ≥ 65% (combines sentiment, technical analysis, price prediction)
 - **Success Probability** ≥ 60% (prediction of profitable outcome based on weighted analysis)
 - **Holder Concentration** < 65% (blocks tokens where top 10 holders own over 65%)
-- **Order-Flow Defense** (Solana only) - Blocks tokens with suspicious trading patterns:
+- **Order-Flow Defense** - Blocks tokens with suspicious trading patterns:
   - Minimum 55% buy dominance (more buyers than sellers)
   - Maximum 20% from single wallet (prevents single-wallet pumps)
   - Minimum 12 unique buyers (ensures diverse participation)
   - Largest buy ≤ 4x median (prevents whale manipulation)
   - Minimum $15k buy volume in last 2 minutes
   - Minimum 25 total trades in lookback window
-  - **Zero API calls** - Uses indexed swap events from local database
 - **Risk Score** ≤ 50% (lower is safer)
 - **Recommendation** = "buy" with >70% confidence
 - **Momentum Requirements**:
@@ -59,6 +58,12 @@ The bot continuously monitors all open positions and automatically sells when:
 - **Take Profit** is hit: 12% gain (default, can be dynamic based on market conditions)
 - **Stop Loss** is triggered: 7% loss
 - **Trailing Stop** activates: Locks in profits if price drops 6% from peak
+- **Volume Exit**: Exits if trading volume drops 50% from entry average (requires 1%+ profit, requires 2 confirmations to avoid false exits)
+- **Technical Exit Signals**: Exits based on technical indicators when profitable:
+  - RSI Overbought: RSI > 70
+  - MACD Bearish Crossover: MACD line crosses below signal line
+  - Bollinger Bands: Price at 85%+ of upper band
+  - VWAP Below + Declining Volume: Price below VWAP with declining volume trend
 - **Token Delisted**: Auto-sells if token becomes untradeable
 
 All positions are monitored in real-time, and exits execute automatically on-chain.
