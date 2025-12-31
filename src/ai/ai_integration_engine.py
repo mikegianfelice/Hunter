@@ -1334,21 +1334,35 @@ class AIIntegrationEngine:
                     momentum_24h = None
                     momentum_1h = None
                 
-                # Block buy actions if 24h momentum < -5% AND 1h momentum < 1.5%
-                if momentum_24h is not None and momentum_1h is not None:
-                    # Normalize to percentage format for comparison (handle both decimal and percentage formats)
-                    # If value is between -1 and 1, it's likely a decimal, multiply by 100 for percentage
-                    mom_24h_pct = momentum_24h * 100 if abs(momentum_24h) <= 1 else momentum_24h
-                    mom_1h_pct = momentum_1h * 100 if abs(momentum_1h) <= 1 else momentum_1h
+                # Block buy actions if 1h momentum < 1.5% (regardless of 24h momentum)
+                # Note: DexScreener provides momentum values as percentages (e.g., 0.53 = 0.53%, 5.5 = 5.5%)
+                if momentum_1h is not None:
+                    # Values from DexScreener are already in percentage format, so use directly
+                    # Only normalize if the value appears to be in decimal format (very small values < 0.01)
+                    # This handles edge cases where values might come from other sources in decimal format
+                    if abs(momentum_1h) < 0.01:
+                        # Very small value, likely decimal format (0.0053 = 0.53%), convert to percentage
+                        mom_1h_pct = momentum_1h * 100
+                    else:
+                        # Value is already in percentage format (0.53 = 0.53%, 5.5 = 5.5%)
+                        mom_1h_pct = momentum_1h
                     
-                    # Block if 24h momentum < -5% AND 1h momentum < 1.5%
-                    if mom_24h_pct < -5.0 and mom_1h_pct < 1.5:
+                    # Block if 1h momentum < 1.5% (regardless of 24h momentum)
+                    if mom_1h_pct < 1.5:
                         # Override any buy action to hold when momentum conditions are met
-                        # This gate applies regardless of overall_score to prevent buying into downtrends
+                        # This gate applies regardless of overall_score to prevent buying into low momentum
+                        mom_24h_pct = None
+                        if momentum_24h is not None:
+                            if abs(momentum_24h) < 0.01:
+                                mom_24h_pct = momentum_24h * 100
+                            else:
+                                mom_24h_pct = momentum_24h
+                        
                         recommendations["action"] = "hold"  # Override buy to hold
                         recommendations["momentum_blocked"] = True  # Mark as momentum-blocked
+                        mom_24h_str = f"{mom_24h_pct:.2f}%" if mom_24h_pct is not None else "N/A"
                         recommendations["reasoning"].append(
-                            f"Negative momentum blocks buy signal (24h: {mom_24h_pct:.2f}%, 1h: {mom_1h_pct:.2f}%)"
+                            f"Low 1h momentum ({mom_1h_pct:.2f}% < 1.5%) blocks buy signal (24h: {mom_24h_str})"
                         )
                         return recommendations
             
