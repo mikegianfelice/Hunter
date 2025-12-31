@@ -1004,12 +1004,12 @@ class EnhancedAsyncTradingEngine:
             momentum_1h = token.get("priceChange1h", 0)
             log_info("trading.recommendation_check",
                     f"Token {token.get('symbol', 'UNKNOWN')}: "
-                    f"action={action}, confidence={confidence:.2f}, "
-                    f"quality_score={quality_score:.2f}, "
-                    f"success_prob={success_prob:.2f}, "
-                    f"risk_score={risk_score:.2f}, "
-                    f"momentum_24h={momentum_24h:.2f}%, "
-                    f"momentum_1h={momentum_1h:.2f}%, "
+                    f"action={action}, confidence={confidence:.3f}, "
+                    f"quality_score={quality_score:.3f}, "
+                    f"success_prob={success_prob:.3f}, "
+                    f"risk_score={risk_score:.3f}, "
+                    f"momentum_24h={momentum_24h:.3f}%, "
+                    f"momentum_1h={momentum_1h:.3f}%, "
                     f"passes_ai_filters={passes_ai_filters}",
                     symbol=token.get("symbol"),
                     action=action,
