@@ -6,7 +6,6 @@ Advanced async processing with connection pooling, batch processing, and perform
 
 import asyncio
 import aiohttp
-import aiofiles
 import time
 import json
 import random
