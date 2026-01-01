@@ -53,20 +53,22 @@ def get_sol_price_usd() -> float:
 
 def _determine_side(swap: Dict, target_token: str) -> str:
     """
-    Determine if swap is BUY or SELL based on token mints
+    Determine if swap is BUY or SELL based on signer wallet balance changes.
     
-    BUY: receiving target_token (quote -> base)
-    SELL: sending target_token (base -> quote)
+    Uses token_delta (signed balance change) to determine direction:
+    - Positive token_delta = BUY (signer received tokens)
+    - Negative token_delta = SELL (signer sent tokens)
     
-    NOTE: This function has a limitation - the swap_indexer stores absolute values
-    for token_amount and quote_amount, so directional information is lost. The current
-    implementation uses a heuristic that may not be accurate. A proper fix would require
-    storing directional information (positive/negative balance changes) in the database.
-    
-    Current heuristic:
-    - If quote_mint is the target token, treat as BUY
-    - Otherwise, assume SELL (since base_mint is typically the tracked token)
+    Falls back to heuristic if token_delta is not available (backward compatibility).
     """
+    # Use directional delta if available (preferred method)
+    token_delta = swap.get("token_delta")
+    if token_delta is not None:
+        # Positive delta = signer received tokens = BUY
+        # Negative delta = signer sent tokens = SELL
+        return "BUY" if token_delta > 0 else "SELL"
+    
+    # Fallback to heuristic for backward compatibility (old data without deltas)
     base_mint = swap.get("base_mint", "").lower() if swap.get("base_mint") else ""
     quote_mint = swap.get("quote_mint", "").lower() if swap.get("quote_mint") else ""
     target_token_lower = target_token.lower()
@@ -76,11 +78,6 @@ def _determine_side(swap: Dict, target_token: str) -> str:
         return "BUY"
     
     # Default: assume SELL when base_mint matches target_token
-    # NOTE: This is a heuristic limitation - we can't determine actual direction
-    # from absolute values stored in the database. The swap_indexer stores
-    # absolute balance changes, losing directional information.
-    # TODO: Fix swap_indexer to store directional balance changes to enable
-    # accurate buy/sell determination.
     if base_mint == target_token_lower:
         return "SELL"
     

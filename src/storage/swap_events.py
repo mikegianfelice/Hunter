@@ -39,6 +39,15 @@ def _init_db() -> None:
             conn.execute("ALTER TABLE swap_events ADD COLUMN signer_wallet TEXT")
         except Exception:
             pass  # Column already exists
+        # Add directional balance change columns (migration)
+        try:
+            conn.execute("ALTER TABLE swap_events ADD COLUMN token_delta REAL")
+        except Exception:
+            pass  # Column already exists
+        try:
+            conn.execute("ALTER TABLE swap_events ADD COLUMN quote_delta REAL")
+        except Exception:
+            pass  # Column already exists
         # Create indexes for fast queries
         conn.execute(
             """
@@ -73,6 +82,8 @@ def store_swap_event(
     quote_mint: Optional[str] = None,
     dex_program: Optional[str] = None,
     signer_wallet: Optional[str] = None,
+    token_delta: Optional[float] = None,
+    quote_delta: Optional[float] = None,
 ) -> bool:
     """
     Store a swap event in the database.
@@ -88,8 +99,9 @@ def store_swap_event(
                     """
                     INSERT OR IGNORE INTO swap_events 
                     (token_address, pool_address, tx_signature, block_time, price_usd, 
-                     volume_usd, amount_in, amount_out, base_mint, quote_mint, dex_program, signer_wallet)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     volume_usd, amount_in, amount_out, base_mint, quote_mint, dex_program, signer_wallet,
+                     token_delta, quote_delta)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         token_address.lower(),
@@ -104,6 +116,8 @@ def store_swap_event(
                         quote_mint.lower() if quote_mint else None,
                         dex_program,
                         signer_wallet.lower() if signer_wallet else None,
+                        token_delta,
+                        quote_delta,
                     ),
                 )
                 # Check if row was inserted by checking lastrowid
@@ -175,7 +189,9 @@ def get_swap_events(
             "base_mint": row["base_mint"],
             "quote_mint": row["quote_mint"],
             "dex_program": row["dex_program"],
-            "signer_wallet": row.get("signer_wallet"),
+            "signer_wallet": row["signer_wallet"],
+            "token_delta": row["token_delta"],
+            "quote_delta": row["quote_delta"],
         }
         for row in rows
     ]

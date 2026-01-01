@@ -378,6 +378,7 @@ class SwapIndexer:
                             {
                                 "accountIndex": b.account_index,
                                 "mint": str(b.mint) if b.mint else None,
+                                "owner": str(b.owner) if b.owner else None,
                                 "uiTokenAmount": {
                                     "uiAmount": b.ui_token_amount.ui_amount if b.ui_token_amount else None,
                                 },
@@ -388,6 +389,7 @@ class SwapIndexer:
                             {
                                 "accountIndex": b.account_index,
                                 "mint": str(b.mint) if b.mint else None,
+                                "owner": str(b.owner) if b.owner else None,
                                 "uiTokenAmount": {
                                     "uiAmount": b.ui_token_amount.ui_amount if b.ui_token_amount else None,
                                 },
@@ -410,30 +412,25 @@ class SwapIndexer:
     def _parse_swap_transaction(
         self, tx_data: Dict, block_time: float, filter_token: Optional[str] = None
     ) -> Optional[Dict]:
-        """Parse swap transaction and extract swap data"""
+        """Parse swap transaction and extract swap data with directional information"""
         try:
-            # Use the same parsing logic as prepare_ml_training_data.py
-            from scripts.prepare_ml_training_data import _parse_solana_swap_tx
-            
-            # Determine which tokens to extract
-            if filter_token:
-                swap_data = _parse_solana_swap_tx(
-                    tx_data, filter_token, USDC_MINT, WSOL_MINT, block_time
-                )
-            else:
-                # Extract swaps for all tokens involved
-                # This is more complex - for now, skip if no filter_token
-                return None
-            
-            if not swap_data or swap_data.get("price", 0) <= 0:
-                return None
-            
-            # Extract additional metadata
+            # Extract additional metadata first
             meta = tx_data.get("meta", {})
             account_keys = tx_data.get("transaction", {}).get("message", {}).get("accountKeys", [])
             
             # Extract signer wallet (first account is always the signer)
             signer_wallet = account_keys[0] if account_keys else None
+            
+            if not filter_token or not signer_wallet:
+                return None
+            
+            # Parse with directional information for signer wallet
+            swap_data = self._parse_solana_swap_with_direction(
+                tx_data, filter_token, signer_wallet, USDC_MINT, WSOL_MINT, block_time
+            )
+            
+            if not swap_data or swap_data.get("price", 0) <= 0:
+                return None
             
             # Find DEX program
             dex_program = None
@@ -456,16 +453,129 @@ class SwapIndexer:
                 "block_time": block_time,
                 "price_usd": swap_data.get("price", 0),
                 "volume_usd": swap_data.get("volume_usd"),
-                "amount_in": swap_data.get("token_amount"),
-                "amount_out": swap_data.get("quote_amount"),
+                "amount_in": swap_data.get("token_amount"),  # Absolute value for backward compatibility
+                "amount_out": swap_data.get("quote_amount"),  # Absolute value for backward compatibility
                 "base_mint": filter_token.lower() if filter_token else None,
                 "quote_mint": swap_data.get("quote_mint", "").lower() if swap_data.get("quote_mint") else None,
                 "dex_program": dex_program,
                 "signer_wallet": signer_wallet,
+                "token_delta": swap_data.get("token_delta"),  # Signed delta for signer
+                "quote_delta": swap_data.get("quote_delta"),  # Signed delta for signer
             }
         
         except Exception as e:
             logger.debug(f"Error parsing swap transaction: {e}")
+            return None
+    
+    def _parse_solana_swap_with_direction(
+        self, tx_data: Dict, token_address: str, signer_wallet: str, 
+        usdc_mint: str, wsol_mint: str, block_time: float
+    ) -> Optional[Dict]:
+        """
+        Parse Solana transaction to extract swap data with directional balance changes for signer wallet.
+        
+        Returns swap data including signed deltas (token_delta, quote_delta) for the signer wallet.
+        Positive token_delta = BUY (signer received tokens)
+        Negative token_delta = SELL (signer sent tokens)
+        """
+        try:
+            if not isinstance(tx_data, dict):
+                return None
+            
+            meta = tx_data.get("meta", {})
+            if not meta or meta.get("err") is not None:
+                return None
+            
+            # Get token balances (pre and post)
+            pre_token_balances = meta.get("preTokenBalances", [])
+            post_token_balances = meta.get("postTokenBalances", [])
+            
+            if not pre_token_balances or not post_token_balances:
+                return None
+            
+            # Get account keys to map account indices to wallet addresses
+            account_keys = tx_data.get("transaction", {}).get("message", {}).get("accountKeys", [])
+            if not account_keys:
+                return None
+            
+            signer_wallet_lower = signer_wallet.lower()
+            token_address_lower = token_address.lower()
+            usdc_mint_lower = usdc_mint.lower()
+            wsol_mint_lower = wsol_mint.lower()
+            
+            # Build maps: (account_index, mint) -> balance for signer's token accounts
+            # Token accounts are owned by the signer wallet (matched by owner field)
+            pre_balances = {}
+            post_balances = {}
+            
+            for bal in pre_token_balances:
+                account_idx = bal.get("accountIndex")
+                if account_idx is not None:
+                    ui_amount = bal.get("uiTokenAmount", {}).get("uiAmount", 0)
+                    mint = bal.get("mint", "").lower()
+                    owner = bal.get("owner", "").lower() if bal.get("owner") else None
+                    # Match token accounts owned by the signer wallet
+                    if owner and owner == signer_wallet_lower:
+                        pre_balances[(account_idx, mint)] = float(ui_amount) if ui_amount is not None else 0.0
+            
+            for bal in post_token_balances:
+                account_idx = bal.get("accountIndex")
+                if account_idx is not None:
+                    ui_amount = bal.get("uiTokenAmount", {}).get("uiAmount", 0)
+                    mint = bal.get("mint", "").lower()
+                    owner = bal.get("owner", "").lower() if bal.get("owner") else None
+                    # Match token accounts owned by the signer wallet
+                    if owner and owner == signer_wallet_lower:
+                        post_balances[(account_idx, mint)] = float(ui_amount) if ui_amount is not None else 0.0
+            
+            # Calculate signed deltas for signer wallet
+            token_delta = 0.0
+            quote_delta = 0.0
+            quote_mint = None
+            
+            all_keys = set(pre_balances.keys()) | set(post_balances.keys())
+            for (account_idx, mint) in all_keys:
+                pre_bal = pre_balances.get((account_idx, mint), 0.0)
+                post_bal = post_balances.get((account_idx, mint), 0.0)
+                delta = post_bal - pre_bal
+                
+                if abs(delta) < 0.000001:
+                    continue
+                
+                if mint == token_address_lower:
+                    token_delta += delta
+                elif mint == usdc_mint_lower or mint == wsol_mint_lower:
+                    quote_delta += delta
+                    if quote_mint is None:
+                        quote_mint = mint
+            
+            # Calculate absolute amounts and price for backward compatibility
+            token_amount = abs(token_delta)
+            quote_amount = abs(quote_delta)
+            
+            if token_amount <= 0 or quote_amount <= 0:
+                return None
+            
+            price = quote_amount / token_amount if token_amount > 0 else 0
+            if price <= 0:
+                return None
+            
+            # Calculate volume in USD
+            volume_usd = quote_amount if quote_mint == usdc_mint_lower else quote_amount * 150.0
+            
+            return {
+                "timestamp": block_time,
+                "token_amount": token_amount,  # Absolute for backward compatibility
+                "quote_amount": quote_amount,  # Absolute for backward compatibility
+                "token_delta": token_delta,  # Signed: positive = BUY, negative = SELL
+                "quote_delta": quote_delta,  # Signed: positive = received quote, negative = paid quote
+                "quote_mint": quote_mint,
+                "price": price,
+                "volume_usd": volume_usd,
+            }
+        
+        except Exception as e:
+            logger.debug(f"Error parsing Solana swap with direction: {e}")
             return None
 
     def _find_pools_for_token(self, token_address: str) -> List[str]:
