@@ -18,8 +18,15 @@ from dataclasses import dataclass, asdict
 import logging
 import yaml
 from pathlib import Path
-import docker
 import requests
+
+# Docker import is optional - only needed for DockerManager
+try:
+    import docker
+    DOCKER_AVAILABLE = True
+except ImportError:
+    DOCKER_AVAILABLE = False
+    docker = None  # Set to None so DockerManager can check
 
 # Add src to path for imports
 import sys
@@ -664,11 +671,17 @@ class DockerManager:
     """Docker container management for production deployment"""
     
     def __init__(self):
+        if not DOCKER_AVAILABLE or docker is None:
+            log_error("docker.import", "Docker module not available. Install with: pip install docker")
+            self.client = None
+            self.container_name = "hunter-trading-bot"
+            return
+        
         try:
             self.client = docker.from_env()
             self.container_name = "hunter-trading-bot"
         except Exception as e:
-            log_error(f"Docker not available: {e}")
+            log_error("docker.init", f"Docker not available: {e}")
             self.client = None
     
     def build_image(self, dockerfile_path: str = "Dockerfile") -> bool:
