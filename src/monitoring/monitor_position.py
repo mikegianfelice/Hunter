@@ -164,6 +164,7 @@ def _cleanup_closed_position(position_key: str, token_address: str, chain_id: st
     2. hunter_state.db (via remove_position)
     3. performance_data.json (mark trade as closed)
     4. Partial TP manager state (clear tracking state)
+    5. Balance cache (invalidate stale cache)
     
     This ensures positions are completely removed when sells complete.
     """
@@ -173,6 +174,14 @@ def _cleanup_closed_position(position_key: str, token_address: str, chain_id: st
         # Remove from open_positions.json and hunter_state.db
         remove_position_from_db(position_key)
         print(f"✅ Removed position {position_key} from open_positions.json and hunter_state.db")
+        
+        # Invalidate balance cache to prevent stale data
+        try:
+            from src.utils.balance_cache import invalidate_token_balance_cache
+            invalidate_token_balance_cache(token_address, chain_id)
+            print(f"✅ Invalidated balance cache for {token_address[:8]}...{token_address[-8:]}")
+        except Exception as e:
+            print(f"⚠️ Failed to invalidate balance cache: {e}")
         
         # Clear partial TP manager state for this position
         # IMPORTANT: Use the key format that partial TP manager expects: "chain_id:address"

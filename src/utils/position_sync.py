@@ -730,8 +730,20 @@ def reconcile_wallet_with_positions(
                         print(f"✅ Removed position: {symbol} ({token_address[:8]}...{token_address[-8:]}) - zero balance")
             
             for key in positions_to_remove:
+                # Get position data before removing (needed for cache invalidation)
+                position_data = open_positions.get(key)
                 open_positions.pop(key, None)
                 results["removed"] += 1
+                
+                # Invalidate cache for removed position
+                if position_data:
+                    try:
+                        from src.utils.balance_cache import invalidate_token_balance_cache
+                        token_addr = resolve_token_address(key, position_data)
+                        chain = position_data.get("chain_id", "solana") if isinstance(position_data, dict) else "solana"
+                        invalidate_token_balance_cache(token_addr, chain)
+                    except Exception as e:
+                        print(f"⚠️ Failed to invalidate cache for {key}: {e}")
         
         # Step 2: Discover missing positions from wallet
         if discover_missing_positions:
@@ -1058,6 +1070,15 @@ def reconcile_position_sizes(
                 updated_positions.pop(pos_key, None)
                 trade_id = pos_data.get("trade_id")
                 _mark_trade_as_closed_in_performance_data(token_addr, chain_id, trade_id)
+                
+                # Invalidate cache for closed position
+                try:
+                    from src.utils.balance_cache import invalidate_token_balance_cache
+                    invalidate_token_balance_cache(token_addr, chain_id)
+                except Exception as e:
+                    if verbose:
+                        print(f"⚠️ Failed to invalidate cache: {e}")
+                
                 stats["closed"] += 1
                 any_change = True
                 if verbose:

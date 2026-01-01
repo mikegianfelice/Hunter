@@ -153,6 +153,12 @@ def reconcile_positions_and_pnl(limit: int = 200) -> Dict[str, Any]:
                 trades_changed = True
                 if _remove_position_for_trade(open_positions, trade_id, mint):
                     positions_changed = True
+                    # Invalidate cache for closed position
+                    try:
+                        from src.utils.balance_cache import invalidate_token_balance_cache
+                        invalidate_token_balance_cache(mint, "solana")
+                    except Exception as e:
+                        print(f"⚠️ Failed to invalidate cache: {e}")
             else:
                 summary["open_positions_verified"] += 1
         else:

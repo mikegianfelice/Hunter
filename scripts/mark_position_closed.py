@@ -155,6 +155,14 @@ def mark_position_closed(token_address: str, symbol: str = None, chain: str = "s
         remove_position(position_key)
         print(f"✅ Position removed from open_positions.json and hunter_state.db")
         
+        # Invalidate balance cache to prevent stale data
+        try:
+            from src.utils.balance_cache import invalidate_token_balance_cache
+            invalidate_token_balance_cache(token_address, chain)
+            print(f"✅ Invalidated balance cache for {token_address[:8]}...{token_address[-8:]}")
+        except Exception as e:
+            print(f"⚠️  Failed to invalidate balance cache: {e}")
+        
         # Update performance_data.json to mark trade as closed
         try:
             perf_data = load_performance_data()
