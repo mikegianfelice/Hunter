@@ -721,7 +721,7 @@ Use the provided launcher script to run the bot in the background with `screen`:
 
 ```bash
 # Make sure you're in the Hunter directory
-cd /Users/gianf/Desktop/Cursor/Hunter
+cd /Users/gianf/Hunter
 
 # Run the launcher script
 ./launch_bot.sh
