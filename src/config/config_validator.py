@@ -23,7 +23,7 @@ class TradingConfig(BaseModel):
     
     # Take profit and stop loss
     take_profit: float = Field(default=0.15, ge=0.05, le=2.0, description="Take profit percentage")
-    stop_loss: float = Field(default=0.08, ge=0.05, le=1.0, description="Stop loss percentage")
+    stop_loss: float = Field(default=0.08, ge=0.03, le=1.0, description="Stop loss percentage")  # Allow 3% minimum for tighter risk control
     trailing_stop_percent: float = Field(default=0.1, ge=0.01, le=0.5, description="Trailing stop percentage")
     
     # Risk management
