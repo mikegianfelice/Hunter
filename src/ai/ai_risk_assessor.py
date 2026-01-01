@@ -377,7 +377,7 @@ class AIRiskAssessor:
         """Assess market regime risk based on real market data"""
         try:
             # Get real market regime data
-            from ai_market_regime_detector import ai_market_regime_detector
+            from .ai_market_regime_detector import ai_market_regime_detector
             regime_data = ai_market_regime_detector.detect_market_regime()
             regime = regime_data.get('regime', 'normal')
             confidence = regime_data.get('confidence', 0.5)

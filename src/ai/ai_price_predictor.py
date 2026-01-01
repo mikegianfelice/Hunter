@@ -245,7 +245,7 @@ class AIPricePredictor:
         """Get market regime impact on prediction"""
         try:
             # Import here to avoid circular imports
-            from ai_market_regime_detector import ai_market_regime_detector
+            from .ai_market_regime_detector import ai_market_regime_detector
             
             regime_data = ai_market_regime_detector.detect_market_regime()
             regime = regime_data['regime']
