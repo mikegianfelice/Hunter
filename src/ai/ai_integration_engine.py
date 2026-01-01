@@ -1542,8 +1542,14 @@ class AIIntegrationEngine:
             
             # MOMENTUM GATE: Block buy actions if momentum is negative
             if token_data:
-                momentum_24h = token_data.get("priceChange24h") or token_data.get("momentum_24h")
-                momentum_1h = token_data.get("priceChange1h") or token_data.get("momentum_1h")
+                # Use explicit None checks instead of 'or' to handle 0.0 values correctly
+                momentum_24h = token_data.get("priceChange24h")
+                if momentum_24h is None:
+                    momentum_24h = token_data.get("momentum_24h")
+                
+                momentum_1h = token_data.get("priceChange1h")
+                if momentum_1h is None:
+                    momentum_1h = token_data.get("momentum_1h")
                 
                 # Convert to float if they're strings or other types
                 try:
