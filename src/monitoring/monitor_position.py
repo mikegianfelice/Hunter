@@ -1584,6 +1584,17 @@ def monitor_all_positions():
                             # CRITICAL: Remove position from ALL storage locations (open_positions.json, hunter_state.db, performance_data.json)
                             _cleanup_closed_position(position_key, token_address, chain_id)
                             
+                            # Send Telegram notification
+                            tx_display = tx if tx and tx not in ["verified_by_balance", "assumed_success"] else "Verified by balance check"
+                            send_telegram_message(
+                                f"🛑 Stop-loss triggered!\n"
+                                f"Token: {symbol} ({token_address})\n"
+                                f"Chain: {chain_id.upper()}\n"
+                                f"Entry: ${entry_price:.6f}\n"
+                                f"Now: ${current_price:.6f} ({gain * 100:.2f}%)\n"
+                                f"TX: {tx_display}"
+                            )
+                            
                             closed_positions.append(position_key)
                             updated_positions.pop(position_key, None)
                             continue
