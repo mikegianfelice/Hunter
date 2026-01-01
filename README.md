@@ -632,7 +632,7 @@ token_discovery:
       - volume
 
 # Strategy Thresholds (Improved Entry Quality)
-min_quality_score: 65         # Minimum quality score (0-100) - raised from 60 to 65 to improve win rate
+min_quality_score: 65         # Minimum quality score (0-100)
 min_volume_24h_for_buy: 500000   # $500k minimum 24h volume - raised from $300k to improve win rate
 min_liquidity_usd_for_buy: 500000 # $500k minimum liquidity - raised from $300k to improve win rate
 min_momentum_pct: 0.012       # 1.2% minimum momentum - raised from 0.8% (50% increase) for stronger signals
