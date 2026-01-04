@@ -18,7 +18,6 @@ class TradingConfig(BaseModel):
     trade_amount_usd: float = Field(default=5.0, ge=1.0, le=1000.0, description="Trade amount in USD")
     max_concurrent_positions: int = Field(default=3, ge=1, le=20, description="Maximum concurrent positions")
     daily_loss_limit_usd: float = Field(default=50.0, ge=10.0, le=10000.0, description="Daily loss limit in USD")
-    per_trade_max_usd: float = Field(default=25.0, ge=1.0, le=1000.0, description="Maximum per trade amount")
     min_wallet_balance_buffer: float = Field(default=0.05, ge=0.01, le=0.5, description="Wallet balance buffer")
     
     # Take profit and stop loss

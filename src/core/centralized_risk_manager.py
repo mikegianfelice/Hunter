@@ -690,8 +690,10 @@ class CentralizedRiskManager:
         try:
             risk_score = 0.0
             
-            # Position size risk
-            max_position_size = self.config.trading.per_trade_max_usd
+            # Position size risk - use tier-based dynamic limits
+            from src.core.risk_manager import get_tier_based_risk_limits
+            tier_limits = get_tier_based_risk_limits()
+            max_position_size = tier_limits.get('PER_TRADE_MAX_USD', 25.0)
             if position_size > max_position_size:
                 risk_score += 0.4
             

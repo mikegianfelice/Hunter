@@ -1091,7 +1091,7 @@ class EnhancedAsyncTradingEngine:
                         from src.core.risk_manager import get_tier_based_risk_limits
                         tier_limits = get_tier_based_risk_limits()
                         tier_base_size = tier_limits.get("BASE_POSITION_SIZE_USD", 5.0)
-                        tier_max_size = tier_limits.get("PER_TRADE_MAX_USD", 25.0)
+                        tier_max_size = tier_limits.get("PER_TRADE_MAX_USD", 10.0)  # Fallback to reasonable default
                     except Exception as e:
                         log_error("trading.tier_limits_error", 
                                 f"Error getting tier limits: {e}")
@@ -1195,7 +1195,7 @@ class EnhancedAsyncTradingEngine:
             from src.core.risk_manager import get_tier_based_risk_limits
             tier_limits = get_tier_based_risk_limits()
             tier_base_size = tier_limits.get("BASE_POSITION_SIZE_USD", 5.0)
-            tier_max_size = tier_limits.get("PER_TRADE_MAX_USD", 25.0)
+            tier_max_size = tier_limits.get("PER_TRADE_MAX_USD", 10.0)  # Fallback to reasonable default
             
             # Ensure position size is within tier bounds
             if position_size < tier_base_size:

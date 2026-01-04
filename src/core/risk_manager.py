@@ -23,7 +23,7 @@ def get_risk_manager_config():
         'DAILY_LOSS_LIMIT_USD': get_config_float("daily_loss_limit_usd", 50.0),
         'MAX_LOSING_STREAK': get_config_int("max_losing_streak", 3),
         'CIRCUIT_BREAK_MIN': get_config_int("circuit_breaker_minutes", 60),
-        'PER_TRADE_MAX_USD': get_config_float("per_trade_max_usd", get_config_float("trade_amount_usd", 5)),
+        'PER_TRADE_MAX_USD': get_tier_based_risk_limits().get('PER_TRADE_MAX_USD', 25.0),  # Use tier-based dynamic sizing
         'MIN_WALLET_BALANCE_BUFFER': get_config_float("min_wallet_balance_buffer", 0.01)
     }
 

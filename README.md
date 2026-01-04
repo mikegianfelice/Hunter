@@ -642,7 +642,7 @@ max_concurrent_positions: 4   # Maximum open positions (reduced from 6 to focus 
 daily_loss_limit_usd: 10.0   # Daily loss limit
 max_losing_streak: 3         # Stop after 3 consecutive losses
 circuit_breaker_minutes: 60  # Cooldown after losses
-per_trade_max_usd: 25        # Maximum per trade
+# Position sizing is now fully dynamic based on wallet tier (see wallet_tiers in config.yaml)
 min_wallet_balance_buffer: 0.02  # 2% buffer for gas fees
 
 # AI System Configuration (Key Modules Enabled)

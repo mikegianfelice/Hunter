@@ -129,7 +129,6 @@ max_concurrent_trades: 5  # Maximum number of trades to execute concurrently per
 daily_loss_limit_usd: 10.0  # Minimum daily loss limit floor (actual limit is 5% of wallet balance, minimum $10)
 max_losing_streak: 3  # Stop after 3 losses
 circuit_breaker_minutes: 60  # 60 minute cooldown after losses
-per_trade_max_usd: 25  # $25 max per trade for accelerated growth
 min_wallet_balance_buffer: 0.02  # Reduced buffer for limited capital
 max_position_duration_hours: 72  # Auto-close positions older than 72 hours (3 days) to free capital for new opportunities
 enable_max_position_duration: true  # Enable automatic closing of stale positions
@@ -297,7 +296,7 @@ sustainable_trade_cooldown_minutes: 10  # Reduced cooldown for higher frequency
 enable_dynamic_position_sizing: true  # Enable dynamic position sizing
 base_position_size_usd: 5.0  # Base position size in USD
 min_position_size_usd: 2.0  # Minimum position size
-max_position_size_usd: 10.0  # Maximum position size (respects per_trade_max_usd)
+max_position_size_usd: 10.0  # Maximum position size (overridden by tier-based dynamic sizing)
 
 # === Tiered Position Sizing System ===
 # Scale position sizes based on wallet balance for accelerated growth
