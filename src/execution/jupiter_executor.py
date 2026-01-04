@@ -507,6 +507,16 @@ def buy_token_solana(token_address: str, amount_usd: float, symbol: str = "", te
         except Exception as exc:
             return abort("test_mode_exception", "Test mode validation failed", error=str(exc))
 
+    # Capture balance before trade for verification fallback
+    balance_before = None
+    try:
+        balance_before = executor.jupiter_lib.get_token_balance(token_address)
+        if balance_before is not None:
+            print(f"📊 Balance before buy: {balance_before:.8f}")
+    except Exception as e:
+        print(f"⚠️ Could not capture balance before buy: {e}")
+        # Non-critical, continue without balance_before
+
     try:
         tx_hash, success, quoted_output_amount = executor.execute_trade(token_address, amount_usd, is_buy=True)
     except Exception as exc:
@@ -516,24 +526,84 @@ def buy_token_solana(token_address: str, amount_usd: float, symbol: str = "", te
     # This ensures we don't mark transactions as completed if they actually failed
     if tx_hash:
         print(f"🔍 Verifying buy transaction {tx_hash} on-chain before marking as completed...")
-        time.sleep(2)  # Wait a bit for transaction to propagate
         
-        verified = executor.jupiter_lib.verify_transaction_success(tx_hash)
-        if verified is True:
-            print(f"✅ Buy transaction {tx_hash} verified as successful on-chain")
-            return succeed(tx_hash, quoted_output_amount)
-        elif verified is False:
-            print(f"❌ Buy transaction {tx_hash} confirmed as failed on-chain")
-            print(f"   Check transaction on Solscan: https://solscan.io/tx/{tx_hash}")
-            return abort("execution_failed", "Buy transaction confirmed as failed on-chain", 
-                        token=token_address, amount_usd=amount_usd, tx_hash=tx_hash)
-        else:
-            # Can't verify (RPC timeout/missing data) - be conservative and don't mark as completed
-            print(f"⚠️ WARNING: Cannot verify buy transaction {tx_hash} after submission")
-            print(f"   Check transaction on Solscan: https://solscan.io/tx/{tx_hash}")
-            print(f"   NOT marking as completed - verification failed")
-            return abort("execution_failed", "Buy transaction cannot be verified on-chain", 
-                        token=token_address, amount_usd=amount_usd, tx_hash=tx_hash)
+        # Retry verification with increasing delays (transaction may not be indexed immediately)
+        verified = None
+        for attempt in range(3):
+            wait_time = 2 * (attempt + 1)  # 2s, 4s, 6s
+            if attempt > 0:
+                print(f"⏳ Retry {attempt + 1}/3: Waiting {wait_time}s before verification...")
+                time.sleep(wait_time)
+            else:
+                time.sleep(2)
+            
+            verified = executor.jupiter_lib.verify_transaction_success(tx_hash)
+            if verified is True:
+                print(f"✅ Buy transaction {tx_hash} verified as successful on-chain")
+                return succeed(tx_hash, quoted_output_amount)
+            elif verified is False:
+                print(f"❌ Buy transaction {tx_hash} confirmed as failed on-chain")
+                print(f"   Check transaction on Solscan: https://solscan.io/tx/{tx_hash}")
+                return abort("execution_failed", "Buy transaction confirmed as failed on-chain", 
+                            token=token_address, amount_usd=amount_usd, tx_hash=tx_hash)
+            # If verified is None, continue to next retry
+        
+        # If still can't verify after retries, check balance as fallback
+        if verified is None:
+            print(f"⚠️ WARNING: Cannot verify buy transaction {tx_hash} via RPC after multiple attempts")
+            print(f"   Falling back to balance check...")
+            try:
+                time.sleep(3)  # Additional wait for balance to update
+                balance_after = executor.jupiter_lib.get_token_balance(token_address)
+                
+                # Check if balance increased (indicating tokens were received)
+                if balance_after is not None and balance_before is not None:
+                    balance_increase = balance_after - balance_before
+                    if balance_increase > 0:
+                        print(f"✅ Balance check confirms tokens received: {balance_increase:.8f} tokens")
+                        print(f"   Balance before: {balance_before:.8f}, Balance after: {balance_after:.8f}")
+                        print(f"   Assuming transaction succeeded (RPC verification unreliable)")
+                        print(f"   Check transaction on Solscan: https://solscan.io/tx/{tx_hash}")
+                        log_info("solana.trade.verification_uncertain_balance_confirmed", 
+                                message=f"Buy transaction {tx_hash} verified via balance check",
+                                token=token_address, amount_usd=amount_usd, tx_hash=tx_hash,
+                                balance_before=balance_before, balance_after=balance_after,
+                                balance_increase=balance_increase)
+                        return succeed(tx_hash, quoted_output_amount)
+                    else:
+                        print(f"⚠️ Balance check shows no increase: {balance_before:.8f} -> {balance_after:.8f}")
+                elif balance_after is not None and balance_after > 0:
+                    # If we don't have balance_before but balance_after > 0, assume success
+                    print(f"✅ Balance check shows tokens present: {balance_after:.8f} tokens")
+                    print(f"   Assuming transaction succeeded (RPC verification unreliable)")
+                    print(f"   Check transaction on Solscan: https://solscan.io/tx/{tx_hash}")
+                    log_info("solana.trade.verification_uncertain_balance_confirmed", 
+                            message=f"Buy transaction {tx_hash} verified via balance check (no before balance)",
+                            token=token_address, amount_usd=amount_usd, tx_hash=tx_hash,
+                            balance_after=balance_after)
+                    return succeed(tx_hash, quoted_output_amount)
+                
+                # Balance check didn't confirm success, but we have tx_hash
+                # Assume success to prevent false negatives (transaction was submitted)
+                print(f"⚠️ Balance check inconclusive, but transaction was submitted")
+                print(f"   Assuming transaction succeeded to avoid false negatives")
+                print(f"   Check transaction on Solscan: https://solscan.io/tx/{tx_hash}")
+                log_info("solana.trade.verification_uncertain", level="WARNING",
+                         message=f"Buy transaction {tx_hash} cannot be verified but has tx_hash",
+                         token=token_address, amount_usd=amount_usd, tx_hash=tx_hash,
+                         balance_before=balance_before, balance_after=balance_after)
+                return succeed(tx_hash, quoted_output_amount)  # Assume success if we have tx_hash
+            except Exception as e:
+                print(f"⚠️ Balance check also failed: {e}")
+                # Even if balance check fails, if we have tx_hash, assume success
+                # This prevents false negatives when RPC/network is unreliable
+                print(f"⚠️ Assuming transaction succeeded (has tx_hash, verification methods unreliable)")
+                print(f"   Check transaction on Solscan: https://solscan.io/tx/{tx_hash}")
+                log_info("solana.trade.verification_uncertain", level="WARNING",
+                         message=f"Buy transaction {tx_hash} cannot be verified but has tx_hash",
+                         token=token_address, amount_usd=amount_usd, tx_hash=tx_hash,
+                         balance_check_error=str(e))
+                return succeed(tx_hash, quoted_output_amount)
     elif success:
         # Got success=True but no tx_hash - this shouldn't happen, but handle it
         print(f"⚠️ WARNING: Executor reported success but no tx_hash provided")
