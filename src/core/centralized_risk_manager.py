@@ -468,10 +468,10 @@ class CentralizedRiskManager:
         overall_risk = min(1.0, overall_risk)
         
         # Yellow-zone logic for holder concentration:
-        # - < 60%: generally OK (green zone)
-        # - 60% to threshold: yellow zone - allow only if other signals are strong, and reduce position size
+        # - < 55%: generally OK (green zone)
+        # - 55% to threshold: yellow zone - allow only if other signals are strong, and reduce position size
         # - >= threshold: red zone - already hard-blocked earlier via holder_concentration_threshold
-        yellow_floor = 60.0
+        yellow_floor = 55.0
         hard_block_threshold = get_config_float("holder_concentration_threshold", 65.0)  # Use same threshold as hard block
         holder_concentration_position_multiplier = 1.0
         yellow_zone = False
