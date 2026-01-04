@@ -794,6 +794,7 @@ class EnhancedAsyncTradingEngine:
                 result = {
                     'entry_gas_fee_usd': fee_data.get('gas_fee_usd', 0),
                     'entry_amount_usd_actual': fee_data.get('actual_cost_usd', 0),
+                    'entry_tokens_received': fee_data.get('tokens_received'),
                     'buy_tx_hash': tx_hash
                 }
                 
@@ -811,6 +812,7 @@ class EnhancedAsyncTradingEngine:
                 return {
                     'entry_gas_fee_usd': fee_data.get('gas_fee_usd', 0),
                     'entry_amount_usd_actual': fee_data.get('actual_cost_usd', 0),
+                    'entry_tokens_received': fee_data.get('tokens_received'),
                     'buy_tx_hash': tx_hash
                 }
         except Exception as e:
