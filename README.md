@@ -602,7 +602,8 @@ supported_chains: ["solana", "base"]  # Solana and Base only (Ethereum removed f
 
 # Trading Configuration (Current Settings)
 test_mode: false              # LIVE TRADING ENABLED
-trade_amount_usd: 6           # Position size (USD)
+# Note: trade_amount_usd removed - position sizing now uses tier-based percentage system
+# Position sizes are calculated as: wallet_balance × base_position_size_percent (from wallet_tiers)
 slippage: 0.03                # 3% slippage tolerance
 take_profit: 0.10             # 10% take profit target (base) - optimized for better risk/reward ratio
 stop_loss: 0.04               # 4% stop loss - tightened for better risk control

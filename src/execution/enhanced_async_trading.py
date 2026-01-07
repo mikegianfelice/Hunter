@@ -1188,7 +1188,14 @@ class EnhancedAsyncTradingEngine:
         supported_chains = getattr(self.config.chains, 'supported_chains', ['solana', 'base'])
         default_chain = supported_chains[0] if supported_chains else "solana"
         chain = token.get("chain", default_chain)
-        position_size = token.get("recommended_position_size", 5)
+        # Get tier base size as fallback (position sizing is tier-based, not fixed)
+        try:
+            from src.core.risk_manager import get_tier_based_risk_limits
+            tier_limits = get_tier_based_risk_limits()
+            tier_base_fallback = tier_limits.get("BASE_POSITION_SIZE_USD", 5.0)
+        except Exception:
+            tier_base_fallback = 5.0
+        position_size = token.get("recommended_position_size", tier_base_fallback)
         take_profit = token.get("recommended_tp", 0.15)
         
         # Safety cap: Ensure position size is within tier-based bounds

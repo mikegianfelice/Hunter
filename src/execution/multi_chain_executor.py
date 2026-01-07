@@ -23,7 +23,9 @@ def get_multi_chain_config():
     """Get current configuration values dynamically"""
     return {
         'TEST_MODE': get_config_bool("test_mode", True),
-        'TRADE_AMOUNT_USD_DEFAULT': get_config_float("trade_amount_usd", 5),
+        # Note: trade_amount_usd removed - position sizing now uses tier-based percentage system
+        # Fallback to tier base size if needed (calculated dynamically)
+        'TRADE_AMOUNT_USD_DEFAULT': 5.0,  # Legacy fallback - tier system should always provide size
         'SLIPPAGE': get_config_float("slippage", 0.02)
     }
 

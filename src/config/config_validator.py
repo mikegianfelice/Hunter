@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 class TradingConfig(BaseModel):
     """Core trading configuration validation"""
-    trade_amount_usd: float = Field(default=5.0, ge=1.0, le=1000.0, description="Trade amount in USD")
+    # Note: trade_amount_usd removed - position sizing now uses tier-based percentage system
     max_concurrent_positions: int = Field(default=3, ge=1, le=20, description="Maximum concurrent positions")
     daily_loss_limit_usd: float = Field(default=50.0, ge=10.0, le=10000.0, description="Daily loss limit in USD")
     min_wallet_balance_buffer: float = Field(default=0.05, ge=0.01, le=0.5, description="Wallet balance buffer")
@@ -188,9 +188,7 @@ class BotConfig(BaseModel):
     # Additional validation
     @model_validator(mode='after')
     def validate_test_mode(self):
-        if self.test_mode and self.trading and self.trading.trade_amount_usd > 10:
-            logger.warning("Test mode: Reducing trade amount to $10 for safety")
-            self.trading.trade_amount_usd = 10.0
+        # Note: trade_amount_usd removed - position sizing now uses tier-based system
         return self
 
 class ConfigValidator:
@@ -369,7 +367,7 @@ class ConfigValidator:
         return {
             'test_mode': config.test_mode,
             'trading': {
-                'trade_amount_usd': config.trading.trade_amount_usd,
+                # Note: trade_amount_usd removed - position sizing now uses tier-based system
                 'max_positions': config.trading.max_concurrent_positions,
                 'daily_loss_limit': config.trading.daily_loss_limit_usd,
                 'take_profit': config.trading.take_profit,

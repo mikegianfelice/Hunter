@@ -2,7 +2,7 @@
 test_mode: false  # LIVE TRADING ENABLED - Realistic Scaling
 
 # === Trading Parameters ===
-trade_amount_usd: 6  # Adjusted to align with current USDC balance
+# Note: trade_amount_usd removed - position sizing now uses tier-based percentage system (wallet_tiers)
 slippage: 0.03  # 3% slippage (tightened for better execution)
 take_profit: 0.10  # 10% (increased from 8% for better risk/reward ratio)
 stop_loss: 0.04  # 4% stop loss (tightened from 6% to improve risk/reward ratio)

@@ -313,8 +313,16 @@ class AsyncTradingLoop:
             trade_tasks = []
             for i, result in enumerate(processed_results):
                 if isinstance(result, dict) and result.get('should_trade', False):
+                    # Note: trade_amount_usd removed - using tier-based sizing
+                    # Get tier base size as fallback
+                    try:
+                        from src.core.risk_manager import get_tier_based_risk_limits
+                        tier_limits = get_tier_based_risk_limits()
+                        tier_base_size = tier_limits.get("BASE_POSITION_SIZE_USD", 10.0)
+                    except Exception:
+                        tier_base_size = 10.0
                     trade_params = {
-                        'amount_usd': self.config.trading.trade_amount_usd,
+                        'amount_usd': tier_base_size,  # Legacy fallback - tier system should provide size
                         'slippage': 0.1,
                         'take_profit': self.config.trading.take_profit,
                         'stop_loss': self.config.trading.stop_loss
