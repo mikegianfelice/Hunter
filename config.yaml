@@ -8,7 +8,7 @@ take_profit: 0.10  # 10% (increased from 8% for better risk/reward ratio)
 stop_loss: 0.04  # 4% stop loss (tightened from 6% to improve risk/reward ratio)
 stop_loss_slippage_buffer: 0.15  # 15% buffer to account for execution slippage (effective trigger = stop_loss * 1.15)
 use_dynamic_tp: true  # Enable dynamic take profit
-min_trade_amount_usd: 10  # Minimum trade amount for realistic scaling
+# Note: min_trade_amount_usd removed - not used (tier-based sizing handles minimums)
 
 # === Trading Performance Optimizations ===
 # Batch processing configuration
@@ -294,9 +294,9 @@ sustainable_trade_cooldown_minutes: 10  # Reduced cooldown for higher frequency
 # === Dynamic Position Sizing ===
 # Position sizing based on token quality
 enable_dynamic_position_sizing: true  # Enable dynamic position sizing
-base_position_size_usd: 5.0  # Base position size in USD
-min_position_size_usd: 2.0  # Minimum position size
-max_position_size_usd: 10.0  # Maximum position size (overridden by tier-based dynamic sizing)
+# Note: base_position_size_usd, min_position_size_usd, max_position_size_usd removed from here
+# - Position sizing now uses tier-based percentage system (wallet_tiers)
+# - AI validator uses its own limits (see AI Position Size Validator section below)
 
 # === Tiered Position Sizing System ===
 # Scale position sizes based on wallet balance for accelerated growth
