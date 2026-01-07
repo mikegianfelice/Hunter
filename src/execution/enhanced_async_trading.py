@@ -1016,7 +1016,21 @@ class EnhancedAsyncTradingEngine:
                     passes_ai_filters=passes_ai_filters)
             
             if action == "buy" and confidence > 0.7 and passes_ai_filters:
-                enhanced_token["approved_for_trading"] = True
+                # CRITICAL: Check buy signal with momentum requirements BEFORE approval
+                from src.core.strategy import check_buy_signal
+                buy_signal_passed = check_buy_signal(token)
+                
+                if not buy_signal_passed:
+                    log_info("trading.buy_signal_blocked",
+                            f"Token {token.get('symbol', 'UNKNOWN')} blocked by check_buy_signal (momentum/strategy requirements not met)",
+                            symbol=token.get("symbol"),
+                            action=action,
+                            confidence=confidence,
+                            passes_ai_filters=passes_ai_filters)
+                    enhanced_token["approved_for_trading"] = False
+                    enhanced_token["rejection_reason"] = "buy_signal_failed"
+                else:
+                    enhanced_token["approved_for_trading"] = True
                 
                 # HARD BLOCK: Check holder concentration BEFORE approval
                 # This prevents tokens exceeding threshold from even attempting trades

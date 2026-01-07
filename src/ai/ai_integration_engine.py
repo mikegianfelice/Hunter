@@ -1559,8 +1559,11 @@ class AIIntegrationEngine:
                     momentum_24h = None
                     momentum_1h = None
                 
-                # Block buy actions if 1h momentum < 1.5% (regardless of 24h momentum)
+                # Block buy actions if 1h momentum below minimum threshold (regardless of 24h momentum)
                 # Note: DexScreener provides momentum values as percentages (e.g., 0.53 = 0.53%, 5.5 = 5.5%)
+                from src.config.config_loader import get_config_float
+                min_1h_momentum_pct = get_config_float("min_1h_momentum_pct", 0.015) * 100  # Convert to percentage (1.5% default)
+                
                 if momentum_1h is not None:
                     # Values from DexScreener are already in percentage format, so use directly
                     # Only normalize if the value appears to be in decimal format (very small values < 0.01)
@@ -1572,8 +1575,8 @@ class AIIntegrationEngine:
                         # Value is already in percentage format (0.53 = 0.53%, 5.5 = 5.5%)
                         mom_1h_pct = momentum_1h
                     
-                    # Block if 1h momentum < 1.5% (regardless of 24h momentum)
-                    if mom_1h_pct < 1.5:
+                    # Block if 1h momentum < threshold (regardless of 24h momentum)
+                    if mom_1h_pct < min_1h_momentum_pct:
                         # Override any buy action to hold when momentum conditions are met
                         # This gate applies regardless of overall_score to prevent buying into low momentum
                         mom_24h_pct = None
@@ -1587,7 +1590,7 @@ class AIIntegrationEngine:
                         recommendations["momentum_blocked"] = True  # Mark as momentum-blocked
                         mom_24h_str = f"{mom_24h_pct:.2f}%" if mom_24h_pct is not None else "N/A"
                         recommendations["reasoning"].append(
-                            f"Low 1h momentum ({mom_1h_pct:.2f}% < 1.5%) blocks buy signal (24h: {mom_24h_str})"
+                            f"Low 1h momentum ({mom_1h_pct:.2f}% < {min_1h_momentum_pct:.2f}%) blocks buy signal (24h: {mom_24h_str})"
                         )
                         return recommendations
             

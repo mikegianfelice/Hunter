@@ -129,11 +129,47 @@ def _get_external_momentum(token: dict, config: dict):
             # Timeframes not aligned - reject
             return None, None
     
-    # Check 24h momentum requirement (must be positive)
-    if require_24h_positive and pc_24h is not None:
-        if pc_24h <= 0:
-            # 24h momentum negative - reject
+    # Tiered 24h momentum requirement with override logic
+    min_24h_momentum = config.get('MIN_24H_MOMENTUM_PCT', 0.03)  # 3% default
+    min_1h_momentum = config.get('MIN_1H_MOMENTUM_PCT', 0.015)  # 1.5% default
+    allow_override = config.get('ALLOW_NEGATIVE_24H_OVERRIDE', True)
+    min_1h_for_override = config.get('MIN_1H_MOMENTUM_FOR_OVERRIDE', 0.04)  # 4% default
+    min_5m_for_override = config.get('MIN_5M_MOMENTUM_FOR_OVERRIDE', 0.05)  # 5% default
+    
+    # Check 1h momentum minimum
+    if pc_1h is not None:
+        if pc_1h < min_1h_momentum:
+            # 1h momentum below minimum - reject
             return None, None
+    
+    # Check 24h momentum with tiered logic
+    if require_24h_positive and pc_24h is not None:
+        if pc_24h < 0:
+            # 24h momentum negative - check for override
+            if allow_override and pc_1h is not None and pc_5m is not None:
+                # Allow override if recent momentum is very strong
+                if pc_1h >= min_1h_for_override and pc_5m >= min_5m_for_override:
+                    # Strong recent momentum overrides negative 24h
+                    pass  # Continue with momentum calculation
+                else:
+                    # Not strong enough for override - reject
+                    return None, None
+            else:
+                # No override allowed or missing data - reject
+                return None, None
+        elif pc_24h < min_24h_momentum:
+            # 24h momentum positive but below minimum - check for override
+            if allow_override and pc_1h is not None and pc_5m is not None:
+                # Allow override if recent momentum is very strong
+                if pc_1h >= min_1h_for_override and pc_5m >= min_5m_for_override:
+                    # Strong recent momentum overrides low 24h
+                    pass  # Continue with momentum calculation
+                else:
+                    # Not strong enough for override - reject
+                    return None, None
+            else:
+                # No override allowed or missing data - reject
+                return None, None
     
     if use_multi and (pc_5m is not None or pc_1h is not None or pc_24h is not None):
         # Multi-timeframe weighted average

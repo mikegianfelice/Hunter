@@ -136,6 +136,11 @@ def get_config_values():
         'EXTERNAL_MOMENTUM_H24_WEIGHT': get_config_float("external_momentum_h24_weight", 0.2),
         'REQUIRE_MOMENTUM_ALIGNMENT': get_config_bool("require_momentum_alignment", True),
         'REQUIRE_POSITIVE_24H_MOMENTUM': get_config_bool("require_positive_24h_momentum", True),
+        'MIN_24H_MOMENTUM_PCT': get_config_float("min_24h_momentum_pct", 0.03),  # 3% minimum
+        'MIN_1H_MOMENTUM_PCT': get_config_float("min_1h_momentum_pct", 0.015),  # 1.5% minimum
+        'ALLOW_NEGATIVE_24H_OVERRIDE': get_config_bool("allow_negative_24h_override", True),
+        'MIN_1H_MOMENTUM_FOR_OVERRIDE': get_config_float("min_1h_momentum_for_override", 0.04),  # 4% for override
+        'MIN_5M_MOMENTUM_FOR_OVERRIDE': get_config_float("min_5m_momentum_for_override", 0.05),  # 5% for override
         'MIN_MOMENTUM_ACCELERATION': get_config_float("min_momentum_acceleration", 0.002),
         'MIN_MOMENTUM_5M_VELOCITY': get_config_float("min_momentum_5m_velocity", 0.025),  # NEW: 5m velocity check
         'ENABLE_VOLUME_MOMENTUM_CHECK': get_config_bool("enable_volume_momentum_check", True),
