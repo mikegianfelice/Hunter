@@ -22,8 +22,8 @@ Hunter is a quant level crypto trading bot executing real on-chain trades with l
 
 ### **1. Token Selection** 🔍
 The bot continuously scans DexScreener for trending tokens across Solana using configurable discovery settings. It filters out low-quality tokens by requiring:
-- Minimum $500k daily volume (configurable)
-- Minimum $500k liquidity (configurable)
+- Minimum $750k daily volume (configurable)
+- Minimum $750k liquidity (configurable)
 - Active trading activity
 - No stablecoins or wrapped tokens
 
@@ -44,7 +44,7 @@ Before entering any trade, tokens must pass multiple analysis-driven checks:
 - **Risk Score** ≤ 50% (lower is safer)
 - **Recommendation** = "buy" with >70% confidence
 - **Momentum Requirements**:
-  - Minimum 1.2% momentum (weighted average across 5m, 1h, 24h timeframes)
+  - Minimum 5% momentum (weighted average across 5m, 1h, 24h timeframes)
   - Both 5m and 1h momentum must be positive (alignment requirement)
   - 24h momentum must be positive (longer-term trend confirmation)
   - Momentum acceleration: 5m momentum must exceed 1h by at least 0.2%
@@ -55,7 +55,7 @@ Only tokens passing all criteria are considered for trading.
 
 ### **3. Exit Strategy** 💰
 The bot continuously monitors all open positions and automatically sells when:
-- **Take Profit** is hit: 8% gain (default, can be dynamic based on market conditions)
+- **Take Profit** is hit: 10% gain (default, can be dynamic based on market conditions)
 - **Stop Loss** is triggered: 4% loss
 - **Trailing Stop** activates: Locks in profits if price drops 4% from peak
 - **Volume Exit**: Exits if trading volume drops 50% from entry average (requires 1%+ profit, requires 2 confirmations to avoid false exits)
@@ -604,7 +604,7 @@ supported_chains: ["solana", "base"]  # Solana and Base only (Ethereum removed f
 test_mode: false              # LIVE TRADING ENABLED
 trade_amount_usd: 6           # Position size (USD)
 slippage: 0.03                # 3% slippage tolerance
-take_profit: 0.08             # 8% take profit target (base) - reduced for faster profit capture
+take_profit: 0.10             # 10% take profit target (base) - optimized for better risk/reward ratio
 stop_loss: 0.04               # 4% stop loss - tightened for better risk control
 use_dynamic_tp: true          # Enable dynamic take profit (8-20% range)
 
@@ -633,9 +633,9 @@ token_discovery:
 
 # Strategy Thresholds (Improved Entry Quality)
 min_quality_score: 65         # Minimum quality score (0-100)
-min_volume_24h_for_buy: 500000   # $500k minimum 24h volume - raised from $300k to improve win rate
-min_liquidity_usd_for_buy: 500000 # $500k minimum liquidity - raised from $300k to improve win rate
-min_momentum_pct: 0.012       # 1.2% minimum momentum - raised from 0.8% (50% increase) for stronger signals
+min_volume_24h_for_buy: 750000   # $750k minimum 24h volume - raised from $500k to improve win rate and PnL
+min_liquidity_usd_for_buy: 750000 # $750k minimum liquidity - raised from $500k to improve win rate and PnL
+min_momentum_pct: 0.05        # 5% minimum momentum - raised from 2.5% for higher quality trades and better PnL
 
 # Risk Management (Current Settings)
 max_concurrent_positions: 4   # Maximum open positions (reduced from 6 to focus on quality)

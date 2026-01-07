@@ -4,7 +4,7 @@ test_mode: false  # LIVE TRADING ENABLED - Realistic Scaling
 # === Trading Parameters ===
 trade_amount_usd: 6  # Adjusted to align with current USDC balance
 slippage: 0.03  # 3% slippage (tightened for better execution)
-take_profit: 0.08  # 8% (reduced from 12% for faster profit capture and better win rate)
+take_profit: 0.10  # 10% (increased from 8% for better risk/reward ratio)
 stop_loss: 0.04  # 4% stop loss (tightened from 6% to improve risk/reward ratio)
 stop_loss_slippage_buffer: 0.15  # 15% buffer to account for execution slippage (effective trigger = stop_loss * 1.15)
 use_dynamic_tp: true  # Enable dynamic take profit
@@ -63,11 +63,11 @@ check_pool_reserves: true  # Verify pool has sufficient reserves
 min_pool_reserves_multiplier: 2.0  # Pool reserves must be 2x trade amount
 
 # === Strategy Thresholds ===
-min_momentum_pct: 0.025  # Raised to 2.5% minimum for $500k+ liquidity (was 1.2% - too low, gets eaten by bots)
+min_momentum_pct: 0.05  # 5% minimum momentum for higher quality trades (raised from 2.5% to improve win rate and PnL)
 multichain_momentum_multiplier: 0.8  # Multi-chain tokens require 80% of ETH momentum (was 75%)
 multichain_momentum_min: 0.020  # Minimum 2.0% momentum for multi-chain tokens (raised from 1.0% for quality)
-min_volume_24h_for_buy: 500000   # Quality-first: $500k volume minimum for reliability (raised from $300k to improve win rate)
-min_liquidity_usd_for_buy: 500000  # Quality-first: $500k liquidity minimum for reliability (raised from $300k to improve win rate)
+min_volume_24h_for_buy: 750000   # Quality-first: $750k volume minimum for reliability (raised from $500k to improve win rate and PnL)
+min_liquidity_usd_for_buy: 750000  # Quality-first: $750k liquidity minimum for reliability (raised from $500k to improve win rate and PnL)
 min_price_usd: 0.000001  # MICRO TESTING - reduced minimum price for more opportunities
 
 # Fast-path thresholds for first-seen tokens
@@ -280,9 +280,9 @@ quality_liquidity_weight: 0.4  # 40% weight for liquidity in quality score
 quality_price_weight: 0.2  # 20% weight for price stability in quality score
 
 # Dynamic take profit settings
-base_take_profit: 0.08  # 8% base take profit (updated to match take_profit)
+base_take_profit: 0.10  # 10% base take profit (updated to match take_profit)
 max_take_profit: 0.20  # 20% maximum take profit
-min_take_profit: 0.08  # 8% minimum take profit
+min_take_profit: 0.10  # 10% minimum take profit
 quality_tp_bonus: 0.03  # +3% for high quality tokens
 volume_tp_bonus: 0.02  # +2% for high volume tokens
 liquidity_tp_bonus: 0.02  # +2% for high liquidity tokens
@@ -1695,7 +1695,7 @@ enable_ai_partial_tp_manager: true  # Enable partial TP manager
 partial_tp_manager:
   first_take_pct: 0.50  # Take 50% at first TP trigger
   first_take_trigger_pct: 0.05  # Trigger at +5% gain (was 6% - activate earlier to lock in profits)
-  second_take_trigger_pct: 0.08  # Sell remaining 50% at +8% gain (defaults to main take_profit)
+  second_take_trigger_pct: 0.10  # Sell remaining 50% at +10% gain (updated to match main take_profit)
   trailing_stop_initial: 0.04  # 4% trailing stop after partial (tightened from 5% to protect gains)
   trail_tighten_trigger_pct: 0.15  # Tighten trail at +15% gain
   trailing_stop_tightened: 0.05  # 5% trailing stop when tightened
