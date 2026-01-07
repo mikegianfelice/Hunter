@@ -124,7 +124,7 @@ solana_usdc_mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"  # USDC mint ad
 solana_min_sol_for_fees: 0.05  # Minimum SOL needed for transaction fees (separate from trading balance)
 
 # === Risk Management ===
-max_concurrent_positions: 8  # Increased to 8 for better capital utilization
+max_concurrent_positions: 6  # Maximum concurrent open positions
 max_concurrent_trades: 5  # Maximum number of trades to execute concurrently per cycle (defaults to min(max_concurrent_positions, 5) if not set)
 daily_loss_limit_usd: 10.0  # Minimum daily loss limit floor (actual limit is 5% of wallet balance, minimum $10)
 max_losing_streak: 3  # Stop after 3 losses
@@ -319,7 +319,7 @@ wallet_tiers: {
     "max_balance": 4999,
     "base_position_size_percent": 0.05,
     "max_position_size_percent": 0.10,
-    "max_total_exposure_percent": 0.5,
+    "max_total_exposure_percent": 0.6,
     "max_wallet_usage_percent": 0.10,
     "description": "Scaling Phase - Moderate (percentage-based for dynamic scaling)"
   },
