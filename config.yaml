@@ -125,7 +125,7 @@ solana_min_sol_for_fees: 0.05  # Minimum SOL needed for transaction fees (separa
 
 # === Risk Management ===
 max_concurrent_positions: 6  # Maximum concurrent open positions
-max_concurrent_trades: 5  # Maximum number of trades to execute concurrently per cycle (defaults to min(max_concurrent_positions, 5) if not set)
+max_concurrent_trades: 5  # Maximum number of trades to execute concurrently per cycle (set to 5 to reduce race condition risk with quality multipliers)
 daily_loss_limit_usd: 10.0  # Minimum daily loss limit floor (actual limit is 5% of wallet balance, minimum $10)
 max_losing_streak: 3  # Stop after 3 losses
 circuit_breaker_minutes: 60  # 60 minute cooldown after losses
