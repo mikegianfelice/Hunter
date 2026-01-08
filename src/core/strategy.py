@@ -1311,24 +1311,100 @@ def check_buy_signal(token: dict) -> bool:
                 )
                 return False
 
-        # External momentum enabled but unavailable - log and reject
+        # External momentum enabled but unavailable - try using momentum from token dict
         _log_trace(
-            "❌ External momentum unavailable; no buy signal (price memory fallback disabled).",
+            "⚠️ External momentum unavailable; trying momentum from token data.",
             level="info",
             event="strategy.buy.no_external_momentum",
             symbol=token.get("symbol"),
         )
+        # Fall through to token momentum check below
     else:
-        # External momentum disabled - skip check entirely
+        # External momentum disabled - use momentum from token dict
         _log_trace(
-            "⏭️ External momentum disabled; skipping external momentum check.",
+            "⏭️ External momentum disabled; using momentum from token data.",
             level="info",
             event="strategy.buy.external_momentum_disabled",
             symbol=token.get("symbol"),
         )
-
+    
+    # Try using momentum data from token dict (from AI recommendations)
+    # Check for momentum_24h/momentum_1h or priceChange24h/priceChange1h
+    momentum_24h = token.get("momentum_24h") or token.get("priceChange24h")
+    momentum_1h = token.get("momentum_1h") or token.get("priceChange1h")
+    
+    # Convert to decimal if needed (DexScreener provides as percentages)
+    def to_decimal(mom_val):
+        if mom_val is None or mom_val == "" or str(mom_val).lower() == "none" or str(mom_val).strip() == "":
+            return None
+        try:
+            val = float(mom_val)
+            # If value > 1, assume it's a percentage (e.g., 3.04 = 3.04%), convert to decimal
+            # If value < 1, assume it's already decimal (e.g., 0.0304 = 3.04%)
+            return val / 100.0 if abs(val) > 1 else val
+        except (ValueError, TypeError):
+            return None
+    
+    mom_24h = to_decimal(momentum_24h)
+    mom_1h = to_decimal(momentum_1h)
+    
+    if mom_1h is not None:
+        # Use 1h momentum as primary (most relevant for entry timing)
+        _log_trace(
+            f"📈 Momentum from token data (1h): {mom_1h*100:.4f}% (need ≥ {momentum_need*100:.4f}%)",
+            level="info",
+            event="strategy.buy.token_momentum",
+            momentum_1h=mom_1h,
+            momentum_24h=mom_24h,
+            required_momentum=momentum_need,
+            symbol=token.get("symbol"),
+        )
+        if mom_1h >= momentum_need:
+            _log_trace(
+                "✅ Token momentum buy signal → TRUE",
+                level="info",
+                event="strategy.buy.token_momentum_pass",
+                symbol=token.get("symbol"),
+            )
+            return True
+        else:
+            _log_trace(
+                f"❌ Token momentum insufficient ({mom_1h*100:.4f}% < {momentum_need*100:.4f}%).",
+                level="info",
+                event="strategy.buy.token_momentum_fail",
+                symbol=token.get("symbol"),
+            )
+            return False
+    elif mom_24h is not None:
+        # Fallback to 24h momentum if 1h not available
+        _log_trace(
+            f"📈 Momentum from token data (24h): {mom_24h*100:.4f}% (need ≥ {momentum_need*100:.4f}%)",
+            level="info",
+            event="strategy.buy.token_momentum_24h",
+            momentum_24h=mom_24h,
+            required_momentum=momentum_need,
+            symbol=token.get("symbol"),
+        )
+        if mom_24h >= momentum_need:
+            _log_trace(
+                "✅ Token momentum (24h) buy signal → TRUE",
+                level="info",
+                event="strategy.buy.token_momentum_24h_pass",
+                symbol=token.get("symbol"),
+            )
+            return True
+        else:
+            _log_trace(
+                f"❌ Token momentum (24h) insufficient ({mom_24h*100:.4f}% < {momentum_need*100:.4f}%).",
+                level="info",
+                event="strategy.buy.token_momentum_24h_fail",
+                symbol=token.get("symbol"),
+            )
+            return False
+    
+    # No momentum available from any source
     _log_trace(
-        "❌ No buy signal (no momentum confirmation).",
+        "❌ No buy signal (no momentum confirmation from external or token data).",
         level="error",
         event="strategy.buy.no_signal",
         symbol=token.get("symbol"),
