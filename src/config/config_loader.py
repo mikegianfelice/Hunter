@@ -113,6 +113,7 @@ def get_config_values():
     return {
         'PRICE_MEM_TTL_SECS': get_config_int("price_memory_ttl_minutes", 15) * 60,
         'PRICE_MEM_PRUNE_SECS': get_config_int("price_memory_prune_hours", 24) * 3600,
+        'PRICE_MEM_MOMENTUM_PCT': get_config_float("price_memory_momentum_pct", 0.02),  # 2% default for price memory momentum
         'BASE_TP': get_config_float("take_profit", 0.5),
         'TP_MIN': get_config_float("tp_min", 0.20),
         'TP_MAX': get_config_float("tp_max", 1.00),

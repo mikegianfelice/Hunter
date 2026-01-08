@@ -1315,18 +1315,23 @@ def check_buy_signal(token: dict) -> bool:
         prev_ts    = int(entry.get("ts", 0))
         age = now_ts - prev_ts
 
-        if prev_price > 0 and age <= config['PRICE_MEM_TTL_SECS']:
+        # Require minimum age of 1 second to ensure meaningful price change
+        # If age is 0, the entry was just saved and we can't calculate momentum
+        min_age_seconds = config.get('PRICE_MEM_MIN_AGE_SECS', 1)
+        # Use separate threshold for price memory momentum (default 2%)
+        price_mem_momentum_need = config.get('PRICE_MEM_MOMENTUM_PCT', 0.02)
+        if prev_price > 0 and min_age_seconds <= age <= config['PRICE_MEM_TTL_SECS']:
             mom = _pct_change(price, prev_price)
             _log_trace(
-                f"📈 Momentum from price memory ({age}s ago): {mom*100:.4f}% (need ≥ {momentum_need*100:.4f}%)",
+                f"📈 Momentum from price memory ({age}s ago): {mom*100:.4f}% (need ≥ {price_mem_momentum_need*100:.4f}%)",
                 level="info",
                 event="strategy.buy.price_memory_momentum",
                 symbol=token.get("symbol"),
                 age_seconds=age,
                 momentum=mom,
-                required_momentum=momentum_need,
+                required_momentum=price_mem_momentum_need,
             )
-            if mom >= momentum_need:
+            if mom >= price_mem_momentum_need:
                 _log_trace(
                     "✅ Price memory momentum buy signal → TRUE",
                     level="info",
@@ -1343,11 +1348,21 @@ def check_buy_signal(token: dict) -> bool:
                 )
                 return False
         else:
+            # Provide specific reason why momentum can't be calculated
+            if prev_price <= 0:
+                reason = "invalid price"
+            elif age < min_age_seconds:
+                reason = f"age too small ({age}s < {min_age_seconds}s minimum)"
+            else:
+                reason = f"age too large ({age}s > {config['PRICE_MEM_TTL_SECS']}s TTL)"
             _log_trace(
-                "ℹ️ Snapshot stale or missing; no reliable momentum data available.",
+                f"ℹ️ Cannot calculate momentum from price memory: {reason}",
                 level="info",
                 event="strategy.buy.price_memory_stale",
                 symbol=token.get("symbol"),
+                age_seconds=age,
+                min_age_seconds=min_age_seconds,
+                reason=reason,
             )
     else:
         _log_trace(

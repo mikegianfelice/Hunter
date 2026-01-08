@@ -63,7 +63,7 @@ check_pool_reserves: true  # Verify pool has sufficient reserves
 min_pool_reserves_multiplier: 2.0  # Pool reserves must be 2x trade amount
 
 # === Strategy Thresholds ===
-min_momentum_pct: 0.05  # 5% minimum momentum for higher quality trades (raised from 2.5% to improve win rate and PnL)
+min_momentum_pct: 0.02  # 2% minimum momentum for external momentum (weighted average of 5m, 1h, 24h)
 multichain_momentum_multiplier: 0.8  # Multi-chain tokens require 80% of ETH momentum (was 75%)
 multichain_momentum_min: 0.020  # Minimum 2.0% momentum for multi-chain tokens (raised from 1.0% for quality)
 min_volume_24h_for_buy: 750000   # Quality-first: $750k volume minimum for reliability (raised from $500k to improve win rate and PnL)
@@ -250,6 +250,7 @@ volume_cache_duration_seconds: 300  # Cache volume data for 5 minutes (same as c
 # === Price Memory ===
 price_memory_ttl_minutes: 15
 price_memory_prune_hours: 24
+price_memory_momentum_pct: 0.02  # 2% minimum momentum for price memory (separate from general momentum threshold)
 
 # === External Momentum Configuration ===
 enable_external_momentum: true  # Use DexScreener price change data for momentum
