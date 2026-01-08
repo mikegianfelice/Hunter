@@ -1309,11 +1309,44 @@ class AIIntegrationEngine:
                         overall_score = overall_score - reduction
             
             # Fix 5: Add minimum quality threshold enforcement (aligned with config.yaml)
+            quality_penalty = 0.0
+            quality_bonus = 0.0
             if market_data:
                 # Read thresholds from config.yaml instead of hardcoding
                 from src.config.config_loader import get_config_float
                 min_volume = get_config_float("min_volume_24h_for_buy", 200000)  # Default $200k
                 min_liquidity = get_config_float("min_liquidity_usd_for_buy", 200000)  # Default $200k
+                
+                # DEBUG: Log component breakdown for "dreams" token
+                if hasattr(market_data, 'symbol') and market_data.symbol.lower() == 'dreams':
+                    from src.utils.logging_utils import log_info
+                    log_info("ai.score_breakdown",
+                            f"Quality score breakdown for {market_data.symbol}: "
+                            f"sentiment={sentiment_score:.3f} (20%), "
+                            f"prediction={prediction_score:.3f} (30%), "
+                            f"risk={risk_score:.3f} (20%), "
+                            f"market={market_score:.3f} (15%), "
+                            f"technical={technical_score:.3f} (15%), "
+                            f"overall_before_penalty={overall_score:.3f}, "
+                            f"volume_24h=${market_data.volume_24h:,.0f}, "
+                            f"liquidity=${market_data.liquidity:,.0f}, "
+                            f"min_volume=${min_volume:,.0f}, "
+                            f"min_liquidity=${min_liquidity:,.0f}, "
+                            f"liquidity_score={liquidity_score:.3f}, "
+                            f"volume_score={volume_score:.3f}",
+                            symbol=market_data.symbol,
+                            sentiment_score=sentiment_score,
+                            prediction_score=prediction_score,
+                            risk_score=risk_score,
+                            market_score=market_score,
+                            technical_score=technical_score,
+                            overall_before_penalty=overall_score,
+                            volume_24h=market_data.volume_24h,
+                            liquidity=market_data.liquidity,
+                            min_volume=min_volume,
+                            min_liquidity=min_liquidity,
+                            liquidity_score=liquidity_score,
+                            volume_score=volume_score)
                 
                 if market_data.volume_24h < min_volume or market_data.liquidity < min_liquidity:
                     # Graduated penalty: more severe the further below threshold
@@ -1327,6 +1360,21 @@ class AIIntegrationEngine:
                     quality_penalty = max(0.05, min(0.3, quality_penalty))
                     overall_score = overall_score - quality_penalty
                     overall_score = max(0.0, overall_score)  # Don't go below 0
+                    
+                    # DEBUG: Log penalty details for "dreams"
+                    if hasattr(market_data, 'symbol') and market_data.symbol.lower() == 'dreams':
+                        from src.utils.logging_utils import log_info
+                        log_info("ai.penalty_details",
+                                f"Quality penalty for {market_data.symbol}: "
+                                f"vol_ratio={vol_ratio:.3f}, liq_ratio={liq_ratio:.3f}, "
+                                f"min_ratio={min_ratio:.3f}, penalty={quality_penalty:.3f}, "
+                                f"overall_after_penalty={overall_score:.3f}",
+                                symbol=market_data.symbol,
+                                vol_ratio=vol_ratio,
+                                liq_ratio=liq_ratio,
+                                min_ratio=min_ratio,
+                                penalty=quality_penalty,
+                                overall_after_penalty=overall_score)
                 
                 # Bonus for exceptional quality tokens (top tier - above typical trades)
                 # Based on actual trade data: trades are $2.6M-$9.9M, so $2M+ is top tier
