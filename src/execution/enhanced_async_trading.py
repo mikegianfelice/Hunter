@@ -1146,7 +1146,7 @@ class EnhancedAsyncTradingEngine:
                     # FIX: Use 0-1 scale (0.91 = 91%, 0.81 = 81%, etc.)
                     quality_multiplier = 1.0
                     if quality_score >= 0.91:  # 91% = 0.91
-                        quality_multiplier = 1.8  # Excellent quality: 80% larger
+                        quality_multiplier = 2.0  # Excellent quality: 100% larger
                     elif quality_score >= 0.81:  # 81% = 0.81
                         quality_multiplier = 1.5  # Very high quality: 50% larger
                     elif quality_score >= 0.71:  # 71% = 0.71

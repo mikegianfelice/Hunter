@@ -23,7 +23,7 @@ trading:
   # Quality-based position sizing multipliers
   enable_quality_based_sizing: true  # Enable quality-based position size scaling
   quality_sizing_multipliers:
-    excellent: 1.8   # Quality 91+: 80% larger positions
+    excellent: 2.0   # Quality 91+: 100% larger positions
     very_high: 1.5   # Quality 81-90: 50% larger positions
     high: 1.2        # Quality 71-80: 20% larger positions
     base: 1.0        # Quality 65-70: Base size
