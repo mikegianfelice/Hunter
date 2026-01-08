@@ -1361,7 +1361,6 @@ class AIIntegrationEngine:
                 
                 # DEBUG: Log component breakdown for "dreams" token
                 if hasattr(market_data, 'symbol') and market_data.symbol.lower() == 'dreams':
-                    from src.utils.logging_utils import log_info
                     log_info("ai.score_breakdown",
                             f"Quality score breakdown for {market_data.symbol}: "
                             f"sentiment={sentiment_score:.3f} (20%), "
@@ -1405,7 +1404,6 @@ class AIIntegrationEngine:
                     
                     # DEBUG: Log penalty details for "dreams"
                     if hasattr(market_data, 'symbol') and market_data.symbol.lower() == 'dreams':
-                        from src.utils.logging_utils import log_info
                         log_info("ai.penalty_details",
                                 f"Quality penalty for {market_data.symbol}: "
                                 f"vol_ratio={vol_ratio:.3f}, liq_ratio={liq_ratio:.3f}, "
