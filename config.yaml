@@ -254,7 +254,7 @@ price_memory_momentum_pct: 0.02  # 2% minimum momentum for price memory (separat
 price_memory_min_age_seconds: 300  # 5 minutes minimum age - short timeframes are noise, not real momentum
 
 # === External Momentum Configuration ===
-enable_external_momentum: true  # Use DexScreener price change data for momentum
+enable_external_momentum: false  # Use DexScreener price change data for momentum (DISABLED - not using external momentum)
 external_momentum_primary_timeframe: "h1"  # Primary timeframe: "m5", "h1", "h24" (DexScreener provides m5, h1, h6, h24)
 external_momentum_fallback_timeframe: "m5"  # Fallback if primary unavailable
 external_momentum_min_timeframe_weight: 0.3  # Minimum weight for primary timeframe
