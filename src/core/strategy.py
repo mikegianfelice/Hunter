@@ -1226,97 +1226,106 @@ def check_buy_signal(token: dict) -> bool:
                 pass  # Skip if volume change data not parseable
 
     # Try external momentum first (DexScreener price change data)
-    ext_momentum, ext_source = _get_external_momentum(token, config)
-    if ext_momentum is not None:
-        # Check momentum acceleration (5m momentum must exceed 1h by threshold)
-        min_acceleration = config.get('MIN_MOMENTUM_ACCELERATION', 0.002)
-        price_change_5m = token.get("priceChange5m")
-        price_change_1h = token.get("priceChange1h")
-        
-        # Convert to decimal if needed
-        def to_decimal(pct_val):
-            if pct_val is None or pct_val == "" or str(pct_val).lower() == "none" or str(pct_val).strip() == "":
-                return None
-            try:
-                val = float(pct_val)
-                return val / 100.0 if val > 1 else val
-            except (ValueError, TypeError):
-                return None
-        
-        pc_5m = to_decimal(price_change_5m)
-        pc_1h = to_decimal(price_change_1h)
-        
-        # Check momentum acceleration
-        if pc_5m is not None and pc_1h is not None:
-            momentum_acceleration = pc_5m - pc_1h
-            if momentum_acceleration < min_acceleration:
+    # Only check external momentum if it's enabled
+    if config.get('ENABLE_EXTERNAL_MOMENTUM', True):
+        ext_momentum, ext_source = _get_external_momentum(token, config)
+        if ext_momentum is not None:
+            # Check momentum acceleration (5m momentum must exceed 1h by threshold)
+            min_acceleration = config.get('MIN_MOMENTUM_ACCELERATION', 0.002)
+            price_change_5m = token.get("priceChange5m")
+            price_change_1h = token.get("priceChange1h")
+            
+            # Convert to decimal if needed
+            def to_decimal(pct_val):
+                if pct_val is None or pct_val == "" or str(pct_val).lower() == "none" or str(pct_val).strip() == "":
+                    return None
+                try:
+                    val = float(pct_val)
+                    return val / 100.0 if val > 1 else val
+                except (ValueError, TypeError):
+                    return None
+            
+            pc_5m = to_decimal(price_change_5m)
+            pc_1h = to_decimal(price_change_1h)
+            
+            # Check momentum acceleration
+            if pc_5m is not None and pc_1h is not None:
+                momentum_acceleration = pc_5m - pc_1h
+                if momentum_acceleration < min_acceleration:
+                    _log_trace(
+                        f"❌ Momentum not accelerating (5m-1h: {momentum_acceleration*100:.2f}% < {min_acceleration*100:.2f}%)",
+                        level="info",
+                        event="strategy.buy.momentum_acceleration_fail",
+                        symbol=token.get("symbol"),
+                        acceleration=momentum_acceleration,
+                        required_acceleration=min_acceleration,
+                    )
+                    return False
+            
+            # NEW: Velocity check - require 5m momentum ≥ 2.5-3% (fast moves only)
+            min_5m_velocity = config.get('MIN_MOMENTUM_5M_VELOCITY', 0.025)  # 2.5% minimum
+            if pc_5m is not None:
+                if pc_5m < min_5m_velocity:
+                    _log_trace(
+                        f"❌ 5m momentum too weak for velocity check: {pc_5m*100:.2f}% < {min_5m_velocity*100:.2f}% (slow move, likely noise)",
+                        level="info",
+                        event="strategy.buy.momentum_velocity_fail",
+                        symbol=token.get("symbol"),
+                        momentum_5m=pc_5m,
+                        required_velocity=min_5m_velocity,
+                    )
+                    return False
+                else:
+                    _log_trace(
+                        f"✅ 5m momentum velocity check passed: {pc_5m*100:.2f}% ≥ {min_5m_velocity*100:.2f}% (fast move)",
+                        level="info",
+                        event="strategy.buy.momentum_velocity_pass",
+                        symbol=token.get("symbol"),
+                        momentum_5m=pc_5m,
+                        required_velocity=min_5m_velocity,
+                    )
+            
+            _log_trace(
+                f"📈 Momentum from {ext_source}: {ext_momentum*100:.4f}% (need ≥ {momentum_need*100:.4f}%)",
+                level="info",
+                event="strategy.buy.external_momentum",
+                source=ext_source,
+                momentum=ext_momentum,
+                required_momentum=momentum_need,
+                symbol=token.get("symbol"),
+            )
+            if ext_momentum >= momentum_need:
                 _log_trace(
-                    f"❌ Momentum not accelerating (5m-1h: {momentum_acceleration*100:.2f}% < {min_acceleration*100:.2f}%)",
+                    "✅ External momentum buy signal → TRUE",
                     level="info",
-                    event="strategy.buy.momentum_acceleration_fail",
+                    event="strategy.buy.external_momentum_pass",
                     symbol=token.get("symbol"),
-                    acceleration=momentum_acceleration,
-                    required_acceleration=min_acceleration,
                 )
-                return False
-        
-        # NEW: Velocity check - require 5m momentum ≥ 2.5-3% (fast moves only)
-        min_5m_velocity = config.get('MIN_MOMENTUM_5M_VELOCITY', 0.025)  # 2.5% minimum
-        if pc_5m is not None:
-            if pc_5m < min_5m_velocity:
-                _log_trace(
-                    f"❌ 5m momentum too weak for velocity check: {pc_5m*100:.2f}% < {min_5m_velocity*100:.2f}% (slow move, likely noise)",
-                    level="info",
-                    event="strategy.buy.momentum_velocity_fail",
-                    symbol=token.get("symbol"),
-                    momentum_5m=pc_5m,
-                    required_velocity=min_5m_velocity,
-                )
-                return False
+                return True
             else:
                 _log_trace(
-                    f"✅ 5m momentum velocity check passed: {pc_5m*100:.2f}% ≥ {min_5m_velocity*100:.2f}% (fast move)",
-                    level="info",
-                    event="strategy.buy.momentum_velocity_pass",
+                    "❌ External momentum insufficient.",
+                    level="error",
+                    event="strategy.buy.external_momentum_fail",
                     symbol=token.get("symbol"),
-                    momentum_5m=pc_5m,
-                    required_velocity=min_5m_velocity,
                 )
-        
+                return False
+
+        # External momentum enabled but unavailable - log and reject
         _log_trace(
-            f"📈 Momentum from {ext_source}: {ext_momentum*100:.4f}% (need ≥ {momentum_need*100:.4f}%)",
+            "❌ External momentum unavailable; no buy signal (price memory fallback disabled).",
             level="info",
-            event="strategy.buy.external_momentum",
-            source=ext_source,
-            momentum=ext_momentum,
-            required_momentum=momentum_need,
+            event="strategy.buy.no_external_momentum",
             symbol=token.get("symbol"),
         )
-        if ext_momentum >= momentum_need:
-            _log_trace(
-                "✅ External momentum buy signal → TRUE",
-                level="info",
-                event="strategy.buy.external_momentum_pass",
-                symbol=token.get("symbol"),
-            )
-            return True
-        else:
-            _log_trace(
-                "❌ External momentum insufficient.",
-                level="error",
-                event="strategy.buy.external_momentum_fail",
-                symbol=token.get("symbol"),
-            )
-            return False
-
-    # No fallback to price memory - require external momentum only
-    # Price memory momentum over short timeframes is just noise, not real momentum
-    _log_trace(
-        "❌ External momentum unavailable; no buy signal (price memory fallback disabled).",
-        level="info",
-        event="strategy.buy.no_external_momentum",
-        symbol=token.get("symbol"),
-    )
+    else:
+        # External momentum disabled - skip check entirely
+        _log_trace(
+            "⏭️ External momentum disabled; skipping external momentum check.",
+            level="info",
+            event="strategy.buy.external_momentum_disabled",
+            symbol=token.get("symbol"),
+        )
 
     _log_trace(
         "❌ No buy signal (no momentum confirmation).",
