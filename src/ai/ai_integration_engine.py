@@ -441,7 +441,7 @@ class AIIntegrationEngine:
             
             # Stage 1: Core Analysis (existing modules)
             core_tasks = [
-                self._analyze_sentiment(market_data),
+                self._analyze_sentiment(market_data, token_data=token_data),
                 self._analyze_price_prediction(market_data, features),
                 self._analyze_risk(market_data, token_data=token_data),
                 self._analyze_market_conditions(market_data),
@@ -585,7 +585,7 @@ class AIIntegrationEngine:
             on_chain_metrics=token_data.get("on_chain_metrics", {})
         )
     
-    async def _analyze_sentiment(self, market_data: MarketData) -> Dict[str, Any]:
+    async def _analyze_sentiment(self, market_data: MarketData, token_data: Optional[Dict] = None) -> Dict[str, Any]:
         """Analyze sentiment using AI modules"""
         try:
             # Use ML pipeline for sentiment analysis
@@ -595,10 +595,52 @@ class AIIntegrationEngine:
             if "sentiment_analyzer" in self.module_connector.modules:
                 try:
                     module = self.module_connector.modules["sentiment_analyzer"]
-                    if hasattr(module, 'analyze_sentiment'):
-                        ai_result = await module.analyze_sentiment(market_data) if asyncio.iscoroutinefunction(module.analyze_sentiment) else module.analyze_sentiment(market_data)
+                    if hasattr(module, 'analyze_token_sentiment'):
+                        # Convert MarketData to token dict format expected by AI sentiment analyzer
+                        if token_data:
+                            # Use original token_data if available (better, may have more fields)
+                            token_dict = token_data.copy()
+                        else:
+                            # Convert MarketData back to token dict format
+                            token_dict = {
+                                "symbol": market_data.symbol,
+                                "volume24h": market_data.volume_24h,
+                                "liquidity": market_data.liquidity,
+                                "priceChange24h": market_data.price_change_24h,
+                                "marketCap": market_data.market_cap,
+                                "priceUsd": market_data.price,
+                                "volume1h": market_data.volume_24h / 24,  # Estimate 1h volume
+                                "holders": market_data.holders,
+                                "transactions24h": market_data.transactions_24h,
+                            }
+                            # Add sentiment if available
+                            if hasattr(market_data, 'news_sentiment') and market_data.news_sentiment:
+                                token_dict["ai_sentiment"] = {
+                                    "score": market_data.news_sentiment,
+                                    "confidence": 0.8
+                                }
+                        
+                        # Call the correct method (analyze_token_sentiment, not analyze_sentiment)
+                        if asyncio.iscoroutinefunction(module.analyze_token_sentiment):
+                            ai_result = await module.analyze_token_sentiment(token_dict)
+                        else:
+                            ai_result = module.analyze_token_sentiment(token_dict)
+                        
                         if ai_result:
-                            sentiment_result.update(ai_result)
+                            # Merge AI sentiment result with ML pipeline result
+                            # Prioritize AI sentiment score if available
+                            if 'score' in ai_result:
+                                sentiment_result['score'] = ai_result['score']
+                            if 'confidence' in ai_result:
+                                sentiment_result['confidence'] = ai_result['confidence']
+                            if 'category' in ai_result:
+                                sentiment_result['category'] = ai_result['category']
+                            if 'breakdown' in ai_result:
+                                sentiment_result['breakdown'] = ai_result['breakdown']
+                            # Preserve other fields from AI result
+                            for key, value in ai_result.items():
+                                if key not in sentiment_result:
+                                    sentiment_result[key] = value
                 except Exception as e:
                     log_error(f"Error in sentiment analyzer module: {e}")
             

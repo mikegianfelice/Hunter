@@ -1000,15 +1000,22 @@ class EnhancedAsyncTradingEngine:
                 and risk_score <= MAX_RISK_SCORE
             )
             
+            # Override action to "skip" if AI filters fail (makes logs clearer)
+            # This ensures action in logs reflects actual execution status
+            original_action = action
+            if not passes_ai_filters and action in ["buy", "weak_buy", "strong_buy"]:
+                action = "skip"
+            
             # Log recommendation details for debugging
             momentum_24h = token.get("priceChange24h", 0)
             momentum_1h = token.get("priceChange1h", 0)
             volume_24h = float(token.get("volume24h", 0))
             liquidity = float(token.get("liquidity", 0))
             log_info("trading.recommendation_check",
-                    f"Token {token.get('symbol', 'UNKNOWN')}: action={action}, passes_ai_filters={passes_ai_filters}",
+                    f"Token {token.get('symbol', 'UNKNOWN')}: action={action} (original={original_action}), passes_ai_filters={passes_ai_filters}",
                     symbol=token.get("symbol"),
                     action=action,
+                    original_action=original_action,
                     confidence=round(confidence, 3),
                     quality_score=round(quality_score, 3),
                     success_prob=round(success_prob, 3),
