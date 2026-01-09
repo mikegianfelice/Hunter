@@ -340,7 +340,7 @@ def _get_wallet_balance_usd(chain_id="ethereum", use_cache_fallback=True):
 
 
 def _get_combined_wallet_balance_usd():
-    """Get combined wallet balance in USD from all supported chains"""
+    """Get combined wallet balance in USD from all supported chains, including open positions"""
     try:
         total_balance = 0.0
         
@@ -364,7 +364,22 @@ def _get_combined_wallet_balance_usd():
                 chain_name = chain_id.capitalize()
                 print(f"⚠️ Failed to get {chain_name} balance: {e}")
         
-        print(f"💰 Combined wallet balance: ${total_balance:.2f}")
+        # Add value of open positions to total portfolio value
+        try:
+            positions = load_positions_store()
+            positions_value = 0.0
+            for payload in positions.values():
+                if isinstance(payload, dict):
+                    position_value = float(payload.get("position_size_usd", 0.0) or 0.0)
+                    positions_value += position_value
+            
+            if positions_value > 0:
+                total_balance += positions_value
+                print(f"💰 Open positions value: ${positions_value:.2f}")
+        except Exception as e:
+            print(f"⚠️ Error calculating positions value: {e}")
+        
+        print(f"💰 Combined wallet balance (including positions): ${total_balance:.2f}")
         return total_balance
         
     except Exception as e:
