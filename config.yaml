@@ -63,7 +63,7 @@ check_pool_reserves: true  # Verify pool has sufficient reserves
 min_pool_reserves_multiplier: 2.0  # Pool reserves must be 2x trade amount
 
 # === Strategy Thresholds ===
-min_momentum_pct: 0.02  # 2% minimum momentum for external momentum (weighted average of 5m, 1h, 24h)
+min_momentum_pct: 0.015  # 1.5% minimum momentum for external momentum (weighted average of 5m, 1h, 24h)
 multichain_momentum_multiplier: 0.8  # Multi-chain tokens require 80% of ETH momentum (was 75%)
 multichain_momentum_min: 0.020  # Minimum 2.0% momentum for multi-chain tokens (raised from 1.0% for quality)
 min_volume_24h_for_buy: 750000   # Quality-first: $750k volume minimum for reliability (raised from $500k to improve win rate and PnL)
