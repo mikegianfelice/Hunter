@@ -103,6 +103,10 @@ def calculate_wallet_value_over_time_from_helius_wrapper(days=5, initial_wallet_
                 if event_time >= start_date:
                     events_raw.append(e)
         
+        # Determine the actual starting wallet value at the beginning of the period
+        # This should be the wallet value at the start of the period, not the original $200
+        actual_starting_wallet = initial_wallet_usd
+        
         # If no data points in range, use the last point from before the range as starting point
         if not time_points and time_points_all:
             # Find the last point before start_date to use as initial value
@@ -117,7 +121,12 @@ def calculate_wallet_value_over_time_from_helius_wrapper(days=5, initial_wallet_
                 if tp < start_date:
                     time_points.insert(0, start_date)
                     wallet_values.insert(0, wallet_values_all[i])
+                    # Update to the actual wallet value at period start
+                    actual_starting_wallet = wallet_values_all[i]
                     break
+        elif time_points and wallet_values:
+            # Use the first wallet value in the period as the actual starting balance
+            actual_starting_wallet = wallet_values[0]
         
         # Convert events to format expected by plotting functions
         events = []
@@ -157,7 +166,7 @@ def calculate_wallet_value_over_time_from_helius_wrapper(days=5, initial_wallet_
             'detailed_wallet_values': wallet_values,
             'events': events,
             'raw_events': raw_events,  # Includes deposits/withdrawals for percentage calculation
-            'initial_wallet': result['initial_wallet'],
+            'initial_wallet': actual_starting_wallet,  # Use actual starting wallet at period start, not original $200
             'current_wallet': result['final_wallet'],
             'total_pnl': result['total_pnl'],
             'trading_pnl': result.get('trading_pnl', result['total_pnl']),
@@ -304,9 +313,19 @@ def plot_percentage_pnl(days=30, initial_wallet_usd=None, save_path=None, use_he
         return
     
     # Get trading PnL and deposits/withdrawals data
+    # For percentage calculation, we should only count deposits/withdrawals DURING the period
+    # Calculate from raw_events if available (they're filtered to the period)
+    if 'raw_events' in data and data['raw_events']:
+        deposits_in_period = sum(e.get('amount', 0.0) for e in data['raw_events'] if e.get('type') == 'deposit')
+        withdrawals_in_period = sum(e.get('amount', 0.0) for e in data['raw_events'] if e.get('type') == 'withdrawal')
+        total_deposits = deposits_in_period
+        total_withdrawals = withdrawals_in_period
+    else:
+        # Fallback to total deposits/withdrawals (may include pre-period)
+        total_deposits = data.get('total_deposits', 0.0)
+        total_withdrawals = data.get('total_withdrawals', 0.0)
+    
     trading_pnl = data.get('trading_pnl', data.get('total_pnl', 0.0))
-    total_deposits = data.get('total_deposits', 0.0)
-    total_withdrawals = data.get('total_withdrawals', 0.0)
     
     # Calculate adjusted capital base for final percentage
     adjusted_capital_base = initial + total_deposits - total_withdrawals
@@ -336,10 +355,11 @@ def plot_percentage_pnl(days=30, initial_wallet_usd=None, save_path=None, use_he
         cumulative_withdrawals_since_start = 0.0
         event_index = 0
         
-        # Get the wallet value at the start of the period (first data point)
-        # Use this as the starting capital base for percentage calculations
-        period_start_wallet_value = data['detailed_wallet_values'][0] if data['detailed_wallet_values'] else initial
-        period_start_capital_base = period_start_wallet_value
+        # Use the initial wallet as the starting capital base (not the wallet value at period start)
+        # The wallet value at period start may already include withdrawals from before the period,
+        # which would incorrectly reduce the capital base and make returns appear worse
+        # We'll add/subtract deposits/withdrawals that happen DURING the period
+        period_start_capital_base = initial
         
         for time_point, wallet_value in zip(data['detailed_time_points'], data['detailed_wallet_values']):
             # First point should always be 0%
