@@ -71,6 +71,13 @@ def scrape_twitter_alternative(symbol):
                 soup = BeautifulSoup(response.text, "html.parser")
                 tweets = soup.find_all("div", class_="timeline-item")
                 
+                # Also try alternative selectors in case HTML structure changed
+                if not tweets:
+                    tweets = soup.find_all("div", class_="tweet")
+                if not tweets:
+                    tweets = soup.find_all("article", {"data-testid": "tweet"})
+                
+                tweets_found = len(tweets)
                 for tweet in tweets:
                     content = tweet.text
                     tweet_score, passed = score_content(content)
@@ -80,8 +87,17 @@ def scrape_twitter_alternative(symbol):
                     else:
                         return {"score": 0, "mentions": mentions, "source": "twitter", "status": "blocked by FUD"}
                 
-                print(f"✅ Twitter sentiment from {base_url}")
-                return {"score": score, "mentions": mentions, "source": "twitter", "status": "ok"}
+                # Distinguish between successful connection and successful data collection
+                if mentions > 0:
+                    print(f"✅ Twitter sentiment from {base_url}: {mentions} mentions, score: {score}")
+                    return {"score": score, "mentions": mentions, "source": "twitter", "status": "ok"}
+                elif tweets_found > 0:
+                    print(f"⚠️ Twitter sentiment from {base_url}: found {tweets_found} tweets but none passed content scoring")
+                    return {"score": 0, "mentions": 0, "source": "twitter", "status": "no_data"}
+                else:
+                    print(f"⚠️ Twitter sentiment from {base_url}: connection successful but no tweets found in HTML")
+                    # Continue to next alternative instead of returning immediately
+                    continue
                 
         except Exception as e:
             print(f"⚠️ Twitter alternative {base_url} failed: {e}")
@@ -173,9 +189,12 @@ def get_sentiment_score(token):
         fallback_confidence = get_config('sentiment_analysis_settings.fallback_confidence_score', 0.3)
         low_data_threshold = get_config('sentiment_analysis_settings.low_data_confidence_threshold', 0.4)
         
-        # If both sources failed, use fallback
-        if twitter["status"] == "fallback" and reddit["status"] == "error":
-            print(f"🔄 Using fallback sentiment for {symbol}")
+        # If both sources failed or have no data, use fallback
+        twitter_no_data = twitter["status"] in ["no_data", "unavailable"]
+        reddit_no_data = reddit["status"] in ["error", "unavailable"]
+        
+        if twitter_no_data and reddit_no_data:
+            print(f"🔄 Using fallback sentiment for {symbol} (no data from any source)")
             fallback = get_fallback_sentiment(symbol)
             return {
                 "symbol": symbol,
@@ -194,7 +213,9 @@ def get_sentiment_score(token):
         
         # If we have very low mentions and scores, use fallback
         if total_mentions < 2 and raw_score < 10:
-            print(f"🔄 Low sentiment data for {symbol}, using fallback")
+            twitter_status = twitter["status"]
+            reddit_status = reddit["status"]
+            print(f"🔄 Low sentiment data for {symbol}, using fallback (mentions: {total_mentions}, score: {raw_score}, twitter: {twitter_status}, reddit: {reddit_status})")
             fallback = get_fallback_sentiment(symbol)
             return {
                 "symbol": symbol,
@@ -216,11 +237,14 @@ def get_sentiment_score(token):
         
         # Calculate confidence based on data quality
         # High confidence: both sources OK and sufficient mentions
-        if twitter["status"] == "ok" and reddit["status"] == "ok" and total_mentions >= min_mentions:
+        twitter_ok = twitter["status"] == "ok"
+        reddit_ok = reddit["status"] == "ok"
+        
+        if twitter_ok and reddit_ok and total_mentions >= min_mentions:
             confidence = 0.9
             is_approximation = False
         # Medium confidence: at least one source OK and some mentions
-        elif (twitter["status"] == "ok" or reddit["status"] == "ok") and total_mentions >= min_mentions // 2:
+        elif (twitter_ok or reddit_ok) and total_mentions >= min_mentions // 2:
             confidence = 0.6
             is_approximation = False
         # Low confidence: limited data
@@ -236,7 +260,7 @@ def get_sentiment_score(token):
             "mentions": total_mentions,
             "score": normalized_score,
             "source": f"{twitter['source']}+{reddit['source']}",
-            "status": "ok" if twitter["status"] == "ok" and reddit["status"] == "ok" else "partial",
+            "status": "ok" if twitter_ok and reddit_ok else "partial",
             "confidence_score": confidence,
             "is_approximation": is_approximation,
             "data_quality": {
