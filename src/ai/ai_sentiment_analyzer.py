@@ -201,6 +201,13 @@ class AISentimentAnalyzer:
     def _get_real_social_sentiment(self, symbol: str) -> Dict:
         """Get real social sentiment using actual scrapers and APIs."""
         try:
+            # Check if sentiment analysis is enabled in config
+            from src.config.config_loader import get_config
+            enable_sentiment = get_config('ai.enable_ai_sentiment_analysis', False)
+            if not enable_sentiment:
+                # Return neutral sentiment when disabled
+                return {'score': 0.5, 'confidence': 0.3, 'mentions': 0}
+            
             # Try to use sentiment scraper if available
             from src.utils.sentiment_scraper import get_sentiment_score
             result = get_sentiment_score(symbol)

@@ -232,6 +232,13 @@ class AIPricePredictor:
     def _get_sentiment_score(self, token: Dict) -> float:
         """Get sentiment score from AI sentiment analyzer"""
         try:
+            # Check if sentiment analysis is enabled
+            from src.config.config_loader import get_config
+            enable_sentiment = get_config('ai.enable_ai_sentiment_analysis', False)
+            if not enable_sentiment:
+                # Return neutral score when disabled
+                return 0.5
+            
             # Import here to avoid circular imports
             from ai_sentiment_analyzer import ai_sentiment_analyzer
             

@@ -80,9 +80,19 @@ class AIModuleConnector:
         self.modules = {}
         failed_modules = []
         
+        # Check config to see if sentiment analysis is enabled
+        from src.config.config_loader import get_config
+        enable_sentiment = get_config('ai.enable_ai_sentiment_analysis', False)
+        
         # Define module specifications
-        module_specs = [
-            ("sentiment_analyzer", "src.ai.ai_sentiment_analyzer", "AISentimentAnalyzer"),
+        module_specs = []
+        
+        # Only load sentiment analyzer if enabled
+        if enable_sentiment:
+            module_specs.append(("sentiment_analyzer", "src.ai.ai_sentiment_analyzer", "AISentimentAnalyzer"))
+        
+        # Load all other modules
+        module_specs.extend([
             ("price_predictor", "src.ai.ai_price_predictor", "AIPricePredictor"),
             ("risk_assessor", "src.ai.ai_risk_assessor", "AIRiskAssessor"),
             ("execution_optimizer", "src.ai.ai_execution_optimizer", "AIExecutionOptimizer"),

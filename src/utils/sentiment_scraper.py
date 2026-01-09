@@ -167,6 +167,29 @@ def get_fallback_sentiment(symbol):
     }
 
 def get_sentiment_score(token):
+    # Check if sentiment analysis is enabled in config
+    from src.config.config_loader import get_config
+    enable_sentiment = get_config('ai.enable_ai_sentiment_analysis', False)
+    if not enable_sentiment:
+        # Return neutral fallback when disabled
+        symbol = token.get("symbol", "UNKNOWN") if isinstance(token, dict) else str(token)
+        fallback = get_fallback_sentiment(symbol)
+        fallback_confidence = get_config('sentiment_analysis_settings.fallback_confidence_score', 0.3)
+        return {
+            "symbol": symbol,
+            "mentions": fallback["mentions"],
+            "score": fallback["score"],
+            "source": "disabled",
+            "status": "disabled",
+            "confidence_score": fallback_confidence,
+            "is_approximation": True,
+            "data_quality": {
+                "confidence_score": fallback_confidence,
+                "is_approximation": True,
+                "warnings": ["Sentiment analysis is disabled in config"]
+            }
+        }
+    
     # Extract symbol from token dict or use token directly if it's a string
     if isinstance(token, dict):
         symbol = token.get("symbol", "UNKNOWN")
