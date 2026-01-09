@@ -250,18 +250,26 @@ def calculate_pnl_from_helius(start_date_str: str, end_date_str: str, initial_wa
                     'tx': tx.get('signature')
                 })
         
-        # If sending USDC but NOT trading tokens, it's a withdrawal
-        if usdc_sent_total > BALANCE_EPSILON and not has_token_trade:
+        # If sending USDC but NOT trading tokens, it's potentially a withdrawal
+        # NOTE: Automatic withdrawal detection is DISABLED to prevent false positives
+        # Small USDC transfers (<$10) are likely fees or other transfers, not withdrawals
+        # If you need to record actual withdrawals, add them manually to the cache
+        MIN_WITHDRAWAL_THRESHOLD = 10.0  # Minimum $10 to be considered a withdrawal
+        if usdc_sent_total > MIN_WITHDRAWAL_THRESHOLD and not has_token_trade:
             sol_fee = float(tx.get('fee', 0)) / 1_000_000_000
             sol_fee_usd = sol_fee * sol_price
             withdrawal_amount = usdc_sent_total + sol_fee_usd  # Include fees in withdrawal
-            if withdrawal_amount > BALANCE_EPSILON:
-                withdrawals.append({
-                    'time': tx_time,
-                    'amount': withdrawal_amount,
-                    'type': 'withdrawal',
-                    'tx': tx.get('signature')
-                })
+            if withdrawal_amount > MIN_WITHDRAWAL_THRESHOLD:
+                # Log potential withdrawal for manual review (but don't auto-add)
+                print(f"⚠️  Potential withdrawal detected: ${withdrawal_amount:.2f} at {tx_time} (tx: {tx.get('signature', 'N/A')[:20]}...)")
+                print(f"   Automatic withdrawal detection is disabled. If this is a real withdrawal, add it manually to the cache.")
+                # Don't automatically add - require manual confirmation to prevent false positives
+                # withdrawals.append({
+                #     'time': tx_time,
+                #     'amount': withdrawal_amount,
+                #     'type': 'withdrawal',
+                #     'tx': tx.get('signature')
+                # })
     
     # Calculate total PnL (only trading performance, not deposits/withdrawals)
     trading_pnl = sum(trade['pnl_usd'] for trade in completed_trades)
@@ -603,18 +611,26 @@ def calculate_wallet_value_over_time_from_helius(
                     'tx': tx.get('signature')
                 })
         
-        # If sending USDC but NOT trading tokens, it's a withdrawal
-        if usdc_sent_total > BALANCE_EPSILON and not has_token_trade:
+        # If sending USDC but NOT trading tokens, it's potentially a withdrawal
+        # NOTE: Automatic withdrawal detection is DISABLED to prevent false positives
+        # Small USDC transfers (<$10) are likely fees or other transfers, not withdrawals
+        # If you need to record actual withdrawals, add them manually to the cache
+        MIN_WITHDRAWAL_THRESHOLD = 10.0  # Minimum $10 to be considered a withdrawal
+        if usdc_sent_total > MIN_WITHDRAWAL_THRESHOLD and not has_token_trade:
             sol_fee = float(tx.get('fee', 0)) / 1_000_000_000
             sol_fee_usd = sol_fee * sol_price
             withdrawal_amount = usdc_sent_total + sol_fee_usd  # Include fees in withdrawal
-            if withdrawal_amount > BALANCE_EPSILON:
-                withdrawals.append({
-                    'time': tx_time,
-                    'amount': withdrawal_amount,
-                    'type': 'withdrawal',
-                    'tx': tx.get('signature')
-                })
+            if withdrawal_amount > MIN_WITHDRAWAL_THRESHOLD:
+                # Log potential withdrawal for manual review (but don't auto-add)
+                print(f"⚠️  Potential withdrawal detected: ${withdrawal_amount:.2f} at {tx_time} (tx: {tx.get('signature', 'N/A')[:20]}...)")
+                print(f"   Automatic withdrawal detection is disabled. If this is a real withdrawal, add it manually to the cache.")
+                # Don't automatically add - require manual confirmation to prevent false positives
+                # withdrawals.append({
+                #     'time': tx_time,
+                #     'amount': withdrawal_amount,
+                #     'type': 'withdrawal',
+                #     'tx': tx.get('signature')
+                # })
     
     # Combine cached and new data
     if use_cache:
