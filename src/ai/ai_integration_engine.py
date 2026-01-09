@@ -116,7 +116,7 @@ class AIModuleConnector:
             ("trade_execution_monitor", "src.ai.ai_trade_execution_monitor", "AITradeExecutionMonitor"),
             ("market_condition_guardian", "src.ai.ai_market_condition_guardian", "AIMarketConditionGuardian"),
             ("market_regime_detector", "src.ai.ai_market_regime_detector", "AIMarketRegimeDetector"),
-        ]
+        ])
         
         # Initialize each module individually
         for module_name, module_path, class_name in module_specs:
