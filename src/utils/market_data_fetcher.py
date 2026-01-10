@@ -390,7 +390,9 @@ class MarketDataFetcher:
             if btc_data and 'prices' in btc_data:
                 btc_prices = {int(p[0] / 1000): float(p[1]) for p in btc_data['prices']}
             else:
-                interval = self._select_coincap_interval(hours)
+                # Force hourly interval for correlation to get more data points
+                # Even for 14 days, use hourly data to get 336 data points instead of daily (14 points)
+                interval = "h1" if hours <= 720 else "h6"  # Max 30 days with hourly, beyond use 6h
                 history = self._get_history_from_coincap("bitcoin", btc_from_timestamp, btc_now, interval)
                 if history:
                     btc_prices = {
@@ -402,7 +404,8 @@ class MarketDataFetcher:
             if eth_data and 'prices' in eth_data:
                 eth_prices = {int(p[0] / 1000): float(p[1]) for p in eth_data['prices']}
             else:
-                interval = self._select_coincap_interval(hours)
+                # Force hourly interval for correlation to get more data points
+                interval = "h1" if hours <= 720 else "h6"  # Max 30 days with hourly, beyond use 6h
                 history = self._get_history_from_coincap("ethereum", eth_from_timestamp, eth_now, interval)
                 if history:
                     eth_prices = {
@@ -433,8 +436,25 @@ class MarketDataFetcher:
             # Require minimum data points for statistical significance
             if len(common_timestamps) < min_data_points:
                 logger.warning(f"Insufficient data points for correlation ({len(common_timestamps)} < {min_data_points})")
-                # Return neutral with reduced confidence
-                return 0.5
+                
+                # Retry with shorter time windows if we have some data but not enough
+                if hours > 168 and len(common_timestamps) < 30:
+                    logger.info(f"Retrying correlation with shorter time window ({hours}h -> 168h) to get more data points")
+                    return self.get_market_correlation(hours=168)
+                elif hours > 72 and len(common_timestamps) < 50:
+                    logger.info(f"Retrying correlation with shorter time window ({hours}h -> 72h) to get more data points")
+                    return self.get_market_correlation(hours=72)
+                elif hours > 24:
+                    logger.info(f"Retrying correlation with shorter time window ({hours}h -> 24h) to get more data points")
+                    return self.get_market_correlation(hours=24)
+                
+                # If we still don't have enough but have at least 10 points, calculate with reduced confidence
+                if len(common_timestamps) >= 10:
+                    logger.warning(f"Calculating correlation with {len(common_timestamps)} data points (below ideal threshold of {min_data_points}, confidence will be reduced)")
+                    # Continue to calculate correlation but with lower confidence flag
+                else:
+                    logger.warning(f"Too few data points ({len(common_timestamps)}) for meaningful correlation, returning neutral")
+                    return 0.5
             
             # Calculate returns for both assets
             btc_returns = []
@@ -457,8 +477,13 @@ class MarketDataFetcher:
                     eth_returns.append(eth_return)
             
             if len(btc_returns) < min_data_points:
-                logger.warning(f"Not enough return data for reliable correlation ({len(btc_returns)} < {min_data_points})")
-                return 0.5
+                # Allow calculation with fewer points but log reduced confidence
+                if len(btc_returns) < 10:
+                    logger.warning(f"Not enough return data for meaningful correlation ({len(btc_returns)} < 10), returning neutral")
+                    return 0.5
+                else:
+                    logger.warning(f"Calculating correlation with {len(btc_returns)} return data points (below ideal threshold of {min_data_points}, confidence will be reduced)")
+                    # Continue to calculate but with reduced confidence
             
             # Calculate Pearson correlation coefficient
             mean_btc = statistics.mean(btc_returns)
@@ -483,9 +508,12 @@ class MarketDataFetcher:
             
             # Calculate confidence based on data points
             data_quality = min(1.0, len(btc_returns) / min_data_points)
-            confidence_note = f" (confidence: {data_quality:.2f}, {len(btc_returns)} data points)" if data_quality < 1.0 else ""
+            confidence_note = f" (confidence: {data_quality:.2f}, {len(btc_returns)} data points)" if data_quality < 1.0 else f" ({len(btc_returns)} data points)"
             
-            logger.info(f"✅ Market correlation (BTC/ETH): {correlation:.3f} (normalized: {normalized:.3f}){confidence_note}")
+            if data_quality < 1.0:
+                logger.warning(f"⚠️ Market correlation (BTC/ETH): {correlation:.3f} (normalized: {normalized:.3f}){confidence_note} - below ideal data threshold")
+            else:
+                logger.info(f"✅ Market correlation (BTC/ETH): {correlation:.3f} (normalized: {normalized:.3f}){confidence_note}")
             return max(0.0, min(1.0, normalized))
                 
         except Exception as e:
