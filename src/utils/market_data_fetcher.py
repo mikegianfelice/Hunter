@@ -80,6 +80,12 @@ class MarketDataFetcher:
         self.helius_cache_duration = helius_cache_hours * 3600  # Convert hours to seconds (default: 1 hour)
         self.coingecko_cache_duration = 3600  # 1 hour (conservative for CoinGecko)
         
+        # Load routing thresholds for 15m candle policy
+        from src.config.config_loader import get_config_int, get_config_float
+        self.dex_max_swaps_guard = get_config_int('helius_15m_candle_policy.dex_api_max_swaps_guard', 3000)
+        self.dex_max_response_mb = get_config_float('helius_15m_candle_policy.dex_api_max_response_size_mb', 15.0)
+        self.dex_processing_timeout = get_config_float('helius_15m_candle_policy.dex_api_processing_timeout_seconds', 8.0)
+        
         # API call tracking
         self.api_tracker = get_tracker()
         
@@ -1293,37 +1299,51 @@ class MarketDataFetcher:
             return self._get_solana_candles_from_memory(token_address, hours)
         
         try:
-            # Track API call BEFORE making request (counts all calls including failures)
+            import time as time_module
+            fetch_start_time = time_module.perf_counter()
+            method_chosen = "dex_api"
+            
+            # Track API call BEFORE making request
             track_helius_call()
             
             # Use Helius DEX API to get swap transactions
-            # NOTE: Helius API requires 'mint' parameter, not 'before'/'after'/'limit' query params
             url = f"{self.helius_base_url}/addresses/{token_address}/transactions"
-            
             params = {
                 "api-key": self.helius_api_key,
-                "mint": token_address,  # Required: specify mint address
-                "type": "SWAP",  # Only get swap transactions
+                "mint": token_address,
+                "type": "SWAP",
             }
             
+            # Make request and capture response size
+            api_call_start = time_module.perf_counter()
             response = requests.get(url, params=params, timeout=15)
+            api_call_time = time_module.perf_counter() - api_call_start
+            
+            # Capture response size (before JSON parse)
+            response_bytes = len(response.content) if hasattr(response, 'content') else 0
+            response_size_mb = response_bytes / (1024 * 1024)
             
             if response.status_code != 200:
                 error_msg = response.text if hasattr(response, 'text') else str(response.content)
                 logger.error(f"Helius API error {response.status_code} for {token_address[:8]}...")
                 logger.debug(f"Request URL: {url}")
                 logger.debug(f"Request params: {params}")
-                logger.debug(f"Response: {error_msg[:500]}")  # Limit error message length
-                return self._get_solana_candles_from_memory(token_address, hours)
+                logger.debug(f"Response: {error_msg[:500]}")
+                method_chosen = "rpc_fallback"
+                # Switch to RPC method
+                return self._get_solana_candles_from_rpc(token_address, hours, cache_key, force_fetch, target_timestamp)
             
+            # Parse JSON and capture swap count
+            json_parse_start = time_module.perf_counter()
             try:
                 data = response.json()
             except Exception as e:
                 logger.error(f"Failed to parse Helius API response as JSON for {token_address[:8]}...: {e}")
                 logger.debug(f"Response content: {response.text[:500]}")
-                return self._get_solana_candles_from_memory(token_address, hours)
+                method_chosen = "rpc_fallback"
+                return self._get_solana_candles_from_rpc(token_address, hours, cache_key, force_fetch, target_timestamp)
+            json_parse_time = time_module.perf_counter() - json_parse_start
             
-            # Helius API returns a list directly, not a dict with 'transactions' key
             if isinstance(data, list):
                 swaps = data
             elif isinstance(data, dict):
@@ -1331,32 +1351,127 @@ class MarketDataFetcher:
             else:
                 swaps = []
             
-            # Filter swaps by time range if target_timestamp is provided
+            swaps_count_returned = len(swaps)
+            
+            # Check routing thresholds BEFORE client-side filtering
+            if swaps_count_returned > self.dex_max_swaps_guard or response_size_mb > self.dex_max_response_mb:
+                logger.warning(f"CANDLE_FETCH_METRICS: DEX payload too large: swaps={swaps_count_returned}, size={response_size_mb:.2f}MB, switching to RPC")
+                method_chosen = "rpc_fallback"
+                return self._get_solana_candles_from_rpc(token_address, hours, cache_key, force_fetch, target_timestamp)
+            
+            # Client-side filtering
+            filter_start = time_module.perf_counter()
             if target_timestamp and swaps:
                 end_time = int(target_timestamp)
-                start_time = end_time - (hours * 3600)
+                start_time_window = end_time - (hours * 3600)
                 filtered_swaps = []
                 for swap in swaps:
                     swap_time = swap.get('timestamp') or swap.get('blockTime')
-                    if swap_time and start_time <= swap_time <= end_time:
+                    if swap_time and start_time_window <= swap_time <= end_time:
                         filtered_swaps.append(swap)
                 swaps = filtered_swaps
+            else:
+                # No filtering needed if no target_timestamp
+                pass
+            filter_time = time_module.perf_counter() - filter_start
+            
+            swaps_count_filtered = len(swaps)
+            
+            # Check processing time threshold
+            processing_time_so_far = time_module.perf_counter() - fetch_start_time
+            if processing_time_so_far > self.dex_processing_timeout:
+                logger.warning(f"CANDLE_FETCH_METRICS: DEX processing too slow: {processing_time_so_far:.2f}s > {self.dex_processing_timeout}s, switching to RPC")
+                method_chosen = "rpc_fallback"
+                return self._get_solana_candles_from_rpc(token_address, hours, cache_key, force_fetch, target_timestamp)
             
             if not swaps or len(swaps) < 2:
                 logger.debug(f"Insufficient swap data from Helius for {token_address[:8]}... (got {len(swaps)} swaps), using price_memory")
-                logger.debug(f"Response type: {type(data)}, keys: {list(data.keys()) if isinstance(data, dict) else 'list'}")
                 return self._get_solana_candles_from_memory(token_address, hours)
             
-            # Process swaps into hourly candles (pass target_timestamp and token_address for proper filtering)
-            candles = self._process_helius_swaps_to_candles(swaps, hours, target_timestamp, token_address)
+            # Process swaps into 15m candles (now returns tuple)
+            candle_build_start = time_module.perf_counter()
+            candles, candle_metadata = self._process_helius_swaps_to_candles(swaps, hours, target_timestamp, token_address)
+            candle_build_time = time_module.perf_counter() - candle_build_start
             
-            logger.debug(f"Processed {len(swaps)} swaps into {len(candles) if candles else 0} candles for {token_address[:8]}...")
+            total_processing_time = time_module.perf_counter() - fetch_start_time
             
-            # Accept candles if we have at least 2 (for basic indicators) or 10+ (for full accuracy)
-            # This allows newer tokens with limited history to still get technical indicators
-            min_candles_required = 2  # Lowered from 10 to allow newer tokens
-            if candles and len(candles) >= min_candles_required:
-                # Cache the result
+            # Log instrumentation - INFO for switches/slow/large, DEBUG for normal
+            if method_chosen == "rpc_fallback" or processing_time_so_far > 5.0 or swaps_count_returned > 2000:
+                logger.info(
+                    f"CANDLE_FETCH_METRICS: token={token_address[:8]}, method={method_chosen}, "
+                    f"swaps_returned={swaps_count_returned}, swaps_filtered={swaps_count_filtered}, "
+                    f"response_mb={response_size_mb:.2f}, api_time={api_call_time:.2f}s, "
+                    f"json_parse_time={json_parse_time:.2f}s, filter_time={filter_time:.2f}s, "
+                    f"total_time={total_processing_time:.2f}s"
+                )
+            else:
+                logger.debug(
+                    f"CANDLE_FETCH_METRICS: token={token_address[:8]}, method={method_chosen}, "
+                    f"swaps_returned={swaps_count_returned}, swaps_filtered={swaps_count_filtered}, "
+                    f"response_mb={response_size_mb:.2f}, api_time={api_call_time:.2f}s, "
+                    f"total_time={total_processing_time:.2f}s"
+                )
+            
+            # CANDLE_BUILD_METRICS - always DEBUG
+            logger.debug(
+                f"CANDLE_BUILD_METRICS: swaps={swaps_count_filtered}, candles={len(candles) if candles else 0}, "
+                f"build_time={candle_build_time:.2f}s"
+            )
+            
+            # CANDLE_SANITY - aggregate sanity metrics for verification
+            if candles and len(candles) > 0:
+                candle_count = len(candles)
+                expected_candles = hours * 4
+                missing_candles = max(0, expected_candles - candle_count)
+                
+                # First and last candle times (ISO format)
+                from datetime import timezone as tz
+                first_candle_time = datetime.fromtimestamp(candles[0]['time'], tz=tz.utc).isoformat()
+                last_candle_time = datetime.fromtimestamp(candles[-1]['time'], tz=tz.utc).isoformat()
+                time_span_hours = (candles[-1]['time'] - candles[0]['time']) / 3600.0
+                
+                # Price range across all candles
+                min_price = min(c['low'] for c in candles)
+                max_price = max(c['high'] for c in candles)
+                
+                # Count candles with zero volume
+                empty_volume_candle_count = sum(1 for c in candles if c.get('volume', 0) == 0)
+                
+                # Count candles with invalid OHLC (high < low or close outside [low, high])
+                invalid_ohlc_count = 0
+                for c in candles:
+                    high = c.get('high', 0)
+                    low = c.get('low', 0)
+                    close = c.get('close', 0)
+                    if high < low or close < low or close > high:
+                        invalid_ohlc_count += 1
+                
+                logger.debug(
+                    f"CANDLE_SANITY: token={token_address[:8]}, candle_count={candle_count}, "
+                    f"expected_candles={expected_candles}, missing_candles={missing_candles}, "
+                    f"first_candle_time={first_candle_time}, last_candle_time={last_candle_time}, "
+                    f"time_span_hours={time_span_hours:.2f}, min_price={min_price:.8f}, max_price={max_price:.8f}, "
+                    f"empty_volume_candle_count={empty_volume_candle_count}, invalid_ohlc_count={invalid_ohlc_count}"
+                )
+            
+            # Validate candle quality
+            if not self._validate_candle_quality(candles, candle_metadata, hours):
+                logger.warning(
+                    f"CANDLE_QUALITY: Failed quality check for {token_address[:8]}: "
+                    f"swaps={candle_metadata['swaps_processed']}, candles={candle_metadata['candles_created']}, "
+                    f"non_empty={candle_metadata['non_empty_candles']}, "
+                    f"avg_swaps_per_candle={candle_metadata['swaps_per_candle_avg']:.1f}"
+                )
+                return self._get_solana_candles_from_memory(token_address, hours)
+            
+            logger.debug(
+                f"CANDLE_QUALITY: PASSED - swaps={candle_metadata['swaps_processed']}, "
+                f"candles={candle_metadata['candles_created']}, non_empty={candle_metadata['non_empty_candles']}, "
+                f"avg_swaps_per_candle={candle_metadata['swaps_per_candle_avg']:.1f}"
+            )
+            
+            # Accept candles if quality check passed (minimum 16 candles = 4h)
+            if candles and len(candles) >= 16:
                 self.candlestick_cache_helius[cache_key] = {
                     'data': candles,
                     'timestamp': current_time,
@@ -1364,13 +1479,11 @@ class MarketDataFetcher:
                 }
                 self._save_candlestick_cache()
                 
-                # Note: API call already tracked before request above
-                
-                logger.info(f"✅ Built {len(candles)} candles from Helius swaps for {token_address[:8]}...")
+                logger.info(f"✅ Built {len(candles)} 15m candles from Helius swaps for {token_address[:8]}...")
                 return candles
             
             # Fallback to price_memory if Helius data insufficient
-            logger.debug(f"Helius candles insufficient ({len(candles) if candles else 0} < 10), falling back to price_memory for {token_address[:8]}...")
+            logger.debug(f"Helius candles insufficient ({len(candles) if candles else 0} < 16), falling back to price_memory for {token_address[:8]}...")
             return self._get_solana_candles_from_memory(token_address, hours)
             
         except Exception as e:
@@ -1563,62 +1676,74 @@ class MarketDataFetcher:
         
         return sorted(candles.values(), key=lambda x: x['time'])
     
-    def _process_helius_swaps_to_candles(self, swaps: List[Dict], hours: int, target_timestamp: Optional[float] = None, token_address: Optional[str] = None) -> List[Dict]:
-        """Convert Helius swap transactions to hourly candles"""
+    def _process_helius_swaps_to_candles(self, swaps: List[Dict], hours: int, target_timestamp: Optional[float] = None, token_address: Optional[str] = None) -> Tuple[List[Dict], Dict]:
+        """Convert Helius swap transactions to 15-minute candles (NOT hourly!)
+        Returns: (candles, metadata) where metadata includes quality metrics
+        """
+        metadata = {
+            'swaps_processed': 0,
+            'swaps_skipped_timestamp': 0,
+            'swaps_skipped_price': 0,
+            'candles_created': 0,
+            'non_empty_candles': 0,
+            'total_volume': 0.0,
+            'swaps_per_candle_avg': 0.0
+        }
+        
         if not swaps:
-            return []
+            return [], metadata
         
-        # Group swaps by hour
+        # Group swaps by 15-minute intervals (900 seconds), not hourly!
         candles = {}
-        # Use target_timestamp if provided, otherwise use current time
         query_time = target_timestamp if target_timestamp else time.time()
-        hour_start = int(query_time - (hours * 3600))
-        
-        processed_count = 0
-        skipped_timestamp = 0
-        skipped_price = 0
+        window_start = int(query_time - (hours * 3600))
         
         for swap in swaps:
-            # Extract timestamp and price from Helius swap data
             timestamp = swap.get('timestamp', swap.get('blockTime', 0))
-            if timestamp < hour_start:
-                skipped_timestamp += 1
+            if timestamp < window_start:
+                metadata['swaps_skipped_timestamp'] += 1
                 continue
             
-            # Extract price from swap
             price = self._extract_price_from_helius_swap(swap, token_address)
             if not price or price <= 0:
-                skipped_price += 1
+                metadata['swaps_skipped_price'] += 1
                 continue
             
-            hour = int((timestamp // 3600) * 3600)
+            # 15-minute interval: int((timestamp // 900) * 900)
+            interval_15m = int((timestamp // 900) * 900)
             
-            if hour not in candles:
-                candles[hour] = {
+            # Get or create candle
+            if interval_15m not in candles:
+                candles[interval_15m] = {
                     'open': price,
                     'high': price,
                     'low': price,
                     'close': price,
                     'volume': 0,
-                    'time': hour
+                    'time': interval_15m
                 }
-            else:
-                candle = candles[hour]
-                candle['high'] = max(candle['high'], price)
-                candle['low'] = min(candle['low'], price)
-                candle['close'] = price  # Latest swap price
             
-            # Extract volume from swap
+            # Always update OHLC (works for both new and existing candles)
+            candle = candles[interval_15m]
+            candle['high'] = max(candle['high'], price)
+            candle['low'] = min(candle['low'], price)
+            candle['close'] = price
+            
+            # Extract volume and add to candle
             volume_usd = self._extract_volume_from_helius_swap(swap)
-            candles[hour]['volume'] += volume_usd
-            processed_count += 1
+            candle['volume'] += volume_usd
+            metadata['swaps_processed'] += 1
         
-        if processed_count == 0:
-            logger.debug(f"No swaps processed: {skipped_timestamp} skipped (timestamp), {skipped_price} skipped (price extraction)")
-        
+        # Calculate metadata
         result = sorted(candles.values(), key=lambda x: x['time'])
-        logger.debug(f"Processed {processed_count}/{len(swaps)} swaps into {len(result)} candles")
-        return result
+        metadata['candles_created'] = len(result)
+        metadata['non_empty_candles'] = sum(1 for c in result if c['volume'] > 0)
+        metadata['total_volume'] = sum(c['volume'] for c in result)
+        if result:
+            metadata['swaps_per_candle_avg'] = metadata['swaps_processed'] / len(result)
+        
+        logger.debug(f"Processed {metadata['swaps_processed']}/{len(swaps)} swaps into {len(result)} 15m candles for {token_address[:8] if token_address else 'unknown'}...")
+        return result, metadata
     
     def _extract_price_from_helius_swap(self, swap: Dict, token_address: Optional[str] = None) -> Optional[float]:
         """Extract price from Helius swap transaction"""
@@ -1728,6 +1853,60 @@ class MarketDataFetcher:
             
         except Exception:
             return 0.0
+    
+    def _validate_candle_quality(self, candles: List[Dict], metadata: Dict, hours: int) -> bool:
+        """
+        Validate candle quality for 15m candles.
+        Returns True if candles meet quality thresholds.
+        """
+        from src.config.config_loader import get_config_int, get_config_float
+        
+        if not candles:
+            return False
+        
+        # Load thresholds from config
+        config_min_candles = get_config_int('helius_15m_candle_policy.min_candles', 16)  # Default 16
+        # Scale min_candles with requested hours: max(config_min, hours*4, 16)
+        # With config_min=16: 4h=max(16,16,16)=16, 6h=max(16,24,16)=24, 2h=max(16,8,16)=16
+        min_candles = max(config_min_candles, hours * 4, 16)
+        
+        min_swaps_in_window = get_config_int('helius_15m_candle_policy.min_swaps_in_window', 40)
+        # Default to 50% coverage (hours*4*0.5) if config not set, otherwise use config value
+        default_min_non_empty = int(hours * 4 * 0.5)
+        min_non_empty_candles = get_config_int('helius_15m_candle_policy.min_non_empty_candles', default_min_non_empty)
+        min_time_coverage_hours_config = get_config_float('helius_15m_candle_policy.min_time_coverage_hours', 4.0)
+        # Ensure min_time_coverage doesn't exceed requested hours
+        min_time_coverage_hours = min(min_time_coverage_hours_config, hours)
+        min_swaps_per_candle = get_config_float('helius_15m_candle_policy.min_swaps_per_candle_avg', 1.5)
+        
+        # Check 1: Minimum candles (scales with hours)
+        if len(candles) < min_candles:
+            logger.debug(f"CANDLE_QUALITY: Insufficient candles: {len(candles)} < {min_candles} (requested {hours}h, config floor={config_min_candles})")
+            return False
+        
+        # Check 2: Minimum swaps in window
+        if metadata['swaps_processed'] < min_swaps_in_window:
+            logger.debug(f"CANDLE_QUALITY: Insufficient swaps: {metadata['swaps_processed']} < {min_swaps_in_window}")
+            return False
+        
+        # Check 3: Minimum non-empty candles (coverage)
+        if metadata['non_empty_candles'] < min_non_empty_candles:
+            logger.debug(f"CANDLE_QUALITY: Insufficient non-empty candles: {metadata['non_empty_candles']} < {min_non_empty_candles}")
+            return False
+        
+        # Check 4: Time coverage
+        time_span = candles[-1]['time'] - candles[0]['time']
+        min_time_coverage_seconds = min_time_coverage_hours * 3600
+        if time_span < min_time_coverage_seconds:
+            logger.debug(f"CANDLE_QUALITY: Insufficient time coverage: {time_span/3600:.1f}h < {min_time_coverage_hours}h")
+            return False
+        
+        # Check 5: Average swaps per candle (density)
+        if metadata['swaps_per_candle_avg'] < min_swaps_per_candle:
+            logger.debug(f"CANDLE_QUALITY: Low swap density: {metadata['swaps_per_candle_avg']:.1f} < {min_swaps_per_candle}")
+            return False
+        
+        return True
     
     def _get_solana_candles_from_memory(self, token_address: str, hours: int) -> Optional[List[Dict]]:
         """Build candles from price_memory (NO API CALLS)"""

@@ -97,6 +97,49 @@ class EnhancedAsyncTradingEngine:
         # Cached AI engine instance for better performance
         self.ai_engine = None
         self._ai_engine_lock = asyncio.Lock()
+    
+    def _safe_float(self, value, default=0.0) -> float:
+        """Safely convert value to float, handling None, strings, and invalid types"""
+        if value is None:
+            return default
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            try:
+                return float(value)
+            except (ValueError, TypeError):
+                return default
+        return default
+    
+    def _get_token_sort_key(self, token: Dict) -> Tuple[float, float]:
+        """
+        Extract sort key (liquidity + volume) from token dict.
+        Supports both normalized (flat) and nested (DexScreener) formats.
+        Safe against None/strings by using safe-float conversion.
+        Returns: (combined_score, volume) for sorting
+        """
+        # Try normalized format first (most common after early filtering)
+        volume = self._safe_float(token.get("volume24h"))
+        liquidity = self._safe_float(token.get("liquidity"))
+        
+        # Fallback to nested format if normalized fields are missing/zero
+        if volume == 0 and liquidity == 0:
+            # Try nested DexScreener format
+            volume_data = token.get("volume")
+            if isinstance(volume_data, dict):
+                volume = self._safe_float(volume_data.get("h24"))
+            else:
+                volume = self._safe_float(volume_data)
+            
+            liquidity_data = token.get("liquidity")
+            if isinstance(liquidity_data, dict):
+                liquidity = self._safe_float(liquidity_data.get("usd"))
+            else:
+                liquidity = self._safe_float(liquidity_data)
+        
+        # Combined score: liquidity + volume (both in USD)
+        combined_score = liquidity + volume
+        return (combined_score, volume)
         
     async def __aenter__(self):
         """Async context manager entry"""
@@ -2036,7 +2079,20 @@ class EnhancedAsyncTradingEngine:
             log_info("trading.no_filtered_tokens", "😴 No tokens passed early filters this cycle")
             return {"success": True, "tokens_processed": 0, "tokens_filtered_early": len(all_tokens)}
         
-        # Process tokens in batches (only tokens that passed early filters)
+        # NEW: Apply hard limiter for candle fetching
+        max_tokens_for_candles = get_config_int('helius_15m_candle_policy.max_tokens_per_cycle_for_candles', 15)
+        
+        if len(filtered_tokens) > max_tokens_for_candles:
+            # Sort by quality score (liquidity + volume) using helper
+            filtered_tokens.sort(
+                key=self._get_token_sort_key,  # Use helper function
+                reverse=True
+            )
+            filtered_tokens = filtered_tokens[:max_tokens_for_candles]
+            log_info("trading.candle_limiter",
+                    f"📊 Limited tokens for candle fetching: {len(filtered_tokens)} tokens (max={max_tokens_for_candles})")
+        
+        # Process tokens in batches (only tokens that passed early filters AND limiter)
         approved_tokens = []
         batch_results = []
         
