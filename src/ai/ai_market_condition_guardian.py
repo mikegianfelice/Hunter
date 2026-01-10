@@ -341,10 +341,10 @@ class AIMarketConditionGuardian:
     def _analyze_market_correlation(self, market_data: Dict, historical_data: Dict) -> Dict:
         """Analyze market correlation breakdown"""
         try:
-            # Estimate correlation breakdown using BTC/ETH trend divergence
+            # Estimate correlation breakdown using BTC/SOL trend divergence
             btc_trend = market_data_fetcher.get_btc_trend(hours=24)
-            eth_trend = market_data_fetcher.get_eth_trend(hours=24)
-            correlation_breakdown = min(0.5, abs(btc_trend - eth_trend))
+            sol_trend = market_data_fetcher.get_sol_trend(hours=24)
+            correlation_breakdown = min(0.5, abs(btc_trend - sol_trend))
             
             if correlation_breakdown >= 0.4:
                 correlation_severity = 'high'

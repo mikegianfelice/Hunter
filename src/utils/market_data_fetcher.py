@@ -285,6 +285,46 @@ class MarketDataFetcher:
         
         return 0.5  # Neutral trend if unable to fetch
     
+    def get_sol_trend(self, hours: int = 24) -> float:
+        """Get SOL price trend over specified hours (0-1 scale, 0.5 = neutral)
+        
+        Uses extended timeframe (7 days default) for regime detection accuracy.
+        """
+        # Default to 7 days (168 hours) for regime detection
+        if hours is None:
+            from src.config.config_loader import get_config
+            hours = get_config('market_analysis_timeframes.sol_trend_hours', 168)
+        
+        try:
+            data, from_timestamp, now = self._get_market_chart_range("solana", hours)
+
+            price_points: List[float] = []
+            if data and 'prices' in data:
+                price_points = [float(point[1]) for point in data['prices'] if len(point) >= 2]
+            else:
+                interval = self._select_coincap_interval(hours)
+                history = self._get_history_from_coincap("solana", from_timestamp, now, interval)
+                if history:
+                    price_points = [
+                        float(point["priceUsd"])
+                        for point in history
+                        if point.get("priceUsd") is not None
+                    ]
+
+            if len(price_points) >= 2:
+                start_price = price_points[0]
+                end_price = price_points[-1]
+
+                if start_price > 0:
+                    change_pct = (end_price - start_price) / start_price
+                    trend = max(0, min(1, 0.5 + change_pct))
+                    return trend
+                        
+        except Exception as e:
+            logger.error(f"❌ Failed to fetch SOL trend: {e}")
+        
+        return 0.5  # Neutral trend if unable to fetch
+    
     def get_market_volatility(self, hours: int = None) -> float:
         """Get market volatility index (0-1 scale)
         
@@ -367,7 +407,7 @@ class MarketDataFetcher:
         return 0.5  # Neutral if unable to fetch
     
     def get_market_correlation(self, hours: int = None) -> float:
-        """Get market correlation between BTC and ETH (0-1 scale)
+        """Get market correlation between BTC and SOL (0-1 scale)
         
         Uses extended timeframe (14 days default) for statistical significance.
         Needs 60+ data points for reliable correlation calculation.
@@ -381,11 +421,26 @@ class MarketDataFetcher:
             min_data_points = 60  # Default minimum
         
         try:
+            # #region agent log
+            import json
+            import time as time_module
+            import os
+            debug_log_path = "/Users/gianf/Hunter/.cursor/debug.log"
+            debug_data = {"id": f"log_{int(time_module.time() * 1000)}", "timestamp": int(time_module.time() * 1000), "location": "market_data_fetcher.py:384", "message": "get_market_correlation entry", "data": {"hours": hours, "min_data_points": min_data_points}, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "C"}
+            logger.info(f"[DEBUG] Correlation entry: hours={hours}, min_data_points={min_data_points}")
+            try:
+                os.makedirs(os.path.dirname(debug_log_path), exist_ok=True)
+                with open(debug_log_path, "a") as f:
+                    f.write(json.dumps(debug_data) + "\n")
+            except Exception as e:
+                logger.warning(f"[DEBUG] Failed to write log file: {e}")
+            # #endregion
+            
             btc_data, btc_from_timestamp, btc_now = self._get_market_chart_range("bitcoin", hours)
-            eth_data, eth_from_timestamp, eth_now = self._get_market_chart_range("ethereum", hours)
+            sol_data, sol_from_timestamp, sol_now = self._get_market_chart_range("solana", hours)
 
             btc_prices: Dict[int, float] = {}
-            eth_prices: Dict[int, float] = {}
+            sol_prices: Dict[int, float] = {}
 
             if btc_data and 'prices' in btc_data:
                 btc_prices = {int(p[0] / 1000): float(p[1]) for p in btc_data['prices']}
@@ -401,20 +456,36 @@ class MarketDataFetcher:
                         if point.get("time") is not None and point.get("priceUsd") is not None
                     }
             
-            if eth_data and 'prices' in eth_data:
-                eth_prices = {int(p[0] / 1000): float(p[1]) for p in eth_data['prices']}
+            if sol_data and 'prices' in sol_data:
+                sol_prices = {int(p[0] / 1000): float(p[1]) for p in sol_data['prices']}
             else:
                 # Force hourly interval for correlation to get more data points
                 interval = "h1" if hours <= 720 else "h6"  # Max 30 days with hourly, beyond use 6h
-                history = self._get_history_from_coincap("ethereum", eth_from_timestamp, eth_now, interval)
+                history = self._get_history_from_coincap("solana", sol_from_timestamp, sol_now, interval)
                 if history:
-                    eth_prices = {
+                    sol_prices = {
                         int(point["time"] / 1000): float(point["priceUsd"])
                         for point in history
                         if point.get("time") is not None and point.get("priceUsd") is not None
                     }
+            
+            # #region agent log
+            try:
+                btc_count = len(btc_prices)
+                sol_count = len(sol_prices)
+                btc_ts_min = min(btc_prices.keys()) if btc_prices else None
+                btc_ts_max = max(btc_prices.keys()) if btc_prices else None
+                sol_ts_min = min(sol_prices.keys()) if sol_prices else None
+                sol_ts_max = max(sol_prices.keys()) if sol_prices else None
+                debug_data = {"id": f"log_{int(time_module.time() * 1000)}", "timestamp": int(time_module.time() * 1000), "location": "market_data_fetcher.py:427", "message": "Price data fetched", "data": {"btc_count": btc_count, "sol_count": sol_count, "btc_ts_range": [btc_ts_min, btc_ts_max], "sol_ts_range": [sol_ts_min, sol_ts_max], "hours": hours}, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "B"}
+                logger.info(f"[DEBUG] Price data: BTC={btc_count}, SOL={sol_count}, hours={hours}")
+                with open(debug_log_path, "a") as f:
+                    f.write(json.dumps(debug_data) + "\n")
+            except Exception as e:
+                logger.warning(f"[DEBUG] Failed to log price data: {e}")
+            # #endregion
 
-            if not btc_prices or not eth_prices:
+            if not btc_prices or not sol_prices:
                 # Try shorter window if we have very little data
                 if hours > 168:
                     logger.info(f"Retrying correlation with shorter time window ({hours}h -> 168h)")
@@ -425,77 +496,188 @@ class MarketDataFetcher:
                 logger.warning("Insufficient data for correlation calculation")
                 return 0.5
             
-            # Find common timestamps (within 1 hour window)
+            # Find common timestamps using adaptive window (expand if needed)
+            # Start with 1 hour window, expand if insufficient matches
+            # #region agent log
+            try:
+                debug_data = {"id": f"log_{int(time_module.time() * 1000)}", "timestamp": int(time_module.time() * 1000), "location": "market_data_fetcher.py:459", "message": "Starting timestamp matching", "data": {"btc_count": len(btc_prices), "sol_count": len(sol_prices), "initial_window_seconds": 3600}, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "A"}
+                logger.info(f"[DEBUG] Starting timestamp matching: BTC={len(btc_prices)}, SOL={len(sol_prices)}")
+                with open(debug_log_path, "a") as f:
+                    f.write(json.dumps(debug_data) + "\n")
+            except Exception as e:
+                logger.warning(f"[DEBUG] Failed to log matching start: {e}")
+            # #endregion
+            
+            # Adaptive window: try 1h, 2h, 4h, 6h windows if needed
+            window_seconds = 3600  # Start with 1 hour
+            max_window_seconds = 21600  # Max 6 hours
             common_timestamps = []
-            for btc_ts in btc_prices.keys():
-                for eth_ts in eth_prices.keys():
-                    if abs(btc_ts - eth_ts) < 3600:  # Within 1 hour
-                        common_timestamps.append((btc_ts, eth_ts))
-                        break
+            used_sol_timestamps = set()  # Track which SOL timestamps we've used to avoid duplicates
+            
+            while window_seconds <= max_window_seconds and len(common_timestamps) < min_data_points:
+                common_timestamps = []
+                used_sol_timestamps.clear()
+                matches_per_btc = {}
+                
+                for btc_ts in sorted(btc_prices.keys()):  # Process in chronological order
+                    matches_for_this_btc = []
+                    for sol_ts in sol_prices.keys():
+                        if sol_ts in used_sol_timestamps:
+                            continue  # Skip already-used SOL timestamps
+                        time_diff = abs(btc_ts - sol_ts)
+                        if time_diff < window_seconds:
+                            matches_for_this_btc.append((sol_ts, time_diff))
+                    
+                    if matches_for_this_btc:
+                        # Sort by time difference to find closest match
+                        matches_for_this_btc.sort(key=lambda x: x[1])
+                        closest_sol_ts = matches_for_this_btc[0][0]
+                        common_timestamps.append((btc_ts, closest_sol_ts))
+                        used_sol_timestamps.add(closest_sol_ts)
+                        matches_per_btc[btc_ts] = len(matches_for_this_btc)
+                
+                # #region agent log
+                try:
+                    total_potential_matches = sum(matches_per_btc.values())
+                    avg_matches_per_btc = total_potential_matches / len(matches_per_btc) if matches_per_btc else 0
+                    debug_data = {"id": f"log_{int(time_module.time() * 1000)}", "timestamp": int(time_module.time() * 1000), "location": "market_data_fetcher.py:490", "message": "Timestamp matching attempt", "data": {"window_seconds": window_seconds, "common_timestamps_count": len(common_timestamps), "total_potential_matches": total_potential_matches, "avg_matches_per_btc": avg_matches_per_btc, "btc_with_matches": len(matches_per_btc), "min_required": min_data_points}, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "E"}
+                    logger.info(f"[DEBUG] Matching attempt: window={window_seconds}s, common={len(common_timestamps)}, min_required={min_data_points}")
+                    with open(debug_log_path, "a") as f:
+                        f.write(json.dumps(debug_data) + "\n")
+                except Exception as e:
+                    logger.warning(f"[DEBUG] Failed to log matching attempt: {e}")
+                # #endregion
+                
+                if len(common_timestamps) >= min_data_points:
+                    break  # We have enough matches
+                
+                # Expand window for next attempt
+                if window_seconds < max_window_seconds:
+                    window_seconds *= 2  # Double the window (1h -> 2h -> 4h)
+                    # #region agent log
+                    try:
+                        logger.warning(f"[DEBUG] Expanding matching window to {window_seconds}s (have {len(common_timestamps)} matches, need {min_data_points})")
+                    except: pass
+                    # #endregion
+                else:
+                    # #region agent log
+                    try:
+                        logger.warning(f"[DEBUG] Maximum window ({max_window_seconds}s) reached with only {len(common_timestamps)} matches (need {min_data_points})")
+                        debug_data = {"id": f"log_{int(time_module.time() * 1000)}", "timestamp": int(time_module.time() * 1000), "location": "market_data_fetcher.py:522", "message": "Max window reached, insufficient matches", "data": {"max_window_seconds": max_window_seconds, "final_matches": len(common_timestamps), "min_required": min_data_points, "btc_price_count": len(btc_prices), "sol_price_count": len(sol_prices)}, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "B"}
+                        with open(debug_log_path, "a") as f:
+                            f.write(json.dumps(debug_data) + "\n")
+                    except Exception as e:
+                        logger.warning(f"[DEBUG] Failed to log max window: {e}")
+                    # #endregion
+                    break  # Can't expand further
+            
+            # #region agent log
+            try:
+                total_potential_matches = sum(matches_per_btc.values()) if matches_per_btc else 0
+                avg_matches_per_btc = total_potential_matches / len(matches_per_btc) if matches_per_btc else 0
+                debug_data = {"id": f"log_{int(time_module.time() * 1000)}", "timestamp": int(time_module.time() * 1000), "location": "market_data_fetcher.py:512", "message": "Timestamp matching complete", "data": {"final_window_seconds": window_seconds, "common_timestamps_count": len(common_timestamps), "total_potential_matches": total_potential_matches, "avg_matches_per_btc": avg_matches_per_btc, "btc_with_matches": len(matches_per_btc)}, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "A"}
+                logger.info(f"[DEBUG] Matching complete: final_window={window_seconds}s, common={len(common_timestamps)}, potential={total_potential_matches}, avg_per_btc={avg_matches_per_btc:.2f}")
+                with open(debug_log_path, "a") as f:
+                    f.write(json.dumps(debug_data) + "\n")
+            except Exception as e:
+                logger.warning(f"[DEBUG] Failed to log matching results: {e}")
+            # #endregion
             
             # Require minimum data points for statistical significance
             if len(common_timestamps) < min_data_points:
-                logger.warning(f"Insufficient data points for correlation ({len(common_timestamps)} < {min_data_points})")
+                # Only retry with shorter windows if we haven't already exhausted the adaptive window strategy
+                # Shorter time windows don't help if data sources themselves are sparse
+                # The adaptive window expansion (up to 6h) should have already maximized matches
+                if window_seconds < max_window_seconds:
+                    # We didn't try all window sizes yet - this shouldn't happen but log if it does
+                    logger.warning(f"[DEBUG] Adaptive window didn't complete: window={window_seconds}s, matches={len(common_timestamps)}")
                 
-                # Retry with shorter time windows if we have some data but not enough
-                if hours > 168 and len(common_timestamps) < 30:
-                    logger.info(f"Retrying correlation with shorter time window ({hours}h -> 168h) to get more data points")
+                logger.warning(f"Insufficient data points for correlation ({len(common_timestamps)} < {min_data_points}) after adaptive window expansion (final window: {window_seconds/3600:.1f}h)")
+                
+                # Only retry with shorter time windows if adaptive window wasn't enough AND we have very few matches
+                # This indicates the data sources themselves may have sparse/inconsistent timestamps
+                if hours > 168 and len(common_timestamps) < 20:
+                    logger.info(f"Retrying correlation with shorter time window ({hours}h -> 168h) to potentially get better data source alignment")
                     return self.get_market_correlation(hours=168)
-                elif hours > 72 and len(common_timestamps) < 50:
-                    logger.info(f"Retrying correlation with shorter time window ({hours}h -> 72h) to get more data points")
+                elif hours > 72 and len(common_timestamps) < 30:
+                    logger.info(f"Retrying correlation with shorter time window ({hours}h -> 72h) to potentially get better data source alignment")
                     return self.get_market_correlation(hours=72)
-                elif hours > 24:
-                    logger.info(f"Retrying correlation with shorter time window ({hours}h -> 24h) to get more data points")
+                elif hours > 24 and len(common_timestamps) < 40:
+                    logger.info(f"Retrying correlation with shorter time window ({hours}h -> 24h) to potentially get better data source alignment")
                     return self.get_market_correlation(hours=24)
                 
                 # If we still don't have enough but have at least 10 points, calculate with reduced confidence
                 if len(common_timestamps) >= 10:
+                    # #region agent log
+                    try:
+                        with open(debug_log_path, "a") as f:
+                            f.write(json.dumps({"id": f"log_{int(time_module.time() * 1000)}", "timestamp": int(time_module.time() * 1000), "location": "market_data_fetcher.py:455", "message": "Insufficient data but proceeding", "data": {"common_timestamps": len(common_timestamps), "min_required": min_data_points, "hours": hours, "retry_attempted": True}, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "C"}) + "\n")
+                    except: pass
+                    # #endregion
                     logger.warning(f"Calculating correlation with {len(common_timestamps)} data points (below ideal threshold of {min_data_points}, confidence will be reduced)")
                     # Continue to calculate correlation but with lower confidence flag
                 else:
+                    # #region agent log
+                    try:
+                        with open(debug_log_path, "a") as f:
+                            f.write(json.dumps({"id": f"log_{int(time_module.time() * 1000)}", "timestamp": int(time_module.time() * 1000), "location": "market_data_fetcher.py:459", "message": "Too few data points, returning neutral", "data": {"common_timestamps": len(common_timestamps), "min_required": 10, "hours": hours}, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "C"}) + "\n")
+                    except: pass
+                    # #endregion
                     logger.warning(f"Too few data points ({len(common_timestamps)}) for meaningful correlation, returning neutral")
                     return 0.5
             
             # Calculate returns for both assets
             btc_returns = []
-            eth_returns = []
+            sol_returns = []
             
             sorted_timestamps = sorted(common_timestamps, key=lambda x: x[0])
             for i in range(1, len(sorted_timestamps)):
-                prev_btc_ts, prev_eth_ts = sorted_timestamps[i-1]
-                curr_btc_ts, curr_eth_ts = sorted_timestamps[i]
+                prev_btc_ts, prev_sol_ts = sorted_timestamps[i-1]
+                curr_btc_ts, curr_sol_ts = sorted_timestamps[i]
                 
                 prev_btc_price = btc_prices[prev_btc_ts]
                 curr_btc_price = btc_prices[curr_btc_ts]
-                prev_eth_price = eth_prices[prev_eth_ts]
-                curr_eth_price = eth_prices[curr_eth_ts]
+                prev_sol_price = sol_prices[prev_sol_ts]
+                curr_sol_price = sol_prices[curr_sol_ts]
                 
-                if prev_btc_price > 0 and prev_eth_price > 0:
+                if prev_btc_price > 0 and prev_sol_price > 0:
                     btc_return = (curr_btc_price - prev_btc_price) / prev_btc_price
-                    eth_return = (curr_eth_price - prev_eth_price) / prev_eth_price
+                    sol_return = (curr_sol_price - prev_sol_price) / prev_sol_price
                     btc_returns.append(btc_return)
-                    eth_returns.append(eth_return)
+                    sol_returns.append(sol_return)
             
             if len(btc_returns) < min_data_points:
                 # Allow calculation with fewer points but log reduced confidence
                 if len(btc_returns) < 10:
+                    # #region agent log
+                    try:
+                        with open(debug_log_path, "a") as f:
+                            f.write(json.dumps({"id": f"log_{int(time_module.time() * 1000)}", "timestamp": int(time_module.time() * 1000), "location": "market_data_fetcher.py:487", "message": "Not enough return data", "data": {"btc_returns_count": len(btc_returns), "common_timestamps_count": len(common_timestamps), "min_required": 10}, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "C"}) + "\n")
+                    except: pass
+                    # #endregion
                     logger.warning(f"Not enough return data for meaningful correlation ({len(btc_returns)} < 10), returning neutral")
                     return 0.5
                 else:
+                    # #region agent log
+                    try:
+                        with open(debug_log_path, "a") as f:
+                            f.write(json.dumps({"id": f"log_{int(time_module.time() * 1000)}", "timestamp": int(time_module.time() * 1000), "location": "market_data_fetcher.py:491", "message": "Calculating with reduced confidence", "data": {"btc_returns_count": len(btc_returns), "min_required": min_data_points, "hours": hours}, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "D"}) + "\n")
+                    except: pass
+                    # #endregion
                     logger.warning(f"Calculating correlation with {len(btc_returns)} return data points (below ideal threshold of {min_data_points}, confidence will be reduced)")
                     # Continue to calculate but with reduced confidence
             
             # Calculate Pearson correlation coefficient
             mean_btc = statistics.mean(btc_returns)
-            mean_eth = statistics.mean(eth_returns)
+            mean_sol = statistics.mean(sol_returns)
             
-            numerator = sum((btc_returns[i] - mean_btc) * (eth_returns[i] - mean_eth) 
+            numerator = sum((btc_returns[i] - mean_btc) * (sol_returns[i] - mean_sol) 
                           for i in range(len(btc_returns)))
             
             btc_variance = sum((r - mean_btc) ** 2 for r in btc_returns)
-            eth_variance = sum((r - mean_eth) ** 2 for r in eth_returns)
+            sol_variance = sum((r - mean_sol) ** 2 for r in sol_returns)
             
-            denominator = (btc_variance * eth_variance) ** 0.5
+            denominator = (btc_variance * sol_variance) ** 0.5
             
             if denominator == 0:
                 return 0.5
@@ -511,9 +693,17 @@ class MarketDataFetcher:
             confidence_note = f" (confidence: {data_quality:.2f}, {len(btc_returns)} data points)" if data_quality < 1.0 else f" ({len(btc_returns)} data points)"
             
             if data_quality < 1.0:
-                logger.warning(f"⚠️ Market correlation (BTC/ETH): {correlation:.3f} (normalized: {normalized:.3f}){confidence_note} - below ideal data threshold")
+                logger.warning(f"⚠️ Market correlation (BTC/SOL): {correlation:.3f} (normalized: {normalized:.3f}){confidence_note} - below ideal data threshold")
             else:
-                logger.info(f"✅ Market correlation (BTC/ETH): {correlation:.3f} (normalized: {normalized:.3f}){confidence_note}")
+                logger.info(f"✅ Market correlation (BTC/SOL): {correlation:.3f} (normalized: {normalized:.3f}){confidence_note}")
+            
+            # #region agent log
+            try:
+                with open(debug_log_path, "a") as f:
+                    f.write(json.dumps({"id": f"log_{int(time_module.time() * 1000)}", "timestamp": int(time_module.time() * 1000), "location": "market_data_fetcher.py:525", "message": "Correlation calculation complete", "data": {"correlation": correlation, "normalized": normalized, "data_quality": data_quality, "btc_returns_count": len(btc_returns), "hours": hours}, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "E"}) + "\n")
+            except: pass
+            # #endregion
+            
             return max(0.0, min(1.0, normalized))
                 
         except Exception as e:
