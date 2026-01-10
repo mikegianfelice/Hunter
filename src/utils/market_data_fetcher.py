@@ -1423,27 +1423,19 @@ class MarketDataFetcher:
             
             total_processing_time = time_module.perf_counter() - fetch_start_time
             
-            # Log instrumentation - INFO for switches/slow/large, DEBUG for normal
-            if method_chosen == "rpc_fallback" or processing_time_so_far > 5.0 or swaps_count_returned > 2000:
-                logger.info(
-                    f"CANDLE_FETCH_METRICS: token={token_address[:8]}, method={method_chosen}, "
-                    f"swaps_returned={swaps_count_returned}, swaps_filtered={swaps_count_filtered}, "
-                    f"response_mb={response_size_mb:.2f}, api_time={api_call_time:.2f}s, "
-                    f"json_parse_time={json_parse_time:.2f}s, filter_time={filter_time:.2f}s, "
-                    f"total_time={total_processing_time:.2f}s"
-                )
-            else:
-                logger.debug(
-                    f"CANDLE_FETCH_METRICS: token={token_address[:8]}, method={method_chosen}, "
-                    f"swaps_returned={swaps_count_returned}, swaps_filtered={swaps_count_filtered}, "
-                    f"response_mb={response_size_mb:.2f}, api_time={api_call_time:.2f}s, "
-                    f"total_time={total_processing_time:.2f}s"
-                )
+            # Log instrumentation - Always INFO for visibility
+            logger.info(
+                f"CANDLE_FETCH_METRICS: token={token_address[:8]}, method={method_chosen}, "
+                f"swaps_returned={swaps_count_returned}, swaps_filtered={swaps_count_filtered}, "
+                f"response_mb={response_size_mb:.2f}, api_time={api_call_time:.2f}s, "
+                f"json_parse_time={json_parse_time:.2f}s, filter_time={filter_time:.2f}s, "
+                f"total_time={total_processing_time:.2f}s"
+            )
             
-            # CANDLE_BUILD_METRICS - always DEBUG
-            logger.debug(
-                f"CANDLE_BUILD_METRICS: swaps={swaps_count_filtered}, candles={len(candles) if candles else 0}, "
-                f"build_time={candle_build_time:.2f}s"
+            # CANDLE_BUILD_METRICS - Always INFO for visibility
+            logger.info(
+                f"CANDLE_BUILD_METRICS: token={token_address[:8]}, swaps={swaps_count_filtered}, "
+                f"candles={len(candles) if candles else 0}, build_time={candle_build_time:.2f}s"
             )
             
             # CANDLE_SANITY - aggregate sanity metrics for verification
@@ -1474,7 +1466,7 @@ class MarketDataFetcher:
                     if high < low or close < low or close > high:
                         invalid_ohlc_count += 1
                 
-                logger.debug(
+                logger.info(
                     f"CANDLE_SANITY: token={token_address[:8]}, candle_count={candle_count}, "
                     f"expected_candles={expected_candles}, missing_candles={missing_candles}, "
                     f"first_candle_time={first_candle_time}, last_candle_time={last_candle_time}, "
@@ -1492,8 +1484,8 @@ class MarketDataFetcher:
                 )
                 return self._get_solana_candles_from_memory(token_address, hours)
             
-            logger.debug(
-                f"CANDLE_QUALITY: PASSED - swaps={candle_metadata['swaps_processed']}, "
+            logger.info(
+                f"CANDLE_QUALITY: PASSED - token={token_address[:8]}, swaps={candle_metadata['swaps_processed']}, "
                 f"candles={candle_metadata['candles_created']}, non_empty={candle_metadata['non_empty_candles']}, "
                 f"avg_swaps_per_candle={candle_metadata['swaps_per_candle_avg']:.1f}"
             )
