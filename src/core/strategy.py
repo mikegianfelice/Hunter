@@ -1225,7 +1225,61 @@ def check_buy_signal(token: dict) -> bool:
             except (ValueError, TypeError):
                 pass  # Skip if volume change data not parseable
 
-    # Try external momentum first (DexScreener price change data)
+    # Use candle-based momentum if available (most accurate - computed from validated 15m candles)
+    # This takes priority over external momentum since it's computed from real on-chain data
+    if token.get('candles_validated') and token.get('candles_15m'):
+        candles = token['candles_15m']
+        candle_momentum = token.get('candle_momentum')
+        
+        if candle_momentum is not None and len(candles) >= 4:  # Need at least 1 hour of data
+            # Get VWAP from technical indicators if available
+            tech_indicators = token.get('technical_indicators', {})
+            vwap = tech_indicators.get('vwap') or token.get('vwap')
+            
+            _log_trace(
+                f"📈 Candle-based momentum: {candle_momentum*100:.4f}% (need ≥ {momentum_need*100:.4f}%), VWAP={vwap:.8f if vwap else 'N/A'}",
+                level="info",
+                event="strategy.buy.candle_momentum",
+                symbol=token.get("symbol"),
+                momentum=candle_momentum,
+                vwap=vwap,
+                required_momentum=momentum_need,
+                candles_count=len(candles),
+            )
+            
+            # Use candle momentum if it meets threshold
+            if candle_momentum >= momentum_need:
+                _log_trace(
+                    "✅ Candle-based momentum buy signal → TRUE",
+                    level="info",
+                    event="strategy.buy.candle_momentum_pass",
+                    symbol=token.get("symbol"),
+                    momentum=candle_momentum,
+                    vwap=vwap,
+                )
+                return True
+            else:
+                _log_trace(
+                    f"❌ Candle-based momentum insufficient ({candle_momentum*100:.4f}% < {momentum_need*100:.4f}%).",
+                    level="info",
+                    event="strategy.buy.candle_momentum_fail",
+                    symbol=token.get("symbol"),
+                    momentum=candle_momentum,
+                    required_momentum=momentum_need,
+                )
+                return False
+        else:
+            _log_trace(
+                f"⚠️ Candle momentum unavailable (momentum={candle_momentum}, candles={len(candles) if candles else 0}), falling back to external momentum",
+                level="warning",
+                event="strategy.buy.candle_momentum_unavailable",
+                symbol=token.get("symbol"),
+                candle_momentum=candle_momentum,
+                candles_count=len(candles) if candles else 0,
+            )
+            # Fall through to external momentum below
+    
+    # Try external momentum (DexScreener price change data)
     # Only check external momentum if it's enabled
     if config.get('ENABLE_EXTERNAL_MOMENTUM', True):
         ext_momentum, ext_source = _get_external_momentum(token, config)
