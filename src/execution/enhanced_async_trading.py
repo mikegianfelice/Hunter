@@ -1195,6 +1195,10 @@ class EnhancedAsyncTradingEngine:
                                             rsi=rsi,
                                             token_address=token_address[:8] + "...")
                                     
+                                    # Set approved_for_trading to True after successful candle validation
+                                    # This allows check_buy_signal to run
+                                    enhanced_token["approved_for_trading"] = True
+                                    
                                 except Exception as indicator_error:
                                     log_error("trading.candle_validation.indicator_error",
                                             f"Error calculating indicators for {token.get('symbol', 'UNKNOWN')}: {indicator_error}",

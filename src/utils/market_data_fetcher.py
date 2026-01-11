@@ -800,7 +800,12 @@ class MarketDataFetcher:
             if data_dict:
                 volume_data = data_dict.get('total_volume', {})
                 if isinstance(volume_data, dict) and 'usd' in volume_data:
-                    current_volume = float(volume_data['usd'])
+                    usd_value = volume_data['usd']
+                    if usd_value is not None:
+                        try:
+                            current_volume = float(usd_value)
+                        except (TypeError, ValueError):
+                            pass
 
             if current_volume is None:
                 logger.warning("Failed to fetch current volume data from all providers")
@@ -814,7 +819,11 @@ class MarketDataFetcher:
 
             volumes: List[float] = []
             if btc_data and 'total_volumes' in btc_data:
-                volumes = [float(v[1]) for v in btc_data['total_volumes']]
+                volumes = [
+                    float(v[1]) 
+                    for v in btc_data['total_volumes'] 
+                    if v[1] is not None
+                ]
                 logger.debug(f"✅ Got {len(volumes)} volume data points from market_chart_range")
 
             if not volumes:
@@ -833,7 +842,11 @@ class MarketDataFetcher:
                     logger.debug(f"   CoinGecko available - fetching volume data...")
                     coingecko_data, _, _ = self._get_market_chart_range("bitcoin", hours)
                     if coingecko_data and 'total_volumes' in coingecko_data:
-                        volumes = [float(v[1]) for v in coingecko_data['total_volumes']]
+                        volumes = [
+                            float(v[1]) 
+                            for v in coingecko_data['total_volumes'] 
+                            if v[1] is not None
+                        ]
                         logger.debug(f"✅ Got {len(volumes)} volume data points from CoinGecko")
                     else:
                         logger.warning(f"⚠️ CoinGecko market_chart/range also failed to provide volume data")
@@ -915,7 +928,12 @@ class MarketDataFetcher:
             if data_dict:
                 market_cap_data = data_dict.get('total_market_cap', {})
                 if isinstance(market_cap_data, dict) and 'usd' in market_cap_data:
-                    current_market_cap = float(market_cap_data['usd'])
+                    usd_value = market_cap_data['usd']
+                    if usd_value is not None:
+                        try:
+                            current_market_cap = float(usd_value)
+                        except (TypeError, ValueError):
+                            pass
 
             if current_market_cap is None:
                 logger.warning("Failed to fetch current market cap data from all providers")
@@ -926,20 +944,34 @@ class MarketDataFetcher:
 
             market_caps: List[float] = []
             if btc_data and 'market_caps' in btc_data:
-                market_caps = [float(mc[1]) for mc in btc_data['market_caps']]
+                market_caps = [
+                    float(mc[1]) 
+                    for mc in btc_data['market_caps'] 
+                    if mc[1] is not None
+                ]
 
             if not market_caps and btc_data and 'prices' in btc_data:
-                market_caps = [float(price[1]) for price in btc_data['prices']]
+                market_caps = [
+                    float(price[1]) 
+                    for price in btc_data['prices'] 
+                    if price[1] is not None
+                ]
 
             if not market_caps:
                 interval = self._select_coincap_interval(hours * 2)
                 history = self._get_history_from_coincap("bitcoin", from_timestamp, now, interval)
                 if history:
-                    market_caps = [
-                        float(point.get("marketCapUsd") or point.get("priceUsd"))
-                        for point in history
-                        if point.get("marketCapUsd") is not None or point.get("priceUsd") is not None
-                    ]
+                    market_caps = []
+                    for point in history:
+                        market_cap_val = point.get("marketCapUsd")
+                        price_val = point.get("priceUsd")
+                        # Use marketCapUsd if available and not None, otherwise use priceUsd
+                        value = market_cap_val if market_cap_val is not None else price_val
+                        if value is not None:
+                            try:
+                                market_caps.append(float(value))
+                            except (TypeError, ValueError):
+                                continue
 
             if len(market_caps) < 2:
                 # Fallback: Use current market cap relative to a reasonable baseline
