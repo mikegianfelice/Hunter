@@ -597,6 +597,43 @@ class ProductionManager:
                         if token_address:
                             indexer.add_token(token_address)
                             log_info("production.indexer", f"Added position token to indexer: {token_address[:8]}...")
+                    
+                    # Add priority tokens from historical trades and established tokens
+                    try:
+                        if get_config("swap_indexer.enable_priority_indexing", True):
+                            from src.utils.priority_token_indexer import PriorityTokenIndexer
+                            from src.config.config_loader import get_config_int
+                            
+                            priority_indexer = PriorityTokenIndexer()
+                            
+                            # Get config values
+                            from_trades_days = get_config_int("swap_indexer.priority_indexing.from_trades_days", 30)
+                            from_trades_min = get_config_int("swap_indexer.priority_indexing.from_trades_min_trades", 1)
+                            from_trades_top_n = get_config_int("swap_indexer.priority_indexing.from_trades_top_n", 50)
+                            include_established = get_config("swap_indexer.priority_indexing.include_established", True)
+                            chain_filter = "solana"  # Or get from config
+                            
+                            priority_tokens = priority_indexer.get_priority_tokens(
+                                from_trades_days=from_trades_days,
+                                from_trades_min=from_trades_min,
+                                from_trades_top_n=from_trades_top_n,
+                                include_established=include_established,
+                                chain_filter=chain_filter
+                            )
+                            
+                            stats = priority_indexer.add_tokens_to_indexer(
+                                indexer,
+                                priority_tokens,
+                                verbose=True
+                            )
+                            
+                            log_info(
+                                "production.priority_indexing",
+                                f"✅ Priority indexing: {stats['added']} tokens added, "
+                                f"{stats['already_tracked']} already tracked"
+                            )
+                    except Exception as e:
+                        log_error("production.priority_indexing", f"Failed to add priority tokens: {e}")
             except Exception as e:
                 log_error("production.indexer", f"Failed to start swap indexer: {e}")
             

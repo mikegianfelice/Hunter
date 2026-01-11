@@ -175,6 +175,15 @@ swap_indexer:
   cleanup_days: 30  # Delete swap events older than this many days
   backfill_tokens_per_cycle: 2  # Max tokens to backfill per cycle (to stay within API limits)
   min_candles_for_accuracy: 35  # Target candles for good technical indicator accuracy
+  
+  # Priority indexing settings
+  enable_priority_indexing: true  # Proactively index frequently-traded tokens
+  priority_indexing:
+    from_trades_days: 30  # Look back 30 days in trade history
+    from_trades_min_trades: 1  # Minimum trades to include token
+    from_trades_top_n: 50  # Top N most-traded tokens to index
+    include_established: true  # Include ESTABLISHED_TOKENS list
+    refresh_interval_hours: 24  # Refresh priority list every 24 hours
 
 # === Balance Cache Settings ===
 balance_cache_enabled: true  # Enable balance caching as fallback during RPC failures
