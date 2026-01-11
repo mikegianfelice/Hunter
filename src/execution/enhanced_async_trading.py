@@ -2471,7 +2471,7 @@ class EnhancedAsyncTradingEngine:
             from src.utils.api_tracker import get_tracker
             api_tracker = get_tracker()
             api_metrics = {
-                "helius_remaining": api_tracker.get_remaining("helius", 30000),
+                "helius_remaining": api_tracker.get_remaining("helius", 300000),
                 "coingecko_remaining": api_tracker.get_remaining("coingecko", 300),
                 "coincap_remaining": api_tracker.get_remaining("coincap", 130),
             }

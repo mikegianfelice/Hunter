@@ -70,7 +70,7 @@ def reconcile_positions_and_pnl(limit: int = 200) -> Dict[str, Any]:
         from src.utils.api_tracker import get_tracker
         tracker = get_tracker()
         helius_calls = tracker.get_count('helius')
-        helius_max = 30000
+        helius_max = 300000
         if helius_calls >= helius_max * 0.95:  # Stop if at 95% of limit
             return {
                 "enabled": True,

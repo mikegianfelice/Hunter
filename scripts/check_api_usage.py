@@ -20,7 +20,7 @@ def main():
     coincap_calls = data.get('coincap', 0)
     last_reset = data.get('last_reset', 0)
     
-    helius_max = 30000
+    helius_max = 300000
     coingecko_max = 330
     coincap_max = 130
     

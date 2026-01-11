@@ -1613,7 +1613,7 @@ class MarketDataFetcher:
                 
                 if helius_calls >= rate_limit_threshold:
                     logger.warning(
-                        f"Helius API usage high ({helius_calls}/30000), using cached/memory data for {token_address[:8]}..."
+                        f"Helius API usage high ({helius_calls}/300000), using cached/memory data for {token_address[:8]}..."
                     )
                     # Try cache first (even if expired, might have usable data)
                     if cache_key in self.candlestick_cache_helius:
@@ -1635,7 +1635,7 @@ class MarketDataFetcher:
                 helius_calls = self.api_tracker.get_count('helius')
                 if helius_calls >= rate_limit_threshold:
                     logger.warning(
-                        f"Helius API usage high ({helius_calls}/30000), skipping RPC fallback for {token_address[:8]}..."
+                        f"Helius API usage high ({helius_calls}/300000), skipping RPC fallback for {token_address[:8]}..."
                     )
                     return self._get_solana_candles_from_memory(token_address, hours)
                 
@@ -1770,7 +1770,7 @@ class MarketDataFetcher:
         # Check rate limit before making API call
         if not self._can_make_helius_call():
             helius_calls = self.api_tracker.get_count('helius')
-            logger.warning(f"Helius rate limit reached ({helius_calls}/30000), using price_memory fallback for {token_address[:8]}...")
+            logger.warning(f"Helius rate limit reached ({helius_calls}/300000), using price_memory fallback for {token_address[:8]}...")
             return self._get_solana_candles_from_memory(token_address, hours)
         
         try:
@@ -2589,7 +2589,7 @@ class MarketDataFetcher:
     def _can_make_helius_call(self) -> bool:
         """Check if we can make a Helius API call"""
         from src.config.config_loader import get_config_int
-        helius_max = get_config_int('api_rate_limiting.helius_max_daily', 30000)
+        helius_max = get_config_int('api_rate_limiting.helius_max_daily', 300000)
         return self.api_tracker.can_make_call('helius', helius_max)
     
     def _get_candles_from_coingecko(self, token_address: str, chain_id: str, 
@@ -2695,6 +2695,9 @@ class MarketDataFetcher:
                         newest_block_time_seen = None
                         count_in_window = 0
                         pages_used = 0
+                        # Track window bounds (transactions in target time range) for coverage calculation
+                        window_oldest_bound = None
+                        window_newest_bound = None
                         
                         logger.debug(f"Querying pool {pool_address[:8]}... with pagination (max {max_pages} pages)")
                         
@@ -2716,60 +2719,118 @@ class MarketDataFetcher:
                             
                             pages_used = page + 1
                             page_signatures = []
-                            found_old_enough = False
+                            
+                            # Track transactions in target window for coverage calculation
+                            page_window_oldest = None
+                            page_window_newest = None
                             
                             for sig_info in sig_infos:
                                 if sig_info.block_time:
-                                    # Track time bounds for early-stop
+                                    # Track time bounds for early-stop (all transactions seen)
                                     if rpc_early_stop_enabled:
                                         if oldest_block_time_seen is None or sig_info.block_time < oldest_block_time_seen:
                                             oldest_block_time_seen = sig_info.block_time
                                         if newest_block_time_seen is None or sig_info.block_time > newest_block_time_seen:
                                             newest_block_time_seen = sig_info.block_time
                                     
-                                    if sig_info.block_time < start_time:
-                                        # We've gone too far back, stop paginating
-                                        found_old_enough = True
-                                        break
-                                    elif start_time <= sig_info.block_time <= end_time:
+                                    # Only add transactions within our target time window
+                                    if start_time <= sig_info.block_time <= end_time:
                                         # This transaction is in our target range
                                         page_signatures.append(sig_info.signature)
                                         if rpc_early_stop_enabled:
                                             count_in_window += 1
+                                            # Track window bounds for accurate coverage calculation
+                                            if page_window_oldest is None or sig_info.block_time < page_window_oldest:
+                                                page_window_oldest = sig_info.block_time
+                                            if page_window_newest is None or sig_info.block_time > page_window_newest:
+                                                page_window_newest = sig_info.block_time
                                 else:
                                     # No block_time, include it and filter later
                                     page_signatures.append(sig_info.signature)
                             
                             all_signatures.extend(page_signatures)
                             
-                            # Check if we need to continue paginating
-                            if found_old_enough:
-                                # We've reached transactions older than our target, stop
-                                break
+                            # Update window bounds (only for transactions in target window)
+                            if rpc_early_stop_enabled and page_window_oldest and page_window_newest:
+                                # Track the actual window bounds from transactions in our target range
+                                if window_oldest_bound is None or page_window_oldest < window_oldest_bound:
+                                    window_oldest_bound = page_window_oldest
+                                if window_newest_bound is None or page_window_newest > window_newest_bound:
+                                    window_newest_bound = page_window_newest
                             
                             # Early-stop check: coverage + density conditions
-                            if rpc_early_stop_enabled and oldest_block_time_seen and newest_block_time_seen:
-                                coverage_hours = (newest_block_time_seen - oldest_block_time_seen) / 3600.0
-                                min_coverage = min(rpc_min_coverage_hours, hours)  # Don't require more than requested
+                            # Need at least 3 hours for 12 candles, ideally 4 hours for 16 candles
+                            time_coverage_sufficient = False
+                            if rpc_early_stop_enabled:
+                                # Calculate coverage using window bounds (transactions in target range)
+                                min_coverage_for_12_candles = 3.0  # 12 * 15min = 180min = 3h
+                                ideal_coverage_for_16_candles = 4.0  # 16 * 15min = 240min = 4h
                                 
-                                if coverage_hours >= min_coverage and count_in_window >= rpc_min_sigs_in_window:
+                                # Use window bounds if available (more accurate), otherwise estimate from all seen
+                                if window_oldest_bound and window_newest_bound:
+                                    coverage_hours = (window_newest_bound - window_oldest_bound) / 3600.0
+                                elif oldest_block_time_seen and newest_block_time_seen:
+                                    # Estimate: clamp to window bounds
+                                    window_oldest_est = max(oldest_block_time_seen, start_time)
+                                    window_newest_est = min(newest_block_time_seen, end_time)
+                                    coverage_hours = max(0.0, (window_newest_est - window_oldest_est) / 3600.0)
+                                else:
+                                    coverage_hours = 0.0
+                                
+                                has_min_coverage = coverage_hours >= min_coverage_for_12_candles
+                                has_ideal_coverage = coverage_hours >= ideal_coverage_for_16_candles
+                                has_enough_sigs = count_in_window >= rpc_min_sigs_in_window
+                                
+                                # Stop if we have ideal coverage (4h) OR (min coverage + enough sigs)
+                                if has_ideal_coverage or (has_min_coverage and has_enough_sigs):
+                                    time_coverage_sufficient = True
                                     logger.info(
                                         f"RPC_EARLY_STOP: token={token_address[:8]}, pool={pool_address[:8]}, "
                                         f"pages_used={pages_used}, sigs_in_window={count_in_window}, "
-                                        f"coverage_h={coverage_hours:.2f}, oldest={oldest_block_time_seen}, newest={newest_block_time_seen}"
+                                        f"coverage_h={coverage_hours:.2f} (target: {ideal_coverage_for_16_candles}h for 16 candles, "
+                                        f"min: {min_coverage_for_12_candles}h for 12 candles), "
+                                        f"oldest={oldest_block_time_seen}, newest={newest_block_time_seen}"
                                     )
                                     break
                             
-                            # Check if the oldest transaction in this page is still too recent
+                            # Check if the oldest transaction in this page is older than start_time
                             oldest_block_time = None
                             for sig_info in sig_infos:
                                 if sig_info.block_time:
                                     if oldest_block_time is None or sig_info.block_time < oldest_block_time:
                                         oldest_block_time = sig_info.block_time
                             
+                            # If we've gone past start_time, check coverage before stopping
                             if oldest_block_time and oldest_block_time < start_time:
-                                # We've gone back far enough
-                                break
+                                if rpc_early_stop_enabled:
+                                    # Check if we have sufficient coverage
+                                    min_coverage_for_12_candles = 3.0
+                                    if window_oldest_bound and window_newest_bound:
+                                        coverage_hours = (window_newest_bound - window_oldest_bound) / 3600.0
+                                    elif oldest_block_time_seen and newest_block_time_seen:
+                                        window_oldest_est = max(oldest_block_time_seen, start_time)
+                                        window_newest_est = min(newest_block_time_seen, end_time)
+                                        coverage_hours = max(0.0, (window_newest_est - window_oldest_est) / 3600.0)
+                                    else:
+                                        coverage_hours = 0.0
+                                    
+                                    # If we have at least 3 hours of coverage OR enough signatures, stop
+                                    if coverage_hours >= min_coverage_for_12_candles or count_in_window >= rpc_min_sigs_in_window:
+                                        logger.debug(
+                                            f"Reached start_time boundary with coverage={coverage_hours:.2f}h, "
+                                            f"sigs={count_in_window}, stopping pagination"
+                                        )
+                                        break
+                                    else:
+                                        logger.debug(
+                                            f"Reached start_time boundary but insufficient coverage "
+                                            f"({coverage_hours:.2f}h < {min_coverage_for_12_candles}h), "
+                                            f"continuing pagination to try to get more data..."
+                                        )
+                                        # Continue paginating - don't break yet
+                                else:
+                                    # No early-stop tracking, stop when we've gone back far enough
+                                    break
                             
                             # Set up pagination for next page
                             if sig_infos:
@@ -2882,10 +2943,30 @@ class MarketDataFetcher:
                 oldest_swap_time = swaps[0].get('timestamp', 0)
                 newest_swap_time = swaps[-1].get('timestamp', 0)
                 time_span_hours = (newest_swap_time - oldest_swap_time) / 3600.0
-                logger.info(
-                    f"RPC swaps time span: {time_span_hours:.2f}h (oldest: {oldest_swap_time}, newest: {newest_swap_time}, "
-                    f"requested: {hours}h, start_time: {start_time}, end_time: {end_time})"
-                )
+                
+                # Check if we have sufficient time coverage for candles
+                # Need at least 3 hours for 12 candles, ideally 4 hours for 16 candles
+                min_coverage_for_12_candles = 3.0  # 12 * 15min = 180min = 3h
+                ideal_coverage_for_16_candles = 4.0  # 16 * 15min = 240min = 4h
+                
+                if time_span_hours < min_coverage_for_12_candles:
+                    logger.warning(
+                        f"RPC swaps time span: {time_span_hours:.2f}h < {min_coverage_for_12_candles}h "
+                        f"(need {min_coverage_for_12_candles}h for 12 candles, ideally {ideal_coverage_for_16_candles}h for 16 candles). "
+                        f"Swaps may be clustered in a short time window. "
+                        f"Oldest: {oldest_swap_time}, newest: {newest_swap_time}, requested: {hours}h"
+                    )
+                elif time_span_hours < ideal_coverage_for_16_candles:
+                    logger.info(
+                        f"RPC swaps time span: {time_span_hours:.2f}h (sufficient for 12 candles, "
+                        f"ideally need {ideal_coverage_for_16_candles}h for 16 candles). "
+                        f"Oldest: {oldest_swap_time}, newest: {newest_swap_time}, requested: {hours}h"
+                    )
+                else:
+                    logger.info(
+                        f"RPC swaps time span: {time_span_hours:.2f}h (sufficient for 16 candles). "
+                        f"Oldest: {oldest_swap_time}, newest: {newest_swap_time}, requested: {hours}h"
+                    )
             
             # Use the same 15-minute candle processor as the DEX API method
             # This will extract prices and build 15-minute candles

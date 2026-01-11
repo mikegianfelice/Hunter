@@ -178,7 +178,6 @@ def get_sol_price_usd() -> float:
                 
         # Use cached price if less than 1 hour old (increased from 5 minutes for API resilience)
         if cached_price and (current_time - cached_time) < 3600:
-            print(f"✅ SOL price from cache: ${cached_price}")
             return cached_price
     except Exception:
         pass  # If cache fails, continue with API calls

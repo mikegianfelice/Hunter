@@ -20,7 +20,7 @@ _tracker_instance: Optional['APICallTracker'] = None
 API_LIMITS = {
     'coingecko': 330,  # 300 calls/day, but code uses 330
     'coincap': 130,
-    'helius': 30000
+    'helius': 300000
 }
 
 
