@@ -979,6 +979,48 @@ class EnhancedAsyncTradingEngine:
                      f"Error checking max positions before analysis: {e}")
             # Continue with analysis if check fails (fail-safe)
         
+        # OPTIMIZATION: Filter out tokens already held before AI analysis
+        # This saves API calls for AI analysis and candle fetching
+        original_batch_size = len(batch)
+        try:
+            from src.core.risk_manager import _is_token_already_held
+            filtered_batch = []
+            skipped_already_held = 0
+            
+            for token in batch:
+                token_address = (token.get("address") or "").lower()
+                if token_address and _is_token_already_held(token_address):
+                    log_info("trading.token_already_held.skip_analysis",
+                            f"Skipping AI analysis for {token.get('symbol', 'UNKNOWN')} - already held",
+                            symbol=token.get("symbol"),
+                            token_address=token_address[:8] + "..." if len(token_address) > 8 else token_address,
+                            chain_id=token.get("chainId", "unknown"))
+                    skipped_already_held += 1
+                    continue
+                filtered_batch.append(token)
+            
+            if skipped_already_held > 0:
+                log_info("trading.batch.filtered",
+                        f"Filtered {skipped_already_held} tokens already held from batch of {original_batch_size}",
+                        skipped_count=skipped_already_held,
+                        original_batch_size=original_batch_size,
+                        remaining_batch_size=len(filtered_batch))
+            
+            batch = filtered_batch
+            
+            # If all tokens filtered out, return early
+            if not batch:
+                log_info("trading.batch.all_filtered",
+                        f"All {original_batch_size} tokens in batch already held - skipping analysis",
+                        original_batch_size=original_batch_size)
+                return []
+        except Exception as e:
+            log_error("trading.token_held_filter_error",
+                     f"Error filtering tokens already held: {e}",
+                     error=str(e),
+                     error_type=type(e).__name__)
+            # Continue with original batch on error (fail-safe)
+        
         # Create tasks for parallel AI analysis
         analysis_tasks = [self._analyze_token_ai(token, regime_data) for token in batch]
         analyses = await asyncio.gather(*analysis_tasks, return_exceptions=True)
