@@ -1222,7 +1222,28 @@ class EnhancedAsyncTradingEngine:
                 
                 # CRITICAL: Check buy signal with momentum requirements BEFORE approval
                 from src.core.strategy import check_buy_signal
-                buy_signal_passed = check_buy_signal(token)
+                try:
+                    log_info("trading.debug.check_buy_signal_start",
+                            f"🔍 Calling check_buy_signal for {token.get('symbol', 'UNKNOWN')}",
+                            symbol=token.get("symbol"),
+                            token_address=token.get("address", "")[:8] + "..." if token.get("address") else None,
+                            volume_24h=token.get("volume24h"),
+                            liquidity=token.get("liquidity"),
+                            price=token.get("priceUsd"),
+                            chain_id=token.get("chainId", "unknown"))
+                    buy_signal_passed = check_buy_signal(token)
+                    log_info("trading.debug.check_buy_signal_result",
+                            f"🔍 check_buy_signal returned: {buy_signal_passed} for {token.get('symbol', 'UNKNOWN')}",
+                            symbol=token.get("symbol"),
+                            buy_signal_passed=buy_signal_passed)
+                except Exception as e:
+                    log_error("trading.check_buy_signal_error",
+                            f"Exception in check_buy_signal for {token.get('symbol', 'UNKNOWN')}: {e}",
+                            symbol=token.get("symbol"),
+                            error=str(e),
+                            error_type=type(e).__name__,
+                            token_address=token.get("address", "")[:8] + "..." if token.get("address") else None)
+                    buy_signal_passed = False
                 
                 if not buy_signal_passed:
                     log_info("trading.buy_signal_blocked",
