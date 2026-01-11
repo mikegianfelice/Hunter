@@ -1236,8 +1236,11 @@ def check_buy_signal(token: dict) -> bool:
             tech_indicators = token.get('technical_indicators', {})
             vwap = tech_indicators.get('vwap') or token.get('vwap')
             
+            # Format VWAP safely to avoid format string errors
+            vwap_str = f"{vwap:.8f}" if isinstance(vwap, (int, float)) and vwap is not None else "N/A"
+            
             _log_trace(
-                f"📈 Candle-based momentum: {candle_momentum*100:.4f}% (need ≥ {momentum_need*100:.4f}%), VWAP={vwap:.8f if vwap else 'N/A'}",
+                f"📈 Candle-based momentum: {candle_momentum*100:.4f}% (need ≥ {momentum_need*100:.4f}%), VWAP={vwap_str}",
                 level="info",
                 event="strategy.buy.candle_momentum",
                 symbol=token.get("symbol"),
