@@ -344,8 +344,8 @@ wallet_tiers: {
   "tier_2": {
     "min_balance": 500,
     "max_balance": 4999,
-    "base_position_size_percent": 0.05,
-    "max_position_size_percent": 0.10,
+    "base_position_size_percent": 0.065,  # Increased from 0.05 (30% increase) - higher quality trades
+    "max_position_size_percent": 0.13,   # Increased from 0.10 (30% increase) - capitalize on excellent opportunities
     "max_total_exposure_percent": 0.6,
     "max_wallet_usage_percent": 0.10,
     "description": "Scaling Phase - Moderate (percentage-based for dynamic scaling)"
