@@ -1311,6 +1311,60 @@ class MarketDataFetcher:
             logger.warning(f"❌ CoinCap history fetch failed for {asset_id}: {exc}", exc_info=True)
         return None
 
+    def _get_global_from_binance(self) -> Optional[Dict]:
+        """Fetch global market metrics from Binance by aggregating major pairs.
+        
+        Binance doesn't have a global endpoint, but we can approximate global volume
+        by summing 24hr volumes from major trading pairs.
+        
+        Returns:
+            Dict with normalized structure matching CoinGecko format, or None if fetch fails.
+            Market cap will be None (Binance doesn't provide it).
+        """
+        try:
+            # Major pairs to aggregate (representative of overall market volume)
+            major_pairs = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", 
+                          "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT"]
+            
+            total_volume = 0.0
+            successful_pairs = 0
+            
+            # Fetch 24hr ticker statistics for each major pair
+            for symbol in major_pairs:
+                try:
+                    url = f"{self._binance_base_url}v3/ticker/24hr?symbol={symbol}"
+                    data = self._fetch_json(url)
+                    if data and "quoteVolume" in data:  # quoteVolume is in USDT (USD equivalent)
+                        volume = float(data["quoteVolume"])
+                        total_volume += volume
+                        successful_pairs += 1
+                except Exception as e:
+                    logger.debug(f"Failed to fetch Binance 24hr ticker for {symbol}: {e}")
+                    continue
+            
+            if total_volume > 0 and successful_pairs > 0:
+                # Return normalized structure matching CoinGecko format
+                # Note: Market cap not available from Binance, so we set it to None
+                normalized = {
+                    "data": {
+                        "total_market_cap": {
+                            "usd": None  # Binance doesn't provide market cap
+                        },
+                        "total_volume": {
+                            "usd": total_volume
+                        }
+                    }
+                }
+                logger.info(f"✅ Binance global volume: ${total_volume/1e9:.2f}B (sum of {successful_pairs}/{len(major_pairs)} major pairs)")
+                return normalized
+            else:
+                logger.warning(f"⚠️ Binance global volume aggregation failed: {successful_pairs}/{len(major_pairs)} pairs succeeded")
+                return None
+                
+        except Exception as exc:
+            logger.warning(f"❌ Binance global volume fetch failed: {exc}")
+            return None
+
     def _get_global_from_coincap(self) -> Optional[Dict]:
         """Fetch global market metrics from CoinCap.
         
@@ -1322,7 +1376,14 @@ class MarketDataFetcher:
         return None
 
     def _get_global_market_snapshot(self) -> Optional[Dict]:
-        """Return cached CoinGecko global snapshot or fetch a fresh one."""
+        """Return cached global market snapshot or fetch a fresh one.
+        
+        Priority order:
+        1. Binance (for volume) + CoinGecko (for market cap) if both available
+        2. Binance (volume only)
+        3. CoinGecko (both volume and market cap)
+        4. CoinCap (if enabled and CoinGecko disabled)
+        """
         now = time.time()
 
         # Respect recent failure window to avoid hammering the API
@@ -1336,7 +1397,40 @@ class MarketDataFetcher:
         if cached_snapshot and now - cached_snapshot.get("timestamp", 0) < self.global_snapshot_ttl:
             return cached_snapshot.get("data")
 
-        # Prefer CoinCap first to reduce CoinGecko usage if enabled
+        # Try Binance FIRST (primary source for volume)
+        binance_data = self._get_global_from_binance()
+        if binance_data and binance_data.get("data", {}).get("total_volume", {}).get("usd"):
+            # Binance provides volume but not market cap
+            # Try to get market cap from CoinGecko if available
+            coingecko_data = None
+            if self.enable_coingecko_global or not self._global_snapshot_failure:
+                try:
+                    url = f"{self._coingecko_base_url}global?vs_currency={DEFAULT_FIAT}"
+                    coingecko_data = self._fetch_json(url)
+                except Exception:
+                    pass
+            
+            # Merge Binance volume with CoinGecko market cap if available
+            if coingecko_data and isinstance(coingecko_data, dict):
+                # Use Binance volume, CoinGecko market cap
+                merged_data = {
+                    "data": {
+                        "total_market_cap": coingecko_data.get("data", {}).get("total_market_cap", {}),
+                        "total_volume": binance_data.get("data", {}).get("total_volume", {})
+                    }
+                }
+                self._global_market_snapshot = {"timestamp": now, "data": merged_data}
+                self._global_snapshot_failure = None
+                logger.info("✅ Using Binance volume + CoinGecko market cap for global snapshot")
+                return merged_data
+            else:
+                # Use Binance data only (volume only, no market cap)
+                self._global_market_snapshot = {"timestamp": now, "data": binance_data}
+                self._global_snapshot_failure = None
+                logger.info("✅ Using Binance volume only for global snapshot (market cap unavailable)")
+                return binance_data
+
+        # Fallback to CoinCap if Binance fails and CoinGecko disabled
         if not self.enable_coingecko_global:
             coincap_data = self._get_global_from_coincap()
             if coincap_data:
@@ -1354,7 +1448,7 @@ class MarketDataFetcher:
                 self._global_snapshot_failure = None
                 return normalized
 
-        # CoinGecko global as primary or fallback
+        # Fallback to CoinGecko (both volume and market cap)
         url = f"{self._coingecko_base_url}global?vs_currency={DEFAULT_FIAT}"
         data = self._fetch_json(url)
         if data and isinstance(data, Dict):
@@ -1362,7 +1456,7 @@ class MarketDataFetcher:
             self._global_snapshot_failure = None
             return data
 
-        # Fallback to CoinCap; normalize structure to match CoinGecko response
+        # Final fallback to CoinCap; normalize structure to match CoinGecko response
         coincap_data = self._get_global_from_coincap()
         if coincap_data:
             normalized = {
