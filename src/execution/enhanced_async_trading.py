@@ -1152,8 +1152,16 @@ class EnhancedAsyncTradingEngine:
                                     indicators = tech_indicators.calculate_all_indicators(candles_15m, include_confidence=True)
                                     
                                     # Extract VWAP and other indicators
-                                    vwap = indicators.get('vwap', None)
+                                    vwap_dict = indicators.get('vwap', None)
                                     rsi = indicators.get('rsi', None)
+                                    
+                                    # Extract actual VWAP value (it's a dict with 'vwap' key)
+                                    vwap_value = None
+                                    if vwap_dict:
+                                        if isinstance(vwap_dict, dict):
+                                            vwap_value = vwap_dict.get('vwap')
+                                        else:
+                                            vwap_value = vwap_dict  # Fallback if it's already a float
                                     
                                     # Calculate momentum from candles (first vs last candle)
                                     first_price = candles_15m[0].get('close', 0)
@@ -1167,18 +1175,18 @@ class EnhancedAsyncTradingEngine:
                                     token['candles_validated'] = True
                                     token['candle_momentum'] = candle_momentum
                                     
-                                    if vwap:
-                                        token['vwap'] = vwap
+                                    if vwap_dict:
+                                        token['vwap'] = vwap_dict  # Store full dict for other uses
                                     if rsi:
                                         token['rsi'] = rsi
                                     if indicators:
                                         token['technical_indicators'] = indicators
                                     
                                     log_info("trading.candle_validation.passed",
-                                            f"Token {token.get('symbol', 'UNKNOWN')} passed candle validation: {len(candles_15m)} candles, VWAP={vwap:.8f if vwap else 'N/A'}, momentum={candle_momentum*100:.4f if candle_momentum else 'N/A'}%",
+                                            f"Token {token.get('symbol', 'UNKNOWN')} passed candle validation: {len(candles_15m)} candles, VWAP={vwap_value:.8f if vwap_value else 'N/A'}, momentum={candle_momentum*100:.4f if candle_momentum else 'N/A'}%",
                                             symbol=token.get("symbol"),
                                             candles_count=len(candles_15m),
-                                            vwap=vwap,
+                                            vwap=vwap_value,  # Store the numeric value for logging
                                             candle_momentum=candle_momentum,
                                             rsi=rsi,
                                             token_address=token_address[:8] + "...")
