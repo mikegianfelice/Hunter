@@ -1521,10 +1521,14 @@ class MarketDataFetcher:
             fetch_start_time = time_module.perf_counter()
             method_chosen = "dex_api"
             
-            # Track API call BEFORE making request
+            # Calculate time window for filtering
+            filter_end_time = int(target_timestamp if target_timestamp else time.time())
+            filter_start_time = filter_end_time - (hours * 3600)
+            
+            # First, try DEX API endpoint (fast, simple) to check if it has enough data
+            # If it only returns recent swaps (last 15-30 minutes), we'll need RPC pagination
             track_helius_call()
             
-            # Use Helius DEX API to get swap transactions
             url = f"{self.helius_base_url}/addresses/{token_address}/transactions"
             params = {
                 "api-key": self.helius_api_key,
@@ -1532,31 +1536,28 @@ class MarketDataFetcher:
                 "type": "SWAP",
             }
             
-            # Make request and capture response size
             api_call_start = time_module.perf_counter()
             response = requests.get(url, params=params, timeout=15)
             api_call_time = time_module.perf_counter() - api_call_start
             
-            # Capture response size (before JSON parse)
             response_bytes = len(response.content) if hasattr(response, 'content') else 0
             response_size_mb = response_bytes / (1024 * 1024)
             
             if response.status_code != 200:
                 error_msg = response.text if hasattr(response, 'text') else str(response.content)
-                logger.error(f"Helius API error {response.status_code} for {token_address[:8]}...")
+                logger.error(f"Helius DEX API error {response.status_code} for {token_address[:8]}...")
                 logger.debug(f"Request URL: {url}")
                 logger.debug(f"Request params: {params}")
                 logger.debug(f"Response: {error_msg[:500]}")
                 method_chosen = "rpc_fallback"
-                # Switch to RPC method
                 return self._get_solana_candles_from_rpc(token_address, hours, cache_key, force_fetch, target_timestamp)
             
-            # Parse JSON and capture swap count
+            # Parse JSON
             json_parse_start = time_module.perf_counter()
             try:
                 data = response.json()
             except Exception as e:
-                logger.error(f"Failed to parse Helius API response as JSON for {token_address[:8]}...: {e}")
+                logger.error(f"Failed to parse Helius DEX API response as JSON for {token_address[:8]}...: {e}")
                 logger.debug(f"Response content: {response.text[:500]}")
                 method_chosen = "rpc_fallback"
                 return self._get_solana_candles_from_rpc(token_address, hours, cache_key, force_fetch, target_timestamp)
@@ -1571,26 +1572,60 @@ class MarketDataFetcher:
             
             swaps_count_returned = len(swaps)
             
+            # Check if DEX API returned enough historical data
+            # If all swaps are within the last hour, pagination likely isn't working - use RPC method
+            if swaps_count_returned > 0:
+                swap_times = [s.get('timestamp') or s.get('blockTime', 0) for s in swaps if s.get('timestamp') or s.get('blockTime')]
+                if swap_times:
+                    oldest_swap_time = min(swap_times)
+                    newest_swap_time = max(swap_times)
+                    time_span_seconds = newest_swap_time - oldest_swap_time
+                    time_span_hours_seen = time_span_seconds / 3600.0
+                    
+                    # If all swaps are within 1 hour but we need 6 hours, pagination isn't working
+                    # Extract actual mint address from swaps and use it for RPC method
+                    if time_span_hours_seen < 2.0 and hours > 2:
+                        logger.info(f"DEX API returned only {time_span_hours_seen:.1f}h of data (need {hours}h), extracting mint address and using RPC method for pagination for {token_address[:8]}...")
+                        
+                        # Extract actual mint address from swaps (should be PUMP mint, not pool address)
+                        actual_mint_address = None
+                        USDC_MINT = "epjfwdd5aufqssqem2qn1xzybapc8g4weggkzwytdt1v"
+                        USDT_MINT = "es9vmfrzwaerbvgtle3i33zq3f3kmbo2fdymgzcan4"
+                        SOL_MINT = "so11111111111111111111111111111111111111112"
+                        base_mints = {USDC_MINT, USDT_MINT, SOL_MINT}
+                        
+                        for swap in swaps[:5]:  # Check first 5 swaps
+                            transfers = swap.get('tokenTransfers', [])
+                            for transfer in transfers:
+                                mint = transfer.get('mint', '').lower()
+                                if mint and mint not in base_mints and mint != token_address.lower():
+                                    actual_mint_address = mint
+                                    logger.info(f"Found actual mint address from swaps: {mint[:8]}... for {token_address[:8]}...")
+                                    break
+                            if actual_mint_address:
+                                break
+                        
+                        # Use mint address for RPC method if found, otherwise use provided address
+                        rpc_address = actual_mint_address if actual_mint_address else token_address
+                        method_chosen = "rpc_fallback"
+                        return self._get_solana_candles_from_rpc(rpc_address, hours, cache_key, force_fetch, target_timestamp)
+            
             # Check routing thresholds BEFORE client-side filtering
             if swaps_count_returned > self.dex_max_swaps_guard or response_size_mb > self.dex_max_response_mb:
                 logger.warning(f"CANDLE_FETCH_METRICS: DEX payload too large: swaps={swaps_count_returned}, size={response_size_mb:.2f}MB, switching to RPC")
                 method_chosen = "rpc_fallback"
                 return self._get_solana_candles_from_rpc(token_address, hours, cache_key, force_fetch, target_timestamp)
             
-            # Client-side filtering
+            # Client-side filtering by time window
             filter_start = time_module.perf_counter()
-            if target_timestamp and swaps:
-                end_time = int(target_timestamp)
-                start_time_window = end_time - (hours * 3600)
-                filtered_swaps = []
-                for swap in swaps:
-                    swap_time = swap.get('timestamp') or swap.get('blockTime')
-                    if swap_time and start_time_window <= swap_time <= end_time:
-                        filtered_swaps.append(swap)
-                swaps = filtered_swaps
-            else:
-                # No filtering needed if no target_timestamp
-                pass
+            # Note: filter_start_time and filter_end_time already calculated above
+            
+            filtered_swaps = []
+            for swap in swaps:
+                swap_time = swap.get('timestamp') or swap.get('blockTime')
+                if swap_time and filter_start_time <= swap_time <= filter_end_time:
+                    filtered_swaps.append(swap)
+            swaps = filtered_swaps
             filter_time = time_module.perf_counter() - filter_start
             
             swaps_count_filtered = len(swaps)
@@ -1692,7 +1727,19 @@ class MarketDataFetcher:
                 logger.info(f"✅ Built {len(candles)} 15m candles from Helius swaps for {token_address[:8]}...")
                 return candles
             
-            # Fallback to price_memory if Helius data insufficient
+            # If we have some candles but not enough, try RPC method which supports pagination better
+            # RPC can fetch more historical swaps through pagination
+            if candles and len(candles) > 0:
+                logger.debug(f"Helius DEX API returned insufficient candles ({len(candles)} < 16), trying RPC method for better historical data for {token_address[:8]}...")
+                rpc_candles = self._get_solana_candles_from_rpc(token_address, hours, cache_key, force_fetch, target_timestamp)
+                if rpc_candles and len(rpc_candles) >= 16:
+                    return rpc_candles
+                # If RPC also doesn't have enough, return what we have from DEX (at least it's recent data)
+                if candles and len(candles) >= 2:
+                    logger.debug(f"Using {len(candles)} candles from DEX API (RPC also insufficient) for {token_address[:8]}...")
+                    return candles
+            
+            # Fallback to price_memory if no candles from either method
             logger.debug(f"Helius candles insufficient ({len(candles) if candles else 0} < 16), falling back to price_memory for {token_address[:8]}...")
             return self._get_solana_candles_from_memory(token_address, hours)
             
@@ -1733,7 +1780,11 @@ class MarketDataFetcher:
             candles = self._process_swaps_to_candles_indexed(swaps, hours, start_time, end_time)
             
             if candles and len(candles) >= 2:
-                logger.debug(f"Built {len(candles)} candles from {len(swaps)} indexed swaps for {token_address[:8]}...")
+                time_span_hours = (candles[-1]['time'] - candles[0]['time']) / 3600.0
+                logger.info(
+                    f"INDEXED_CANDLES: token={token_address[:8]}, interval=15m, candles={len(candles)}, "
+                    f"time_span_h={time_span_hours:.2f}, swaps={len(swaps)}"
+                )
                 return candles
             
             return None
@@ -1851,34 +1902,35 @@ class MarketDataFetcher:
     def _process_swaps_to_candles_indexed(
         self, swaps: List[Dict], hours: int, start_time: float, end_time: float
     ) -> List[Dict]:
-        """Convert indexed swap events to hourly candles"""
+        """Convert indexed swap events to 15-minute candles (900 seconds)"""
         if not swaps:
             return []
         
         candles = {}
-        hour_start = int((start_time // 3600) * 3600)
+        window_start = int(start_time)
         
         for swap in swaps:
             timestamp = float(swap.get('block_time', 0))
             price = float(swap.get('price_usd', 0))
             volume = float(swap.get('volume_usd', 0) or 0)
             
-            if timestamp < hour_start or price <= 0:
+            if timestamp < window_start or price <= 0:
                 continue
             
-            hour = int((timestamp // 3600) * 3600)
+            # 15-minute interval: int((timestamp // 900) * 900)
+            interval_15m = int((timestamp // 900) * 900)
             
-            if hour not in candles:
-                candles[hour] = {
+            if interval_15m not in candles:
+                candles[interval_15m] = {
                     'open': price,
                     'high': price,
                     'low': price,
                     'close': price,
                     'volume': volume,
-                    'time': hour
+                    'time': interval_15m
                 }
             else:
-                candle = candles[hour]
+                candle = candles[interval_15m]
                 candle['high'] = max(candle['high'], price)
                 candle['low'] = min(candle['low'], price)
                 candle['close'] = price
@@ -1973,38 +2025,56 @@ class MarketDataFetcher:
             token_amount = 0
             target_token_mint = None
             
-            # Use provided token_address if available, otherwise try to identify it
-            if token_address:
-                target_token_mint = token_address.lower()
-            
-            # If no token_address provided, identify which token we're pricing (the one that's not a base currency)
+            # Supported base currencies (USDC, USDT, SOL)
             base_mints = {USDC_MINT, USDT_MINT, SOL_MINT}
-            if not target_token_mint:
+            
+            # First pass: identify the target token mint
+            # If token_address provided, try to find it in transfers, otherwise auto-detect
+            if token_address:
+                token_address_lower = token_address.lower()
+                # Check if the provided address matches any mint in the transfers
+                found_mint = False
+                for transfer in token_transfers:
+                    mint = transfer.get('mint', '').lower()
+                    if mint == token_address_lower:
+                        target_token_mint = mint
+                        found_mint = True
+                        break
+                
+                # If provided address doesn't match any mint, auto-detect the non-base token
+                if not found_mint:
+                    for transfer in token_transfers:
+                        mint = transfer.get('mint', '').lower()
+                        if mint not in base_mints:
+                            target_token_mint = mint
+                            break
+            else:
+                # No token_address provided, auto-detect the non-base token
                 for transfer in token_transfers:
                     mint = transfer.get('mint', '').lower()
                     if mint not in base_mints:
                         target_token_mint = mint
                         break
             
-            # Second pass: extract amounts
+            if not target_token_mint:
+                # Could not identify target token
+                return None
+            
+            # Second pass: extract amounts (sum all transfers for base and token)
             for transfer in token_transfers:
                 mint = transfer.get('mint', '').lower()
                 amount = float(transfer.get('tokenAmount', 0))
                 
                 if mint == USDC_MINT or mint == USDT_MINT:
-                    # USDC/USDT are worth $1, so use directly
-                    base_amount = amount
-                elif mint == SOL_MINT:
-                    # SOL needs to be converted to USD - we'll need SOL price
-                    # For now, skip SOL-based swaps or use a fallback
-                    # TODO: Fetch SOL price and convert
-                    continue
+                    # USDC/USDT are worth $1, sum all USDC/USDT transfers
+                    base_amount += amount
                 elif mint == target_token_mint:
-                    token_amount = amount
+                    # Sum all token transfers (handle multiple transfers)
+                    token_amount += amount
             
-            # If we have SOL-based swap, try to get SOL price
+            # If we have SOL-based swap and no USDC/USDT, try to get SOL price
             has_sol = any(t.get('mint', '').lower() == SOL_MINT for t in token_transfers)
-            if has_sol and not base_amount:
+            if has_sol and base_amount == 0:
                 # Get real SOL price
                 try:
                     from src.utils.utils import get_sol_price_usd
@@ -2012,13 +2082,12 @@ class MarketDataFetcher:
                 except Exception:
                     sol_price_usd = 150.0  # Fallback
                 
+                # Sum SOL transfers
                 for transfer in token_transfers:
                     mint = transfer.get('mint', '').lower()
                     amount = float(transfer.get('tokenAmount', 0))
                     if mint == SOL_MINT:
-                        base_amount = amount * sol_price_usd
-                    elif mint == target_token_mint:
-                        token_amount = amount
+                        base_amount += amount * sol_price_usd
             
             if base_amount > 0 and token_amount > 0:
                 return base_amount / token_amount
@@ -2252,16 +2321,15 @@ class MarketDataFetcher:
             return self._get_solana_candles_from_memory(token_address, hours)
         
         try:
-            # Use Helius RPC endpoint
-            rpc_url = f"https://mainnet.helius-rpc.com/?api-key={self.helius_api_key}"
-            client = Client(rpc_url)
+            # Use HeliusClient for normalized transaction format (with tokenTransfers)
+            from src.utils.helius_client import HeliusClient
+            client = HeliusClient(self.helius_api_key)
             
             # Calculate time range
             query_time = target_timestamp if target_timestamp else time.time()
             end_time = int(query_time)
             start_time = end_time - (hours * 3600)
             
-            token_pubkey = Pubkey.from_string(token_address)
             swaps = []
             
             # OPTIMIZATION: Find liquidity pools containing the token, then query pool transactions
@@ -2280,19 +2348,42 @@ class MarketDataFetcher:
                 
                 # Step 2: Query transactions from pool addresses with pagination
                 # Load pagination limits from config with sensible defaults
-                from src.config.config_loader import get_config_int
+                from src.config.config_loader import get_config_int, get_config_float, get_config
                 max_pools = get_config_int('helius_candlestick_settings.max_pools_to_query', 2)
-                max_pages = get_config_int('helius_candlestick_settings.max_pagination_pages', 5)
+                # Dynamically increase pagination pages based on hours requested
+                # For 6 hours, we need more pages to get historical data
+                # Base pages: 5, add extra pages based on hours (6h = 6*3 = 18 pages minimum)
+                base_pages = get_config_int('helius_candlestick_settings.max_pagination_pages', 5)
+                # Calculate needed pages: roughly 3 pages per hour (300 transactions/hour should be enough)
+                # Cap at 50 pages to avoid excessive API calls
+                max_pages = min(base_pages + (hours * 3), 50)
                 max_sigs_per_page = get_config_int('helius_candlestick_settings.max_signatures_per_page', 100)
+                
+                # Early-stop configuration
+                rpc_early_stop_enabled = get_config('helius_15m_candle_policy.rpc_early_stop_enabled', True)
+                rpc_min_sigs_in_window = get_config_int('helius_15m_candle_policy.rpc_min_sigs_in_window', 500)
+                rpc_min_coverage_hours = get_config_float('helius_15m_candle_policy.rpc_min_coverage_hours', 4.0)
+                
+                logger.info(
+                    f"RPC pagination settings for {hours}h: pools={max_pools}, pages={max_pages} "
+                    f"(base={base_pages} + {hours*3} hours = {base_pages + hours*3}, capped at 50), "
+                    f"sigs/page={max_sigs_per_page}"
+                )
                 
                 for pool_address in pool_addresses[:max_pools]:  # Limit pools (default: 2, was 5)
                     try:
-                        pool_pubkey = Pubkey.from_string(pool_address)
+                        # HeliusClient.get_signatures_for_address expects a string address
                         
                         # Paginate backwards in time to reach historical data
                         all_signatures = []
                         before_signature = None
                         # Reduced pagination limits (default: 5 pages = 500 transactions max, was 20 pages = 10,000)
+                        
+                        # Early-stop tracking (only if enabled)
+                        oldest_block_time_seen = None
+                        newest_block_time_seen = None
+                        count_in_window = 0
+                        pages_used = 0
                         
                         logger.debug(f"Querying pool {pool_address[:8]}... with pagination (max {max_pages} pages)")
                         
@@ -2301,20 +2392,30 @@ class MarketDataFetcher:
                             track_helius_call()
                             
                             # Get signatures for the pool address, paginating backwards
-                            sigs_response = client.get_signatures_for_address(
-                                pool_pubkey,
+                            # HeliusClient._get_signatures_for_address returns List[SignatureInfo]
+                            sig_infos = client._get_signatures_for_address(
+                                pool_address,  # String address, not Pubkey
                                 limit=max_sigs_per_page,  # Reduced limit (default: 100, was 500)
-                                before=before_signature  # Paginate using last signature from previous page
+                                before=before_signature,  # Paginate using last signature from previous page
+                                until=None
                             )
                             
-                            if not sigs_response.value:
+                            if not sig_infos:
                                 break  # No more transactions
                             
+                            pages_used = page + 1
                             page_signatures = []
                             found_old_enough = False
                             
-                            for sig_info in sigs_response.value:
+                            for sig_info in sig_infos:
                                 if sig_info.block_time:
+                                    # Track time bounds for early-stop
+                                    if rpc_early_stop_enabled:
+                                        if oldest_block_time_seen is None or sig_info.block_time < oldest_block_time_seen:
+                                            oldest_block_time_seen = sig_info.block_time
+                                        if newest_block_time_seen is None or sig_info.block_time > newest_block_time_seen:
+                                            newest_block_time_seen = sig_info.block_time
+                                    
                                     if sig_info.block_time < start_time:
                                         # We've gone too far back, stop paginating
                                         found_old_enough = True
@@ -2322,6 +2423,8 @@ class MarketDataFetcher:
                                     elif start_time <= sig_info.block_time <= end_time:
                                         # This transaction is in our target range
                                         page_signatures.append(sig_info.signature)
+                                        if rpc_early_stop_enabled:
+                                            count_in_window += 1
                                 else:
                                     # No block_time, include it and filter later
                                     page_signatures.append(sig_info.signature)
@@ -2333,9 +2436,22 @@ class MarketDataFetcher:
                                 # We've reached transactions older than our target, stop
                                 break
                             
+                            # Early-stop check: coverage + density conditions
+                            if rpc_early_stop_enabled and oldest_block_time_seen and newest_block_time_seen:
+                                coverage_hours = (newest_block_time_seen - oldest_block_time_seen) / 3600.0
+                                min_coverage = min(rpc_min_coverage_hours, hours)  # Don't require more than requested
+                                
+                                if coverage_hours >= min_coverage and count_in_window >= rpc_min_sigs_in_window:
+                                    logger.info(
+                                        f"RPC_EARLY_STOP: token={token_address[:8]}, pool={pool_address[:8]}, "
+                                        f"pages_used={pages_used}, sigs_in_window={count_in_window}, "
+                                        f"coverage_h={coverage_hours:.2f}, oldest={oldest_block_time_seen}, newest={newest_block_time_seen}"
+                                    )
+                                    break
+                            
                             # Check if the oldest transaction in this page is still too recent
                             oldest_block_time = None
-                            for sig_info in sigs_response.value:
+                            for sig_info in sig_infos:
                                 if sig_info.block_time:
                                     if oldest_block_time is None or sig_info.block_time < oldest_block_time:
                                         oldest_block_time = sig_info.block_time
@@ -2345,18 +2461,44 @@ class MarketDataFetcher:
                                 break
                             
                             # Set up pagination for next page
-                            if sigs_response.value:
-                                before_signature = sigs_response.value[-1].signature
+                            if sig_infos:
+                                before_signature = sig_infos[-1].signature
                             else:
                                 break  # No more transactions
                             
-                            logger.debug(f"Page {page + 1}: Found {len(page_signatures)} transactions in range, oldest: {oldest_block_time}")
+                            # Log pagination progress with time information
+                            if oldest_block_time:
+                                oldest_age_hours = (end_time - oldest_block_time) / 3600.0
+                                logger.debug(
+                                    f"Page {page + 1}: Found {len(page_signatures)} transactions in range, "
+                                    f"oldest: {oldest_block_time} ({oldest_age_hours:.2f}h ago), "
+                                    f"target: {start_time} ({hours}h ago)"
+                                )
+                            else:
+                                logger.debug(f"Page {page + 1}: Found {len(page_signatures)} transactions in range (no block_time)")
                         
                         if not all_signatures:
                             logger.debug(f"No transactions in time range for pool {pool_address[:8]}...")
                             continue
                         
-                        logger.info(f"Found {len(all_signatures)} transactions in target time range from pool {pool_address[:8]}...")
+                        # Check actual time span of signatures found
+                        if all_signatures and len(all_signatures) > 0:
+                            # Log pagination completion (early-stop or full)
+                            if rpc_early_stop_enabled and pages_used < max_pages:
+                                # Early-stop already logged above
+                                pass
+                            else:
+                                # Completed full pagination
+                                logger.debug(
+                                    f"RPC_PAGINATION_DONE: token={token_address[:8]}, pool={pool_address[:8]}, "
+                                    f"pages_used={pages_used}, sigs_total={len(all_signatures)}, "
+                                    f"sigs_in_window={count_in_window}, oldest={oldest_block_time_seen}, newest={newest_block_time_seen}"
+                                )
+                            # Note: We need to fetch transactions to get actual timestamps, but we can at least log signature count
+                            logger.info(
+                                f"Found {len(all_signatures)} transaction signatures in target time range from pool {pool_address[:8]}... "
+                                f"(target: {hours}h, pages: {pages_used}/{max_pages})"
+                            )
                         
                         # Fetch transactions in batches
                         batch_size = 50
@@ -2364,55 +2506,47 @@ class MarketDataFetcher:
                             batch = all_signatures[i:i + batch_size]
                             
                             try:
-                                # Track RPC call for transaction batch
-                                track_helius_call()
+                                # Use HeliusClient.get_transactions_by_signature for normalized format
+                                # This returns transactions in Helius format with tokenTransfers
+                                normalized_txs = client.get_transactions_by_signature(batch)
                                 
-                                # Get transaction details
-                                txs_response = client.get_transactions(
-                                    batch,
-                                    max_supported_transaction_version=0
-                                )
-                                
-                                if not txs_response.value:
+                                if not normalized_txs:
                                     continue
                                 
-                                # Process each transaction
-                                for tx_result in txs_response.value:
-                                    if not tx_result or not tx_result.transaction:
+                                # Process each normalized transaction (Helius format with tokenTransfers)
+                                # Keep original format and let _process_helius_swaps_to_candles extract prices
+                                batch_swaps = 0
+                                for tx in normalized_txs:
+                                    if not tx:
                                         continue
                                     
-                                    tx = tx_result.transaction
-                                    meta = tx_result.transaction.meta
-                                    
-                                    if not meta or meta.err:
-                                        continue  # Skip failed transactions
-                                    
-                                    # Get block time (timestamp)
-                                    block_time = tx_result.block_time
-                                    if not block_time:
+                                    # Get timestamp
+                                    timestamp = tx.get('timestamp')
+                                    if not timestamp:
                                         continue
                                     
                                     # Filter by time range (double-check)
-                                    if block_time < start_time or block_time > end_time:
+                                    if timestamp < start_time or timestamp > end_time:
                                         continue
                                     
-                                    # Check if this is a swap transaction
-                                    if self._is_swap_transaction(tx, meta):
-                                        swap_data = self._extract_swap_from_transaction(
-                                            tx, meta, token_pubkey, token_address
-                                        )
-                                        
-                                        if swap_data:
-                                            swaps.append({
-                                                'timestamp': block_time,
-                                                'price': swap_data['price'],
-                                                'volume': swap_data.get('volume', 0),
-                                                'signature': str(tx_result.transaction.signatures[0]) if tx_result.transaction.signatures else None
-                                            })
+                                    # Check if it has tokenTransfers (indicates a swap)
+                                    token_transfers = tx.get('tokenTransfers', [])
+                                    if not token_transfers or len(token_transfers) < 2:
+                                        continue
+                                    
+                                    # Keep the original transaction format - _process_helius_swaps_to_candles will extract prices
+                                    swaps.append(tx)
+                                    batch_swaps += 1
+                                
+                                if batch_swaps > 0:
+                                    logger.debug(f"Added {batch_swaps} swaps from batch {i//batch_size + 1}")
                             
                             except Exception as e:
-                                logger.debug(f"Error processing transaction batch from pool: {e}")
+                                logger.warning(f"Error processing transaction batch {i//batch_size + 1} from pool {pool_address[:8]}...: {e}")
                                 continue
+                        
+                        # Log progress after processing each pool
+                        logger.info(f"After processing pool {pool_address[:8]}..., found {len(swaps)} swaps total")
                     
                     except Exception as e:
                         logger.debug(f"Error querying pool {pool_address[:8]}...: {e}")
@@ -2423,17 +2557,46 @@ class MarketDataFetcher:
                 return self._try_jupiter_price_fallback(token_address, hours, target_timestamp)
             
             if not swaps or len(swaps) < 2:
-                logger.debug(f"Insufficient swap data from RPC for {token_address[:8]}... (got {len(swaps)} swaps)")
+                logger.warning(f"Insufficient swap data from RPC for {token_address[:8]}... (got {len(swaps)} swaps after processing all pools)")
                 # Try Jupiter price API as fallback
                 return self._try_jupiter_price_fallback(token_address, hours, target_timestamp)
             
-            # Sort swaps by timestamp
-            swaps.sort(key=lambda x: x['timestamp'])
+            logger.info(f"✅ Successfully found {len(swaps)} swap transactions from RPC for {token_address[:8]}...")
             
-            # Build candles from swaps
-            candles = self._process_swaps_to_candles_rpc(swaps, hours, start_time, end_time)
+            # Sort swaps by timestamp (swaps are already in Helius format with tokenTransfers)
+            swaps.sort(key=lambda x: x.get('timestamp', 0))
             
-            if candles and len(candles) >= 10:
+            # Check time span of swaps
+            if swaps:
+                oldest_swap_time = swaps[0].get('timestamp', 0)
+                newest_swap_time = swaps[-1].get('timestamp', 0)
+                time_span_hours = (newest_swap_time - oldest_swap_time) / 3600.0
+                logger.info(
+                    f"RPC swaps time span: {time_span_hours:.2f}h (oldest: {oldest_swap_time}, newest: {newest_swap_time}, "
+                    f"requested: {hours}h, start_time: {start_time}, end_time: {end_time})"
+                )
+            
+            # Use the same 15-minute candle processor as the DEX API method
+            # This will extract prices and build 15-minute candles
+            candles, candle_metadata = self._process_helius_swaps_to_candles(swaps, hours, target_timestamp, token_address)
+            
+            # Log candle metadata for debugging
+            logger.info(
+                f"CANDLE_BUILD_RPC: token={token_address[:8]}, swaps={candle_metadata.get('swaps_processed', 0)}, "
+                f"candles={candle_metadata.get('candles_created', 0)}, "
+                f"non_empty={candle_metadata.get('non_empty_candles', 0)}"
+            )
+            
+            # Check time span of candles if we have any
+            candle_time_span = None
+            if candles:
+                candle_time_span = (candles[-1]['time'] - candles[0]['time']) / 3600.0
+                logger.info(f"CANDLE_TIME_SPAN: {candle_time_span:.2f}h (first: {candles[0]['time']}, last: {candles[-1]['time']})")
+            
+            # If we have candles but not enough, check if they meet quality requirements
+            # Sometimes we get fewer candles if swaps are clustered in a shorter time window
+            # But we still need minimum 16 candles (4 hours) for quality check
+            if candles and len(candles) >= 16:
                 # Cache the result
                 self.candlestick_cache_helius[cache_key] = {
                     'data': candles,
@@ -2447,7 +2610,29 @@ class MarketDataFetcher:
                 logger.info(f"✅ Built {len(candles)} candles from RPC swaps for {token_address[:8]}...")
                 return candles
             
+            # If we have some candles but not enough, log why
+            if candles and len(candles) > 0:
+                time_span_str = f"{candle_time_span:.2f}h" if candle_time_span is not None else "N/A"
+                logger.warning(
+                    f"RPC method built only {len(candles)} candles (need >= 16) for {token_address[:8]}... "
+                    f"Swaps: {len(swaps)}, processed: {candle_metadata.get('swaps_processed', 0)}, "
+                    f"Time span: {time_span_str}"
+                )
+                # If we have at least some valid candles, check if quality is good enough
+                # Maybe the token just doesn't have 6 hours of history, but we can still use what we have
+                if self._validate_candle_quality(candles, candle_metadata, hours):
+                    logger.info(f"✅ Candle quality passed with {len(candles)} candles, accepting result for {token_address[:8]}...")
+                    # Cache and return even if less than 16 candles (quality check passed)
+                    self.candlestick_cache_helius[cache_key] = {
+                        'data': candles,
+                        'timestamp': time.time(),
+                        'source': 'rpc'
+                    }
+                    self._save_candlestick_cache()
+                    return candles
+            
             # Fallback to Jupiter or price_memory
+            logger.debug(f"RPC method failed to build sufficient candles for {token_address[:8]}..., trying Jupiter fallback")
             return self._try_jupiter_price_fallback(token_address, hours, target_timestamp)
             
         except Exception as e:

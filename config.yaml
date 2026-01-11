@@ -144,7 +144,7 @@ helius_candlestick_settings:
   max_pools_to_query: 2  # Max liquidity pools to query for RPC method (reduced from 5)
   max_pagination_pages: 5  # Max pages per pool for RPC pagination (reduced from 20)
   max_signatures_per_page: 100  # Max signatures per page for RPC (reduced from 500)
-  rate_limit_threshold: 25000  # Use fallback if Helius calls exceed this (83% of 30k limit)
+  rate_limit_threshold: 250000  # Use fallback if Helius calls exceed this (83% of 30k limit)
 
 # === Helius 15m Candle Policy ===
 helius_15m_candle_policy:
@@ -157,6 +157,10 @@ helius_15m_candle_policy:
   min_time_coverage_hours: 4.0
   min_swaps_per_candle_avg: 1.5
   max_tokens_per_cycle_for_candles: 15
+  # RPC early-stop settings
+  rpc_early_stop_enabled: true
+  rpc_min_sigs_in_window: 500
+  rpc_min_coverage_hours: 4.0
 
 # === Swap Indexer Settings ===
 swap_indexer:
