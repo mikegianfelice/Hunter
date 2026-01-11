@@ -2137,18 +2137,25 @@ class MarketDataFetcher:
         """
         Validate candle quality for 15m candles.
         Returns True if candles meet quality thresholds.
+        Supports both strict mode (full candle count) and lenient mode (partial data).
         """
         from src.config.config_loader import get_config_int, get_config_float
         
         if not candles:
             return False
         
-        # Load thresholds from config
+        # Load strict mode thresholds from config
         config_min_candles = get_config_int('helius_15m_candle_policy.min_candles', 16)  # Default 16
         # Scale min_candles with requested hours: max(config_min, hours*4, 16)
         # With config_min=16: 4h=max(16,16,16)=16, 6h=max(16,24,16)=24, 2h=max(16,8,16)=16
-        min_candles = max(config_min_candles, hours * 4, 16)
+        min_candles_strict = max(config_min_candles, hours * 4, 16)
         
+        # Load lenient mode thresholds from config
+        ABS_MIN_CANDLES = get_config_int('helius_15m_candle_policy.absolute_min_candles', 12)  # Default 12
+        lenient_min_coverage_hours = get_config_float('helius_15m_candle_policy.lenient_min_coverage_hours', 3.0)  # Default 3.0
+        lenient_non_empty_ratio = get_config_float('helius_15m_candle_policy.lenient_non_empty_ratio', 0.5)  # Default 0.5
+        
+        # Load other thresholds
         min_swaps_in_window = get_config_int('helius_15m_candle_policy.min_swaps_in_window', 40)
         # Default to 50% coverage (hours*4*0.5) if config not set, otherwise use config value
         default_min_non_empty = int(hours * 4 * 0.5)
@@ -2158,9 +2165,56 @@ class MarketDataFetcher:
         min_time_coverage_hours = min(min_time_coverage_hours_config, hours)
         min_swaps_per_candle = get_config_float('helius_15m_candle_policy.min_swaps_per_candle_avg', 1.5)
         
+        # Check absolute minimum first (reject if below absolute minimum)
+        if len(candles) < ABS_MIN_CANDLES:
+            logger.debug(f"CANDLE_QUALITY: Insufficient candles: {len(candles)} < {ABS_MIN_CANDLES} (absolute minimum)")
+            return False
+        
+        # Determine if we should use lenient mode
+        use_lenient_mode = len(candles) < min_candles_strict and len(candles) >= ABS_MIN_CANDLES
+        
+        if use_lenient_mode:
+            # LENIENT MODE: Accept partial data if quality is strong
+            logger.debug(f"CANDLE_QUALITY: Using lenient mode: {len(candles)} candles (strict requires {min_candles_strict})")
+            
+            # Lenient check 1: Time coverage (must be >= 3 hours)
+            time_span = candles[-1]['time'] - candles[0]['time']
+            min_time_coverage_seconds_lenient = lenient_min_coverage_hours * 3600
+            if time_span < min_time_coverage_seconds_lenient:
+                logger.debug(f"CANDLE_QUALITY_LENIENT: Insufficient time coverage: {time_span/3600:.1f}h < {lenient_min_coverage_hours}h")
+                return False
+            
+            # Lenient check 2: Non-empty candles ratio (must be >= 50% of returned candles)
+            min_non_empty_candles_lenient = int(len(candles) * lenient_non_empty_ratio)
+            if metadata['non_empty_candles'] < min_non_empty_candles_lenient:
+                logger.debug(f"CANDLE_QUALITY_LENIENT: Insufficient non-empty candles: {metadata['non_empty_candles']} < {min_non_empty_candles_lenient} (ratio: {lenient_non_empty_ratio})")
+                return False
+            
+            # Lenient check 3: Swap density (same as strict mode)
+            if metadata['swaps_per_candle_avg'] < min_swaps_per_candle:
+                logger.debug(f"CANDLE_QUALITY_LENIENT: Low swap density: {metadata['swaps_per_candle_avg']:.1f} < {min_swaps_per_candle}")
+                return False
+            
+            # Lenient check 4: Minimum swaps (use max(24, len(candles) * min_swaps_per_candle))
+            min_swaps_lenient = max(24, int(len(candles) * min_swaps_per_candle))
+            if metadata['swaps_processed'] < min_swaps_lenient:
+                logger.debug(f"CANDLE_QUALITY_LENIENT: Insufficient swaps: {metadata['swaps_processed']} < {min_swaps_lenient}")
+                return False
+            
+            # All lenient checks passed
+            coverage_h = time_span / 3600.0
+            logger.info(
+                f"CANDLE_QUALITY_LENIENT_PASS token={metadata.get('token_address', 'unknown')[:8] if 'token_address' in metadata else 'unknown'}, "
+                f"candles={len(candles)}, swaps={metadata['swaps_processed']}, "
+                f"coverage_h={coverage_h:.2f}, density={metadata['swaps_per_candle_avg']:.2f}, "
+                f"non_empty={metadata['non_empty_candles']}"
+            )
+            return True
+        
+        # STRICT MODE: Full validation for complete candle sets
         # Check 1: Minimum candles (scales with hours)
-        if len(candles) < min_candles:
-            logger.debug(f"CANDLE_QUALITY: Insufficient candles: {len(candles)} < {min_candles} (requested {hours}h, config floor={config_min_candles})")
+        if len(candles) < min_candles_strict:
+            logger.debug(f"CANDLE_QUALITY: Insufficient candles: {len(candles)} < {min_candles_strict} (requested {hours}h, config floor={config_min_candles})")
             return False
         
         # Check 2: Minimum swaps in window

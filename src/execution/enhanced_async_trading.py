@@ -1108,16 +1108,14 @@ class EnhancedAsyncTradingEngine:
                                     chain_id=chain_id)
                             enhanced_token["approved_for_trading"] = False
                             enhanced_token["rejection_reason"] = "no_candles_returned"
-                        elif len(candles_15m) < 16:  # Minimum 16 candles (4 hours)
-                            log_error("trading.candle_validation.insufficient_candles",
-                                    f"Token {token.get('symbol', 'UNKNOWN')} blocked: insufficient candles ({len(candles_15m)} < 16)",
-                                    symbol=token.get("symbol"),
-                                    candles_count=len(candles_15m),
-                                    required_min=16,
-                                    token_address=token_address[:8] + "...")
-                            enhanced_token["approved_for_trading"] = False
-                            enhanced_token["rejection_reason"] = f"insufficient_candles_{len(candles_15m)}"
                         else:
+                            # Quality validation already happened in market_data_fetcher
+                            # If candles exist, they passed lenient or strict validation
+                            if len(candles_15m) < 16:
+                                logger.warning(
+                                    f"Token {token.get('symbol', 'UNKNOWN')} has {len(candles_15m)} candles (<16 ideal), "
+                                    f"but passed quality validation - continuing"
+                                )
                             # Validate candle quality (check OHLC integrity)
                             invalid_count = 0
                             for idx, c in enumerate(candles_15m):
