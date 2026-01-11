@@ -1574,26 +1574,31 @@ class MarketDataFetcher:
             
             # Check if we have sufficient data for accurate indicators
             from src.config.config_loader import get_config_int
-            min_candles = get_config_int("swap_indexer.min_candles_for_accuracy", 35)
+            # Use reasonable minimum: 12 candles minimum, but cap at hours*4 for 6h requests
+            min_candles = min(
+                get_config_int("swap_indexer.min_candles_for_accuracy", 35),
+                max(12, hours * 4)  # Minimum 12 candles, max 24 for 6 hours
+            )
             
             if candles and len(candles) >= min_candles:
                 logger.debug(f"✅ Got {len(candles)} candles from indexed swaps for {token_address[:8]}... (sufficient for accuracy)")
                 return candles
             
             # If we have some data but not enough, try targeted backfill
-            if candles and len(candles) >= 10:
+            # Accept 12+ candles (3 hours minimum) even if below ideal threshold
+            if candles and len(candles) >= 12:
                 logger.debug(f"⚠️  Got {len(candles)} candles (need {min_candles}+), attempting targeted backfill for {token_address[:8]}...")
                 candles = self._try_targeted_backfill(token_address, hours, candles, target_timestamp)
                 if candles and len(candles) >= min_candles:
                     logger.debug(f"✅ After backfill: {len(candles)} candles for {token_address[:8]}...")
                     return candles
-                # If backfill didn't help enough, continue with what we have
-                if candles and len(candles) >= 10:
-                    logger.debug(f"Using {len(candles)} candles (acceptable but not optimal)")
+                # If backfill didn't help enough, but we have 12+ candles, accept it
+                if candles and len(candles) >= 12:
+                    logger.debug(f"Using {len(candles)} candles (minimum acceptable: 12 candles = 3 hours)")
                     return candles
             
             # If no indexed data yet, add token to indexer for future cycles (defensive)
-            if not candles or len(candles) < 10:
+            if not candles or len(candles) < 12:
                 try:
                     from src.config.config_loader import get_config
                     if get_config("swap_indexer.enabled", True):
@@ -2403,9 +2408,9 @@ class MarketDataFetcher:
         
         # Load strict mode thresholds from config
         config_min_candles = get_config_int('helius_15m_candle_policy.min_candles', 16)  # Default 16
-        # Scale min_candles with requested hours: max(config_min, hours*4, 16)
-        # With config_min=16: 4h=max(16,16,16)=16, 6h=max(16,24,16)=24, 2h=max(16,8,16)=16
-        min_candles_strict = max(config_min_candles, hours * 4, 16)
+        # For 6 hours: require at least 12 candles (3 hours), ideally 16+ (4+ hours)
+        # Min 12 candles, but don't exceed hours*4 (24 for 6h requests)
+        min_candles_strict = max(12, min(config_min_candles, hours * 4))
         
         # Load lenient mode thresholds from config
         ABS_MIN_CANDLES = get_config_int('helius_15m_candle_policy.absolute_min_candles', 12)  # Default 12
@@ -2763,8 +2768,8 @@ class MarketDataFetcher:
                             time_coverage_sufficient = False
                             if rpc_early_stop_enabled:
                                 # Calculate coverage using window bounds (transactions in target range)
-                                min_coverage_for_12_candles = 3.0  # 12 * 15min = 180min = 3h
-                                ideal_coverage_for_16_candles = 4.0  # 16 * 15min = 240min = 4h
+                                min_coverage_for_12_candles = 3.0  # Minimum: 12 candles = 3 hours
+                                ideal_coverage_for_16_candles = max(4.0, (hours * 0.67))  # Target: 4+ hours (16+ candles) or 67% of requested
                                 
                                 # Use window bounds if available (more accurate), otherwise estimate from all seen
                                 if window_oldest_bound and window_newest_bound:
@@ -2803,8 +2808,8 @@ class MarketDataFetcher:
                             # If we've gone past start_time, check coverage before stopping
                             if oldest_block_time and oldest_block_time < start_time:
                                 if rpc_early_stop_enabled:
-                                    # Check if we have sufficient coverage
-                                    min_coverage_for_12_candles = 3.0
+                                    # Check if we have sufficient coverage (minimum 3 hours = 12 candles)
+                                    min_coverage_for_12_candles = 3.0  # Keep at 3.0 (12 candles minimum)
                                     if window_oldest_bound and window_newest_bound:
                                         coverage_hours = (window_newest_bound - window_oldest_bound) / 3600.0
                                     elif oldest_block_time_seen and newest_block_time_seen:

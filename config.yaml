@@ -164,7 +164,8 @@ helius_15m_candle_policy:
   # RPC early-stop settings
   rpc_early_stop_enabled: true
   rpc_min_sigs_in_window: 500
-  rpc_min_coverage_hours: 4.0
+  rpc_min_coverage_hours: 3.0  # Minimum 3 hours (12 candles)
+  rpc_ideal_coverage_hours: 4.0  # Ideally 4+ hours (16+ candles)
 
 # === Swap Indexer Settings ===
 swap_indexer:
