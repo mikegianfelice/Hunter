@@ -442,17 +442,22 @@ class MarketDataFetcher:
             start_ts = now - (hours * 3600)
             end_ts = now
             
-            # Select appropriate interval for Binance (same logic as CoinCap)
+            # Select appropriate interval for Binance correlation
+            # For correlation analysis, prioritize getting 60+ data points (need min 60)
+            # Use hourly intervals for longer timeframes to get more points
+            # Binance limit is 1000 klines, so we can use 1h for up to 1000 hours (41.6 days)
             if hours <= 6:
-                interval = "m15"  # 15 minutes
+                interval = "m15"  # 15 minutes (24 points for 6h)
             elif hours <= 24:
-                interval = "h1"   # 1 hour
+                interval = "h1"   # 1 hour (24 points)
             elif hours <= 72:
-                interval = "h6"   # 6 hours
+                interval = "h1"   # 1 hour (72 points) - prioritize data points over efficiency
             elif hours <= 168:
-                interval = "h12"  # 12 hours
+                interval = "h1"   # 1 hour (168 points) - changed from h12
+            elif hours <= 1000:  # Binance limit is 1000 klines
+                interval = "h1"   # 1 hour (up to 1000 hours = 41.6 days)
             else:
-                interval = "d1"   # 1 day
+                interval = "h6"   # 6 hours (for very long timeframes beyond 1000 hours)
             
             btc_prices: Dict[int, float] = {}
             sol_prices: Dict[int, float] = {}
