@@ -436,38 +436,75 @@ class MarketDataFetcher:
                 logger.warning(f"[DEBUG] Failed to write log file: {e}")
             # #endregion
             
-            btc_data, btc_from_timestamp, btc_now = self._get_market_chart_range("bitcoin", hours)
-            sol_data, sol_from_timestamp, sol_now = self._get_market_chart_range("solana", hours)
-
+            # Try Binance first for BTC/SOL correlation (same exchange = perfect timestamp alignment)
+            # Binance provides both BTCUSDT and SOLUSDT with synchronized timestamps
+            now = int(time.time())
+            start_ts = now - (hours * 3600)
+            end_ts = now
+            
+            # Select appropriate interval for Binance (same logic as CoinCap)
+            if hours <= 6:
+                interval = "m15"  # 15 minutes
+            elif hours <= 24:
+                interval = "h1"   # 1 hour
+            elif hours <= 72:
+                interval = "h6"   # 6 hours
+            elif hours <= 168:
+                interval = "h12"  # 12 hours
+            else:
+                interval = "d1"   # 1 day
+            
             btc_prices: Dict[int, float] = {}
             sol_prices: Dict[int, float] = {}
-
-            if btc_data and 'prices' in btc_data:
-                btc_prices = {int(p[0] / 1000): float(p[1]) for p in btc_data['prices']}
-            else:
-                # Force hourly interval for correlation to get more data points
-                # Even for 14 days, use hourly data to get 336 data points instead of daily (14 points)
-                interval = "h1" if hours <= 720 else "h6"  # Max 30 days with hourly, beyond use 6h
-                history = self._get_history_from_coincap("bitcoin", btc_from_timestamp, btc_now, interval)
-                if history:
-                    btc_prices = {
-                        int(point["time"] / 1000): float(point["priceUsd"])
-                        for point in history
-                        if point.get("time") is not None and point.get("priceUsd") is not None
-                    }
             
-            if sol_data and 'prices' in sol_data:
-                sol_prices = {int(p[0] / 1000): float(p[1]) for p in sol_data['prices']}
+            # Try Binance first (best option - same exchange, perfect alignment)
+            btc_history = self._get_history_from_binance("BTCUSDT", start_ts, end_ts, interval)
+            sol_history = self._get_history_from_binance("SOLUSDT", start_ts, end_ts, interval)
+            
+            if btc_history and sol_history:
+                # Binance provides perfect timestamp alignment (same exchange)
+                btc_prices = {
+                    point["time"]: point["priceUsd"]
+                    for point in btc_history
+                    if point.get("time") is not None and point.get("priceUsd") is not None
+                }
+                sol_prices = {
+                    point["time"]: point["priceUsd"]
+                    for point in sol_history
+                    if point.get("time") is not None and point.get("priceUsd") is not None
+                }
+                logger.info(f"✅ Using Binance data for correlation: BTC={len(btc_prices)} points, SOL={len(sol_prices)} points")
             else:
-                # Force hourly interval for correlation to get more data points
-                interval = "h1" if hours <= 720 else "h6"  # Max 30 days with hourly, beyond use 6h
-                history = self._get_history_from_coincap("solana", sol_from_timestamp, sol_now, interval)
-                if history:
-                    sol_prices = {
-                        int(point["time"] / 1000): float(point["priceUsd"])
-                        for point in history
-                        if point.get("time") is not None and point.get("priceUsd") is not None
-                    }
+                # Fallback to existing CoinGecko/CoinCap method
+                btc_data, btc_from_timestamp, btc_now = self._get_market_chart_range("bitcoin", hours)
+                sol_data, sol_from_timestamp, sol_now = self._get_market_chart_range("solana", hours)
+
+                if btc_data and 'prices' in btc_data:
+                    btc_prices = {int(p[0] / 1000): float(p[1]) for p in btc_data['prices']}
+                else:
+                    # Force hourly interval for correlation to get more data points
+                    # Even for 14 days, use hourly data to get 336 data points instead of daily (14 points)
+                    interval = "h1" if hours <= 720 else "h6"  # Max 30 days with hourly, beyond use 6h
+                    history = self._get_history_from_coincap("bitcoin", btc_from_timestamp, btc_now, interval)
+                    if history:
+                        btc_prices = {
+                            int(point["time"] / 1000): float(point["priceUsd"])
+                            for point in history
+                            if point.get("time") is not None and point.get("priceUsd") is not None
+                        }
+                
+                if sol_data and 'prices' in sol_data:
+                    sol_prices = {int(p[0] / 1000): float(p[1]) for p in sol_data['prices']}
+                else:
+                    # Force hourly interval for correlation to get more data points
+                    interval = "h1" if hours <= 720 else "h6"  # Max 30 days with hourly, beyond use 6h
+                    history = self._get_history_from_coincap("solana", sol_from_timestamp, sol_now, interval)
+                    if history:
+                        sol_prices = {
+                            int(point["time"] / 1000): float(point["priceUsd"])
+                            for point in history
+                            if point.get("time") is not None and point.get("priceUsd") is not None
+                        }
             
             # #region agent log
             try:
@@ -477,14 +514,15 @@ class MarketDataFetcher:
                 btc_ts_max = max(btc_prices.keys()) if btc_prices else None
                 sol_ts_min = min(sol_prices.keys()) if sol_prices else None
                 sol_ts_max = max(sol_prices.keys()) if sol_prices else None
-                debug_data = {"id": f"log_{int(time_module.time() * 1000)}", "timestamp": int(time_module.time() * 1000), "location": "market_data_fetcher.py:427", "message": "Price data fetched", "data": {"btc_count": btc_count, "sol_count": sol_count, "btc_ts_range": [btc_ts_min, btc_ts_max], "sol_ts_range": [sol_ts_min, sol_ts_max], "hours": hours}, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "B"}
-                logger.info(f"[DEBUG] Price data: BTC={btc_count}, SOL={sol_count}, hours={hours}")
+                source = "Binance" if btc_history and sol_history else "CoinGecko/CoinCap"
+                debug_data = {"id": f"log_{int(time_module.time() * 1000)}", "timestamp": int(time_module.time() * 1000), "location": "market_data_fetcher.py:427", "message": "Price data fetched", "data": {"source": source, "btc_count": btc_count, "sol_count": sol_count, "btc_ts_range": [btc_ts_min, btc_ts_max], "sol_ts_range": [sol_ts_min, sol_ts_max], "hours": hours}, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "B"}
+                logger.info(f"[DEBUG] Price data ({source}): BTC={btc_count}, SOL={sol_count}, hours={hours}")
                 with open(debug_log_path, "a") as f:
                     f.write(json.dumps(debug_data) + "\n")
             except Exception as e:
                 logger.warning(f"[DEBUG] Failed to log price data: {e}")
             # #endregion
-
+            
             if not btc_prices or not sol_prices:
                 # Try shorter window if we have very little data
                 if hours > 168:
@@ -496,103 +534,127 @@ class MarketDataFetcher:
                 logger.warning("Insufficient data for correlation calculation")
                 return 0.5
             
-            # Find common timestamps using adaptive window (expand if needed)
-            # Start with 1 hour window, expand if insufficient matches
-            # #region agent log
-            try:
-                debug_data = {"id": f"log_{int(time_module.time() * 1000)}", "timestamp": int(time_module.time() * 1000), "location": "market_data_fetcher.py:459", "message": "Starting timestamp matching", "data": {"btc_count": len(btc_prices), "sol_count": len(sol_prices), "initial_window_seconds": 3600}, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "A"}
-                logger.info(f"[DEBUG] Starting timestamp matching: BTC={len(btc_prices)}, SOL={len(sol_prices)}")
-                with open(debug_log_path, "a") as f:
-                    f.write(json.dumps(debug_data) + "\n")
-            except Exception as e:
-                logger.warning(f"[DEBUG] Failed to log matching start: {e}")
-            # #endregion
+            # Check if we're using Binance data (perfectly aligned timestamps from same exchange)
+            using_binance = btc_history and sol_history and btc_prices and sol_prices
+            window_seconds = None  # Will be set if using adaptive window
             
-            # Adaptive window: try 1h, 2h, 4h, 6h windows if needed
-            window_seconds = 3600  # Start with 1 hour
-            max_window_seconds = 21600  # Max 6 hours
-            common_timestamps = []
-            used_sol_timestamps = set()  # Track which SOL timestamps we've used to avoid duplicates
-            
-            while window_seconds <= max_window_seconds and len(common_timestamps) < min_data_points:
+            # Find common timestamps
+            if using_binance:
+                # Binance provides perfectly aligned timestamps (same exchange, same intervals)
+                # Use exact timestamp matching (much faster and more accurate)
                 common_timestamps = []
-                used_sol_timestamps.clear()
-                matches_per_btc = {}
+                for ts in sorted(set(btc_prices.keys()) & set(sol_prices.keys())):
+                    common_timestamps.append((ts, ts))  # Same timestamp for both
                 
-                for btc_ts in sorted(btc_prices.keys()):  # Process in chronological order
-                    matches_for_this_btc = []
-                    for sol_ts in sol_prices.keys():
-                        if sol_ts in used_sol_timestamps:
-                            continue  # Skip already-used SOL timestamps
-                        time_diff = abs(btc_ts - sol_ts)
-                        if time_diff < window_seconds:
-                            matches_for_this_btc.append((sol_ts, time_diff))
-                    
-                    if matches_for_this_btc:
-                        # Sort by time difference to find closest match
-                        matches_for_this_btc.sort(key=lambda x: x[1])
-                        closest_sol_ts = matches_for_this_btc[0][0]
-                        common_timestamps.append((btc_ts, closest_sol_ts))
-                        used_sol_timestamps.add(closest_sol_ts)
-                        matches_per_btc[btc_ts] = len(matches_for_this_btc)
-                
+                logger.info(f"✅ Binance data: {len(common_timestamps)} perfectly aligned timestamps (no window matching needed)")
+            else:
+                # Fallback to adaptive window matching for CoinGecko/CoinCap data
                 # #region agent log
                 try:
-                    total_potential_matches = sum(matches_per_btc.values())
-                    avg_matches_per_btc = total_potential_matches / len(matches_per_btc) if matches_per_btc else 0
-                    debug_data = {"id": f"log_{int(time_module.time() * 1000)}", "timestamp": int(time_module.time() * 1000), "location": "market_data_fetcher.py:490", "message": "Timestamp matching attempt", "data": {"window_seconds": window_seconds, "common_timestamps_count": len(common_timestamps), "total_potential_matches": total_potential_matches, "avg_matches_per_btc": avg_matches_per_btc, "btc_with_matches": len(matches_per_btc), "min_required": min_data_points}, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "E"}
-                    logger.info(f"[DEBUG] Matching attempt: window={window_seconds}s, common={len(common_timestamps)}, min_required={min_data_points}")
+                    debug_data = {"id": f"log_{int(time_module.time() * 1000)}", "timestamp": int(time_module.time() * 1000), "location": "market_data_fetcher.py:459", "message": "Starting timestamp matching", "data": {"btc_count": len(btc_prices), "sol_count": len(sol_prices), "initial_window_seconds": 3600}, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "A"}
+                    logger.info(f"[DEBUG] Starting timestamp matching: BTC={len(btc_prices)}, SOL={len(sol_prices)}")
                     with open(debug_log_path, "a") as f:
                         f.write(json.dumps(debug_data) + "\n")
                 except Exception as e:
-                    logger.warning(f"[DEBUG] Failed to log matching attempt: {e}")
+                    logger.warning(f"[DEBUG] Failed to log matching start: {e}")
                 # #endregion
                 
-                if len(common_timestamps) >= min_data_points:
-                    break  # We have enough matches
+                # Adaptive window: try 1h, 2h, 4h, 8h windows if needed
+                window_seconds = 3600  # Start with 1 hour
+                max_window_seconds = 28800  # Max 8 hours (increased from 6h)
+                common_timestamps = []
+                used_sol_timestamps = set()  # Track which SOL timestamps we've used to avoid duplicates
                 
-                # Expand window for next attempt
-                if window_seconds < max_window_seconds:
-                    window_seconds *= 2  # Double the window (1h -> 2h -> 4h)
+                while window_seconds <= max_window_seconds and len(common_timestamps) < min_data_points:
+                    common_timestamps = []
+                    used_sol_timestamps.clear()
+                    matches_per_btc = {}
+                
+                    for btc_ts in sorted(btc_prices.keys()):  # Process in chronological order
+                        matches_for_this_btc = []
+                        for sol_ts in sol_prices.keys():
+                            if sol_ts in used_sol_timestamps:
+                                continue  # Skip already-used SOL timestamps
+                            time_diff = abs(btc_ts - sol_ts)
+                            if time_diff < window_seconds:
+                                matches_for_this_btc.append((sol_ts, time_diff))
+                        
+                        if matches_for_this_btc:
+                            # Sort by time difference to find closest match
+                            matches_for_this_btc.sort(key=lambda x: x[1])
+                            closest_sol_ts = matches_for_this_btc[0][0]
+                            common_timestamps.append((btc_ts, closest_sol_ts))
+                            used_sol_timestamps.add(closest_sol_ts)
+                            matches_per_btc[btc_ts] = len(matches_for_this_btc)
+                    
                     # #region agent log
                     try:
-                        logger.warning(f"[DEBUG] Expanding matching window to {window_seconds}s (have {len(common_timestamps)} matches, need {min_data_points})")
-                    except: pass
-                    # #endregion
-                else:
-                    # #region agent log
-                    try:
-                        logger.warning(f"[DEBUG] Maximum window ({max_window_seconds}s) reached with only {len(common_timestamps)} matches (need {min_data_points})")
-                        debug_data = {"id": f"log_{int(time_module.time() * 1000)}", "timestamp": int(time_module.time() * 1000), "location": "market_data_fetcher.py:522", "message": "Max window reached, insufficient matches", "data": {"max_window_seconds": max_window_seconds, "final_matches": len(common_timestamps), "min_required": min_data_points, "btc_price_count": len(btc_prices), "sol_price_count": len(sol_prices)}, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "B"}
+                        total_potential_matches = sum(matches_per_btc.values())
+                        avg_matches_per_btc = total_potential_matches / len(matches_per_btc) if matches_per_btc else 0
+                        debug_data = {"id": f"log_{int(time_module.time() * 1000)}", "timestamp": int(time_module.time() * 1000), "location": "market_data_fetcher.py:490", "message": "Timestamp matching attempt", "data": {"window_seconds": window_seconds, "common_timestamps_count": len(common_timestamps), "total_potential_matches": total_potential_matches, "avg_matches_per_btc": avg_matches_per_btc, "btc_with_matches": len(matches_per_btc), "min_required": min_data_points}, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "E"}
+                        logger.info(f"[DEBUG] Matching attempt: window={window_seconds}s, common={len(common_timestamps)}, min_required={min_data_points}")
                         with open(debug_log_path, "a") as f:
                             f.write(json.dumps(debug_data) + "\n")
                     except Exception as e:
-                        logger.warning(f"[DEBUG] Failed to log max window: {e}")
+                        logger.warning(f"[DEBUG] Failed to log matching attempt: {e}")
                     # #endregion
-                    break  # Can't expand further
+                    
+                    if len(common_timestamps) >= min_data_points:
+                        break  # We have enough matches
+                    
+                    # Expand window for next attempt
+                    if window_seconds < max_window_seconds:
+                        window_seconds *= 2  # Double the window (1h -> 2h -> 4h -> 8h)
+                        # #region agent log
+                        try:
+                            logger.warning(f"[DEBUG] Expanding matching window to {window_seconds}s (have {len(common_timestamps)} matches, need {min_data_points})")
+                        except: pass
+                        # #endregion
+                    else:
+                        # #region agent log
+                        try:
+                            logger.warning(f"[DEBUG] Maximum window ({max_window_seconds}s) reached with only {len(common_timestamps)} matches (need {min_data_points})")
+                            debug_data = {"id": f"log_{int(time_module.time() * 1000)}", "timestamp": int(time_module.time() * 1000), "location": "market_data_fetcher.py:522", "message": "Max window reached, insufficient matches", "data": {"max_window_seconds": max_window_seconds, "final_matches": len(common_timestamps), "min_required": min_data_points, "btc_price_count": len(btc_prices), "sol_price_count": len(sol_prices)}, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "B"}
+                            with open(debug_log_path, "a") as f:
+                                f.write(json.dumps(debug_data) + "\n")
+                        except Exception as e:
+                            logger.warning(f"[DEBUG] Failed to log max window: {e}")
+                        # #endregion
+                        break  # Can't expand further
             
             # #region agent log
-            try:
-                total_potential_matches = sum(matches_per_btc.values()) if matches_per_btc else 0
-                avg_matches_per_btc = total_potential_matches / len(matches_per_btc) if matches_per_btc else 0
-                debug_data = {"id": f"log_{int(time_module.time() * 1000)}", "timestamp": int(time_module.time() * 1000), "location": "market_data_fetcher.py:512", "message": "Timestamp matching complete", "data": {"final_window_seconds": window_seconds, "common_timestamps_count": len(common_timestamps), "total_potential_matches": total_potential_matches, "avg_matches_per_btc": avg_matches_per_btc, "btc_with_matches": len(matches_per_btc)}, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "A"}
-                logger.info(f"[DEBUG] Matching complete: final_window={window_seconds}s, common={len(common_timestamps)}, potential={total_potential_matches}, avg_per_btc={avg_matches_per_btc:.2f}")
-                with open(debug_log_path, "a") as f:
-                    f.write(json.dumps(debug_data) + "\n")
-            except Exception as e:
-                logger.warning(f"[DEBUG] Failed to log matching results: {e}")
+            if not using_binance:  # Only log matching details for non-Binance (adaptive window) case
+                try:
+                    # matches_per_btc is only defined in the adaptive window loop
+                    if 'matches_per_btc' in locals():
+                        total_potential_matches = sum(matches_per_btc.values()) if matches_per_btc else 0
+                        avg_matches_per_btc = total_potential_matches / len(matches_per_btc) if matches_per_btc else 0
+                        btc_with_matches = len(matches_per_btc) if matches_per_btc else 0
+                    else:
+                        total_potential_matches = 0
+                        avg_matches_per_btc = 0
+                        btc_with_matches = 0
+                    debug_data = {"id": f"log_{int(time_module.time() * 1000)}", "timestamp": int(time_module.time() * 1000), "location": "market_data_fetcher.py:512", "message": "Timestamp matching complete", "data": {"final_window_seconds": window_seconds, "common_timestamps_count": len(common_timestamps), "total_potential_matches": total_potential_matches, "avg_matches_per_btc": avg_matches_per_btc, "btc_with_matches": btc_with_matches}, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "A"}
+                    logger.info(f"[DEBUG] Matching complete: final_window={window_seconds}s, common={len(common_timestamps)}, potential={total_potential_matches}, avg_per_btc={avg_matches_per_btc:.2f}")
+                    with open(debug_log_path, "a") as f:
+                        f.write(json.dumps(debug_data) + "\n")
+                except Exception as e:
+                    logger.warning(f"[DEBUG] Failed to log matching results: {e}")
             # #endregion
             
             # Require minimum data points for statistical significance
             if len(common_timestamps) < min_data_points:
                 # Only retry with shorter windows if we haven't already exhausted the adaptive window strategy
                 # Shorter time windows don't help if data sources themselves are sparse
-                # The adaptive window expansion (up to 6h) should have already maximized matches
-                if window_seconds < max_window_seconds:
+                # The adaptive window expansion (up to 8h) should have already maximized matches
+                if not using_binance and window_seconds and window_seconds < max_window_seconds:
                     # We didn't try all window sizes yet - this shouldn't happen but log if it does
                     logger.warning(f"[DEBUG] Adaptive window didn't complete: window={window_seconds}s, matches={len(common_timestamps)}")
                 
-                logger.warning(f"Insufficient data points for correlation ({len(common_timestamps)} < {min_data_points}) after adaptive window expansion (final window: {window_seconds/3600:.1f}h)")
+                if using_binance:
+                    logger.warning(f"Insufficient data points for correlation ({len(common_timestamps)} < {min_data_points}) from Binance (perfect alignment, but insufficient data)")
+                else:
+                    logger.warning(f"Insufficient data points for correlation ({len(common_timestamps)} < {min_data_points}) after adaptive window expansion (final window: {window_seconds/3600:.1f}h if window_seconds else 'N/A')")
                 
                 # Only retry with shorter time windows if adaptive window wasn't enough AND we have very few matches
                 # This indicates the data sources themselves may have sparse/inconsistent timestamps
@@ -1148,6 +1210,70 @@ class MarketDataFetcher:
                 return value
         except Exception as exc:
             logger.warning(f"Binance price fetch failed for {symbol}: {exc}")
+        return None
+    
+    def _get_history_from_binance(self, symbol: str, start_ts: int, end_ts: int, interval: str = "1h") -> Optional[List[Dict]]:
+        """Fetch historical klines data from Binance public API.
+        
+        Args:
+            symbol: Trading pair (e.g., "BTCUSDT", "SOLUSDT")
+            start_ts: Start timestamp in seconds
+            end_ts: End timestamp in seconds
+            interval: Kline interval (1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d, 1w, 1M)
+        
+        Returns:
+            List of dicts with keys: time, priceUsd (close price)
+        """
+        try:
+            # Binance expects millisecond timestamps
+            start_ms = start_ts * 1000
+            end_ms = end_ts * 1000
+            
+            # Map interval format to Binance format (h1 -> 1h, etc.)
+            interval_map = {
+                "m15": "15m",
+                "h1": "1h",
+                "h6": "6h",
+                "h12": "12h",
+                "d1": "1d",
+                "1h": "1h",
+                "1d": "1d"
+            }
+            # If already in Binance format (1h, 1d, etc.), use it directly
+            # Otherwise, map from our format (h1, d1, etc.)
+            binance_interval = interval_map.get(interval, "1h")
+            
+            # Binance klines endpoint: /api/v3/klines
+            # Returns up to 1000 klines per request
+            url = f"{self._binance_base_url}v3/klines?symbol={symbol}&interval={binance_interval}&startTime={start_ms}&endTime={end_ms}&limit=1000"
+            
+            logger.debug(f"🔍 Binance klines URL: {url[:100]}...")
+            data = self._fetch_json(url)
+            
+            if data and isinstance(data, list):
+                if data:
+                    # Binance klines format: [[open_time, open, high, low, close, volume, close_time, ...], ...]
+                    # Convert to our format: [{time: seconds, priceUsd: close_price}, ...]
+                    result = []
+                    for kline in data:
+                        if len(kline) >= 6:
+                            open_time_ms = int(kline[0])
+                            close_price = float(kline[4])  # Close price
+                            # Use open_time as the timestamp (in seconds)
+                            timestamp_seconds = int(open_time_ms / 1000)
+                            result.append({
+                                "time": timestamp_seconds,
+                                "priceUsd": close_price
+                            })
+                    
+                    logger.info(f"✅ Retrieved {len(result)} {symbol} klines from Binance")
+                    return result
+                else:
+                    logger.warning(f"⚠️ Binance returned empty klines list for {symbol}")
+            else:
+                logger.warning(f"⚠️ Binance response missing data or wrong type: {type(data)}")
+        except Exception as exc:
+            logger.warning(f"❌ Binance history fetch failed for {symbol}: {exc}", exc_info=True)
         return None
 
     def _get_history_from_coincap(self, asset_id: str, start_ts: int, end_ts: int, interval: str = "h1") -> Optional[List[Dict]]:
