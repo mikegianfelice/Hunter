@@ -9,6 +9,7 @@ from src.utils.http_utils import get_json
 from typing import Dict, Any, Optional
 
 from src.storage.sol_price import load_sol_price_cache, save_sol_price_cache
+from src.storage.btc_sol_ratio import load_btc_sol_ratio_cache, save_btc_sol_ratio_cache
 
 # Public constants
 UNISWAP_V2_ROUTER = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"
@@ -279,3 +280,79 @@ def get_sol_price_usd() -> float:
     _cache_sol_price(emergency_price)
     
     return emergency_price
+
+def get_btc_sol_ratio() -> float:
+    """
+    Get BTC/SOL exchange rate (how many SOL per 1 BTC) with 30-minute caching.
+    
+    Uses cached ratio if available and less than 30 minutes old.
+    Otherwise fetches BTC and SOL prices and calculates the ratio.
+    
+    Returns:
+        float: BTC/SOL ratio (e.g., 350.0 means 1 BTC = 350 SOL)
+    """
+    cache = load_btc_sol_ratio_cache()
+    try:
+        cached_ratio = cache.get('ratio') if cache else None
+        cached_time = cache.get('timestamp', 0) if cache else 0
+        current_time = time.time()
+        
+        # Use cached ratio if less than 30 minutes old (1800 seconds)
+        if cached_ratio and cached_ratio > 0 and (current_time - cached_time) < 1800:
+            print(f"✅ BTC/SOL ratio from cache: {cached_ratio:.4f}")
+            return float(cached_ratio)
+    except Exception:
+        pass  # If cache fails, continue with calculation
+    
+    # Fetch BTC and SOL prices to calculate ratio
+    try:
+        from src.utils.market_data_fetcher import market_data_fetcher
+        
+        # Get BTC price in USD
+        btc_price = market_data_fetcher.get_btc_price()
+        if not btc_price or btc_price <= 0:
+            # Fallback: use cached ratio even if expired, or estimate
+            if cached_ratio and cached_ratio > 0:
+                print(f"⚠️ BTC price fetch failed, using expired cached ratio: {cached_ratio:.4f}")
+                return float(cached_ratio)
+            # Very rough estimate: ~1 BTC = 350 SOL (adjust as needed)
+            estimated_ratio = 350.0
+            print(f"⚠️ Could not fetch BTC price, using estimated ratio: {estimated_ratio:.4f}")
+            return estimated_ratio
+        
+        # Get SOL price in USD
+        sol_price = get_sol_price_usd()
+        if not sol_price or sol_price <= 0:
+            # Fallback: use cached ratio even if expired, or estimate
+            if cached_ratio and cached_ratio > 0:
+                print(f"⚠️ SOL price fetch failed, using expired cached ratio: {cached_ratio:.4f}")
+                return float(cached_ratio)
+            estimated_ratio = 350.0
+            print(f"⚠️ Could not fetch SOL price, using estimated ratio: {estimated_ratio:.4f}")
+            return estimated_ratio
+        
+        # Calculate ratio: BTC price / SOL price
+        ratio = btc_price / sol_price
+        if ratio > 0:
+            print(f"✅ BTC/SOL ratio calculated: {ratio:.4f} (BTC: ${btc_price:.2f}, SOL: ${sol_price:.2f})")
+            save_btc_sol_ratio_cache(ratio)
+            return float(ratio)
+        else:
+            # Invalid ratio, use cached or estimate
+            if cached_ratio and cached_ratio > 0:
+                print(f"⚠️ Invalid ratio calculated, using cached ratio: {cached_ratio:.4f}")
+                return float(cached_ratio)
+            estimated_ratio = 350.0
+            print(f"⚠️ Invalid ratio, using estimated ratio: {estimated_ratio:.4f}")
+            return estimated_ratio
+            
+    except Exception as e:
+        print(f"⚠️ Error calculating BTC/SOL ratio: {e}")
+        # Fallback to cached ratio if available
+        if cached_ratio and cached_ratio > 0:
+            print(f"⚠️ Using cached ratio as fallback: {cached_ratio:.4f}")
+            return float(cached_ratio)
+        # Last resort: estimated ratio
+        estimated_ratio = 350.0
+        print(f"⚠️ All methods failed, using estimated ratio: {estimated_ratio:.4f}")
+        return estimated_ratio
