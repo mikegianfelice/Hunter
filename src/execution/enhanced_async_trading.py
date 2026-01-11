@@ -1182,8 +1182,12 @@ class EnhancedAsyncTradingEngine:
                                     if indicators:
                                         token['technical_indicators'] = indicators
                                     
+                                    # Format values safely before using in f-string to avoid format specifier errors
+                                    vwap_str = f"{vwap_value:.8f}" if vwap_value is not None else "N/A"
+                                    momentum_str = f"{candle_momentum*100:.4f}%" if candle_momentum is not None else "N/A"
+                                    
                                     log_info("trading.candle_validation.passed",
-                                            f"Token {token.get('symbol', 'UNKNOWN')} passed candle validation: {len(candles_15m)} candles, VWAP={vwap_value:.8f if vwap_value else 'N/A'}, momentum={candle_momentum*100:.4f if candle_momentum else 'N/A'}%",
+                                            f"Token {token.get('symbol', 'UNKNOWN')} passed candle validation: {len(candles_15m)} candles, VWAP={vwap_str}, momentum={momentum_str}",
                                             symbol=token.get("symbol"),
                                             candles_count=len(candles_15m),
                                             vwap=vwap_value,  # Store the numeric value for logging
