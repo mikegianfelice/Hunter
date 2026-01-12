@@ -1121,6 +1121,18 @@ class EnhancedAsyncTradingEngine:
                     token_address = token.get("address", "").lower()
                     chain_id = token.get("chainId", token.get("chain", "solana")).lower()
                     
+                    # Check if token is marked as hyperactive (should be blocked from trading)
+                    from src.utils.market_data_fetcher import market_data_fetcher
+                    if token_address and token_address in market_data_fetcher._hyperactive_skip_tokens:
+                        log_error("trading.hyperactivity_blocked",
+                                f"Token {token.get('symbol', 'UNKNOWN')} blocked for hyperactivity",
+                                symbol=token.get("symbol"),
+                                token_address=token_address[:8] + "..." if len(token_address) > 8 else token_address,
+                                chain_id=chain_id)
+                        enhanced_token["approved_for_trading"] = False
+                        enhanced_token["rejection_reason"] = "hyperactivity_blocked"
+                        continue  # Skip to next token
+                    
                     if not token_address:
                         log_error("trading.candle_validation.missing_address",
                                 f"Token {token.get('symbol', 'UNKNOWN')} blocked: missing token address",

@@ -98,6 +98,9 @@ class MarketDataFetcher:
         self._candle_fetch_locks: Dict[str, threading.Lock] = {}
         self._candle_fetch_lock_global = threading.Lock()
         
+        # Track hyperactive tokens that should be skipped
+        self._hyperactive_skip_tokens: set = set()
+        
         # Load persistent cache
         self._load_candlestick_cache()
         
@@ -1578,8 +1581,14 @@ class MarketDataFetcher:
         if not force_fetch and cache_key in self.candlestick_cache_helius:
             cached = self.candlestick_cache_helius[cache_key]
             cache_age = current_time - cached.get('timestamp', 0)
-            if cache_age < self.helius_cache_duration:
-                logger.debug(f"✅ Using cached candlestick data for {token_address[:8]}... (age: {cache_age/60:.1f}m)")
+            
+            # Use shorter TTL for partial results (15 minutes vs 1 hour)
+            cache_duration = self.helius_cache_duration
+            if cached.get('partial', False):
+                cache_duration = min(cache_duration, 900)  # 15 minutes for partial results
+            
+            if cache_age < cache_duration:
+                logger.debug(f"✅ Using cached candlestick data for {token_address[:8]}... (age: {cache_age/60:.1f}m, {'partial' if cached.get('partial') else 'full'})")
                 return cached['data']
         
         # SOLANA: Try indexed swaps first (fast, no API calls), then targeted backfill, then DEX API, then RPC
@@ -1643,8 +1652,14 @@ class MarketDataFetcher:
                     if not force_fetch and cache_key in self.candlestick_cache_helius:
                         cached = self.candlestick_cache_helius[cache_key]
                         cache_age = current_time - cached.get('timestamp', 0)
-                        if cache_age < self.helius_cache_duration:
-                            logger.debug(f"✅ Using cached candlestick data for {token_address[:8]}... (another fetch completed)")
+                        
+                        # Use shorter TTL for partial results (15 minutes vs 1 hour)
+                        cache_duration = self.helius_cache_duration
+                        if cached.get('partial', False):
+                            cache_duration = min(cache_duration, 900)  # 15 minutes for partial results
+                        
+                        if cache_age < cache_duration:
+                            logger.debug(f"✅ Using cached candlestick data for {token_address[:8]}... (another fetch completed, {'partial' if cached.get('partial') else 'full'})")
                             return cached['data']
                     
                     # Check rate limit before making expensive API calls
@@ -2035,6 +2050,18 @@ class MarketDataFetcher:
                 # If RPC also doesn't have enough, return what we have from DEX (at least it's recent data)
                 if candles and len(candles) >= 2:
                     logger.debug(f"Using {len(candles)} candles from DEX API (RPC also insufficient) for {token_address[:8]}...")
+                    
+                    # Cache partial results to prevent repeated fetches (with shorter TTL)
+                    # Use 15-minute cache for partial results vs 1-hour for full results
+                    self.candlestick_cache_helius[cache_key] = {
+                        'data': candles,
+                        'timestamp': current_time,
+                        'source': 'helius_partial',  # Mark as partial
+                        'partial': True  # Flag for shorter TTL
+                    }
+                    self._save_candlestick_cache()
+                    logger.debug(f"Cached partial result ({len(candles)} candles) for {token_address[:8]}... to prevent repeated fetches")
+                    
                     return candles
             
             # Fallback to price_memory if no candles from either method
@@ -2668,6 +2695,11 @@ class MarketDataFetcher:
                 logger.debug(f"✅ Using cached RPC candlestick data for {token_address[:8]}...")
                 return cached['data']
         
+        # Check if token is marked as hyperactive_skip
+        if token_address.lower() in self._hyperactive_skip_tokens:
+            logger.debug(f"Skipping hyperactive token {token_address[:8]}... (marked as hyperactive_skip)")
+            return None
+        
         if not self.helius_api_key:
             logger.debug("Helius API key not configured, using price_memory fallback")
             return self._get_solana_candles_from_memory(token_address, hours)
@@ -2798,6 +2830,66 @@ class MarketDataFetcher:
                                     window_oldest_bound = page_window_oldest
                                 if window_newest_bound is None or page_window_newest > window_newest_bound:
                                     window_newest_bound = page_window_newest
+                            
+                            # HYPERACTIVITY GUARD: Check after 500 sigs or page 5
+                            # This prevents excessive API calls for tokens with extremely high transaction volume
+                            should_check_hyperactivity = (
+                                (pages_used == 5) or  # At end of page 5
+                                (count_in_window >= 500)  # Or after collecting 500 sigs
+                            )
+                            
+                            if should_check_hyperactivity and rpc_early_stop_enabled:
+                                # Calculate hours_covered from block_time span
+                                hours_covered = 0.0
+                                if window_oldest_bound and window_newest_bound:
+                                    hours_covered = (window_newest_bound - window_oldest_bound) / 3600.0
+                                elif oldest_block_time_seen and newest_block_time_seen:
+                                    # Estimate from all seen transactions
+                                    window_oldest_est = max(oldest_block_time_seen, start_time)
+                                    window_newest_est = min(newest_block_time_seen, end_time)
+                                    hours_covered = max(0.0, (window_newest_est - window_oldest_est) / 3600.0)
+                                
+                                if hours_covered > 0:
+                                    sigs_per_hour = count_in_window / hours_covered if hours_covered > 0 else float('inf')
+                                    
+                                    # Case 1: < 1.0h coverage (>500 sig/hour) - abort and mark as hyperactive_skip
+                                    if hours_covered < 1.0:
+                                        logger.warning(
+                                            f"HYPERACTIVITY_GUARD: token={token_address[:8]}, pool={pool_address[:8]}, "
+                                            f"aborting fetch - {count_in_window} sigs in {hours_covered:.2f}h "
+                                            f"({sigs_per_hour:.0f} sig/hour > 500 threshold). "
+                                            f"Marking as hyperactive_skip."
+                                        )
+                                        self._hyperactive_skip_tokens.add(token_address.lower())
+                                        # Cache empty result to prevent repeated fetches
+                                        self.candlestick_cache_helius[cache_key] = {
+                                            'data': [],
+                                            'timestamp': time.time(),
+                                            'source': 'hyperactive_skip',
+                                            'partial': True
+                                        }
+                                        self._save_candlestick_cache()
+                                        return None  # Abort candle fetch
+                                    
+                                    # Case 2: 1-2h coverage - cap lookback to 3h
+                                    elif 1.0 <= hours_covered < 2.0:
+                                        logger.info(
+                                            f"HYPERACTIVITY_GUARD: token={token_address[:8]}, pool={pool_address[:8]}, "
+                                            f"{count_in_window} sigs in {hours_covered:.2f}h ({sigs_per_hour:.0f} sig/hour). "
+                                            f"Capping lookback to 3h instead of {hours}h."
+                                        )
+                                        # Adjust hours to 3 and recalculate start_time
+                                        hours = 3
+                                        start_time = end_time - (hours * 3600)
+                                        # Continue with reduced lookback
+                                    
+                                    # Case 3: >= 2h coverage - proceed normally with 6h lookback
+                                    else:
+                                        logger.debug(
+                                            f"HYPERACTIVITY_GUARD: token={token_address[:8]}, pool={pool_address[:8]}, "
+                                            f"{count_in_window} sigs in {hours_covered:.2f}h ({sigs_per_hour:.0f} sig/hour). "
+                                            f"Proceeding with {hours}h lookback."
+                                        )
                             
                             # Early-stop check: coverage + density conditions
                             # Need at least 3 hours for 12 candles, ideally 4 hours for 16 candles
@@ -3084,7 +3176,7 @@ class MarketDataFetcher:
                     else:
                         logger.warning(f"⚠️ Candle quality check failed for {token_address[:8]}... with {len(candles)} candles, will try fallback")
             
-            # If we have some candles but less than 12 (insufficient), log why
+            # If we have some candles but less than 12 (insufficient), log why and cache to prevent repeated fetches
             if candles and len(candles) > 0 and len(candles) < 12:
                 time_span_str = f"{candle_time_span:.2f}h" if candle_time_span is not None else "N/A"
                 logger.warning(
@@ -3092,6 +3184,17 @@ class MarketDataFetcher:
                     f"Swaps: {len(swaps)}, processed: {candle_metadata.get('swaps_processed', 0)}, "
                     f"Time span: {time_span_str}"
                 )
+                
+                # Cache partial results to prevent repeated fetches (with shorter TTL)
+                # Even if insufficient, cache to avoid hitting API repeatedly for tokens with low activity
+                self.candlestick_cache_helius[cache_key] = {
+                    'data': candles,
+                    'timestamp': time.time(),
+                    'source': 'rpc_partial',  # Mark as partial
+                    'partial': True  # Flag for shorter TTL
+                }
+                self._save_candlestick_cache()
+                logger.debug(f"Cached partial RPC result ({len(candles)} candles) for {token_address[:8]}... to prevent repeated fetches")
             
             # Fallback to Jupiter or price_memory
             logger.debug(f"RPC method failed to build sufficient candles for {token_address[:8]}..., trying Jupiter fallback")
