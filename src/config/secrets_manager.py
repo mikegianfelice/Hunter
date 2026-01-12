@@ -4,8 +4,8 @@ import json
 import base64
 from typing import Dict, Optional, Any
 from cryptography.fernet import Fernet
-import boto3
-from botocore.exceptions import ClientError
+# Lazy import boto3/botocore only when AWS backend is used
+# This prevents permission errors when AWS is not configured
 
 class SecretsManager:
     """Secure secrets management with multiple backends"""
@@ -58,6 +58,16 @@ class SecretsManager:
     def _get_aws_secret(self, secret_name: str) -> Optional[Dict[str, Any]]:
         """Get secret from AWS Secrets Manager"""
         try:
+            # Lazy import boto3 only when AWS backend is actually used
+            # This prevents permission errors when AWS is not configured
+            try:
+                import boto3
+                from botocore.exceptions import ClientError
+            except (ImportError, PermissionError, OSError) as import_error:
+                print(f"⚠️ Cannot import boto3/botocore (AWS not configured or permission denied): {import_error}")
+                print(f"💡 Tip: Set SECRETS_BACKEND=env or SECRETS_BACKEND=local to use non-AWS backends")
+                return None
+            
             session = boto3.session.Session()
             client = session.client(
                 service_name='secretsmanager',
@@ -90,6 +100,16 @@ class SecretsManager:
     def _set_aws_secret(self, secret_name: str, secret_data: Dict[str, Any]) -> bool:
         """Set secret in AWS Secrets Manager"""
         try:
+            # Lazy import boto3 only when AWS backend is actually used
+            # This prevents permission errors when AWS is not configured
+            try:
+                import boto3
+                from botocore.exceptions import ClientError
+            except (ImportError, PermissionError, OSError) as import_error:
+                print(f"⚠️ Cannot import boto3/botocore (AWS not configured or permission denied): {import_error}")
+                print(f"💡 Tip: Set SECRETS_BACKEND=env or SECRETS_BACKEND=local to use non-AWS backends")
+                return False
+            
             session = boto3.session.Session()
             client = session.client(
                 service_name='secretsmanager',
@@ -212,8 +232,9 @@ def get_secrets_manager(backend: str = None, region: str = None) -> SecretsManag
     
     if _secrets_manager is None:
         # Determine backend from environment or config
+        # Default to "env" instead of "aws" to avoid boto3 import issues
         if backend is None:
-            backend = os.getenv("SECRETS_BACKEND", "aws")
+            backend = os.getenv("SECRETS_BACKEND", "env")
         
         if region is None:
             region = os.getenv("AWS_REGION", "us-east-1")

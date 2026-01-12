@@ -66,7 +66,7 @@ class AIMarketRegimeDetector:
         # Market indicators weights
         self.indicator_weights = {
             'btc_trend': 0.25,
-            'eth_trend': 0.20,
+            'sol_trend': 0.20,
             'market_correlation': 0.15,
             'volatility_index': 0.15,
             'volume_trends': 0.10,
@@ -129,8 +129,8 @@ class AIMarketRegimeDetector:
             # BTC trend analysis
             indicators['btc_trend'] = self._analyze_btc_trend()
             
-            # ETH trend analysis
-            indicators['eth_trend'] = self._analyze_eth_trend()
+            # SOL trend analysis (changed from ETH for Solana-focused trading)
+            indicators['sol_trend'] = self._analyze_sol_trend()
             
             # Market correlation analysis
             indicators['market_correlation'] = self._analyze_market_correlation()
@@ -152,7 +152,7 @@ class AIMarketRegimeDetector:
             # Provide default values
             indicators = {
                 'btc_trend': 0.5,
-                'eth_trend': 0.5,
+                'sol_trend': 0.5,
                 'market_correlation': 0.5,
                 'volatility_index': 0.5,
                 'volume_trends': 0.5,
@@ -178,20 +178,20 @@ class AIMarketRegimeDetector:
             logger.error(f"Error analyzing BTC trend: {e}")
             return 0.5
     
-    def _analyze_eth_trend(self) -> float:
-        """Analyze Ethereum trend (0-1 scale) using extended timeframe"""
+    def _analyze_sol_trend(self) -> float:
+        """Analyze Solana trend (0-1 scale) using extended timeframe"""
         try:
-            # Use real ETH price data with extended timeframe for regime detection
+            # Use real SOL price data with extended timeframe for regime detection
             from src.utils.market_data_fetcher import market_data_fetcher
             from src.config.config_loader import get_config
             
             # Use extended timeframe (default 7 days) for better accuracy
-            hours = get_config('market_analysis_timeframes.eth_trend_hours', 168)
-            eth_trend = market_data_fetcher.get_eth_trend(hours=hours)
-            return eth_trend
+            hours = get_config('market_analysis_timeframes.sol_trend_hours', 168)
+            sol_trend = market_data_fetcher.get_sol_trend(hours=hours)
+            return sol_trend
             
         except Exception as e:
-            logger.error(f"Error analyzing ETH trend: {e}")
+            logger.error(f"Error analyzing SOL trend: {e}")
             return 0.5
     
     def _analyze_market_correlation(self) -> float:
@@ -266,7 +266,7 @@ class AIMarketRegimeDetector:
             # Bull market score
             bull_score = (
                 indicators['btc_trend'] * 0.3 +
-                indicators['eth_trend'] * 0.2 +
+                indicators['sol_trend'] * 0.2 +
                 indicators['market_correlation'] * 0.2 +
                 indicators['volume_trends'] * 0.15 +
                 indicators['fear_greed_index'] * 0.15
@@ -276,7 +276,7 @@ class AIMarketRegimeDetector:
             # Bear market score
             bear_score = (
                 (1 - indicators['btc_trend']) * 0.3 +
-                (1 - indicators['eth_trend']) * 0.2 +
+                (1 - indicators['sol_trend']) * 0.2 +
                 indicators['market_correlation'] * 0.2 +
                 (1 - indicators['volume_trends']) * 0.15 +
                 (1 - indicators['fear_greed_index']) * 0.15
@@ -294,7 +294,7 @@ class AIMarketRegimeDetector:
             # Sideways market score
             sideways_score = (
                 (1 - abs(indicators['btc_trend'] - 0.5)) * 0.3 +
-                (1 - abs(indicators['eth_trend'] - 0.5)) * 0.2 +
+                (1 - abs(indicators['sol_trend'] - 0.5)) * 0.2 +
                 (1 - indicators['volatility_index']) * 0.3 +
                 (1 - abs(indicators['fear_greed_index'] - 0.5)) * 0.2
             )
@@ -303,7 +303,7 @@ class AIMarketRegimeDetector:
             # Recovery market score
             recovery_score = (
                 indicators['btc_trend'] * 0.25 +
-                indicators['eth_trend'] * 0.25 +
+                indicators['sol_trend'] * 0.25 +
                 indicators['market_cap_trend'] * 0.25 +
                 indicators['volume_trends'] * 0.25
             ) * 0.8  # Recovery is typically moderate
