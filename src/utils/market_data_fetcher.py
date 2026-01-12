@@ -8,6 +8,7 @@ import json
 import time
 import logging
 import requests
+import threading
 from typing import Any, Dict, Optional, List, Tuple
 from datetime import datetime, timedelta
 import statistics
@@ -91,6 +92,11 @@ class MarketDataFetcher:
         
         # Backfill rate limiting tracker (tracks tokens backfilled per cycle)
         self._backfill_tracker: Dict[str, float] = {}
+        
+        # Per-token locks to prevent concurrent candle fetches for the same token
+        # This prevents race conditions when trading cycles overlap (>5 min candle fetches)
+        self._candle_fetch_locks: Dict[str, threading.Lock] = {}
+        self._candle_fetch_lock_global = threading.Lock()
         
         # Load persistent cache
         self._load_candlestick_cache()
@@ -1557,6 +1563,9 @@ class MarketDataFetcher:
         - Solana: CoinGecko API (via token ID lookup)
         - Ethereum/Base: The Graph (free tier) or CoinGecko (sparingly)
         
+        Uses per-token locking to prevent concurrent fetches for the same token,
+        preventing race conditions when trading cycles overlap (>5 min candle fetches).
+        
         Args:
             target_timestamp: Unix timestamp to query historical data for (None = current time)
         """
@@ -1565,9 +1574,18 @@ class MarketDataFetcher:
             cache_key += f":{int(target_timestamp)}"
         current_time = time.time()
         
+        # Check cache first (before acquiring lock - fast path)
+        if not force_fetch and cache_key in self.candlestick_cache_helius:
+            cached = self.candlestick_cache_helius[cache_key]
+            cache_age = current_time - cached.get('timestamp', 0)
+            if cache_age < self.helius_cache_duration:
+                logger.debug(f"✅ Using cached candlestick data for {token_address[:8]}... (age: {cache_age/60:.1f}m)")
+                return cached['data']
+        
         # SOLANA: Try indexed swaps first (fast, no API calls), then targeted backfill, then DEX API, then RPC
         if chain_id.lower() == "solana":
             # First, try indexed swap events from SQLite (fastest, no API calls)
+            # This doesn't need locking since it's just a DB query
             candles = self._get_solana_candles_from_indexed_swaps(
                 token_address, hours, target_timestamp
             )
@@ -1610,45 +1628,63 @@ class MarketDataFetcher:
                 except Exception as e:
                     logger.debug(f"Could not add token to indexer: {e}")
             
+            # For expensive API calls (Helius DEX API and RPC), use per-token locking
+            # to prevent concurrent fetches when trading cycles overlap
             if self.helius_api_key:
-                # Check rate limit before making expensive API calls
-                from src.config.config_loader import get_config_int
-                helius_calls = self.api_tracker.get_count('helius')
-                rate_limit_threshold = get_config_int('helius_candlestick_settings.rate_limit_threshold', 25000)
+                # Get or create lock for this token
+                with self._candle_fetch_lock_global:
+                    if cache_key not in self._candle_fetch_locks:
+                        self._candle_fetch_locks[cache_key] = threading.Lock()
+                    token_lock = self._candle_fetch_locks[cache_key]
                 
-                if helius_calls >= rate_limit_threshold:
-                    logger.warning(
-                        f"Helius API usage high ({helius_calls}/300000), using cached/memory data for {token_address[:8]}..."
-                    )
-                    # Try cache first (even if expired, might have usable data)
-                    if cache_key in self.candlestick_cache_helius:
+                # Acquire token-specific lock to prevent concurrent fetches
+                with token_lock:
+                    # Check cache again after acquiring lock (another fetch might have completed)
+                    if not force_fetch and cache_key in self.candlestick_cache_helius:
                         cached = self.candlestick_cache_helius[cache_key]
-                        if cached.get('data'):
-                            logger.debug(f"Using cached data despite rate limit for {token_address[:8]}...")
+                        cache_age = current_time - cached.get('timestamp', 0)
+                        if cache_age < self.helius_cache_duration:
+                            logger.debug(f"✅ Using cached candlestick data for {token_address[:8]}... (another fetch completed)")
                             return cached['data']
-                    # Fallback to memory
-                    return self._get_solana_candles_from_memory(token_address, hours)
-                
-                # Try DEX API first (more efficient - 1 call vs potentially 100+ RPC calls)
-                candles = self._get_solana_candles_from_helius(
-                    token_address, hours, cache_key, force_fetch, target_timestamp
-                )
-                if candles:
-                    return candles
-                
-                # Check rate limit again before expensive RPC fallback
-                helius_calls = self.api_tracker.get_count('helius')
-                if helius_calls >= rate_limit_threshold:
-                    logger.warning(
-                        f"Helius API usage high ({helius_calls}/300000), skipping RPC fallback for {token_address[:8]}..."
+                    
+                    # Check rate limit before making expensive API calls
+                    from src.config.config_loader import get_config_int
+                    helius_calls = self.api_tracker.get_count('helius')
+                    rate_limit_threshold = get_config_int('helius_candlestick_settings.rate_limit_threshold', 25000)
+                    
+                    if helius_calls >= rate_limit_threshold:
+                        logger.warning(
+                            f"Helius API usage high ({helius_calls}/300000), using cached/memory data for {token_address[:8]}..."
+                        )
+                        # Try cache first (even if expired, might have usable data)
+                        if cache_key in self.candlestick_cache_helius:
+                            cached = self.candlestick_cache_helius[cache_key]
+                            if cached.get('data'):
+                                logger.debug(f"Using cached data despite rate limit for {token_address[:8]}...")
+                                return cached['data']
+                        # Fallback to memory
+                        return self._get_solana_candles_from_memory(token_address, hours)
+                    
+                    # Try DEX API first (more efficient - 1 call vs potentially 100+ RPC calls)
+                    candles = self._get_solana_candles_from_helius(
+                        token_address, hours, cache_key, force_fetch, target_timestamp
                     )
-                    return self._get_solana_candles_from_memory(token_address, hours)
-                
-                # Fallback to RPC if DEX API fails or returns insufficient data
-                logger.debug(f"DEX API failed or insufficient data, trying RPC fallback for {token_address[:8]}...")
-                return self._get_solana_candles_from_rpc(
-                    token_address, hours, cache_key, force_fetch, target_timestamp
-                )
+                    if candles:
+                        return candles
+                    
+                    # Check rate limit again before expensive RPC fallback
+                    helius_calls = self.api_tracker.get_count('helius')
+                    if helius_calls >= rate_limit_threshold:
+                        logger.warning(
+                            f"Helius API usage high ({helius_calls}/300000), skipping RPC fallback for {token_address[:8]}..."
+                        )
+                        return self._get_solana_candles_from_memory(token_address, hours)
+                    
+                    # Fallback to RPC if DEX API fails or returns insufficient data
+                    logger.debug(f"DEX API failed or insufficient data, trying RPC fallback for {token_address[:8]}...")
+                    return self._get_solana_candles_from_rpc(
+                        token_address, hours, cache_key, force_fetch, target_timestamp
+                    )
             else:
                 logger.warning(f"No Helius API key configured for {token_address[:8]}..., using price_memory fallback")
                 return self._get_solana_candles_from_memory(token_address, hours)
@@ -2786,8 +2822,11 @@ class MarketDataFetcher:
                                 has_ideal_coverage = coverage_hours >= ideal_coverage_for_16_candles
                                 has_enough_sigs = count_in_window >= rpc_min_sigs_in_window
                                 
-                                # Stop if we have ideal coverage (4h) OR (min coverage + enough sigs)
-                                if has_ideal_coverage or (has_min_coverage and has_enough_sigs):
+                                # CRITICAL: Prioritize time coverage over signature count
+                                # Only stop if we have at least 3 hours of coverage (min_coverage_for_12_candles)
+                                # AND either ideal coverage OR enough signatures
+                                # This ensures we always get at least 3 hours of data before stopping
+                                if has_min_coverage and (has_ideal_coverage or has_enough_sigs):
                                     time_coverage_sufficient = True
                                     logger.info(
                                         f"RPC_EARLY_STOP: token={token_address[:8]}, pool={pool_address[:8]}, "
@@ -2819,10 +2858,11 @@ class MarketDataFetcher:
                                     else:
                                         coverage_hours = 0.0
                                     
-                                    # If we have at least 3 hours of coverage OR enough signatures, stop
-                                    if coverage_hours >= min_coverage_for_12_candles or count_in_window >= rpc_min_sigs_in_window:
+                                    # CRITICAL: Prioritize time coverage - only stop if we have at least 3 hours
+                                    # Don't stop just because we have enough signatures if coverage is insufficient
+                                    if coverage_hours >= min_coverage_for_12_candles:
                                         logger.debug(
-                                            f"Reached start_time boundary with coverage={coverage_hours:.2f}h, "
+                                            f"Reached start_time boundary with sufficient coverage={coverage_hours:.2f}h, "
                                             f"sigs={count_in_window}, stopping pagination"
                                         )
                                         break
@@ -2830,9 +2870,9 @@ class MarketDataFetcher:
                                         logger.debug(
                                             f"Reached start_time boundary but insufficient coverage "
                                             f"({coverage_hours:.2f}h < {min_coverage_for_12_candles}h), "
-                                            f"continuing pagination to try to get more data..."
+                                            f"sigs={count_in_window}, continuing pagination to get at least 3h of data..."
                                         )
-                                        # Continue paginating - don't break yet
+                                        # Continue paginating - don't break yet until we have 3h coverage
                                 else:
                                     # No early-stop tracking, stop when we've gone back far enough
                                     break
@@ -2865,12 +2905,30 @@ class MarketDataFetcher:
                                 # Early-stop already logged above
                                 pass
                             else:
-                                # Completed full pagination
-                                logger.debug(
-                                    f"RPC_PAGINATION_DONE: token={token_address[:8]}, pool={pool_address[:8]}, "
-                                    f"pages_used={pages_used}, sigs_total={len(all_signatures)}, "
-                                    f"sigs_in_window={count_in_window}, oldest={oldest_block_time_seen}, newest={newest_block_time_seen}"
-                                )
+                                # Completed full pagination - check if we got enough coverage
+                                min_coverage_for_12_candles = 3.0
+                                coverage_hours = 0.0
+                                if window_oldest_bound and window_newest_bound:
+                                    coverage_hours = (window_newest_bound - window_oldest_bound) / 3600.0
+                                elif oldest_block_time_seen and newest_block_time_seen:
+                                    window_oldest_est = max(oldest_block_time_seen, start_time)
+                                    window_newest_est = min(newest_block_time_seen, end_time)
+                                    coverage_hours = max(0.0, (window_newest_est - window_oldest_est) / 3600.0)
+                                
+                                if coverage_hours < min_coverage_for_12_candles:
+                                    logger.warning(
+                                        f"RPC_PAGINATION_COMPLETE: token={token_address[:8]}, pool={pool_address[:8]}, "
+                                        f"exhausted {max_pages} pages but only got {coverage_hours:.2f}h coverage "
+                                        f"(need {min_coverage_for_12_candles}h minimum). "
+                                        f"Sigs: {count_in_window}, will process what we have."
+                                    )
+                                else:
+                                    logger.debug(
+                                        f"RPC_PAGINATION_DONE: token={token_address[:8]}, pool={pool_address[:8]}, "
+                                        f"pages_used={pages_used}, sigs_total={len(all_signatures)}, "
+                                        f"sigs_in_window={count_in_window}, coverage={coverage_hours:.2f}h, "
+                                        f"oldest={oldest_block_time_seen}, newest={newest_block_time_seen}"
+                                    )
                             # Note: We need to fetch transactions to get actual timestamps, but we can at least log signature count
                             logger.info(
                                 f"Found {len(all_signatures)} transaction signatures in target time range from pool {pool_address[:8]}... "
@@ -2990,43 +3048,50 @@ class MarketDataFetcher:
                 candle_time_span = (candles[-1]['time'] - candles[0]['time']) / 3600.0
                 logger.info(f"CANDLE_TIME_SPAN: {candle_time_span:.2f}h (first: {candles[0]['time']}, last: {candles[-1]['time']})")
             
-            # If we have candles but not enough, check if they meet quality requirements
-            # Sometimes we get fewer candles if swaps are clustered in a shorter time window
-            # But we still need minimum 16 candles (4 hours) for quality check
-            if candles and len(candles) >= 16:
-                # Cache the result
-                self.candlestick_cache_helius[cache_key] = {
-                    'data': candles,
-                    'timestamp': time.time(),
-                    'source': 'rpc'
-                }
-                self._save_candlestick_cache()
-                
-                # Note: RPC calls already tracked above (get_signatures_for_address and get_transactions)
-                
-                logger.info(f"✅ Built {len(candles)} candles from RPC swaps for {token_address[:8]}...")
-                return candles
-            
-            # If we have some candles but not enough, log why
-            if candles and len(candles) > 0:
-                time_span_str = f"{candle_time_span:.2f}h" if candle_time_span is not None else "N/A"
-                logger.warning(
-                    f"RPC method built only {len(candles)} candles (need >= 16) for {token_address[:8]}... "
-                    f"Swaps: {len(swaps)}, processed: {candle_metadata.get('swaps_processed', 0)}, "
-                    f"Time span: {time_span_str}"
-                )
-                # If we have at least some valid candles, check if quality is good enough
-                # Maybe the token just doesn't have 6 hours of history, but we can still use what we have
-                if self._validate_candle_quality(candles, candle_metadata, hours):
-                    logger.info(f"✅ Candle quality passed with {len(candles)} candles, accepting result for {token_address[:8]}...")
-                    # Cache and return even if less than 16 candles (quality check passed)
+            # Cache and return candles if we have sufficient data
+            # Minimum: 12 candles (3 hours) - this is the absolute minimum we need
+            if candles and len(candles) >= 12:
+                # Check if we have ideal amount (16+ candles = 4+ hours)
+                if len(candles) >= 16:
+                    # Cache the result
                     self.candlestick_cache_helius[cache_key] = {
                         'data': candles,
                         'timestamp': time.time(),
                         'source': 'rpc'
                     }
                     self._save_candlestick_cache()
+                    logger.info(f"✅ Built {len(candles)} candles from RPC swaps for {token_address[:8]}... (ideal: 16+)")
                     return candles
+                else:
+                    # We have 12-15 candles (3-3.75 hours) - validate quality and cache
+                    time_span_str = f"{candle_time_span:.2f}h" if candle_time_span is not None else "N/A"
+                    logger.info(
+                        f"RPC method built {len(candles)} candles (minimum acceptable: 12 = 3h) for {token_address[:8]}... "
+                        f"Swaps: {len(swaps)}, processed: {candle_metadata.get('swaps_processed', 0)}, "
+                        f"Time span: {time_span_str}"
+                    )
+                    # Validate quality - if passes, cache and return
+                    if self._validate_candle_quality(candles, candle_metadata, hours):
+                        logger.info(f"✅ Candle quality passed with {len(candles)} candles (3h+), caching and accepting result for {token_address[:8]}...")
+                        # Cache and return (quality check passed, minimum 3h coverage met)
+                        self.candlestick_cache_helius[cache_key] = {
+                            'data': candles,
+                            'timestamp': time.time(),
+                            'source': 'rpc'
+                        }
+                        self._save_candlestick_cache()
+                        return candles
+                    else:
+                        logger.warning(f"⚠️ Candle quality check failed for {token_address[:8]}... with {len(candles)} candles, will try fallback")
+            
+            # If we have some candles but less than 12 (insufficient), log why
+            if candles and len(candles) > 0 and len(candles) < 12:
+                time_span_str = f"{candle_time_span:.2f}h" if candle_time_span is not None else "N/A"
+                logger.warning(
+                    f"RPC method built only {len(candles)} candles (need >= 12 for 3h minimum) for {token_address[:8]}... "
+                    f"Swaps: {len(swaps)}, processed: {candle_metadata.get('swaps_processed', 0)}, "
+                    f"Time span: {time_span_str}"
+                )
             
             # Fallback to Jupiter or price_memory
             logger.debug(f"RPC method failed to build sufficient candles for {token_address[:8]}..., trying Jupiter fallback")
