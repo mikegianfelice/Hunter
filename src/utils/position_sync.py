@@ -98,6 +98,34 @@ def resolve_token_address(position_key: str, position_data: Any) -> str:
     return address
 
 
+def find_position_key_by_address(token_address: str, chain_id: Optional[str] = None) -> Optional[str]:
+    """
+    Find position key by token address. Handles both canonical and composite keys.
+    Returns the key if found, None otherwise.
+    """
+    positions = load_positions_store()
+    token_address_lower = token_address.lower()
+    
+    for key, pos_data in positions.items():
+        if isinstance(pos_data, dict):
+            # Check chain_id if provided
+            if chain_id:
+                pos_chain = (pos_data.get("chain_id") or "").lower()
+                if pos_chain != chain_id.lower():
+                    continue
+            
+            # Check address
+            pos_addr = (pos_data.get("address") or key).lower()
+            if pos_addr == token_address_lower:
+                return key
+        else:
+            # Legacy format - check key directly
+            if key.lower() == token_address_lower:
+                return key
+    
+    return None
+
+
 def _check_token_balance_on_chain(token_address: str, chain_id: str, use_cache: bool = True) -> float:
     """
     Check token balance on the specified chain with caching support.

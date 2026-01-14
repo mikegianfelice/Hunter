@@ -855,6 +855,64 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
                 
                 # Only log trade if we have confirmed execution
                 if entry_amount_actual > 0 or (tokens_received is not None and tokens_received > 0):
+                    # Add Helius verification for Solana buys
+                    buy_verified = True
+                    if chain_id.lower() == "solana":
+                        import time
+                        time.sleep(30)  # Wait for transaction to propagate
+                        
+                        try:
+                            from src.utils.helius_client import HeliusClient
+                            from src.config.secrets import HELIUS_API_KEY, SOLANA_WALLET_ADDRESS
+                            
+                            if HELIUS_API_KEY and SOLANA_WALLET_ADDRESS:
+                                print(f"🔍 Verifying buy with Helius reconciliation...")
+                                client = HeliusClient(HELIUS_API_KEY)
+                                balances = client.get_address_balances(SOLANA_WALLET_ADDRESS)
+                                tokens = balances.get("tokens", [])
+                                
+                                # Check if token is in wallet
+                                token_found = False
+                                token_balance = 0.0
+                                for token in tokens:
+                                    mint = (token.get("mint") or "").lower()
+                                    if mint == token_address.lower():
+                                        amount_raw = token.get("amount") or 0
+                                        decimals = token.get("decimals") or 0
+                                        amount = float(amount_raw) / (10 ** decimals) if decimals else float(amount_raw)
+                                        if amount > 1e-9:
+                                            token_found = True
+                                            token_balance = amount
+                                            print(f"✅ Buy verified: {symbol} in wallet ({amount:.6f} tokens)")
+                                            break
+                                
+                                if not token_found:
+                                    print(f"❌ Buy verification failed: {symbol} not in wallet after transaction")
+                                    log_event("trading.buy_verification_failed",
+                                             level="ERROR",
+                                             symbol=symbol,
+                                             tx_hash=tx_hash,
+                                             note="Token not found in wallet after buy transaction")
+                                    buy_verified = False
+                                else:
+                                    # Update tokens_received with actual balance if different
+                                    if tokens_received is None or abs(tokens_received - token_balance) > 0.01:
+                                        print(f"⚠️ Token balance mismatch: expected {tokens_received}, got {token_balance}")
+                                        # Update fee_data with actual balance
+                                        fee_data['entry_tokens_received'] = token_balance
+                        except Exception as e:
+                            print(f"⚠️ Helius verification error (proceeding anyway): {e}")
+                            import traceback
+                            traceback.print_exc()
+                    
+                    if not buy_verified:
+                        # Don't log trade if buy verification failed
+                        log_event("trading.buy_not_logged_verification_failed",
+                                 level="WARNING",
+                                 symbol=symbol,
+                                 reason="Buy verification failed - token not in wallet")
+                        return  # Exit early, don't log position
+                    
                     # Log trade entry to performance tracker with fee data
                     try:
                         from src.core.performance_tracker import performance_tracker

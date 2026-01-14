@@ -38,6 +38,14 @@ OPEN_POSITIONS_FILE = DATA_DIR / "open_positions.json"
 USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 BALANCE_EPSILON = 1e-9
 TIMESTAMP_TOLERANCE_SECONDS = 900  # +/- 15 minutes for heuristic matching
+MIN_POSITION_SIZE_USD = 1.0  # Only track positions >= $1 USD
+
+# Excluded tokens (native/gas tokens)
+EXCLUDED_MINTS = {
+    "so11111111111111111111111111111111111111112",  # SOL / wSOL
+    USDC_MINT.lower(),  # USDC
+    "es9vmfrzacermjfrf4h2fyd4kconky11mcce8benwnyb",  # USDT
+}
 
 
 def reconcile_positions_and_pnl(limit: int = 200) -> Dict[str, Any]:
@@ -206,6 +214,59 @@ def reconcile_positions_and_pnl(limit: int = 200) -> Dict[str, Any]:
                 summary["issues"].append(
                     f"Closed trade {trade_id or mint} still holds {balance:.6f} tokens on-chain."
                 )
+
+    # ------------------------------------------------------------------ #
+    # Step 1b: Also check open_positions.json directly (in case positions
+    #          exist there but not in performance_tracker)
+    # ------------------------------------------------------------------ #
+    for key, pos in list(open_positions.items()):
+        address = (pos.get("address") or key).lower()
+        if not address:
+            continue
+        
+        # Skip if we already processed this in Step 1
+        already_processed = any(
+            (t.get("address") or "").lower() == address 
+            for t in performance_tracker.trades 
+            if (t.get("chain") or "").lower() == "solana"
+        )
+        if already_processed:
+            continue
+        
+        # Skip excluded tokens
+        if address in EXCLUDED_MINTS:
+            symbol = pos.get("symbol", "?")
+            print(f"⚠️ Removing excluded token from open_positions.json: {symbol} ({address[:8]}...{address[-8:]})")
+            open_positions.pop(key, None)
+            positions_changed = True
+            summary["open_positions_closed"] += 1
+            continue
+        
+        balance = balance_index.get(address, 0.0)
+        position_size = pos.get("position_size_usd", 0.0)
+        
+        # Remove if no balance OR if position size is too small
+        should_remove = False
+        reason = ""
+        if balance <= BALANCE_EPSILON:
+            should_remove = True
+            reason = "no balance"
+        elif position_size < MIN_POSITION_SIZE_USD:
+            should_remove = True
+            reason = f"position size too small (${position_size:.6f} < ${MIN_POSITION_SIZE_USD:.2f})"
+        
+        if should_remove:
+            symbol = pos.get("symbol", "?")
+            print(f"⚠️ Removing position from open_positions.json: {symbol} ({address[:8]}...{address[-8:]}) - {reason}")
+            open_positions.pop(key, None)
+            positions_changed = True
+            summary["open_positions_closed"] += 1
+            # Invalidate cache for closed position
+            try:
+                from src.utils.balance_cache import invalidate_token_balance_cache
+                invalidate_token_balance_cache(address, "solana")
+            except Exception as e:
+                print(f"⚠️ Failed to invalidate cache: {e}")
 
     # ------------------------------------------------------------------ #
     # Step 2: Rebuild execution metrics using Helius transaction data

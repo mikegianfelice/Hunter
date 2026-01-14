@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import threading
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from .db import get_connection, get_meta, set_meta
 
@@ -119,12 +119,44 @@ def upsert_position(position_key: str, position_data: Dict[str, Any]) -> None:
         _write_json_snapshot()
 
 
-def remove_position(position_key: str) -> None:
+def remove_position(position_key: str, token_address: Optional[str] = None) -> bool:
+    """
+    Remove position by key. If key match fails and token_address provided,
+    search by address and remove matching position.
+    Returns True if position was removed, False otherwise.
+    """
     _init_db()
     with _LOCK:
         with get_connection() as conn:
-            conn.execute("DELETE FROM positions WHERE position_key = ?", (position_key,))
-        _write_json_snapshot()
+            # Try exact key match first
+            cursor = conn.execute("DELETE FROM positions WHERE position_key = ?", (position_key,))
+            deleted = cursor.rowcount > 0
+            
+            # If no match and token_address provided, search by address
+            if not deleted and token_address:
+                positions = load_positions()
+                token_address_lower = token_address.lower()
+                
+                # Search for position by address
+                for key, pos_data in positions.items():
+                    if isinstance(pos_data, dict):
+                        pos_addr = (pos_data.get("address") or key).lower()
+                    else:
+                        pos_addr = key.lower()
+                    
+                    if pos_addr == token_address_lower:
+                        # Found matching position, remove it
+                        conn.execute("DELETE FROM positions WHERE position_key = ?", (key,))
+                        deleted = True
+                        print(f"⚠️ Removed position by address lookup: {key} (original key: {position_key})")
+                        break
+            
+            if deleted:
+                _write_json_snapshot()
+            elif token_address:
+                print(f"⚠️ Failed to remove position: key '{position_key}' not found, address '{token_address}' also not found")
+            
+            return deleted
 
 
 def replace_positions(positions: Dict[str, Dict[str, Any]]) -> None:

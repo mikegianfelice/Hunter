@@ -157,7 +157,7 @@ def load_positions(validate_balances: bool = False):
 
     return validated_positions
 
-def _cleanup_closed_position(position_key: str, token_address: str, chain_id: str):
+def _cleanup_closed_position(position_key: str, token_address: str, chain_id: str) -> bool:
     """
     Comprehensive cleanup function to remove a position from ALL storage locations:
     1. open_positions.json (via remove_position)
@@ -166,14 +166,47 @@ def _cleanup_closed_position(position_key: str, token_address: str, chain_id: st
     4. Partial TP manager state (clear tracking state)
     5. Balance cache (invalidate stale cache)
     
-    This ensures positions are completely removed when sells complete.
+    Returns True if cleanup succeeded, False otherwise.
     """
     try:
         from src.storage.positions import remove_position as remove_position_from_db
         
-        # Remove from open_positions.json and hunter_state.db
-        remove_position_from_db(position_key)
-        print(f"✅ Removed position {position_key} from open_positions.json and hunter_state.db")
+        # Remove from open_positions.json and hunter_state.db (with address fallback)
+        removed = remove_position_from_db(position_key, token_address)
+        if removed:
+            print(f"✅ Removed position {position_key} from open_positions.json and hunter_state.db")
+        else:
+            print(f"⚠️ Failed to remove position {position_key} - will verify and retry")
+            
+            # Verify position is actually gone
+            positions = load_positions_store()
+            if position_key in positions:
+                # Still present, try finding by address
+                from src.utils.position_sync import find_position_key_by_address
+                found_key = find_position_key_by_address(token_address, chain_id)
+                if found_key and found_key != position_key:
+                    print(f"🔄 Found position with different key: {found_key}, removing...")
+                    removed = remove_position_from_db(found_key, token_address)
+                    if removed:
+                        print(f"✅ Removed position {found_key} via address lookup")
+                    else:
+                        print(f"❌ Failed to remove position {found_key} even with address lookup")
+                elif found_key == position_key:
+                    # Same key, removal should have worked - check again
+                    positions_after = load_positions_store()
+                    if position_key not in positions_after:
+                        removed = True
+                        print(f"✅ Position {position_key} confirmed removed")
+                    else:
+                        print(f"❌ Position {position_key} still present after removal attempt")
+            else:
+                # Position is gone, removal succeeded
+                removed = True
+                print(f"✅ Position {position_key} confirmed removed (was not in positions)")
+        
+        if not removed:
+            print(f"❌ CRITICAL: Failed to remove position {position_key} ({token_address[:8]}...{token_address[-8:]})")
+            return False
         
         # Invalidate balance cache to prevent stale data
         try:
@@ -221,11 +254,14 @@ def _cleanup_closed_position(position_key: str, token_address: str, chain_id: st
                 replace_performance_data(perf_data)
         except Exception as e:
             print(f"⚠️ Error updating performance_data.json: {e}")
+        
+        return removed
             
     except Exception as e:
         print(f"⚠️ Error in _cleanup_closed_position: {e}")
         import traceback
         traceback.print_exc()
+        return False
 
 def save_positions(positions):
     """
@@ -1933,6 +1969,51 @@ def monitor_all_positions():
             # Execute sell
             tx = _sell_token_multi_chain(token_address, chain_id, symbol)
             if tx:
+                # Wait for transaction to propagate, then verify with Helius
+                print(f"⏳ Waiting 30 seconds for transaction to propagate before verification...")
+                time.sleep(30)
+                
+                # Run Helius reconciliation to verify sell (for Solana)
+                sell_verified = True
+                if chain_id.lower() == "solana":
+                    try:
+                        from src.utils.helius_client import HeliusClient
+                        from src.config.secrets import HELIUS_API_KEY, SOLANA_WALLET_ADDRESS
+                        
+                        if HELIUS_API_KEY and SOLANA_WALLET_ADDRESS:
+                            print(f"🔍 Verifying sell with Helius reconciliation...")
+                            client = HeliusClient(HELIUS_API_KEY)
+                            balances = client.get_address_balances(SOLANA_WALLET_ADDRESS)
+                            tokens = balances.get("tokens", [])
+                            
+                            # Check if token is still in wallet
+                            token_still_present = False
+                            for token in tokens:
+                                mint = (token.get("mint") or "").lower()
+                                if mint == token_address.lower():
+                                    amount_raw = token.get("amount") or 0
+                                    decimals = token.get("decimals") or 0
+                                    amount = float(amount_raw) / (10 ** decimals) if decimals else float(amount_raw)
+                                    if amount > 1e-9:  # Still has balance
+                                        token_still_present = True
+                                        print(f"❌ Sell verification failed: {symbol} still in wallet ({amount:.6f} tokens)")
+                                        break
+                            
+                            if token_still_present:
+                                print(f"🔄 Sell failed - token still in wallet. Will retry on next cycle.")
+                                sell_verified = False
+                            else:
+                                print(f"✅ Sell verified: {symbol} no longer in wallet")
+                    except Exception as e:
+                        print(f"⚠️ Helius verification error (proceeding anyway): {e}")
+                        import traceback
+                        traceback.print_exc()
+                
+                if not sell_verified:
+                    # Don't proceed with cleanup, mark for retry
+                    print(f"❌ [TECHNICAL EXIT] Sell verification failed, will retry on next cycle")
+                    continue
+                
                 log_trade(token_address, entry_price, current_price, f"technical_exit_{technical_exit_reason}")
                 if trade:
                     position_size = trade.get('position_size_usd', 0)
@@ -1940,7 +2021,17 @@ def monitor_all_positions():
                     from src.core.performance_tracker import performance_tracker
                     performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, f"technical_exit_{technical_exit_reason}")
                 
-                _cleanup_closed_position(position_key, token_address, chain_id)
+                # Cleanup with verification
+                cleanup_success = _cleanup_closed_position(position_key, token_address, chain_id)
+                if not cleanup_success:
+                    print(f"⚠️ Cleanup failed for {symbol}, retrying with address lookup...")
+                    from src.utils.position_sync import find_position_key_by_address
+                    found_key = find_position_key_by_address(token_address, chain_id)
+                    if found_key:
+                        cleanup_success = _cleanup_closed_position(found_key, token_address, chain_id)
+                    
+                    if not cleanup_success:
+                        print(f"❌ CRITICAL: Failed to remove {symbol} from open_positions.json after sell!")
                 
                 send_telegram_message(
                     f"📊 Technical Exit Signal Triggered!\n"
@@ -2070,6 +2161,51 @@ def monitor_all_positions():
             print(f"🔍 [DEBUG] Sell result: tx={tx}, type={type(tx)}")
             
             if tx:  # Only proceed if sell succeeded
+                # Wait for transaction to propagate, then verify with Helius
+                print(f"⏳ Waiting 30 seconds for transaction to propagate before verification...")
+                time.sleep(30)
+                
+                # Run Helius reconciliation to verify sell (for Solana)
+                sell_verified = True
+                if chain_id.lower() == "solana":
+                    try:
+                        from src.utils.helius_client import HeliusClient
+                        from src.config.secrets import HELIUS_API_KEY, SOLANA_WALLET_ADDRESS
+                        
+                        if HELIUS_API_KEY and SOLANA_WALLET_ADDRESS:
+                            print(f"🔍 Verifying sell with Helius reconciliation...")
+                            client = HeliusClient(HELIUS_API_KEY)
+                            balances = client.get_address_balances(SOLANA_WALLET_ADDRESS)
+                            tokens = balances.get("tokens", [])
+                            
+                            # Check if token is still in wallet
+                            token_still_present = False
+                            for token in tokens:
+                                mint = (token.get("mint") or "").lower()
+                                if mint == token_address.lower():
+                                    amount_raw = token.get("amount") or 0
+                                    decimals = token.get("decimals") or 0
+                                    amount = float(amount_raw) / (10 ** decimals) if decimals else float(amount_raw)
+                                    if amount > 1e-9:  # Still has balance
+                                        token_still_present = True
+                                        print(f"❌ Sell verification failed: {symbol} still in wallet ({amount:.6f} tokens)")
+                                        break
+                            
+                            if token_still_present:
+                                print(f"🔄 Sell failed - token still in wallet. Will retry on next cycle.")
+                                sell_verified = False
+                            else:
+                                print(f"✅ Sell verified: {symbol} no longer in wallet")
+                    except Exception as e:
+                        print(f"⚠️ Helius verification error (proceeding anyway): {e}")
+                        import traceback
+                        traceback.print_exc()
+                
+                if not sell_verified:
+                    # Don't proceed with cleanup, mark for retry
+                    print(f"❌ [TAKE PROFIT] Sell verification failed, will retry on next cycle")
+                    continue
+                
                 log_trade(token_address, entry_price, current_price, "take_profit")
                 
                 # Update performance tracker with exit
@@ -2093,7 +2229,16 @@ def monitor_all_positions():
                     print(f"📊 Updated performance tracker for take profit: {trade.get('symbol', '?')}")
                 
                 # CRITICAL: Remove position from ALL storage locations (open_positions.json, hunter_state.db, performance_data.json)
-                _cleanup_closed_position(position_key, token_address, chain_id)
+                cleanup_success = _cleanup_closed_position(position_key, token_address, chain_id)
+                if not cleanup_success:
+                    print(f"⚠️ Cleanup failed for {symbol}, retrying with address lookup...")
+                    from src.utils.position_sync import find_position_key_by_address
+                    found_key = find_position_key_by_address(token_address, chain_id)
+                    if found_key:
+                        cleanup_success = _cleanup_closed_position(found_key, token_address, chain_id)
+                    
+                    if not cleanup_success:
+                        print(f"❌ CRITICAL: Failed to remove {symbol} from open_positions.json after sell!")
                 
                 tx_display = tx if tx and tx not in ["verified_by_balance", "assumed_success"] else "Verified by balance check"
                 send_telegram_message(
@@ -2228,6 +2373,51 @@ def monitor_all_positions():
             tx = _sell_token_multi_chain(token_address, chain_id, symbol)
             
             if tx:  # Only proceed if sell succeeded
+                # Wait for transaction to propagate, then verify with Helius
+                print(f"⏳ Waiting 30 seconds for transaction to propagate before verification...")
+                time.sleep(30)
+                
+                # Run Helius reconciliation to verify sell (for Solana)
+                sell_verified = True
+                if chain_id.lower() == "solana":
+                    try:
+                        from src.utils.helius_client import HeliusClient
+                        from src.config.secrets import HELIUS_API_KEY, SOLANA_WALLET_ADDRESS
+                        
+                        if HELIUS_API_KEY and SOLANA_WALLET_ADDRESS:
+                            print(f"🔍 Verifying sell with Helius reconciliation...")
+                            client = HeliusClient(HELIUS_API_KEY)
+                            balances = client.get_address_balances(SOLANA_WALLET_ADDRESS)
+                            tokens = balances.get("tokens", [])
+                            
+                            # Check if token is still in wallet
+                            token_still_present = False
+                            for token in tokens:
+                                mint = (token.get("mint") or "").lower()
+                                if mint == token_address.lower():
+                                    amount_raw = token.get("amount") or 0
+                                    decimals = token.get("decimals") or 0
+                                    amount = float(amount_raw) / (10 ** decimals) if decimals else float(amount_raw)
+                                    if amount > 1e-9:  # Still has balance
+                                        token_still_present = True
+                                        print(f"❌ Sell verification failed: {symbol} still in wallet ({amount:.6f} tokens)")
+                                        break
+                            
+                            if token_still_present:
+                                print(f"🔄 Sell failed - token still in wallet. Will retry on next cycle.")
+                                sell_verified = False
+                            else:
+                                print(f"✅ Sell verified: {symbol} no longer in wallet")
+                    except Exception as e:
+                        print(f"⚠️ Helius verification error (proceeding anyway): {e}")
+                        import traceback
+                        traceback.print_exc()
+                
+                if not sell_verified:
+                    # Don't proceed with cleanup, mark for retry
+                    print(f"❌ [STOP LOSS] Sell verification failed, will retry on next cycle")
+                    continue
+                
                 log_trade(token_address, entry_price, current_price, "stop_loss")
                 
                 # Update performance tracker with exit
@@ -2252,7 +2442,16 @@ def monitor_all_positions():
                     print(f"📊 Updated performance tracker for stop loss: {trade.get('symbol', '?')}")
                 
                 # CRITICAL: Remove position from ALL storage locations (open_positions.json, hunter_state.db, performance_data.json)
-                _cleanup_closed_position(position_key, token_address, chain_id)
+                cleanup_success = _cleanup_closed_position(position_key, token_address, chain_id)
+                if not cleanup_success:
+                    print(f"⚠️ Cleanup failed for {symbol}, retrying with address lookup...")
+                    from src.utils.position_sync import find_position_key_by_address
+                    found_key = find_position_key_by_address(token_address, chain_id)
+                    if found_key:
+                        cleanup_success = _cleanup_closed_position(found_key, token_address, chain_id)
+                    
+                    if not cleanup_success:
+                        print(f"❌ CRITICAL: Failed to remove {symbol} from open_positions.json after sell!")
                 
                 tx_display = tx if tx and tx not in ["verified_by_balance", "assumed_success"] else "Verified by balance check"
                 send_telegram_message(
@@ -2383,6 +2582,51 @@ def monitor_all_positions():
             tx = _sell_token_multi_chain(token_address, chain_id, symbol)
             
             if tx:  # Only proceed if sell succeeded
+                # Wait for transaction to propagate, then verify with Helius
+                print(f"⏳ Waiting 30 seconds for transaction to propagate before verification...")
+                time.sleep(30)
+                
+                # Run Helius reconciliation to verify sell (for Solana)
+                sell_verified = True
+                if chain_id.lower() == "solana":
+                    try:
+                        from src.utils.helius_client import HeliusClient
+                        from src.config.secrets import HELIUS_API_KEY, SOLANA_WALLET_ADDRESS
+                        
+                        if HELIUS_API_KEY and SOLANA_WALLET_ADDRESS:
+                            print(f"🔍 Verifying sell with Helius reconciliation...")
+                            client = HeliusClient(HELIUS_API_KEY)
+                            balances = client.get_address_balances(SOLANA_WALLET_ADDRESS)
+                            tokens = balances.get("tokens", [])
+                            
+                            # Check if token is still in wallet
+                            token_still_present = False
+                            for token in tokens:
+                                mint = (token.get("mint") or "").lower()
+                                if mint == token_address.lower():
+                                    amount_raw = token.get("amount") or 0
+                                    decimals = token.get("decimals") or 0
+                                    amount = float(amount_raw) / (10 ** decimals) if decimals else float(amount_raw)
+                                    if amount > 1e-9:  # Still has balance
+                                        token_still_present = True
+                                        print(f"❌ Sell verification failed: {symbol} still in wallet ({amount:.6f} tokens)")
+                                        break
+                            
+                            if token_still_present:
+                                print(f"🔄 Sell failed - token still in wallet. Will retry on next cycle.")
+                                sell_verified = False
+                            else:
+                                print(f"✅ Sell verified: {symbol} no longer in wallet")
+                    except Exception as e:
+                        print(f"⚠️ Helius verification error (proceeding anyway): {e}")
+                        import traceback
+                        traceback.print_exc()
+                
+                if not sell_verified:
+                    # Don't proceed with cleanup, mark for retry
+                    print(f"❌ [TRAILING STOP] Sell verification failed, will retry on next cycle")
+                    continue
+                
                 log_trade(token_address, entry_price, current_price, "trailing_stop")
                 
                 # Update performance tracker with exit
@@ -2407,7 +2651,16 @@ def monitor_all_positions():
                     print(f"📊 Updated performance tracker for trailing stop: {trade.get('symbol', '?')}")
                 
                 # CRITICAL: Remove position from ALL storage locations (open_positions.json, hunter_state.db, performance_data.json)
-                _cleanup_closed_position(position_key, token_address, chain_id)
+                cleanup_success = _cleanup_closed_position(position_key, token_address, chain_id)
+                if not cleanup_success:
+                    print(f"⚠️ Cleanup failed for {symbol}, retrying with address lookup...")
+                    from src.utils.position_sync import find_position_key_by_address
+                    found_key = find_position_key_by_address(token_address, chain_id)
+                    if found_key:
+                        cleanup_success = _cleanup_closed_position(found_key, token_address, chain_id)
+                    
+                    if not cleanup_success:
+                        print(f"❌ CRITICAL: Failed to remove {symbol} from open_positions.json after sell!")
                 
                 tx_display = tx if tx and tx not in ["verified_by_balance", "assumed_success"] else "Verified by balance check"
                 send_telegram_message(

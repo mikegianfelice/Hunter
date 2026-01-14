@@ -540,6 +540,46 @@ def buy_token_solana(token_address: str, amount_usd: float, symbol: str = "", te
             verified = executor.jupiter_lib.verify_transaction_success(tx_hash)
             if verified is True:
                 print(f"✅ Buy transaction {tx_hash} verified as successful on-chain")
+                
+                # Additional Helius reconciliation to verify token is in wallet
+                print(f"⏳ Waiting 30 seconds for transaction to propagate before Helius verification...")
+                time.sleep(30)
+                
+                try:
+                    from src.utils.helius_client import HeliusClient
+                    from src.config.secrets import HELIUS_API_KEY, SOLANA_WALLET_ADDRESS
+                    
+                    if HELIUS_API_KEY and SOLANA_WALLET_ADDRESS:
+                        print(f"🔍 Verifying buy with Helius reconciliation...")
+                        client = HeliusClient(HELIUS_API_KEY)
+                        balances = client.get_address_balances(SOLANA_WALLET_ADDRESS)
+                        tokens = balances.get("tokens", [])
+                        
+                        # Check if token is in wallet
+                        token_found = False
+                        token_balance = 0.0
+                        for token in tokens:
+                            mint = (token.get("mint") or "").lower()
+                            if mint == token_address.lower():
+                                amount_raw = token.get("amount") or 0
+                                decimals = token.get("decimals") or 0
+                                amount = float(amount_raw) / (10 ** decimals) if decimals else float(amount_raw)
+                                if amount > 1e-9:
+                                    token_found = True
+                                    token_balance = amount
+                                    print(f"✅ Buy verified via Helius: {symbol} in wallet ({amount:.6f} tokens)")
+                                    break
+                        
+                        if not token_found:
+                            print(f"❌ Buy verification failed via Helius: {symbol} not in wallet after transaction")
+                            print(f"   Transaction may have failed despite on-chain verification")
+                            return abort("helius_verification_failed", "Token not found in wallet after buy transaction", 
+                                        token=token_address, amount_usd=amount_usd, tx_hash=tx_hash)
+                except Exception as e:
+                    print(f"⚠️ Helius verification error (proceeding anyway): {e}")
+                    import traceback
+                    traceback.print_exc()
+                
                 return succeed(tx_hash, quoted_output_amount)
             elif verified is False:
                 print(f"❌ Buy transaction {tx_hash} confirmed as failed on-chain")
