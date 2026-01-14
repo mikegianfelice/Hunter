@@ -1963,8 +1963,8 @@ class MarketDataFetcher:
                 return self._get_solana_candles_from_rpc(token_address, hours, cache_key, force_fetch, target_timestamp)
             
             if not swaps or len(swaps) < 2:
-                logger.debug(f"Insufficient swap data from Helius for {token_address[:8]}... (got {len(swaps)} swaps), using price_memory")
-                return self._get_solana_candles_from_memory(token_address, hours)
+                logger.debug(f"Insufficient swap data from Helius DEX API for {token_address[:8]}... (got {len(swaps)} swaps), will try RPC fallback")
+                return None
             
             # Process swaps into 15m candles (now returns tuple)
             candle_build_start = time_module.perf_counter()
