@@ -1121,12 +1121,14 @@ class EnhancedAsyncTradingEngine:
                     from src.utils.market_data_fetcher import market_data_fetcher
                     from src.utils.technical_indicators import TechnicalIndicators
                     
-                    token_address = token.get("address", "").lower()
+                    # Keep original address case for validation and RPC calls (Solana addresses are case-sensitive)
+                    token_address = token.get("address", "")
                     chain_id = token.get("chainId", token.get("chain", "solana")).lower()
                     
                     # Check if token is marked as hyperactive (should be blocked from trading)
+                    # Use lowercase for lookup since _hyperactive_skip_tokens stores addresses in lowercase
                     from src.utils.market_data_fetcher import market_data_fetcher
-                    if token_address and token_address in market_data_fetcher._hyperactive_skip_tokens:
+                    if token_address and token_address.lower() in market_data_fetcher._hyperactive_skip_tokens:
                         log_error("trading.hyperactivity_blocked",
                                 f"Token {token.get('symbol', 'UNKNOWN')} blocked for hyperactivity",
                                 symbol=token.get("symbol"),
