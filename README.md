@@ -34,7 +34,7 @@ Before entering any trade, tokens must pass multiple analysis-driven checks:
 - **Quality Score** ≥ 65% (combines sentiment, technical analysis, price prediction)
 - **Success Probability** ≥ 60% (prediction of profitable outcome based on weighted analysis)
 - **Holder Concentration** < 60% (blocks tokens where top 10 holders own 60% or more)
-- **Order-Flow Defense** (Solana only) - Blocks tokens with suspicious trading patterns:
+- **Order-Flow Defense** - Blocks tokens with suspicious trading patterns:
   - Minimum 55% buy dominance (more buyers than sellers)
   - Maximum 20% from single wallet (prevents single-wallet pumps)
   - Minimum 12 unique buyers (ensures diverse participation)
