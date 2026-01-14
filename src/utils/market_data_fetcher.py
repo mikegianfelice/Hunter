@@ -77,8 +77,9 @@ class MarketDataFetcher:
         self.candlestick_cache_file = Path("data/candlestick_cache.json")
         
         # Cache durations - load from config with sensible defaults
-        helius_cache_hours = get_config('helius_candlestick_settings.cache_duration_hours', 1)
-        self.helius_cache_duration = helius_cache_hours * 3600  # Convert hours to seconds (default: 1 hour)
+        helius_cache_hours = get_config('helius_candlestick_settings.cache_duration_hours', 2)  # Increased from 1 to 2 hours
+        self.helius_cache_duration = helius_cache_hours * 3600  # Convert hours to seconds (default: 2 hours)
+        self.enable_stale_cache_fallback = get_config('helius_candlestick_settings.enable_stale_cache_fallback', True)
         self.coingecko_cache_duration = 3600  # 1 hour (conservative for CoinGecko)
         
         # Load routing thresholds for 15m candle policy
@@ -1602,6 +1603,16 @@ class MarketDataFetcher:
             if cache_age < cache_duration:
                 logger.debug(f"✅ Using cached candlestick data for {token_address[:8]}... (age: {cache_age/60:.1f}m, {'partial' if cached.get('partial') else 'full'})")
                 return cached['data']
+            
+            # Stale-while-revalidate: Use stale cache if rate limit is high (even if expired)
+            if self.enable_stale_cache_fallback and cache_age < (cache_duration * 2):  # Stale but not too old (< 4 hours)
+                helius_calls = self.api_tracker.get_count('helius')
+                if helius_calls > 200000:  # Over 66% of limit
+                    logger.debug(
+                        f"Using stale cache (age: {cache_age/3600:.1f}h) for {token_address[:8]}... "
+                        f"due to high API usage ({helius_calls}/300000)"
+                    )
+                    return cached['data']  # Use stale cache to save calls
         
         # SOLANA: Try indexed swaps first (fast, no API calls), then targeted backfill, then DEX API, then RPC
         if chain_id.lower() == "solana":
@@ -1673,6 +1684,15 @@ class MarketDataFetcher:
                         if cache_age < cache_duration:
                             logger.debug(f"✅ Using cached candlestick data for {token_address[:8]}... (another fetch completed, {'partial' if cached.get('partial') else 'full'})")
                             return cached['data']
+                        
+                        # Stale-while-revalidate: Use stale cache if rate limit is high
+                        if self.enable_stale_cache_fallback and cache_age < (cache_duration * 2):
+                            if helius_calls > 200000:  # Over 66% of limit
+                                logger.debug(
+                                    f"Using stale cache (age: {cache_age/3600:.1f}h) for {token_address[:8]}... "
+                                    f"due to high API usage ({helius_calls}/300000)"
+                                )
+                                return cached['data']
                     
                     # Check rate limit before making expensive API calls
                     from src.config.config_loader import get_config_int
@@ -2756,14 +2776,14 @@ class MarketDataFetcher:
                 # Step 2: Query transactions from pool addresses with pagination
                 # Load pagination limits from config with sensible defaults
                 from src.config.config_loader import get_config_int, get_config_float, get_config
-                max_pools = get_config_int('helius_candlestick_settings.max_pools_to_query', 2)
+                max_pools = get_config_int('helius_candlestick_settings.max_pools_to_query', 1)  # Reduced from 2
                 # Dynamically increase pagination pages based on hours requested
-                # For 6 hours, we need more pages to get historical data
-                # Base pages: 5, add extra pages based on hours (6h = 6*3 = 18 pages minimum)
-                base_pages = get_config_int('helius_candlestick_settings.max_pagination_pages', 5)
-                # Calculate needed pages: roughly 3 pages per hour (300 transactions/hour should be enough)
-                # Cap at 50 pages to avoid excessive API calls
-                max_pages = min(base_pages + (hours * 3), 50)
+                # More conservative: 2 pages per hour instead of 3
+                # Base pages: 3 (reduced from 5), add extra pages based on hours (6h = 6*2 = 12 pages)
+                base_pages = get_config_int('helius_candlestick_settings.max_pagination_pages', 3)  # Reduced from 5
+                # Calculate needed pages: roughly 2 pages per hour (200 transactions/hour should be enough)
+                # Cap at 15 pages to avoid excessive API calls (reduced from 50)
+                max_pages = min(base_pages + (hours * 2), 15)  # Reduced from 50
                 max_sigs_per_page = get_config_int('helius_candlestick_settings.max_signatures_per_page', 100)
                 
                 # Early-stop configuration
@@ -2773,7 +2793,7 @@ class MarketDataFetcher:
                 
                 logger.info(
                     f"RPC pagination settings for {hours}h: pools={max_pools}, pages={max_pages} "
-                    f"(base={base_pages} + {hours*3} hours = {base_pages + hours*3}, capped at 50), "
+                    f"(base={base_pages} + {hours*2} hours = {base_pages + hours*2}, capped at 15), "
                     f"sigs/page={max_sigs_per_page}"
                 )
                 
@@ -2874,6 +2894,15 @@ class MarketDataFetcher:
                                 
                                 if hours_covered > 0:
                                     sigs_per_hour = count_in_window / hours_covered if hours_covered > 0 else float('inf')
+                                    
+                                    # Early stop if we have high signature density and sufficient data
+                                    # High density = more swaps per hour = need fewer pages
+                                    if sigs_per_hour > 100 and count_in_window >= 60 and hours_covered >= 3:
+                                        logger.debug(
+                                            f"High signature density ({sigs_per_hour:.0f}/hour), sufficient swaps ({count_in_window}), "
+                                            f"stopping pagination early"
+                                        )
+                                        break  # Stop pagination early
                                     
                                     # Case 1: < 1.0h coverage (>500 sig/hour) - abort and mark as hyperactive_skip
                                     if hours_covered < 1.0:
@@ -3013,6 +3042,25 @@ class MarketDataFetcher:
                             logger.debug(f"No transactions in time range for pool {pool_address[:8]}...")
                             continue
                         
+                        # Early detection: Check if we have enough signatures before fetching transactions
+                        # Need at least 20 signatures for 12 candles (minimum viable)
+                        if len(all_signatures) < 20:
+                            logger.debug(
+                                f"Insufficient signatures ({len(all_signatures)} < 20) for pool {pool_address[:8]}..., "
+                                f"skipping expensive transaction fetch"
+                            )
+                            continue  # Skip this pool, try next or fallback
+                        
+                        # Check time coverage from signatures before fetching transactions
+                        if oldest_block_time_seen and newest_block_time_seen:
+                            time_span = newest_block_time_seen - oldest_block_time_seen
+                            if time_span < 2 * 3600:  # Less than 2 hours of data
+                                logger.debug(
+                                    f"Insufficient time coverage ({time_span/3600:.1f}h < 2h) for pool {pool_address[:8]}..., "
+                                    f"skipping expensive transaction fetch"
+                                )
+                                continue  # Skip this pool
+                        
                         # Check actual time span of signatures found
                         if all_signatures and len(all_signatures) > 0:
                             # Log pagination completion (early-stop or full)
@@ -3097,6 +3145,20 @@ class MarketDataFetcher:
                         
                         # Log progress after processing each pool
                         logger.info(f"After processing pool {pool_address[:8]}..., found {len(swaps)} swaps total")
+                        
+                        # Early exit: If first pool gives enough data, skip second pool
+                        if len(swaps) >= 40:
+                            # Check time span of swaps
+                            if swaps:
+                                swap_times = [s.get('timestamp', 0) for s in swaps if s.get('timestamp')]
+                                if swap_times:
+                                    time_span_hours = (max(swap_times) - min(swap_times)) / 3600.0
+                                    if time_span_hours >= 3.0:  # At least 3 hours of data
+                                        logger.debug(
+                                            f"First pool sufficient ({len(swaps)} swaps, {time_span_hours:.1f}h), "
+                                            f"skipping remaining pools to save API calls"
+                                        )
+                                        break  # Don't query additional pools
                     
                     except Exception as e:
                         logger.debug(f"Error querying pool {pool_address[:8]}...: {e}")

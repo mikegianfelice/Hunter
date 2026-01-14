@@ -140,11 +140,13 @@ helius_reconciliation_tx_limit: 50  # Max transactions to request per reconcilia
 
 # === Helius Candlestick Settings ===
 helius_candlestick_settings:
-  cache_duration_hours: 1  # Cache duration for candlestick data (1 hour = 3600 seconds)
-  max_pools_to_query: 2  # Max liquidity pools to query for RPC method (reduced from 5)
-  max_pagination_pages: 5  # Max pages per pool for RPC pagination (reduced from 20)
+  cache_duration_hours: 2  # Cache duration for candlestick data (2 hours = 7200 seconds) - increased from 1
+  max_pools_to_query: 1  # Max liquidity pools to query for RPC method (reduced from 2) - query second pool only if first insufficient
+  max_pagination_pages: 3  # Base pages per pool for RPC pagination (reduced from 5) - adds hours*2 pages up to max 15
   max_signatures_per_page: 100  # Max signatures per page for RPC (reduced from 500)
-  rate_limit_threshold: 250000  # Use fallback if Helius calls exceed this (83% of 30k limit)
+  transaction_batch_size: 100  # Transactions per batch request (reduces API calls by ~98%)
+  rate_limit_threshold: 250000  # Use fallback if Helius calls exceed this (83% of 300k limit)
+  enable_stale_cache_fallback: true  # Use stale cache if rate limit high (>66% usage) to save API calls
 
 # === Helius 15m Candle Policy ===
 helius_15m_candle_policy:

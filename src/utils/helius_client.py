@@ -178,21 +178,71 @@ class HeliusClient:
         return infos
 
     def _fetch_transactions(self, signatures: Sequence[str]) -> List[Optional[Dict[str, Any]]]:
-        transactions: List[Optional[Dict[str, Any]]] = []
-        for signature in signatures:
-            tx = self._rpc_request(
-                "getTransaction",
-                [
-                    signature,
-                    {
-                        "encoding": "jsonParsed",
-                        "commitment": "confirmed",
-                        "maxSupportedTransactionVersion": 0,
-                    },
-                ],
-            )
-            transactions.append(tx)
-        return transactions
+        """
+        Fetch transactions using batch JSON-RPC requests.
+        Reduces API calls from N to ceil(N/batch_size) - typically 98% reduction.
+        """
+        if not signatures:
+            return []
+        
+        # Get batch size from config, default to 100
+        from src.config.config_loader import get_config_int
+        batch_size = get_config_int('helius_candlestick_settings.transaction_batch_size', 100)
+        
+        all_transactions = []
+        
+        # Process signatures in batches
+        for i in range(0, len(signatures), batch_size):
+            batch_sigs = signatures[i:i + batch_size]
+            
+            # Create batch JSON-RPC request (array of request objects)
+            batch_payload = []
+            for idx, sig in enumerate(batch_sigs):
+                batch_payload.append({
+                    "jsonrpc": "2.0",
+                    "id": f"batch-{i}-{idx}",
+                    "method": "getTransaction",
+                    "params": [
+                        sig,
+                        {
+                            "encoding": "jsonParsed",
+                            "commitment": "confirmed",
+                            "maxSupportedTransactionVersion": 0,
+                        }
+                    ]
+                })
+            
+            # Track as ONE API call (not N calls)
+            from src.utils.api_tracker import track_helius_call
+            track_helius_call()
+            
+            # Send batch request
+            response = post_json(self.endpoint, batch_payload)
+            
+            # Parse batch response
+            if isinstance(response, list):
+                # Batch response - array of response objects
+                # Sort by id to match request order
+                response_dict = {}
+                for item in response:
+                    if isinstance(item, dict) and "id" in item:
+                        response_dict[item["id"]] = item.get("result")
+                
+                # Map responses back to signatures in order
+                for idx, sig in enumerate(batch_sigs):
+                    req_id = f"batch-{i}-{idx}"
+                    all_transactions.append(response_dict.get(req_id))
+            elif isinstance(response, dict):
+                # Single response (fallback - shouldn't happen with batch)
+                if "result" in response:
+                    all_transactions.append(response["result"])
+                else:
+                    all_transactions.append(None)
+            else:
+                # Unexpected response format - append None for each signature
+                all_transactions.extend([None] * len(batch_sigs))
+        
+        return all_transactions
 
     def _get_token_accounts(self, owner: str) -> List[Dict[str, Any]]:
         result = self._rpc_request(
