@@ -21,7 +21,7 @@ Hunter is a quant level crypto trading bot executing real on-chain trades with l
 ## 🔄 How It Works
 
 ### **1. Token Selection** 🔍
-The bot continuously scans DexScreener for trending tokens across Solana using configurable discovery settings. It filters out low-quality tokens by requiring:
+The bot continuously scans DexScreener for trending tokens across Solana and Base using configurable discovery settings. It filters out low-quality tokens by requiring:
 - Minimum $750k daily volume (configurable)
 - Minimum $750k liquidity (configurable)
 - Active trading activity
@@ -33,21 +33,26 @@ Top candidates are ranked by volume and passed to the analysis system for deeper
 Before entering any trade, tokens must pass multiple analysis-driven checks:
 - **Quality Score** ≥ 65% (combines sentiment, technical analysis, price prediction)
 - **Success Probability** ≥ 60% (prediction of profitable outcome based on weighted analysis)
-- **Holder Concentration** < 65% (blocks tokens where top 10 holders own over 65%)
-- **Order-Flow Defense** - Blocks tokens with suspicious trading patterns:
+- **Holder Concentration** < 60% (blocks tokens where top 10 holders own 60% or more)
+- **Order-Flow Defense** (Solana only) - Blocks tokens with suspicious trading patterns:
   - Minimum 55% buy dominance (more buyers than sellers)
   - Maximum 20% from single wallet (prevents single-wallet pumps)
   - Minimum 12 unique buyers (ensures diverse participation)
   - Largest buy ≤ 4x median (prevents whale manipulation)
   - Minimum $15k buy volume in last 2 minutes
   - Minimum 25 total trades in lookback window
+- **Hyperactivity Filter** - Blocks tokens with extremely high transaction volume:
+  - Detects tokens with >500 transactions/hour or <1 hour of time coverage
+  - Prevents excessive API calls and filters out bot/wash trading activity
+  - Tokens are blocked for 1 hour cooldown period after detection
 - **Risk Score** ≤ 50% (lower is safer)
 - **Recommendation** = "buy" with >70% confidence
 - **Momentum Requirements**:
-  - Minimum 5% momentum (weighted average across 5m, 1h, 24h timeframes)
+  - Minimum 1.5% momentum (weighted average across 5m, 1h, 24h timeframes)
   - Both 5m and 1h momentum must be positive (alignment requirement)
-  - 24h momentum must be positive (longer-term trend confirmation)
+  - 24h momentum must be positive (longer-term trend confirmation, with override for strong recent momentum)
   - Momentum acceleration: 5m momentum must exceed 1h by at least 0.2%
+  - Minimum 2.5% 5m momentum for velocity check (filters slow pumps)
 - **Volume Momentum**: Volume must be increasing (if volume change data available)
 - **RSI Filter**: Rejects overbought tokens (RSI > 70)
 
@@ -55,11 +60,11 @@ Only tokens passing all criteria are considered for trading.
 
 ### **3. Exit Strategy** 💰
 The bot continuously monitors all open positions and automatically sells when:
-- **Take Profit** is hit: 10% gain (default, can be dynamic based on market conditions)
+- **Take Profit** is hit: 10% gain (default, can be dynamic based on market conditions, up to 20% for high-quality tokens)
 - **Stop Loss** is triggered: 3% loss
-- **Trailing Stop** activates: Locks in profits if price drops 4% from peak
+- **Trailing Stop** activates: Locks in profits if price drops 5% from peak
 - **Volume Exit**: Exits if trading volume drops 50% from entry average (requires 1%+ profit, requires 2 confirmations to avoid false exits)
-- **Technical Exit Signals**: Exits based on technical indicators when profitable:
+- **Technical Exit Signals**: Exits based on technical indicators when profitable (minimum 2% profit required):
   - RSI Overbought: RSI > 70
   - MACD Bearish Crossover: MACD line crosses below signal line
   - Bollinger Bands: Price at 85%+ of upper band
