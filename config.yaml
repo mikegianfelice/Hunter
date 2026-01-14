@@ -135,7 +135,7 @@ enable_max_position_duration: true  # Enable automatic closing of stale position
 
 # === Reconciliation Settings ===
 enable_helius_reconciliation: true  # Periodically sync Solana positions using Helius
-helius_reconciliation_interval_minutes: 60  # How often to run reconciliation (increased from 30 to reduce RPC calls)
+helius_reconciliation_interval_minutes: 20  # How often to run reconciliation
 helius_reconciliation_tx_limit: 50  # Max transactions to request per reconciliation run (Helius caps at 100)
 
 # === Helius Candlestick Settings ===
