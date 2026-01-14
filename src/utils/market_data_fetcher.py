@@ -98,8 +98,8 @@ class MarketDataFetcher:
         self._candle_fetch_locks: Dict[str, threading.Lock] = {}
         self._candle_fetch_lock_global = threading.Lock()
         
-        # Track hyperactive tokens that should be skipped
-        self._hyperactive_skip_tokens: set = set()
+        # Track hyperactive tokens that should be skipped (with timestamps for cooldown)
+        self._hyperactive_skip_tokens: Dict[str, float] = {}  # {token_address: blocked_timestamp}
         
         # Load persistent cache
         self._load_candlestick_cache()
@@ -1558,6 +1558,18 @@ class MarketDataFetcher:
         except Exception as e:
             logger.error(f"Error saving candlestick cache: {e}")
 
+    def _cleanup_expired_hyperactive_tokens(self, cooldown_seconds: int = 3600):
+        """Remove tokens that have exceeded cooldown period from hyperactive skip list"""
+        current_time = time.time()
+        expired = [
+            token for token, blocked_time in list(self._hyperactive_skip_tokens.items())
+            if current_time - blocked_time >= cooldown_seconds
+        ]
+        for token in expired:
+            del self._hyperactive_skip_tokens[token]
+        if expired:
+            logger.debug(f"Cleaned up {len(expired)} expired hyperactive token cooldowns")
+
     def get_candlestick_data(self, token_address: str, chain_id: str = "ethereum", 
                             hours: int = 24, force_fetch: bool = False,
                             target_timestamp: Optional[float] = None) -> Optional[List[Dict]]:
@@ -2695,10 +2707,21 @@ class MarketDataFetcher:
                 logger.debug(f"✅ Using cached RPC candlestick data for {token_address[:8]}...")
                 return cached['data']
         
-        # Check if token is marked as hyperactive_skip
-        if token_address.lower() in self._hyperactive_skip_tokens:
-            logger.debug(f"Skipping hyperactive token {token_address[:8]}... (marked as hyperactive_skip)")
-            return None
+        # Check if token is marked as hyperactive_skip (with time-based cooldown)
+        HYPERACTIVE_COOLDOWN_SECONDS = 3600  # 1 hour cooldown
+        blocked_timestamp = self._hyperactive_skip_tokens.get(token_address.lower())
+        if blocked_timestamp:
+            elapsed_seconds = time.time() - blocked_timestamp
+            if elapsed_seconds < HYPERACTIVE_COOLDOWN_SECONDS:
+                logger.debug(
+                    f"Skipping hyperactive token {token_address[:8]}... "
+                    f"(cooldown active: {elapsed_seconds/60:.1f}min / {HYPERACTIVE_COOLDOWN_SECONDS/60:.0f}min)"
+                )
+                return None
+            else:
+                # Cooldown expired, remove from dict and allow retry
+                del self._hyperactive_skip_tokens[token_address.lower()]
+                logger.debug(f"Hyperactive cooldown expired for {token_address[:8]}... - allowing retry")
         
         if not self.helius_api_key:
             logger.debug("Helius API key not configured, using price_memory fallback")
@@ -2860,7 +2883,7 @@ class MarketDataFetcher:
                                             f"({sigs_per_hour:.0f} sig/hour > 500 threshold). "
                                             f"Marking as hyperactive_skip."
                                         )
-                                        self._hyperactive_skip_tokens.add(token_address.lower())
+                                        self._hyperactive_skip_tokens[token_address.lower()] = time.time()
                                         # Cache empty result to prevent repeated fetches
                                         self.candlestick_cache_helius[cache_key] = {
                                             'data': [],
