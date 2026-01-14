@@ -1146,6 +1146,31 @@ class EnhancedAsyncTradingEngine:
                         enhanced_token["rejection_reason"] = "missing_token_address"
                         continue  # Skip to next token
                     
+                    # Validate address format before attempting RPC calls
+                    if chain_id == "solana":
+                        from src.utils.address_utils import is_solana_address
+                        if not is_solana_address(token_address):
+                            log_error("trading.holder_concentration.invalid_address",
+                                    f"Token {token.get('symbol', 'UNKNOWN')} blocked: invalid Solana address format",
+                                    symbol=token.get("symbol"),
+                                    token_address=token_address[:8] + "..." if len(token_address) > 8 else token_address)
+                            enhanced_token["approved_for_trading"] = False
+                            enhanced_token["rejection_reason"] = "invalid_address_format"
+                            continue  # Skip to next token
+                    else:
+                        # For EVM chains, validate address format
+                        from src.utils.address_utils import validate_chain_address_match
+                        is_valid, corrected_chain, error_message = validate_chain_address_match(token_address, chain_id)
+                        if not is_valid:
+                            log_error("trading.holder_concentration.invalid_address",
+                                    f"Token {token.get('symbol', 'UNKNOWN')} blocked: invalid address format for {chain_id}",
+                                    symbol=token.get("symbol"),
+                                    token_address=token_address[:8] + "..." if len(token_address) > 8 else token_address,
+                                    error=error_message)
+                            enhanced_token["approved_for_trading"] = False
+                            enhanced_token["rejection_reason"] = f"invalid_address_format_{chain_id}"
+                            continue  # Skip to next token
+                    
                     try:
                         from src.utils.holder_concentration_checker import check_holder_concentration
                         symbol = token.get("symbol", "UNKNOWN")
