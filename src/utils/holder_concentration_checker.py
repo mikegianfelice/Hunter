@@ -199,7 +199,14 @@ def _check_solana_holder_concentration(token_address: str) -> Dict:
         supply_data = supply_response.json()
         
         if "error" in supply_data:
-            result["error"] = f"RPC error getting supply: {supply_data['error'].get('message', 'Unknown error')}"
+            error_message = supply_data['error'].get('message', 'Unknown error')
+            # Distinguish between "account not found" (invalid token) vs other RPC errors
+            if "could not find account" in error_message.lower() or "invalid param" in error_message.lower():
+                result["error"] = f"RPC error getting supply: {error_message}"
+                result["error_type"] = "account_not_found"  # Mark as data validation issue
+            else:
+                result["error"] = f"RPC error getting supply: {error_message}"
+                result["error_type"] = "rpc_error"
             return result
         
         if "result" not in supply_data or "value" not in supply_data["result"]:
@@ -244,7 +251,14 @@ def _check_solana_holder_concentration(token_address: str) -> Dict:
         accounts_data = accounts_response.json()
         
         if "error" in accounts_data:
-            result["error"] = f"RPC error getting largest accounts: {accounts_data['error'].get('message', 'Unknown error')}"
+            error_message = accounts_data['error'].get('message', 'Unknown error')
+            # Distinguish between "account not found" (invalid token) vs other RPC errors
+            if "could not find account" in error_message.lower() or "invalid param" in error_message.lower():
+                result["error"] = f"RPC error getting largest accounts: {error_message}"
+                result["error_type"] = "account_not_found"  # Mark as data validation issue
+            else:
+                result["error"] = f"RPC error getting largest accounts: {error_message}"
+                result["error_type"] = "rpc_error"
             return result
         
         if "result" not in accounts_data or "value" not in accounts_data["result"]:

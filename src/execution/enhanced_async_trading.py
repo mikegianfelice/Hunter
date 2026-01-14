@@ -1177,13 +1177,16 @@ class EnhancedAsyncTradingEngine:
                                             holder_concentration_pct=holder_concentration_pct,
                                             threshold=threshold)
                             elif get_config_bool("holder_concentration_fail_closed", True):
-                                # Fail-closed: block if check fails
+                                # Fail-closed: block if check fails (including account_not_found - we can't verify token safety without data)
+                                error_type = holder_check.get("error_type", "unknown") if holder_check else "unknown"
+                                error_msg = holder_check.get("error") if holder_check else "check_returned_none"
                                 log_error("trading.holder_concentration_blocked",
                                         f"Token {symbol} BLOCKED: holder concentration check failed (fail-closed mode)",
                                         symbol=symbol,
-                                        error=holder_check.get("error") if holder_check else "check_returned_none")
+                                        error=error_msg,
+                                        error_type=error_type)
                                 enhanced_token["approved_for_trading"] = False
-                                enhanced_token["rejection_reason"] = "holder_concentration_check_failed"
+                                enhanced_token["rejection_reason"] = f"holder_concentration_check_failed_{error_type}"
                                 enhanced_token["holder_concentration_pct"] = 100.0
                                 continue  # Skip to next token (don't fetch candles)
                             else:
