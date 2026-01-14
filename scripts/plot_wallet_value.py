@@ -27,6 +27,9 @@ def get_project_root():
 
 PROJECT_ROOT = get_project_root()
 
+# Official start date when bot officially began running after major changes
+OFFICIAL_START_DATE = datetime(2026, 1, 14, 0, 0, 0, tzinfo=timezone.utc)
+
 
 def calculate_wallet_value_over_time_from_helius_wrapper(days=5, initial_wallet_usd=None):
     """Calculate wallet value using Helius transaction data (more accurate)"""
@@ -44,7 +47,9 @@ def calculate_wallet_value_over_time_from_helius_wrapper(days=5, initial_wallet_
         
         # Calculate date range (use timezone-aware datetimes)
         today = datetime.now(timezone.utc)
-        start_date = (today - timedelta(days=days)).replace(hour=0, minute=0, second=0, microsecond=0)
+        calculated_start = (today - timedelta(days=days)).replace(hour=0, minute=0, second=0, microsecond=0)
+        # Enforce minimum start date of January 14, 2026 (official bot start date)
+        start_date = max(calculated_start, OFFICIAL_START_DATE)
         
         # Set default initial wallet if not provided
         if initial_wallet_usd is None:
@@ -52,7 +57,9 @@ def calculate_wallet_value_over_time_from_helius_wrapper(days=5, initial_wallet_
         
         # Call Helius calculation function (use a bit earlier start to ensure we have data)
         # but we'll filter to the exact date range requested
-        helius_start_date = (start_date - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        # Use a 1-day buffer, but don't go before official start date
+        helius_start_buffer = (start_date - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        helius_start_date = max(helius_start_buffer, OFFICIAL_START_DATE - timedelta(days=1))
         result = calculate_wallet_value_over_time_from_helius(
             start_date_str=helius_start_date.strftime('%Y-%m-%d'),
             end_date_str=today.strftime('%Y-%m-%d'),
