@@ -102,6 +102,9 @@ class MarketDataFetcher:
         # Track hyperactive tokens that should be skipped (with timestamps for cooldown)
         self._hyperactive_skip_tokens: Dict[str, float] = {}  # {token_address: blocked_timestamp}
         
+        # Track shown warnings to prevent duplicates
+        self._shown_warnings = set()
+        
         # Load persistent cache
         self._load_candlestick_cache()
         
@@ -863,10 +866,16 @@ class MarketDataFetcher:
                 else:
                     coingecko_enabled = self.enable_coingecko_market_chart
                     coingecko_can_call = self._can_make_coingecko_call() if hasattr(self, '_can_make_coingecko_call') else False
-                    logger.warning(f"⚠️ CoinGecko unavailable for volume fallback (enabled: {coingecko_enabled}, can_call: {coingecko_can_call})")
+                    warning_key = "coingecko_unavailable_volume_fallback"
+                    if warning_key not in self._shown_warnings:
+                        logger.warning(f"⚠️ CoinGecko unavailable for volume fallback (enabled: {coingecko_enabled}, can_call: {coingecko_can_call})")
+                        self._shown_warnings.add(warning_key)
 
             if len(volumes) < 2:
-                logger.warning(f"⚠️ Insufficient volume data: {len(volumes)} data points (need at least 2)")
+                warning_key = "insufficient_volume_data"
+                if warning_key not in self._shown_warnings:
+                    logger.warning(f"⚠️ Insufficient volume data: {len(volumes)} data points (need at least 2)")
+                    self._shown_warnings.add(warning_key)
                 # Fallback: Use current volume relative to a reasonable baseline
                 # Typical crypto market volume ranges from $50B to $200B+
                 # Normalize assuming $50B = 0.0, $200B+ = 1.0
@@ -880,7 +889,10 @@ class MarketDataFetcher:
                 else:
                     trend = 0.3 + ((current_volume - baseline_volume) / (max_volume - baseline_volume)) * 0.7
                 
-                logger.warning(f"⚠️ Volume trend (estimated with static baseline): {trend:.3f} (current: ${current_volume/1e9:.1f}B, insufficient historical data)")
+                warning_key = "volume_trend_estimated_baseline"
+                if warning_key not in self._shown_warnings:
+                    logger.warning(f"⚠️ Volume trend (estimated with static baseline): {trend:.3f} (current: ${current_volume/1e9:.1f}B, insufficient historical data)")
+                    self._shown_warnings.add(warning_key)
                 return max(0.0, min(1.0, trend))
             
             # Use rolling average comparison instead of simple split
