@@ -73,24 +73,6 @@ def reconcile_positions_and_pnl(limit: int = 200) -> Dict[str, Any]:
             "skipped": "No Solana positions to reconcile",
         }
     
-    # Check rate limit before making API calls
-    try:
-        from src.utils.api_tracker import get_tracker
-        tracker = get_tracker()
-        helius_calls = tracker.get_count('helius')
-        helius_max = 300000
-        if helius_calls >= helius_max * 0.95:  # Stop if at 95% of limit
-            return {
-                "enabled": True,
-                "open_positions_closed": 0,
-                "open_positions_verified": 0,
-                "trades_updated": 0,
-                "issues": [],
-                "skipped": f"Near Helius rate limit ({helius_calls}/{helius_max})",
-            }
-    except Exception:
-        pass  # Continue if check fails
-
     client = HeliusClient(HELIUS_API_KEY)
     context = _HeliusContext(client, SOLANA_WALLET_ADDRESS, limit=limit)
 
