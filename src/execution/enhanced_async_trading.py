@@ -200,17 +200,16 @@ class EnhancedAsyncTradingEngine:
         self.token_cache[cache_key] = (tokens, time.time())
         log_info("trading.cache", f"Cached {len(tokens)} tokens for {chain}")
     
-    async def _maybe_run_helius_reconciliation(self) -> None:
-        """Periodically reconcile Solana positions via Helius to keep exposure accurate."""
+    async def _run_helius_reconciliation(self) -> None:
+        """Reconcile Solana positions via Helius on every cycle to keep exposure accurate.
+        
+        Updates:
+        - open_positions.json (via replace_positions)
+        - hunter_state.db (via replace_positions)
+        - performance_data.json (via performance_tracker.save_data())
+        """
         if not self.helius_reconciliation_enabled:
             return
-        
-        interval_seconds = self.helius_reconciliation_interval * 60
-        now = time.time()
-        if now - self._helius_last_reconciliation < interval_seconds:
-            return
-        
-        self._helius_last_reconciliation = now
         
         try:
             summary = await asyncio.to_thread(
@@ -233,7 +232,7 @@ class EnhancedAsyncTradingEngine:
         
         log_info(
             "trading.helius_reconcile",
-            "🔄 Helius reconciliation executed",
+            "🔄 Helius reconciliation executed (updates open_positions, hunter_state.db, and performance_data)",
             {
                 "open_positions_closed": summary.get("open_positions_closed", 0),
                 "open_positions_verified": summary.get("open_positions_verified", 0),
@@ -2268,7 +2267,9 @@ class EnhancedAsyncTradingEngine:
         except Exception as e:
             log_error("trading.position_count_error", f"Error checking position count: {e}")
         
-        await self._maybe_run_helius_reconciliation()
+        # Run Helius reconciliation on every cycle to sync positions
+        # Updates: open_positions.json, hunter_state.db, and performance_data.json
+        await self._run_helius_reconciliation()
         
         # Check AI module health
         ai_health = await self._check_ai_module_health()
