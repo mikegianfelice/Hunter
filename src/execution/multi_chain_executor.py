@@ -913,6 +913,29 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
                                  reason="Buy verification failed - token not in wallet")
                         return  # Exit early, don't log position
                     
+                    # CRITICAL FIX: Calculate actual execution price from transaction data
+                    # This ensures entry_price reflects actual execution, not evaluation-time price
+                    entry_amount_actual = fee_data.get('entry_amount_usd_actual', 0) or 0
+                    tokens_received = fee_data.get('entry_tokens_received')
+                    
+                    if entry_amount_actual > 0 and tokens_received and tokens_received > 0:
+                        actual_entry_price = entry_amount_actual / tokens_received
+                        evaluation_price = token_for_logging.get('priceUsd', 0) or 0
+                        
+                        # Add actual entry price to fee_data so it can override the evaluation price
+                        fee_data['actual_entry_price'] = actual_entry_price
+                        
+                        # Log if there's a significant difference
+                        if evaluation_price > 0:
+                            price_diff_pct = abs(actual_entry_price - evaluation_price) / evaluation_price
+                            if price_diff_pct > 0.01:  # More than 1% difference
+                                log_event("trading.entry_price_corrected",
+                                         symbol=symbol,
+                                         evaluation_price=evaluation_price,
+                                         actual_entry_price=actual_entry_price,
+                                         price_diff_pct=price_diff_pct*100,
+                                         note="Entry price corrected from evaluation-time price to actual execution price")
+                    
                     # Log trade entry to performance tracker with fee data
                     try:
                         from src.core.performance_tracker import performance_tracker
@@ -922,7 +945,7 @@ def execute_trade(token: dict, trade_amount_usd: float = None):
                             token_for_logging,
                             total_successful_amount or amount_usd,
                             quality_score,
-                            additional_data=fee_data  # Pass fee_data here (includes window_score)
+                            additional_data=fee_data  # Pass fee_data here (includes window_score and actual_entry_price)
                         )
                         log_event("trading.performance_logged", symbol=symbol, 
                                 entry_amount_actual=entry_amount_actual,

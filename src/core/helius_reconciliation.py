@@ -457,6 +457,29 @@ def _apply_entry_metrics(
         if trade.get("entry_amount_usd_actual") != usdc_spent:
             trade["entry_amount_usd_actual"] = usdc_spent
             updated = True
+    
+    # CRITICAL FIX: Recalculate entry_price from actual execution data
+    # Use actual execution price (entry_amount_usd_actual / tokens_received) instead of evaluation-time price
+    entry_amount_actual = trade.get("entry_amount_usd_actual", 0) or 0
+    tokens_received = trade.get("entry_tokens_received") or token_in
+    
+    if entry_amount_actual > 0 and tokens_received > 0:
+        actual_entry_price = entry_amount_actual / tokens_received
+        original_entry_price = trade.get("entry_price", 0)
+        
+        # Update entry_price with actual execution price
+        if trade.get("entry_price") != actual_entry_price:
+            trade["entry_price"] = actual_entry_price
+            updated = True
+            
+            # Log if there's a significant difference
+            if original_entry_price > 0:
+                price_diff_pct = abs(actual_entry_price - original_entry_price) / original_entry_price
+                if price_diff_pct > 0.01:  # More than 1% difference
+                    print(f"📊 [HELIUS RECONCILIATION] Updated entry price for {trade.get('symbol', '?')}: "
+                          f"${original_entry_price:.6f} -> ${actual_entry_price:.6f} "
+                          f"(diff: {price_diff_pct*100:.2f}%) - using actual execution price")
+    
     total_sol_cost = sol_fee + max(sol_spent - sol_received, 0)
     if sol_price > 0 and total_sol_cost > 0:
         fee_usd = total_sol_cost * sol_price

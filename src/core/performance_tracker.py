@@ -92,6 +92,35 @@ class PerformanceTracker:
         if additional_data:
             trade.update(additional_data)
         
+        # CRITICAL FIX: Recalculate entry_price from actual execution data
+        # Use actual execution price (entry_amount_usd_actual / tokens_received) instead of evaluation-time price
+        entry_amount_actual = trade.get('entry_amount_usd_actual', 0) or 0
+        tokens_received = trade.get('entry_tokens_received')
+        
+        # Check if actual_entry_price was already calculated (from multi_chain_executor)
+        actual_entry_price = trade.get('actual_entry_price')
+        
+        if actual_entry_price is None and entry_amount_actual > 0 and tokens_received and tokens_received > 0:
+            # Calculate actual execution price if not already provided
+            actual_entry_price = entry_amount_actual / tokens_received
+        
+        if actual_entry_price and actual_entry_price > 0:
+            original_entry_price = trade.get('entry_price', 0)
+            
+            # Update entry_price with actual execution price
+            trade['entry_price'] = actual_entry_price
+            
+            # Remove the temporary actual_entry_price field (it's now stored as entry_price)
+            trade.pop('actual_entry_price', None)
+            
+            # Log if there's a significant difference
+            if original_entry_price > 0:
+                price_diff_pct = abs(actual_entry_price - original_entry_price) / original_entry_price
+                if price_diff_pct > 0.01:  # More than 1% difference
+                    print(f"📊 [ENTRY PRICE] Updated entry price for {trade.get('symbol', '?')}: "
+                          f"${original_entry_price:.6f} -> ${actual_entry_price:.6f} "
+                          f"(diff: {price_diff_pct*100:.2f}%) - using actual execution price")
+        
         self.trades.append(trade)
         self.save_data()
         
@@ -102,7 +131,7 @@ class PerformanceTracker:
             address = trade.get('address')
             symbol = trade.get('symbol', '?')
             chain = trade.get('chain', 'ethereum').lower()
-            entry_price = float(trade.get('entry_price', 0))
+            entry_price = float(trade.get('entry_price', 0))  # Now uses actual execution price
             
             # Verify trade actually succeeded before syncing
             entry_amount = trade.get('entry_amount_usd_actual', 0) or 0
