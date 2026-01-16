@@ -157,6 +157,33 @@ def load_positions(validate_balances: bool = False):
 
     return validated_positions
 
+def _verify_position_cleanup(position_key: str, token_address: str, chain_id: str) -> bool:
+    """
+    Verify that a position was successfully removed from all storage locations.
+    
+    Returns:
+        True if position is confirmed removed, False otherwise
+    """
+    try:
+        # Check if position still exists in open_positions.json
+        positions = load_positions()
+        if position_key in positions:
+            print(f"⚠️ [VERIFY] Position {position_key} still exists in open_positions.json")
+            return False
+        
+        # Check if position exists by address lookup
+        from src.utils.position_sync import find_position_key_by_address
+        found_key = find_position_key_by_address(token_address, chain_id)
+        if found_key:
+            print(f"⚠️ [VERIFY] Position still exists with key {found_key} (found by address lookup)")
+            return False
+        
+        print(f"✅ [VERIFY] Position {position_key} confirmed removed from all storage locations")
+        return True
+    except Exception as e:
+        print(f"⚠️ [VERIFY] Error verifying position cleanup: {e}")
+        return False
+
 def _cleanup_closed_position(position_key: str, token_address: str, chain_id: str) -> bool:
     """
     Comprehensive cleanup function to remove a position from ALL storage locations:
@@ -1278,9 +1305,11 @@ def monitor_all_positions():
                             trade = _find_open_trade_by_address(token_address, chain_id)
                         if trade:
                             # Try to get current price if possible, otherwise use entry price (0 PnL)
-                            current_price = _fetch_token_price_multi_chain(token_address) or entry_price
+                            # Use original_entry_price if available for partial TP positions
+                            original_entry_price = old_position_data.get("original_entry_price", entry_price) if isinstance(old_position_data, dict) else entry_price
+                            current_price = _fetch_token_price_multi_chain(token_address) or original_entry_price
                             position_size = trade.get('position_size_usd', 0)
-                            gain = ((current_price - entry_price) / entry_price) if entry_price > 0 else 0
+                            gain = ((current_price - original_entry_price) / original_entry_price) if original_entry_price > 0 else 0
                             pnl_usd = gain * position_size
                             performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, "manual_close")
                             
@@ -1288,14 +1317,14 @@ def monitor_all_positions():
                             symbol = trade.get('symbol') or (old_position_data.get('symbol') if isinstance(old_position_data, dict) else '?')
                             
                             # Log to trade_log.csv
-                            log_trade(token_address, entry_price, current_price, "manual_close_detected")
+                            log_trade(token_address, original_entry_price, current_price, "manual_close_detected")
                             
                             # Send detailed Telegram notification
                             send_telegram_message(
                                 f"✅ Position Closed (Detected)\n"
                                 f"Token: {symbol} ({token_address})\n"
                                 f"Chain: {chain_id.upper()}\n"
-                                f"Entry: ${entry_price:.6f}\n"
+                                f"Entry: ${original_entry_price:.6f}\n"
                                 f"Exit: ${current_price:.6f} ({gain * 100:.2f}%)\n"
                                 f"Reason: Already sold (detected by balance check)"
                             )
@@ -1618,21 +1647,40 @@ def monitor_all_positions():
                                 performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, action.reason)
                             
                             # CRITICAL: Remove position from ALL storage locations (open_positions.json, hunter_state.db, performance_data.json)
-                            _cleanup_closed_position(position_key, token_address, chain_id)
+                            cleanup_success = _cleanup_closed_position(position_key, token_address, chain_id)
                             
-                            # Send Telegram notification
-                            tx_display = tx if tx and tx not in ["verified_by_balance", "assumed_success"] else "Verified by balance check"
-                            send_telegram_message(
-                                f"🛑 Stop-loss triggered!\n"
-                                f"Token: {symbol} ({token_address})\n"
-                                f"Chain: {chain_id.upper()}\n"
-                                f"Entry: ${entry_price:.6f}\n"
-                                f"Now: ${current_price:.6f} ({gain * 100:.2f}%)\n"
-                                f"TX: {tx_display}"
-                            )
+                            # Verify cleanup succeeded before sending notification
+                            if not cleanup_success:
+                                print(f"⚠️ [STOP-LOSS] Cleanup failed, verifying position removal...")
+                                cleanup_success = _verify_position_cleanup(position_key, token_address, chain_id)
                             
-                            closed_positions.append(position_key)
-                            updated_positions.pop(position_key, None)
+                            if cleanup_success:
+                                # Re-fetch current price right before notification to ensure accuracy
+                                fresh_current_price = _fetch_token_price_multi_chain(token_address) or current_price
+                                if fresh_current_price != current_price:
+                                    print(f"📊 [PRICE UPDATE] Re-fetched price: ${current_price:.6f} -> ${fresh_current_price:.6f}")
+                                    current_price = fresh_current_price
+                                    # Recalculate gain with fresh price
+                                    gain = (current_price - original_entry_price) / original_entry_price
+                                
+                                # Send Telegram notification
+                                tx_display = tx if tx and tx not in ["verified_by_balance", "assumed_success"] else "Verified by balance check"
+                                send_telegram_message(
+                                    f"🛑 Stop-loss triggered!\n"
+                                    f"Token: {symbol} ({token_address})\n"
+                                    f"Chain: {chain_id.upper()}\n"
+                                    f"Entry: ${original_entry_price:.6f}\n"
+                                    f"Now: ${current_price:.6f} ({gain * 100:.2f}%)\n"
+                                    f"TX: {tx_display}"
+                                )
+                                
+                                closed_positions.append(position_key)
+                                updated_positions.pop(position_key, None)
+                            else:
+                                print(f"❌ [STOP-LOSS] Failed to verify position cleanup - notification not sent")
+                                # Still mark as closed to prevent retry loops
+                                closed_positions.append(position_key)
+                                updated_positions.pop(position_key, None)
                             continue
                     else:
                         # Partial sell - execute the sell and update position
@@ -1676,17 +1724,13 @@ def monitor_all_positions():
                             
                             if is_remaining_sell:
                                 # This is the final sell - close the position
-                                send_telegram_message(
-                                    f"✅ Position Fully Closed (Remaining Sell)!\n"
-                                    f"Token: {symbol} ({token_address[:8]}...{token_address[-8:]})\n"
-                                    f"Chain: {chain_id.upper()}\n"
-                                    f"Entry: ${entry_price:.6f}\n"
-                                    f"Exit: ${current_price:.6f} (+{gain * 100:.2f}%)\n"
-                                    f"Final Sell: {action.size_pct*100:.0f}% (${sold_usd:.2f} USD)\n"
-                                    f"Realized PnL: ${realized_pnl_usd:.2f}\n"
-                                    f"TX: {tx}",
-                                    message_type="trade"
-                                )
+                                # Re-fetch current price right before notification
+                                fresh_current_price = _fetch_token_price_multi_chain(token_address) or current_price
+                                if fresh_current_price != current_price:
+                                    print(f"📊 [PRICE UPDATE] Re-fetched price: ${current_price:.6f} -> ${fresh_current_price:.6f}")
+                                    current_price = fresh_current_price
+                                    gain = (current_price - original_entry_price) / original_entry_price
+                                    realized_pnl_usd = gain * sold_usd
                                 
                                 # Update performance tracker and close position
                                 if trade:
@@ -1695,17 +1739,41 @@ def monitor_all_positions():
                                     from src.core.performance_tracker import performance_tracker
                                     performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, log_reason)
                                 
-                                _cleanup_closed_position(position_key, token_address, chain_id)
+                                cleanup_success = _cleanup_closed_position(position_key, token_address, chain_id)
+                                if not cleanup_success:
+                                    cleanup_success = _verify_position_cleanup(position_key, token_address, chain_id)
+                                
+                                if cleanup_success:
+                                    send_telegram_message(
+                                        f"✅ Position Fully Closed (Remaining Sell)!\n"
+                                        f"Token: {symbol} ({token_address[:8]}...{token_address[-8:]})\n"
+                                        f"Chain: {chain_id.upper()}\n"
+                                        f"Entry: ${original_entry_price:.6f}\n"
+                                        f"Exit: ${current_price:.6f} (+{gain * 100:.2f}%)\n"
+                                        f"Final Sell: {action.size_pct*100:.0f}% (${sold_usd:.2f} USD)\n"
+                                        f"Realized PnL: ${realized_pnl_usd:.2f}\n"
+                                        f"TX: {tx}",
+                                        message_type="trade"
+                                    )
+                                
                                 closed_positions.append(position_key)
                                 updated_positions.pop(position_key, None)
                                 continue  # Move to next position
                             else:
                                 # Partial TP - keep position open
+                                # Re-fetch current price right before notification
+                                fresh_current_price = _fetch_token_price_multi_chain(token_address) or current_price
+                                if fresh_current_price != current_price:
+                                    print(f"📊 [PRICE UPDATE] Re-fetched price: ${current_price:.6f} -> ${fresh_current_price:.6f}")
+                                    current_price = fresh_current_price
+                                    gain = (current_price - original_entry_price) / original_entry_price
+                                    realized_pnl_usd = gain * sold_usd
+                                
                                 send_telegram_message(
                                     f"💵 Partial Take-Profit Executed!\n"
                                     f"Token: {symbol} ({token_address[:8]}...{token_address[-8:]})\n"
                                     f"Chain: {chain_id.upper()}\n"
-                                    f"Entry: ${entry_price:.6f}\n"
+                                    f"Entry: ${original_entry_price:.6f}\n"
                                     f"Exit: ${current_price:.6f} (+{gain * 100:.2f}%)\n"
                                     f"Sold: {action.size_pct*100:.0f}% (${sold_usd:.2f} USD)\n"
                                     f"Remaining: {remaining_size_pct*100:.0f}% (${remaining_position_size_usd:.2f} USD)\n"
@@ -1828,11 +1896,19 @@ def monitor_all_positions():
                                                     
                                                     if is_remaining_sell:
                                                         # This is the final sell - close the position
+                                                        # Re-fetch current price right before notification
+                                                        fresh_current_price = _fetch_token_price_multi_chain(token_address) or current_price
+                                                        if fresh_current_price != current_price:
+                                                            print(f"📊 [PRICE UPDATE] Re-fetched price: ${current_price:.6f} -> ${fresh_current_price:.6f}")
+                                                            current_price = fresh_current_price
+                                                            gain = (current_price - original_entry_price) / original_entry_price
+                                                            realized_pnl_usd = gain * sold_usd
+                                                        
                                                         send_telegram_message(
                                                             f"✅ Position Fully Closed (Remaining Sell - Unverified)!\n"
                                                             f"Token: {symbol} ({token_address[:8]}...{token_address[-8:]})\n"
                                                             f"Chain: {chain_id.upper()}\n"
-                                                            f"Entry: ${entry_price:.6f}\n"
+                                                            f"Entry: ${original_entry_price:.6f}\n"
                                                             f"Exit: ${current_price:.6f} (+{gain * 100:.2f}%)\n"
                                                             f"Final Sell: {action.size_pct*100:.0f}% (${sold_usd:.2f} USD)\n"
                                                             f"Realized PnL: ${realized_pnl_usd:.2f}\n"
@@ -1868,11 +1944,19 @@ def monitor_all_positions():
                                                         continue  # Move to next position
                                                     else:
                                                         # Partial TP - keep position open
+                                                        # Re-fetch current price right before notification
+                                                        fresh_current_price = _fetch_token_price_multi_chain(token_address) or current_price
+                                                        if fresh_current_price != current_price:
+                                                            print(f"📊 [PRICE UPDATE] Re-fetched price: ${current_price:.6f} -> ${fresh_current_price:.6f}")
+                                                            current_price = fresh_current_price
+                                                            gain = (current_price - original_entry_price) / original_entry_price
+                                                            realized_pnl_usd = gain * sold_usd
+                                                        
                                                         send_telegram_message(
                                                             f"💵 Partial Take-Profit Executed (Unverified)!\n"
                                                             f"Token: {symbol} ({token_address[:8]}...{token_address[-8:]})\n"
                                                             f"Chain: {chain_id.upper()}\n"
-                                                            f"Entry: ${entry_price:.6f}\n"
+                                                            f"Entry: ${original_entry_price:.6f}\n"
                                                             f"Exit: ${current_price:.6f} (+{gain * 100:.2f}%)\n"
                                                             f"Sold: {action.size_pct*100:.0f}% (${sold_usd:.2f} USD)\n"
                                                             f"Remaining: {remaining_size_pct*100:.0f}% (${remaining_position_size_usd:.2f} USD)\n"
@@ -2240,15 +2324,30 @@ def monitor_all_positions():
                     if not cleanup_success:
                         print(f"❌ CRITICAL: Failed to remove {symbol} from open_positions.json after sell!")
                 
-                tx_display = tx if tx and tx not in ["verified_by_balance", "assumed_success"] else "Verified by balance check"
-                send_telegram_message(
-                    f"💰 Take-profit triggered!\n"
-                    f"Token: {symbol} ({token_address})\n"
-                    f"Chain: {chain_id.upper()}\n"
-                    f"Entry: ${entry_price:.6f}\n"
-                    f"Now: ${current_price:.6f} (+{gain * 100:.2f}%)\n"
-                    f"TX: {tx_display}"
-                )
+                # Verify cleanup succeeded before sending notification
+                if not cleanup_success:
+                    cleanup_success = _verify_position_cleanup(position_key, token_address, chain_id)
+                
+                if cleanup_success:
+                    # Re-fetch current price right before notification to ensure accuracy
+                    fresh_current_price = _fetch_token_price_multi_chain(token_address) or current_price
+                    if fresh_current_price != current_price:
+                        print(f"📊 [PRICE UPDATE] Re-fetched price: ${current_price:.6f} -> ${fresh_current_price:.6f}")
+                        current_price = fresh_current_price
+                        gain = (current_price - original_entry_price) / original_entry_price
+                    
+                    tx_display = tx if tx and tx not in ["verified_by_balance", "assumed_success"] else "Verified by balance check"
+                    send_telegram_message(
+                        f"💰 Take-profit triggered!\n"
+                        f"Token: {symbol} ({token_address})\n"
+                        f"Chain: {chain_id.upper()}\n"
+                        f"Entry: ${original_entry_price:.6f}\n"
+                        f"Now: ${current_price:.6f} (+{gain * 100:.2f}%)\n"
+                        f"TX: {tx_display}"
+                    )
+                else:
+                    print(f"❌ [TAKE-PROFIT] Failed to verify position cleanup - notification not sent")
+                
                 closed_positions.append(position_key)
                 updated_positions.pop(position_key, None)
             else:  # Sell failed - but verify with balance check first to avoid false negatives
@@ -2274,7 +2373,7 @@ def monitor_all_positions():
                 if balance_check_passed:
                     # Sell actually succeeded - log it and remove position
                     print(f"✅ [RECOVERY] Sell succeeded (verified by balance check), logging trade...")
-                    log_trade(token_address, entry_price, current_price, "take_profit")
+                    log_trade(token_address, original_entry_price, current_price, "take_profit")
                     
                     # Update performance tracker
                     if trade:
@@ -2285,25 +2384,45 @@ def monitor_all_positions():
                         performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, "take_profit")
                     
                     # Clean up position
-                    _cleanup_closed_position(position_key, token_address, chain_id)
+                    cleanup_success = _cleanup_closed_position(position_key, token_address, chain_id)
+                    if not cleanup_success:
+                        cleanup_success = _verify_position_cleanup(position_key, token_address, chain_id)
                     
-                    send_telegram_message(
-                        f"💰 Take-profit triggered!\n"
-                        f"Token: {symbol} ({token_address})\n"
-                        f"Chain: {chain_id.upper()}\n"
-                        f"Entry: ${entry_price:.6f}\n"
-                        f"Now: ${current_price:.6f} (+{gain * 100:.2f}%)\n"
-                        f"TX: Verified by balance check"
-                    )
+                    if cleanup_success:
+                        # Re-fetch current price right before notification
+                        fresh_current_price = _fetch_token_price_multi_chain(token_address) or current_price
+                        if fresh_current_price != current_price:
+                            print(f"📊 [PRICE UPDATE] Re-fetched price: ${current_price:.6f} -> ${fresh_current_price:.6f}")
+                            current_price = fresh_current_price
+                            gain = (current_price - original_entry_price) / original_entry_price
+                        
+                        send_telegram_message(
+                            f"💰 Take-profit triggered!\n"
+                            f"Token: {symbol} ({token_address})\n"
+                            f"Chain: {chain_id.upper()}\n"
+                            f"Entry: ${original_entry_price:.6f}\n"
+                            f"Now: ${current_price:.6f} (+{gain * 100:.2f}%)\n"
+                            f"TX: Verified by balance check"
+                        )
+                    else:
+                        print(f"❌ [TAKE-PROFIT] Failed to verify position cleanup - notification not sent")
+                    
                     closed_positions.append(position_key)
                     updated_positions.pop(position_key, None)
                 else:
                     # Sell actually failed - send error message
+                    # Re-fetch current price right before notification
+                    fresh_current_price = _fetch_token_price_multi_chain(token_address) or current_price
+                    if fresh_current_price != current_price:
+                        print(f"📊 [PRICE UPDATE] Re-fetched price: ${current_price:.6f} -> ${fresh_current_price:.6f}")
+                        current_price = fresh_current_price
+                        gain = (current_price - original_entry_price) / original_entry_price
+                    
                     send_telegram_message(
                         f"⚠️ Take-profit triggered but SELL FAILED!\n"
                         f"Token: {symbol} ({token_address})\n"
                         f"Chain: {chain_id.upper()}\n"
-                        f"Entry: ${entry_price:.6f}\n"
+                        f"Entry: ${original_entry_price:.6f}\n"
                         f"Now: ${current_price:.6f} (+{gain * 100:.2f}%)\n"
                         f"Will retry on next check..."
                     )
@@ -2320,7 +2439,7 @@ def monitor_all_positions():
             print(f"🛑 STOP-LOSS TRIGGERED!")
             print(f"Token: {symbol} ({token_address[:8]}...{token_address[-8:]})")
             print(f"Chain: {chain_id.upper()}")
-            print(f"Entry Price: ${entry_price:.6f}")
+            print(f"Entry Price: ${original_entry_price:.6f}")
             print(f"Current Price: ${current_price:.6f}")
             print(f"Gain/Loss: {gain * 100:.2f}%")
             print(f"Stop Loss Threshold: {config['STOP_LOSS'] * 100:.2f}%")
@@ -2338,7 +2457,7 @@ def monitor_all_positions():
                 print(f"✅ [PRE-SELL CHECK] Token balance is zero/dust ({pre_sell_balance:.8f}) - position already sold, cleaning up...")
                 
                 # Log the trade exit
-                log_trade(token_address, entry_price, current_price, "stop_loss")
+                log_trade(token_address, original_entry_price, current_price, "stop_loss")
                 
                 # Update performance tracker
                 trade = _find_open_trade_by_address(token_address, chain_id)
@@ -2350,17 +2469,30 @@ def monitor_all_positions():
                     print(f"📊 Updated performance tracker for stop loss: {trade.get('symbol', '?')}")
                 
                 # Clean up position
-                _cleanup_closed_position(position_key, token_address, chain_id)
+                cleanup_success = _cleanup_closed_position(position_key, token_address, chain_id)
+                if not cleanup_success:
+                    cleanup_success = _verify_position_cleanup(position_key, token_address, chain_id)
                 
-                # Send notification
-                send_telegram_message(
-                    f"🛑 Stop-loss triggered (already sold)!\n"
-                    f"Token: {symbol} ({token_address})\n"
-                    f"Chain: {chain_id.upper()}\n"
-                    f"Entry: ${entry_price:.6f}\n"
-                    f"Exit: ${current_price:.6f} ({gain * 100:.2f}%)\n"
-                    f"TX: Already sold (detected by balance check)"
-                )
+                if cleanup_success:
+                    # Re-fetch current price right before notification
+                    fresh_current_price = _fetch_token_price_multi_chain(token_address) or current_price
+                    if fresh_current_price != current_price:
+                        print(f"📊 [PRICE UPDATE] Re-fetched price: ${current_price:.6f} -> ${fresh_current_price:.6f}")
+                        current_price = fresh_current_price
+                        gain = (current_price - original_entry_price) / original_entry_price
+                    
+                    # Send notification
+                    send_telegram_message(
+                        f"🛑 Stop-loss triggered (already sold)!\n"
+                        f"Token: {symbol} ({token_address})\n"
+                        f"Chain: {chain_id.upper()}\n"
+                        f"Entry: ${original_entry_price:.6f}\n"
+                        f"Exit: ${current_price:.6f} ({gain * 100:.2f}%)\n"
+                        f"TX: Already sold (detected by balance check)"
+                    )
+                else:
+                    print(f"❌ [STOP-LOSS] Failed to verify position cleanup - notification not sent")
+                
                 closed_positions.append(position_key)
                 updated_positions.pop(position_key, None)
                 continue  # Skip to next position
@@ -2418,7 +2550,7 @@ def monitor_all_positions():
                     print(f"❌ [STOP LOSS] Sell verification failed, will retry on next cycle")
                     continue
                 
-                log_trade(token_address, entry_price, current_price, "stop_loss")
+                log_trade(token_address, original_entry_price, current_price, "stop_loss")
                 
                 # Update performance tracker with exit
                 trade = _find_open_trade_by_address(token_address, chain_id)
@@ -2453,15 +2585,30 @@ def monitor_all_positions():
                     if not cleanup_success:
                         print(f"❌ CRITICAL: Failed to remove {symbol} from open_positions.json after sell!")
                 
-                tx_display = tx if tx and tx not in ["verified_by_balance", "assumed_success"] else "Verified by balance check"
-                send_telegram_message(
-                    f"🛑 Stop-loss triggered!\n"
-                    f"Token: {symbol} ({token_address})\n"
-                    f"Chain: {chain_id.upper()}\n"
-                    f"Entry: ${entry_price:.6f}\n"
-                    f"Now: ${current_price:.6f} ({gain * 100:.2f}%)\n"
-                    f"TX: {tx_display}"
-                )
+                # Verify cleanup succeeded before sending notification
+                if not cleanup_success:
+                    cleanup_success = _verify_position_cleanup(position_key, token_address, chain_id)
+                
+                if cleanup_success:
+                    # Re-fetch current price right before notification to ensure accuracy
+                    fresh_current_price = _fetch_token_price_multi_chain(token_address) or current_price
+                    if fresh_current_price != current_price:
+                        print(f"📊 [PRICE UPDATE] Re-fetched price: ${current_price:.6f} -> ${fresh_current_price:.6f}")
+                        current_price = fresh_current_price
+                        gain = (current_price - original_entry_price) / original_entry_price
+                    
+                    tx_display = tx if tx and tx not in ["verified_by_balance", "assumed_success"] else "Verified by balance check"
+                    send_telegram_message(
+                        f"🛑 Stop-loss triggered!\n"
+                        f"Token: {symbol} ({token_address})\n"
+                        f"Chain: {chain_id.upper()}\n"
+                        f"Entry: ${original_entry_price:.6f}\n"
+                        f"Now: ${current_price:.6f} ({gain * 100:.2f}%)\n"
+                        f"TX: {tx_display}"
+                    )
+                else:
+                    print(f"❌ [STOP-LOSS] Failed to verify position cleanup - notification not sent")
+                
                 closed_positions.append(position_key)
                 updated_positions.pop(position_key, None)
             else:  # Sell failed - but verify with balance check first to avoid false negatives
@@ -2486,7 +2633,7 @@ def monitor_all_positions():
                 if balance_check_passed:
                     # Sell actually succeeded - log it and remove position
                     print(f"✅ [RECOVERY] Stop-loss sell succeeded (verified by balance check), logging trade...")
-                    log_trade(token_address, entry_price, current_price, "stop_loss")
+                    log_trade(token_address, original_entry_price, current_price, "stop_loss")
                     
                     # Update performance tracker
                     trade = _find_open_trade_by_address(token_address, chain_id)
@@ -2498,25 +2645,45 @@ def monitor_all_positions():
                         performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, "stop_loss")
                     
                     # Clean up position
-                    _cleanup_closed_position(position_key, token_address, chain_id)
+                    cleanup_success = _cleanup_closed_position(position_key, token_address, chain_id)
+                    if not cleanup_success:
+                        cleanup_success = _verify_position_cleanup(position_key, token_address, chain_id)
                     
-                    send_telegram_message(
-                        f"🛑 Stop-loss triggered!\n"
-                        f"Token: {symbol} ({token_address})\n"
-                        f"Chain: {chain_id.upper()}\n"
-                        f"Entry: ${entry_price:.6f}\n"
-                        f"Now: ${current_price:.6f} ({gain * 100:.2f}%)\n"
-                        f"TX: Verified by balance check"
-                    )
+                    if cleanup_success:
+                        # Re-fetch current price right before notification
+                        fresh_current_price = _fetch_token_price_multi_chain(token_address) or current_price
+                        if fresh_current_price != current_price:
+                            print(f"📊 [PRICE UPDATE] Re-fetched price: ${current_price:.6f} -> ${fresh_current_price:.6f}")
+                            current_price = fresh_current_price
+                            gain = (current_price - original_entry_price) / original_entry_price
+                        
+                        send_telegram_message(
+                            f"🛑 Stop-loss triggered!\n"
+                            f"Token: {symbol} ({token_address})\n"
+                            f"Chain: {chain_id.upper()}\n"
+                            f"Entry: ${original_entry_price:.6f}\n"
+                            f"Now: ${current_price:.6f} ({gain * 100:.2f}%)\n"
+                            f"TX: Verified by balance check"
+                        )
+                    else:
+                        print(f"❌ [STOP-LOSS] Failed to verify position cleanup - notification not sent")
+                    
                     closed_positions.append(position_key)
                     updated_positions.pop(position_key, None)
                 else:
                     # Sell actually failed
+                    # Re-fetch current price right before notification
+                    fresh_current_price = _fetch_token_price_multi_chain(token_address) or current_price
+                    if fresh_current_price != current_price:
+                        print(f"📊 [PRICE UPDATE] Re-fetched price: ${current_price:.6f} -> ${fresh_current_price:.6f}")
+                        current_price = fresh_current_price
+                        gain = (current_price - original_entry_price) / original_entry_price
+                    
                     print(f"\n{'='*60}")
                     print(f"❌ CRITICAL: STOP-LOSS TRIGGERED BUT SELL FAILED!")
                     print(f"Token: {symbol} ({token_address[:8]}...{token_address[-8:]})")
                     print(f"Chain: {chain_id.upper()}")
-                    print(f"Entry Price: ${entry_price:.6f}")
+                    print(f"Entry Price: ${original_entry_price:.6f}")
                     print(f"Current Price: ${current_price:.6f}")
                     print(f"Loss: {gain * 100:.2f}%")
                     print(f"Position will remain open and retry on next check")
@@ -2525,7 +2692,7 @@ def monitor_all_positions():
                         f"⚠️ Stop-loss triggered but SELL FAILED!\n"
                         f"Token: {symbol} ({token_address})\n"
                         f"Chain: {chain_id.upper()}\n"
-                        f"Entry: ${entry_price:.6f}\n"
+                        f"Entry: ${original_entry_price:.6f}\n"
                         f"Now: ${current_price:.6f} ({gain * 100:.2f}%)\n"
                         f"Will retry on next check..."
                     )

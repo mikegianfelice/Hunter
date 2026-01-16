@@ -354,13 +354,35 @@ def sync_position_from_performance_data_with_key(
         if not timestamp_value:
             timestamp_value = datetime.now().isoformat()
 
-        position_data = {
-            "entry_price": float(entry_price),
-            "chain_id": chain_id.lower(),
-            "symbol": symbol,
-            "address": token_address,  # Store original address for compatibility
-            "timestamp": timestamp_value,
-        }
+        # CRITICAL: Preserve original_entry_price if it exists (for partial TP positions)
+        # Only update entry_price if original_entry_price doesn't exist OR if explicitly updating entry price
+        if isinstance(existing_entry, dict) and existing_entry.get("original_entry_price"):
+            # Position has partial TP history - preserve original_entry_price
+            position_data = {
+                "entry_price": float(existing_entry.get("entry_price", entry_price)),  # Preserve existing entry_price
+                "original_entry_price": float(existing_entry["original_entry_price"]),  # Always preserve
+                "chain_id": chain_id.lower(),
+                "symbol": symbol,
+                "address": token_address,  # Store original address for compatibility
+                "timestamp": timestamp_value,
+            }
+            
+            # Check if entry_price is being changed significantly (more than 1%)
+            existing_entry_price = existing_entry.get("entry_price", 0)
+            if existing_entry_price > 0:
+                price_diff_pct = abs(float(entry_price) - existing_entry_price) / existing_entry_price
+                if price_diff_pct > 0.01:  # More than 1% difference
+                    print(f"⚠️ WARNING: Entry price changed significantly for {symbol}: ${existing_entry_price:.6f} -> ${entry_price:.6f} (diff: {price_diff_pct*100:.2f}%)")
+                    print(f"   Preserving original_entry_price: ${existing_entry['original_entry_price']:.6f}")
+        else:
+            # New position or no partial TP history - use provided entry_price
+            position_data = {
+                "entry_price": float(entry_price),
+                "chain_id": chain_id.lower(),
+                "symbol": symbol,
+                "address": token_address,  # Store original address for compatibility
+                "timestamp": timestamp_value,
+            }
         
         # Include trade_id if available
         if trade_id:
@@ -386,9 +408,11 @@ def sync_position_from_performance_data_with_key(
                 # Non-critical - log but don't fail
                 print(f"⚠️ Could not fetch entry volume for {symbol}: {e}")
 
-        # Preserve additional metadata flags when present
+        # Preserve additional metadata flags when present (including partial TP flags)
         if isinstance(existing_entry, dict):
-            for key in ("discovered", "entry_price_estimated", "entry_volume_24h_avg"):
+            for key in ("discovered", "entry_price_estimated", "entry_volume_24h_avg", 
+                       "partial_sell_taken", "partial_sell_pct", "partial_sell_tx", 
+                       "partial_sell_price", "partial_sell_time"):
                 if key in existing_entry and key not in position_data:
                     position_data[key] = existing_entry[key]
         
