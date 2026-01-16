@@ -110,6 +110,31 @@ def reconcile_positions_and_pnl(limit: int = 200) -> Dict[str, Any]:
                 entry_price = trade.get("entry_price", 0.0) or 0.0
                 exit_price = entry_price  # Use entry price as fallback if we can't determine exit price
                 
+                # CRITICAL FIX: Recalculate entry_price from entry transaction if available
+                # This ensures we use actual execution price, not potentially incorrect stored value
+                entry_tx_for_price = None
+                entry_sig = trade.get("buy_tx_hash")
+                if entry_sig:
+                    entry_tx_for_price = context.get_transaction(entry_sig)
+                if entry_tx_for_price is None:
+                    entry_tx_for_price = context.find_matching_transaction(trade, mint, direction="buy")
+                
+                if entry_tx_for_price:
+                    # Extract actual entry price from transaction
+                    transfers = entry_tx_for_price.get("tokenTransfers") or []
+                    mint_lower = mint.lower()
+                    usdc_spent = _aggregate_token_amount(
+                        transfers, SOLANA_WALLET_ADDRESS, USDC_MINT.lower(), incoming=False
+                    )
+                    tokens_received = _aggregate_token_amount(
+                        transfers, SOLANA_WALLET_ADDRESS, mint_lower, incoming=True
+                    )
+                    if tokens_received > BALANCE_EPSILON and usdc_spent > 0:
+                        actual_entry_price = usdc_spent / tokens_received
+                        if actual_entry_price > 0:
+                            entry_price = actual_entry_price
+                            print(f"📊 [RECONCILIATION] Recalculated entry price from transaction: ${entry_price:.6f}")
+                
                 # Try to get actual exit price from recent transactions
                 exit_tx = context.find_matching_transaction(trade, mint, direction="sell")
                 if exit_tx:
