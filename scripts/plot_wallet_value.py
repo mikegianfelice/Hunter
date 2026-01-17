@@ -313,6 +313,15 @@ def plot_percentage_pnl(days=30, initial_wallet_usd=None, save_path=None, use_he
         print("No data to plot")
         return None
     
+    # Check if we have any data points
+    if not data.get('detailed_time_points') or len(data['detailed_time_points']) == 0:
+        print(f"⚠️ No data points found for the requested period ({days} days from {OFFICIAL_START_DATE.date()})")
+        print("   This may be because:")
+        print("   1. No trades have occurred in this period yet")
+        print("   2. The cache needs to be updated with new transactions")
+        print("   3. Helius API rate limits are preventing data fetch")
+        return None
+    
     # Calculate percentage returns based on trading PnL and adjusted capital base
     initial = data['initial_wallet']
     if initial <= 0:
@@ -439,20 +448,29 @@ def plot_percentage_pnl(days=30, initial_wallet_usd=None, save_path=None, use_he
     line_color = '#2563EB'      # Blue
     grid_color = '#E5E7EB'      # Light gray
     
-    # Plot percentage returns with smooth line
-    ax.plot(data['detailed_time_points'], percentage_returns, 
-             linewidth=3, color=line_color, label='Total Return', zorder=3)
+    # Check if we have data to plot
+    if not data['detailed_time_points'] or len(data['detailed_time_points']) == 0:
+        # No data - show a message
+        ax.text(0.5, 0.5, f'No trading data available\nfor the requested period\n({days} days from {OFFICIAL_START_DATE.date()})',
+                horizontalalignment='center', verticalalignment='center',
+                transform=ax.transAxes, fontsize=14, color='#6B7280',
+                bbox=dict(boxstyle='round', facecolor='#F9FAFB', edgecolor='#E5E7EB'))
+        ax.set_title('Hunter Bot Performance: No Data Available', fontsize=16, color='#6B7280', pad=20)
+    else:
+        # Plot percentage returns with smooth line
+        ax.plot(data['detailed_time_points'], percentage_returns, 
+                 linewidth=3, color=line_color, label='Total Return', zorder=3)
     
-    # Zero line (break-even)
-    ax.axhline(y=0, color='#6B7280', linestyle='--', linewidth=1.5, alpha=0.7, zorder=1)
-    
-    # Fill positive/negative areas
-    ax.fill_between(data['detailed_time_points'], 0, percentage_returns,
-                     where=[p >= 0 for p in percentage_returns],
-                     alpha=0.2, color=positive_color, label='Profit Zone', zorder=2)
-    ax.fill_between(data['detailed_time_points'], 0, percentage_returns,
-                     where=[p < 0 for p in percentage_returns],
-                     alpha=0.2, color=negative_color, label='Loss Zone', zorder=2)
+        # Zero line (break-even)
+        ax.axhline(y=0, color='#6B7280', linestyle='--', linewidth=1.5, alpha=0.7, zorder=1)
+        
+        # Fill positive/negative areas
+        ax.fill_between(data['detailed_time_points'], 0, percentage_returns,
+                         where=[p >= 0 for p in percentage_returns],
+                         alpha=0.2, color=positive_color, label='Profit Zone', zorder=2)
+        ax.fill_between(data['detailed_time_points'], 0, percentage_returns,
+                         where=[p < 0 for p in percentage_returns],
+                         alpha=0.2, color=negative_color, label='Loss Zone', zorder=2)
     
     # Formatting for readability
     ax.set_xlabel('Date', fontsize=13, fontweight='bold', color='#1F2937')

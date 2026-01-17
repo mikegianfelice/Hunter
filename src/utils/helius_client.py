@@ -146,6 +146,11 @@ class HeliusClient:
         from src.utils.api_tracker import track_helius_call
         track_helius_call()
         
+        # Rate limit: Add small delay to respect RPS limits
+        # Helius has per-second rate limits (50-500 RPS depending on plan)
+        import time
+        time.sleep(0.02)  # 20ms delay = max 50 requests/sec, safe for all plans
+        
         response = post_json(self.endpoint, payload)
         
         if not isinstance(response, dict):
@@ -192,6 +197,7 @@ class HeliusClient:
         all_transactions = []
         
         # Process signatures in batches
+        import time
         for i in range(0, len(signatures), batch_size):
             batch_sigs = signatures[i:i + batch_size]
             
@@ -215,6 +221,12 @@ class HeliusClient:
             # Track as ONE API call (not N calls)
             from src.utils.api_tracker import track_helius_call
             track_helius_call()
+            
+            # Rate limit: Add small delay between batches to respect RPS limits
+            # Helius has per-second rate limits (50-500 RPS depending on plan)
+            # Adding 0.05s delay = max 20 requests/sec, well under any plan's limit
+            if i > 0:  # Don't delay the first request
+                time.sleep(0.05)  # 50ms delay between batches
             
             # Send batch request
             response = post_json(self.endpoint, batch_payload)

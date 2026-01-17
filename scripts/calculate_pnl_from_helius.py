@@ -403,8 +403,23 @@ def calculate_wallet_value_over_time_from_helius(
         print(f"   Cached trades: {len(cached_trades)}")
         print(f"   Fetching new transactions since last update...\n")
         
-        # Only fetch transactions since last update (with small buffer for safety)
-        fetch_start = last_update - timedelta(minutes=5)  # 5 min buffer for safety
+        # Determine fetch_start: use the latest trade date or last_update, whichever is earlier
+        # This ensures we don't miss trades that happened between cache updates
+        latest_trade_date = None
+        if cached_trades:
+            for trade in cached_trades:
+                sell_time = trade.get('sell_time')
+                if sell_time:
+                    if isinstance(sell_time, str):
+                        sell_time = datetime.fromisoformat(sell_time.replace('Z', '+00:00'))
+                    if not latest_trade_date or sell_time > latest_trade_date:
+                        latest_trade_date = sell_time
+        
+        # Use the earlier of: latest trade date or last_update (with 5 min buffer)
+        if latest_trade_date:
+            fetch_start = min(latest_trade_date - timedelta(minutes=5), last_update - timedelta(minutes=5))
+        else:
+            fetch_start = last_update - timedelta(minutes=5)  # 5 min buffer for safety
     else:
         print("📦 No cache found - performing full historical pull\n")
         processed_signatures = set()
@@ -435,14 +450,18 @@ def calculate_wallet_value_over_time_from_helius(
             except Exception as e:
                 fetch_error = e
                 print(f"⚠️ Error fetching transactions from Helius (page {page + 1}): {e}")
-                # If we have cached data and this is just a transient error, continue with cached data
-                if use_cache and all_transactions:
-                    print("   Using cached data and previously fetched transactions...")
+                # If we have cached data, we can still proceed with cached data
+                if use_cache:
+                    if all_transactions:
+                        print("   Using cached data and previously fetched transactions...")
+                    else:
+                        print("   Using cached data only (no new transactions fetched)...")
                     break
-                # Otherwise, re-raise if this is a critical error
-                if not use_cache or page == 0:
+                # For first run without cache, we need at least some data
+                if not use_cache and page == 0:
+                    print("❌ Cannot proceed without any transaction data")
                     raise
-                # For subsequent pages with cache, we can continue with what we have
+                # For subsequent pages without cache, continue with what we have
                 break
             
             if not transactions:
@@ -498,10 +517,14 @@ def calculate_wallet_value_over_time_from_helius(
                 break
     
     except Exception as e:
-        # If we have cached data, we can still proceed
-        if use_cache and all_transactions:
-            print(f"⚠️ Error during transaction fetch, but continuing with {len(all_transactions)} cached/new transactions: {e}")
+        # If we have cached data, we can still proceed even if we couldn't fetch new transactions
+        if use_cache:
+            if all_transactions:
+                print(f"⚠️ Error during transaction fetch, but continuing with {len(all_transactions)} cached/new transactions: {e}")
+            else:
+                print(f"⚠️ Error fetching new transactions, but will use existing cached data: {e}")
             fetch_error = e
+            # Continue processing with cached data - don't raise
         else:
             # No cached data available, this is a critical error
             print(f"❌ Critical error fetching transactions: {e}")
