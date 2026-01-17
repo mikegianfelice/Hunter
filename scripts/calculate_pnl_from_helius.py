@@ -422,65 +422,90 @@ def calculate_wallet_value_over_time_from_helius(
     all_transactions = []
     before_signature = None
     max_pages = 50  # Fetch more pages for longer history
+    fetch_error = None
     
-    for page in range(max_pages):
-        transactions = client.get_address_transactions(
-            SOLANA_WALLET_ADDRESS,
-            limit=200,
-            before=before_signature,
-        )
-        
-        if not transactions:
-            break
-        
-        # Filter by date range and skip already processed transactions
-        page_txs = []
-        earliest_in_page = None
-        new_tx_count = 0
-        
-        for tx in transactions:
-            ts = tx.get('timestamp')
-            if not ts:
-                continue
-            tx_time = datetime.fromtimestamp(ts, tz=timezone.utc)
-            tx_sig = tx.get('signature')
+    try:
+        for page in range(max_pages):
+            try:
+                transactions = client.get_address_transactions(
+                    SOLANA_WALLET_ADDRESS,
+                    limit=200,
+                    before=before_signature,
+                )
+            except Exception as e:
+                fetch_error = e
+                print(f"⚠️ Error fetching transactions from Helius (page {page + 1}): {e}")
+                # If we have cached data and this is just a transient error, continue with cached data
+                if use_cache and all_transactions:
+                    print("   Using cached data and previously fetched transactions...")
+                    break
+                # Otherwise, re-raise if this is a critical error
+                if not use_cache or page == 0:
+                    raise
+                # For subsequent pages with cache, we can continue with what we have
+                break
             
-            # Skip if already processed (when using cache)
-            if use_cache and tx_sig and tx_sig in processed_signatures:
-                continue
+            if not transactions:
+                break
             
-            # Only fetch transactions since fetch_start (or in date range for first run)
+            # Filter by date range and skip already processed transactions
+            page_txs = []
+            earliest_in_page = None
+            new_tx_count = 0
+            
+            for tx in transactions:
+                ts = tx.get('timestamp')
+                if not ts:
+                    continue
+                tx_time = datetime.fromtimestamp(ts, tz=timezone.utc)
+                tx_sig = tx.get('signature')
+                
+                # Skip if already processed (when using cache)
+                if use_cache and tx_sig and tx_sig in processed_signatures:
+                    continue
+                
+                # Only fetch transactions since fetch_start (or in date range for first run)
+                if use_cache:
+                    if tx_time >= fetch_start and tx_time < end_date:
+                        page_txs.append(tx)
+                        new_tx_count += 1
+                else:
+                    if start_date <= tx_time < end_date:
+                        page_txs.append(tx)
+                
+                if earliest_in_page is None or tx_time < earliest_in_page:
+                    earliest_in_page = tx_time
+            
+            all_transactions.extend(page_txs)
+            
+            # Stop if we've gone too far back
             if use_cache:
-                if tx_time >= fetch_start and tx_time < end_date:
-                    page_txs.append(tx)
-                    new_tx_count += 1
+                # When using cache, stop if we've gone before fetch_start
+                if earliest_in_page and earliest_in_page < fetch_start:
+                    break
             else:
-                if start_date <= tx_time < end_date:
-                    page_txs.append(tx)
+                # First run: stop if before start_date
+                if earliest_in_page and earliest_in_page < start_date:
+                    break
             
-            if earliest_in_page is None or tx_time < earliest_in_page:
-                earliest_in_page = tx_time
-        
-        all_transactions.extend(page_txs)
-        
-        # Stop if we've gone too far back
-        if use_cache:
-            # When using cache, stop if we've gone before fetch_start
-            if earliest_in_page and earliest_in_page < fetch_start:
+            # If using cache and no new transactions found, we're done
+            if use_cache and new_tx_count == 0 and page_txs:
                 break
+            
+            # Prepare for next page
+            before_signature = transactions[-1].get('signature')
+            if not before_signature:
+                break
+    
+    except Exception as e:
+        # If we have cached data, we can still proceed
+        if use_cache and all_transactions:
+            print(f"⚠️ Error during transaction fetch, but continuing with {len(all_transactions)} cached/new transactions: {e}")
+            fetch_error = e
         else:
-            # First run: stop if before start_date
-            if earliest_in_page and earliest_in_page < start_date:
-                break
-        
-        # If using cache and no new transactions found, we're done
-        if use_cache and new_tx_count == 0 and page_txs:
-            break
-        
-        # Prepare for next page
-        before_signature = transactions[-1].get('signature')
-        if not before_signature:
-            break
+            # No cached data available, this is a critical error
+            print(f"❌ Critical error fetching transactions: {e}")
+            raise
     
     print(f"   Found {len(all_transactions)} transactions in date range\n")
     

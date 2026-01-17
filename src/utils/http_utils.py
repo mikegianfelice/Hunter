@@ -126,7 +126,17 @@ def get_json(url, headers=None, timeout=DEFAULT_TIMEOUT, retries=DEFAULT_RETRIES
             else:
                 _record_failure()
         except requests.exceptions.HTTPError as e:
-            # For HTTP errors, don't retry if it's a client error (4xx)
+            # Special handling for 429 (rate limit) - should retry with backoff
+            if hasattr(e, 'response') and e.response.status_code == 429:
+                last_err = e
+                print(f"⚠️ Rate limit (429) error (attempt {attempt}/{retries}), retrying with backoff...")
+                if attempt < retries:
+                    _sleep(attempt, backoff * 2)  # Longer backoff for rate limits
+                    continue
+                else:
+                    _record_failure()
+                    raise e
+            # For other HTTP errors, don't retry if it's a client error (4xx)
             if hasattr(e, 'response') and 400 <= e.response.status_code < 500:
                 _record_success()  # Don't count client errors as failures
                 raise e
@@ -195,7 +205,17 @@ def post_json(url, payload, headers=None, timeout=DEFAULT_TIMEOUT, retries=DEFAU
             else:
                 _record_failure()
         except requests.exceptions.HTTPError as e:
-            # For HTTP errors, don't retry if it's a client error (4xx)
+            # Special handling for 429 (rate limit) - should retry with backoff
+            if hasattr(e, 'response') and e.response.status_code == 429:
+                last_err = e
+                print(f"⚠️ Rate limit (429) error (attempt {attempt}/{retries}), retrying with backoff...")
+                if attempt < retries:
+                    _sleep(attempt, backoff * 2)  # Longer backoff for rate limits
+                    continue
+                else:
+                    _record_failure()
+                    raise e
+            # For other HTTP errors, don't retry if it's a client error (4xx)
             if hasattr(e, 'response') and 400 <= e.response.status_code < 500:
                 _record_success()  # Don't count client errors as failures
                 raise e
