@@ -231,13 +231,15 @@ def reconcile_positions_and_pnl(limit: int = 200) -> Dict[str, Any]:
         if not address:
             continue
         
-        # Skip if we already processed this in Step 1
-        already_processed = any(
+        # Skip if we already processed this in Step 1 (only skip if there's an OPEN trade)
+        # If all trades are closed, we still need to check balance and clean up open_positions.json
+        has_open_trade = any(
             (t.get("address") or "").lower() == address 
+            and (t.get("status") or "").lower() == "open"
             for t in performance_tracker.trades 
             if (t.get("chain") or "").lower() == "solana"
         )
-        if already_processed:
+        if has_open_trade:
             continue
         
         # Skip excluded tokens
