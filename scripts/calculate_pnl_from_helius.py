@@ -436,11 +436,20 @@ def calculate_wallet_value_over_time_from_helius(
     print("📡 Fetching transactions from Helius...")
     all_transactions = []
     before_signature = None
-    max_pages = 50  # Fetch more pages for longer history
+    # When using cache, we only need a few pages (new transactions are recent)
+    # For full refresh, fetch more pages for longer history
+    max_pages = 10 if use_cache else 50
     fetch_error = None
+    
+    # Add delay between requests to avoid rate limits
+    import time
     
     try:
         for page in range(max_pages):
+            # Add delay between requests to respect rate limits (especially important when fetching many pages)
+            if page > 0:
+                time.sleep(0.5)  # 500ms delay between pages to avoid rate limits
+            
             try:
                 transactions = client.get_address_transactions(
                     SOLANA_WALLET_ADDRESS,
@@ -449,6 +458,18 @@ def calculate_wallet_value_over_time_from_helius(
                 )
             except Exception as e:
                 fetch_error = e
+                error_str = str(e).lower()
+                
+                # Check if it's a rate limit error (429)
+                is_rate_limit = "429" in error_str or "rate limit" in error_str or "too many requests" in error_str
+                
+                if is_rate_limit and page < max_pages - 1:
+                    # Wait longer for rate limits before retrying
+                    wait_time = min(30, 5 * (page + 1))  # Up to 30 seconds
+                    print(f"⚠️ Rate limit hit (page {page + 1}), waiting {wait_time}s before retry...")
+                    time.sleep(wait_time)
+                    continue  # Retry this page
+                
                 print(f"⚠️ Error fetching transactions from Helius (page {page + 1}): {e}")
                 # If we have cached data, we can still proceed with cached data
                 if use_cache:
