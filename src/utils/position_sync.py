@@ -1112,10 +1112,35 @@ def reconcile_position_sizes(
             if verify_balance:
                 balance = _check_token_balance_on_chain(token_addr, chain_id)
                 if balance is None or balance == -1.0:
-                    stats["skipped"] += 1
-                    if verbose:
-                        print(f"[skip-balance] {symbol} {token_addr[:8]}...{token_addr[-8:]} - balance check failed")
-                    continue
+                    # RPC check failed - try Helius as fallback (for Solana)
+                    if chain_id.lower() == "solana":
+                        try:
+                            from src.utils.helius_client import HeliusClient
+                            from src.config.secrets import HELIUS_API_KEY, SOLANA_WALLET_ADDRESS
+                            if HELIUS_API_KEY and SOLANA_WALLET_ADDRESS:
+                                if verbose:
+                                    print(f"[fallback-helius] {symbol} {token_addr[:8]}...{token_addr[-8:]} - RPC failed, trying Helius...")
+                                client = HeliusClient(HELIUS_API_KEY)
+                                balances = client.get_address_balances(SOLANA_WALLET_ADDRESS)
+                                tokens = balances.get("tokens", [])
+                                for token in tokens:
+                                    if (token.get("mint") or "").lower() == token_addr.lower():
+                                        amount_raw = token.get("amount") or 0
+                                        decimals = token.get("decimals") or 0
+                                        balance = float(amount_raw) / (10 ** decimals) if decimals else float(amount_raw)
+                                        if verbose:
+                                            print(f"[fallback-helius-success] {symbol} balance={balance:.8f}")
+                                        break
+                        except Exception as helius_e:
+                            if verbose:
+                                print(f"[skip-balance] {symbol} {token_addr[:8]}...{token_addr[-8:]} - both RPC and Helius failed: {helius_e}")
+                    
+                    # If still no balance after fallback, skip (don't remove on uncertainty)
+                    if balance is None or balance == -1.0:
+                        stats["skipped"] += 1
+                        if verbose:
+                            print(f"[skip-balance] {symbol} {token_addr[:8]}...{token_addr[-8:]} - balance check failed")
+                        continue
 
             if balance is not None and (balance <= 0 or balance < min_balance_threshold):
                 # Position closed - remove from open_positions

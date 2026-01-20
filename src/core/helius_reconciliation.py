@@ -226,20 +226,29 @@ def reconcile_positions_and_pnl(limit: int = 200) -> Dict[str, Any]:
     # Step 1b: Also check open_positions.json directly (in case positions
     #          exist there but not in performance_tracker)
     # ------------------------------------------------------------------ #
+    # Track which addresses Step 1 already processed
+    step1_processed_addresses = set()
+    for trade in performance_tracker.trades:
+        if (trade.get("chain") or "").lower() == "solana":
+            mint = (trade.get("address") or "").lower()
+            if mint:
+                step1_processed_addresses.add(mint)
+    
     for key, pos in list(open_positions.items()):
         address = (pos.get("address") or key).lower()
         if not address:
             continue
         
-        # Skip if we already processed this in Step 1 (only skip if there's an OPEN trade)
-        # If all trades are closed, we still need to check balance and clean up open_positions.json
+        # Skip if Step 1 already processed it AND trade is still open (meaning balance was verified)
+        # Always check balance if trade doesn't exist or is closed
         has_open_trade = any(
             (t.get("address") or "").lower() == address 
             and (t.get("status") or "").lower() == "open"
             for t in performance_tracker.trades 
             if (t.get("chain") or "").lower() == "solana"
         )
-        if has_open_trade:
+        # Only skip if Step 1 processed it AND trade is still open (balance verified)
+        if has_open_trade and address in step1_processed_addresses:
             continue
         
         # Skip excluded tokens

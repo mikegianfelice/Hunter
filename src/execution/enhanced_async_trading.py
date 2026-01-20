@@ -21,7 +21,7 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from src.monitoring.structured_logger import log_info, log_error, log_trade, log_performance
+from src.monitoring.structured_logger import log_info, log_error, log_warning, log_trade, log_performance
 from src.config.config_validator import get_validated_config
 from src.config.config_loader import get_config_bool, get_config_int, get_config_float, get_config
 from src.monitoring.performance_monitor import record_trade_metrics, start_trading_session, end_trading_session
@@ -222,12 +222,21 @@ class EnhancedAsyncTradingEngine:
         
         if not summary.get("enabled", False):
             reason = summary.get("reason", "unknown reason")
-            log_info(
-                "trading.helius_reconcile_disabled",
-                f"Helius reconciliation disabled: {reason}",
-            )
-            self.helius_reconciliation_enabled = False
-            self._helius_disabled_reason = reason
+            # Don't disable permanently - log and retry next cycle
+            # Only disable if it's a permanent issue (missing credentials)
+            if "Missing HELIUS_API_KEY" in reason or "Missing SOLANA_WALLET_ADDRESS" in reason:
+                log_info(
+                    "trading.helius_reconcile_disabled",
+                    f"Helius reconciliation disabled: {reason}",
+                )
+                self.helius_reconciliation_enabled = False
+                self._helius_disabled_reason = reason
+            else:
+                # Temporary failure - log warning but keep enabled for retry
+                log_warning(
+                    "trading.helius_reconcile_temp_failure",
+                    f"Helius reconciliation temporarily unavailable: {reason} (will retry next cycle)",
+                )
             return
         
         log_info(

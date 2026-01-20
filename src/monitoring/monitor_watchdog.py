@@ -196,31 +196,56 @@ def _maybe_reconcile_positions():
     _last_reconcile_ts = now
     
     try:
-        from src.utils.position_sync import reconcile_position_sizes
+        # Primary: Use Helius reconciliation (more accurate, single API call)
+        from src.core.helius_reconciliation import reconcile_positions_and_pnl
+        from src.config.secrets import HELIUS_API_KEY, SOLANA_WALLET_ADDRESS
         
-        log_message("🔄 Running periodic position size reconciliation...")
-        stats = reconcile_position_sizes(
-            threshold_pct=5.0,
-            min_balance_threshold=1e-6,
-            chains=None,  # All chains
-            verify_balance=True,
-            dry_run=False,
-            verbose=False,
-        )
+        helius_success = False
+        if HELIUS_API_KEY and SOLANA_WALLET_ADDRESS:
+            try:
+                log_message("🔄 Running Helius reconciliation (watchdog)...")
+                helius_summary = reconcile_positions_and_pnl(limit=100)
+                if helius_summary.get("enabled", False):
+                    helius_success = True
+                    log_message(
+                        f"✅ Helius reconciliation complete: "
+                        f"closed={helius_summary.get('open_positions_closed', 0)} "
+                        f"verified={helius_summary.get('open_positions_verified', 0)} "
+                        f"updated={helius_summary.get('trades_updated', 0)}"
+                    )
+                    if helius_summary.get("issues"):
+                        for issue in helius_summary["issues"][:3]:
+                            log_message(f"⚠️  Helius reconciliation issue: {issue}")
+            except Exception as helius_e:
+                log_message(f"⚠️  Helius reconciliation failed (falling back to position_sync): {helius_e}")
         
-        log_message(
-            f"✅ Position reconciliation complete: "
-            f"updated={stats['updated']} "
-            f"closed={stats['closed']} "
-            f"skipped={stats['skipped']} "
-            f"errors={len(stats['errors'])}"
-        )
-        
-        if stats["errors"]:
-            for err in stats["errors"][:5]:  # Log first 5 errors
-                log_message(f"⚠️  Reconciliation error: {err}")
-            if len(stats["errors"]) > 5:
-                log_message(f"⚠️  ... and {len(stats['errors']) - 5} more errors")
+        # Fallback: Use position_sync if Helius unavailable or failed
+        if not helius_success:
+            from src.utils.position_sync import reconcile_position_sizes
+            
+            log_message("🔄 Running position size reconciliation (fallback)...")
+            stats = reconcile_position_sizes(
+                threshold_pct=5.0,
+                min_balance_threshold=1e-6,
+                chains=None,  # All chains
+                verify_balance=True,
+                dry_run=False,
+                verbose=False,
+            )
+            
+            log_message(
+                f"✅ Position reconciliation complete: "
+                f"updated={stats['updated']} "
+                f"closed={stats['closed']} "
+                f"skipped={stats['skipped']} "
+                f"errors={len(stats['errors'])}"
+            )
+            
+            if stats["errors"]:
+                for err in stats["errors"][:5]:  # Log first 5 errors
+                    log_message(f"⚠️  Reconciliation error: {err}")
+                if len(stats["errors"]) > 5:
+                    log_message(f"⚠️  ... and {len(stats['errors']) - 5} more errors")
                 
     except Exception as e:
         log_message(f"❌ Position reconciliation failed: {e}")

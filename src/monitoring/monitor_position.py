@@ -2540,6 +2540,15 @@ def monitor_all_positions():
                                 sell_verified = False
                             else:
                                 print(f"✅ Sell verified: {symbol} no longer in wallet")
+                                
+                                # Run full Helius reconciliation immediately after verified sell
+                                try:
+                                    from src.core.helius_reconciliation import reconcile_positions_and_pnl
+                                    print(f"🔄 Running immediate reconciliation after sell...")
+                                    recon_summary = reconcile_positions_and_pnl(limit=50)  # Smaller limit for post-sell
+                                    print(f"✅ Post-sell reconciliation complete: closed={recon_summary.get('open_positions_closed', 0)}, verified={recon_summary.get('open_positions_verified', 0)}")
+                                except Exception as recon_e:
+                                    print(f"⚠️ Post-sell reconciliation error (non-critical): {recon_e}")
                     except Exception as e:
                         print(f"⚠️ Helius verification error (proceeding anyway): {e}")
                         import traceback
