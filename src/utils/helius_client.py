@@ -49,9 +49,15 @@ class HeliusClient:
         before: Optional[str] = None,
         until: Optional[str] = None,
         tx_types: Optional[Iterable[str]] = None,  # retained for API compatibility
+        include_token_accounts: bool = True,  # Use tokenAccounts filter for complete history
     ) -> List[Dict[str, Any]]:
         """
         Fetch recent transactions for a wallet address.
+        
+        Uses getTransactionsForAddress with tokenAccounts filter when available for:
+        - More complete transaction history (includes token account transactions)
+        - Fewer API calls (single call instead of getSignaturesForAddress + getTransaction)
+        - Better reconciliation accuracy (won't miss token-only transactions)
 
         Returns a list of dicts with keys:
             - signature
@@ -61,6 +67,67 @@ class HeliusClient:
         """
         _ = tx_types  # retained for compatibility; RPC layer does not yet filter by type
 
+        # Try new getTransactionsForAddress method with tokenAccounts filter first
+        if include_token_accounts:
+            try:
+                config: Dict[str, Any] = {
+                    "transactionDetails": "full",
+                    "limit": max(1, min(limit, 100)),  # Max 100 for full details
+                    "sortOrder": "desc",
+                    "filters": {
+                        "tokenAccounts": "balanceChanged"  # Include token account transactions
+                    }
+                }
+                if before:
+                    config["before"] = before
+                # Note: until parameter (signature) not directly supported in getTransactionsForAddress
+                # Would need to convert to blockTime if needed
+                
+                result = self._rpc_request("getTransactionsForAddress", [address, config])
+                if result and isinstance(result, dict):
+                    transactions = result.get("transactions", [])
+                    if transactions:
+                        # Normalize transactions from getTransactionsForAddress format
+                        results: List[Dict[str, Any]] = []
+                        for tx_entry in transactions:
+                            # getTransactionsForAddress returns transactions in format:
+                            # {"transaction": {...}, "meta": {...}, "blockTime": ..., "signature": ...}
+                            # Similar to getTransaction response
+                            if isinstance(tx_entry, dict):
+                                signature = tx_entry.get("signature")
+                                if not signature:
+                                    # Fallback: extract from transaction
+                                    signature = self._extract_signature(tx_entry)
+                                
+                                block_time = tx_entry.get("blockTime")
+                                slot = tx_entry.get("slot")
+                                
+                                if signature:
+                                    info = SignatureInfo(
+                                        signature=signature,
+                                        block_time=block_time,
+                                        slot=slot
+                                    )
+                                    normalised = self._normalise_transaction(tx_entry, info)
+                                    if normalised:
+                                        results.append(normalised)
+                        
+                        # Apply before filter if needed (filter by signature)
+                        if before and results:
+                            filtered_results = []
+                            for tx in results:
+                                if tx.get("signature") == before:
+                                    break  # Stop at before signature
+                                filtered_results.append(tx)
+                            results = filtered_results
+                        
+                        return results
+            except Exception as e:
+                # Fallback to old method if new method fails
+                # This ensures backward compatibility if getTransactionsForAddress isn't available
+                pass
+
+        # Fallback to original method (getSignaturesForAddress + getTransaction)
         signature_infos = self._get_signatures_for_address(
             address,
             limit=max(1, min(limit, 200)),
