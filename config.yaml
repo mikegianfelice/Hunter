@@ -83,12 +83,13 @@ pre_buy_check_timeout: 10
 # === Token Discovery ===
 # Configuration for token discovery and filtering
 token_discovery:
-  tokens_per_chain: 60  # Number of tokens to fetch per chain (increased for more opportunities)
-  max_tokens_total: 120  # Safety cap across all chains to prevent excessive processing
+  tokens_per_chain: 100  # Number of tokens to fetch per chain (increased from 60 for more opportunities)
+  max_tokens_total: 200  # Safety cap across all chains (increased from 120 to support expanded discovery)
   prefilter_min_volume_24h: 5000  # Minimum 24h volume to keep during discovery (filters out dead pairs)
   prefilter_min_liquidity_usd: 20000  # Minimum liquidity to keep during discovery (filters out low-liquidity pairs)
   
   # DexScreener search query terms per chain (controls discovery breadth)
+  # Expanded queries to cast wider net for tokens meeting high trading thresholds
   dexscreener_queries:
     solana:
       - trending
@@ -98,6 +99,13 @@ token_discovery:
       - meteora
       - pump
       - bonk
+      - gaining      # Find tokens with positive momentum
+      - volume       # High volume tokens
+      - liquidity    # High liquidity tokens
+      - hot          # Hot/active tokens
+      - rising       # Rising tokens
+      - popular      # Popular tokens
+      - active       # Active trading pairs
     base:
       - trending
       - aerodrome
@@ -343,12 +351,13 @@ enable_tiered_position_sizing: true  # Enable tiered position sizing
 tiered_position_scaling: true  # Enable automatic scaling with wallet growth
 
 # Wallet balance tiers for position sizing
+# Position sizes increased to better utilize capital with 1 trade/day frequency
 wallet_tiers: {
   "tier_1": {
     "min_balance": 100,
     "max_balance": 499,
-    "base_position_size_percent": 0.05,
-    "max_position_size_percent": 0.12,
+    "base_position_size_percent": 0.09,  # Increased from 0.05 (80% increase) - better capital utilization
+    "max_position_size_percent": 0.19,   # Increased from 0.12 (58% increase) - capitalize on excellent opportunities
     "max_total_exposure_percent": 0.8,
     "max_wallet_usage_percent": 0.4,
     "description": "Learning Phase - Higher leverage for rapid compounding (position sizes and exposure scale dynamically with wallet balance)"
@@ -356,8 +365,8 @@ wallet_tiers: {
   "tier_2": {
     "min_balance": 500,
     "max_balance": 4999,
-    "base_position_size_percent": 0.065,  # Increased from 0.05 (30% increase) - higher quality trades
-    "max_position_size_percent": 0.13,   # Increased from 0.10 (30% increase) - capitalize on excellent opportunities
+    "base_position_size_percent": 0.11,  # Increased from 0.065 (69% increase) - better capital utilization
+    "max_position_size_percent": 0.19,   # Increased from 0.13 (46% increase) - capitalize on excellent opportunities
     "max_total_exposure_percent": 0.6,
     "max_wallet_usage_percent": 0.10,
     "description": "Scaling Phase - Moderate (percentage-based for dynamic scaling)"
@@ -365,8 +374,8 @@ wallet_tiers: {
   "tier_3": {
     "min_balance": 5000,
     "max_balance": 19999,
-    "base_position_size_percent": 0.04,
-    "max_position_size_percent": 0.08,
+    "base_position_size_percent": 0.07,  # Increased from 0.04 (75% increase) - better capital utilization
+    "max_position_size_percent": 0.13,   # Increased from 0.08 (63% increase) - capitalize on excellent opportunities
     "max_total_exposure_percent": 0.4,
     "max_wallet_usage_percent": 0.10,
     "description": "Acceleration Phase - Aggressive (percentage-based for dynamic scaling)"
@@ -374,8 +383,8 @@ wallet_tiers: {
   "tier_4": {
     "min_balance": 20000,
     "max_balance": 99999,
-    "base_position_size_percent": 0.03,
-    "max_position_size_percent": 0.06,
+    "base_position_size_percent": 0.055,  # Increased from 0.03 (83% increase) - better capital utilization
+    "max_position_size_percent": 0.10,    # Increased from 0.06 (67% increase) - capitalize on excellent opportunities
     "max_total_exposure_percent": 0.3,
     "max_wallet_usage_percent": 0.10,
     "description": "Professional Phase - Maximum (percentage-based for dynamic scaling)"
@@ -383,8 +392,8 @@ wallet_tiers: {
   "tier_5": {
     "min_balance": 100000,
     "max_balance": 999999,
-    "base_position_size_percent": 0.02,
-    "max_position_size_percent": 0.05,
+    "base_position_size_percent": 0.035,  # Increased from 0.02 (75% increase) - better capital utilization
+    "max_position_size_percent": 0.08,    # Increased from 0.05 (60% increase) - capitalize on excellent opportunities
     "max_total_exposure_percent": 0.2,
     "max_wallet_usage_percent": 0.10,
     "description": "Institutional Phase - Elite (percentage-based for dynamic scaling)"
