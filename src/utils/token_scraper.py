@@ -279,6 +279,106 @@ def calculate_token_score(symbol, volume24h, liquidity, chain_id, address=None):
     
     return max(0, score)  # Ensure non-negative
 
+def calculate_legitimacy_score(pair: dict) -> float:
+    """
+    Calculate legitimacy score (0-10) based on trading patterns.
+    Higher scores indicate legitimate trading activity vs wash trading.
+    
+    Analyzes:
+    - Buy/sell ratio balance
+    - Transaction distribution consistency over time
+    - Volume distribution consistency
+    - Price movement correlation with volume
+    - Average trade sizes
+    - Token age
+    
+    Args:
+        pair: DexScreener pair data dictionary
+    
+    Returns:
+        float: Legitimacy score from 0-10
+    """
+    score = 0.0
+    
+    try:
+        # Get transaction data
+        txns_24h = pair.get("txns", {}).get("h24", {})
+        buys_24h = int(txns_24h.get("buys", 0))
+        sells_24h = int(txns_24h.get("sells", 0))
+        total_txns = buys_24h + sells_24h
+        
+        txns_1h = pair.get("txns", {}).get("h1", {})
+        buys_1h = int(txns_1h.get("buys", 0))
+        sells_1h = int(txns_1h.get("sells", 0))
+        
+        # Get volume data
+        volume24h = float((pair.get("volume") or {}).get("h24") or 0)
+        volume_1h = float((pair.get("volume") or {}).get("h1") or 0)
+        
+        # Get price change data
+        price_change = pair.get("priceChange", {})
+        price_change_24h = float(price_change.get("h24", 0))
+        
+        # Get pair age
+        pair_created_at = pair.get("pairCreatedAt")
+        pair_age_hours = None
+        if pair_created_at:
+            age_ms = int(pair_created_at)
+            current_ms = int(datetime.now().timestamp() * 1000)
+            pair_age_hours = (current_ms - age_ms) / (1000 * 3600)
+        
+        # Indicator 1: Buy/Sell Ratio (0-2 points)
+        if total_txns > 0:
+            buy_sell_ratio = buys_24h / sells_24h if sells_24h > 0 else 0
+            if 0.5 <= buy_sell_ratio <= 2.0:
+                score += 2.0  # Balanced ratio - healthy trading
+            elif 0.2 <= buy_sell_ratio <= 5.0:
+                score += 1.0  # Reasonable ratio
+        
+        # Indicator 2: Transaction Distribution Consistency (0-2 points)
+        if total_txns > 0 and (buys_1h + sells_1h) > 0:
+            txn_rate_24h = total_txns / 24
+            txn_rate_1h = buys_1h + sells_1h
+            if txn_rate_24h > 0:
+                consistency_ratio = txn_rate_1h / txn_rate_24h
+                if 0.5 <= consistency_ratio <= 2.0:
+                    score += 2.0  # Consistent activity over time
+                elif 0.3 <= consistency_ratio <= 3.0:
+                    score += 1.0  # Reasonable consistency
+        
+        # Indicator 3: Volume Distribution Consistency (0-2 points)
+        if volume24h > 0 and volume_1h > 0:
+            volume_per_hour_avg = volume24h / 24
+            if volume_per_hour_avg > 0:
+                volume_consistency = volume_1h / volume_per_hour_avg
+                if 0.3 <= volume_consistency <= 3.0:
+                    score += 2.0  # Consistent volume distribution
+                elif 0.1 <= volume_consistency <= 5.0:
+                    score += 1.0  # Reasonable distribution
+        
+        # Indicator 4: Price Movement Correlation (0-2 points)
+        if abs(price_change_24h) > 50.0:
+            score += 2.0  # Significant price movement with volume - likely legitimate
+        elif abs(price_change_24h) > 10.0:
+            score += 1.0  # Moderate price movement
+        
+        # Indicator 5: Average Trade Size (0-1 point)
+        if total_txns > 0:
+            avg_trade_size = volume24h / total_txns
+            if 10 <= avg_trade_size <= 10000:
+                score += 1.0  # Reasonable trade sizes (not bot-like or whale manipulation)
+        
+        # Indicator 6: Token Age (0-1 point)
+        if pair_age_hours:
+            if pair_age_hours >= 168:  # 7+ days old
+                score += 1.0  # Established token - lower risk
+        
+    except Exception as e:
+        # On error, return 0 (fail closed - don't bypass if we can't verify)
+        return 0.0
+    
+    return min(10.0, score)  # Cap at 10
+
 def ensure_symbol_diversity(tokens, max_same_symbol=3):
     """Ensure we don't get too many tokens with the same symbol"""
     symbol_counts = defaultdict(int)
@@ -450,10 +550,23 @@ def fetch_trending_tokens(limit=200):  # INCREASED for more opportunities
         if liq > 0 and vol24 > 0:
             vol_liq_ratio = vol24 / liq
             max_vol_liq_ratio = get_config_float("max_volume_liquidity_ratio", 10.0)
-            # Reject tokens with volume > 10× liquidity (manipulation/wash trading indicator)
+            enable_legitimacy_bypass = get_config_bool("enable_legitimacy_bypass", True)
+            min_legitimacy_for_bypass = get_config_float("legitimacy_bypass_threshold", 7.0)
+            
+            # Reject tokens with volume > threshold liquidity
             if vol_liq_ratio > max_vol_liq_ratio:
-                print(f"🚫 Skipping token with suspiciously high volume/liquidity ratio: {symbol} (ratio: {vol_liq_ratio:.2f}x, vol: ${vol24:,.0f}, liq: ${liq:,.0f})")
-                continue
+                # Check if token has high legitimacy score (allows bypass)
+                if enable_legitimacy_bypass:
+                    legitimacy_score = calculate_legitimacy_score(pair)
+                    if legitimacy_score >= min_legitimacy_for_bypass:
+                        print(f"✅ Allowing token with high volume/liquidity ratio due to high legitimacy score: {symbol} (ratio: {vol_liq_ratio:.2f}x, legitimacy: {legitimacy_score:.1f}/10)")
+                        # Token passes - continue to next checks
+                    else:
+                        print(f"🚫 Skipping token with suspiciously high volume/liquidity ratio: {symbol} (ratio: {vol_liq_ratio:.2f}x, legitimacy: {legitimacy_score:.1f}/10 - below threshold)")
+                        continue
+                else:
+                    print(f"🚫 Skipping token with suspiciously high volume/liquidity ratio: {symbol} (ratio: {vol_liq_ratio:.2f}x, vol: ${vol24:,.0f}, liq: ${liq:,.0f})")
+                    continue
             # Reject tokens with extremely low volume/liquidity ratios (more lenient)
             if vol_liq_ratio < 0.05:  # Volume less than 5% of liquidity (more lenient)
                 print(f"🚫 Skipping low volume/liquidity ratio: {symbol} (ratio: {vol_liq_ratio:.2f})")

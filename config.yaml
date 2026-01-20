@@ -240,6 +240,10 @@ order_flow_cache_seconds: 30  # Cache results for 30 seconds
 # === Volume/Liquidity Safety ===
 max_volume_liquidity_ratio: 10.0  # Reject tokens where volume > 10× liquidity (manipulation/wash trading indicator)
 
+# === Legitimacy-Based Bypass ===
+enable_legitimacy_bypass: true  # Allow tokens with high legitimacy scores to bypass volume/liquidity ratio check
+legitimacy_bypass_threshold: 7.0  # Minimum legitimacy score (0-10) required to bypass volume/liquidity ratio check
+
 # === Jupiter API Settings ===
 enable_jupiter_pre_check: true  # Enable Jupiter pre-check for quality
 jupiter_pre_check_strict: true  # Reject tokens if Jupiter pre-check fails
