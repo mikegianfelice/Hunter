@@ -448,7 +448,7 @@ def calculate_wallet_value_over_time_from_helius(
         for page in range(max_pages):
             # Add delay between requests to respect rate limits (especially important when fetching many pages)
             if page > 0:
-                time.sleep(0.5)  # 500ms delay between pages to avoid rate limits
+                time.sleep(1.0)  # 1 second delay between pages to avoid rate limits (conservative)
             
             try:
                 transactions = client.get_address_transactions(
@@ -461,12 +461,17 @@ def calculate_wallet_value_over_time_from_helius(
                 error_str = str(e).lower()
                 
                 # Check if it's a rate limit error (429)
-                is_rate_limit = "429" in error_str or "rate limit" in error_str or "too many requests" in error_str
+                # Check both HTTPError status code and error message
+                is_rate_limit = False
+                if hasattr(e, 'response') and hasattr(e.response, 'status_code'):
+                    is_rate_limit = e.response.status_code == 429
+                else:
+                    is_rate_limit = "429" in error_str or "rate limit" in error_str or "too many requests" in error_str
                 
                 if is_rate_limit and page < max_pages - 1:
-                    # Wait longer for rate limits before retrying
-                    wait_time = min(30, 5 * (page + 1))  # Up to 30 seconds
-                    print(f"⚠️ Rate limit hit (page {page + 1}), waiting {wait_time}s before retry...")
+                    # Wait longer for rate limits before retrying (exponential backoff)
+                    wait_time = min(60, 10 * (page + 1))  # Up to 60 seconds, more conservative
+                    print(f"⚠️ Rate limit (429) hit (page {page + 1}/{max_pages}), waiting {wait_time}s before retry...")
                     time.sleep(wait_time)
                     continue  # Retry this page
                 

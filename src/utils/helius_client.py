@@ -213,10 +213,11 @@ class HeliusClient:
         from src.utils.api_tracker import track_helius_call
         track_helius_call()
         
-        # Rate limit: Add small delay to respect RPS limits
+        # Rate limit: Add delay to respect RPS limits
         # Helius has per-second rate limits (50-500 RPS depending on plan)
+        # Using 30ms delay = max 33 requests/sec, safe for all plans including Developer (50 RPS)
         import time
-        time.sleep(0.02)  # 20ms delay = max 50 requests/sec, safe for all plans
+        time.sleep(0.03)  # 30ms delay = max 33 requests/sec, conservative for all plans
         
         response = post_json(self.endpoint, payload)
         
@@ -289,11 +290,11 @@ class HeliusClient:
             from src.utils.api_tracker import track_helius_call
             track_helius_call()
             
-            # Rate limit: Add small delay between batches to respect RPS limits
+            # Rate limit: Add delay between batches to respect RPS limits
             # Helius has per-second rate limits (50-500 RPS depending on plan)
-            # Adding 0.05s delay = max 20 requests/sec, well under any plan's limit
+            # Adding 0.1s delay = max 10 requests/sec, well under any plan's limit
             if i > 0:  # Don't delay the first request
-                time.sleep(0.05)  # 50ms delay between batches
+                time.sleep(0.1)  # 100ms delay between batches for safety
             
             # Send batch request
             response = post_json(self.endpoint, batch_payload)

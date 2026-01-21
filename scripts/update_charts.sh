@@ -132,9 +132,21 @@ fi
 $PYTHON_CMD scripts/plot_wallet_value.py --days 30 --type percentage --save docs/performance_chart.png 2>&1
 CHART30_EXIT=$?
 
+# Add delay between chart generations to avoid rate limit bursts
+if [ $CHART30_EXIT -eq 0 ]; then
+    echo "⏳ Waiting 5 seconds before generating next chart to avoid rate limits..."
+    sleep 5
+fi
+
 # Generate 90-day chart
 $PYTHON_CMD scripts/plot_wallet_value.py --days 90 --type percentage --save docs/performance_90d.png 2>&1
 CHART90_EXIT=$?
+
+# Add delay between chart generations to avoid rate limit bursts
+if [ $CHART90_EXIT -eq 0 ]; then
+    echo "⏳ Waiting 5 seconds before generating next chart to avoid rate limits..."
+    sleep 5
+fi
 
 # Generate 180-day chart
 $PYTHON_CMD scripts/plot_wallet_value.py --days 180 --type percentage --save docs/performance_180d.png 2>&1
