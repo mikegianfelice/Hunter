@@ -134,8 +134,8 @@ CHART30_EXIT=$?
 
 # Add delay between chart generations to avoid rate limit bursts
 if [ $CHART30_EXIT -eq 0 ]; then
-    echo "⏳ Waiting 5 seconds before generating next chart to avoid rate limits..."
-    sleep 5
+    echo "⏳ Waiting 10 seconds before generating next chart to avoid rate limits..."
+    sleep 10
 fi
 
 # Generate 90-day chart
@@ -144,8 +144,8 @@ CHART90_EXIT=$?
 
 # Add delay between chart generations to avoid rate limit bursts
 if [ $CHART90_EXIT -eq 0 ]; then
-    echo "⏳ Waiting 5 seconds before generating next chart to avoid rate limits..."
-    sleep 5
+    echo "⏳ Waiting 10 seconds before generating next chart to avoid rate limits..."
+    sleep 10
 fi
 
 # Generate 180-day chart

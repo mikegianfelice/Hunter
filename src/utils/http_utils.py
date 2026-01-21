@@ -131,7 +131,10 @@ def get_json(url, headers=None, timeout=DEFAULT_TIMEOUT, retries=DEFAULT_RETRIES
                 last_err = e
                 print(f"⚠️ Rate limit (429) error (attempt {attempt}/{retries}), retrying with backoff...")
                 if attempt < retries:
-                    _sleep(attempt, backoff * 2)  # Longer backoff for rate limits
+                    # Much longer backoff for rate limits: exponential with minimum 5 seconds
+                    wait_time = max(5.0, backoff * (2 ** (attempt + 1)))
+                    print(f"   Waiting {wait_time:.1f}s before retry...")
+                    time.sleep(wait_time)
                     continue
                 else:
                     _record_failure()
@@ -210,7 +213,10 @@ def post_json(url, payload, headers=None, timeout=DEFAULT_TIMEOUT, retries=DEFAU
                 last_err = e
                 print(f"⚠️ Rate limit (429) error (attempt {attempt}/{retries}), retrying with backoff...")
                 if attempt < retries:
-                    _sleep(attempt, backoff * 2)  # Longer backoff for rate limits
+                    # Much longer backoff for rate limits: exponential with minimum 5 seconds
+                    wait_time = max(5.0, backoff * (2 ** (attempt + 1)))
+                    print(f"   Waiting {wait_time:.1f}s before retry...")
+                    time.sleep(wait_time)
                     continue
                 else:
                     _record_failure()

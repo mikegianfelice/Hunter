@@ -448,7 +448,7 @@ def calculate_wallet_value_over_time_from_helius(
         for page in range(max_pages):
             # Add delay between requests to respect rate limits (especially important when fetching many pages)
             if page > 0:
-                time.sleep(1.0)  # 1 second delay between pages to avoid rate limits (conservative)
+                time.sleep(2.0)  # 2 second delay between pages to avoid rate limits (very conservative)
             
             try:
                 transactions = client.get_address_transactions(
