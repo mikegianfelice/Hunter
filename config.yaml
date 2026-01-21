@@ -88,6 +88,14 @@ token_discovery:
   prefilter_min_volume_24h: 5000  # Minimum 24h volume to keep during discovery (filters out dead pairs)
   prefilter_min_liquidity_usd: 20000  # Minimum liquidity to keep during discovery (filters out low-liquidity pairs)
   
+  # Jupiter API Settings (primary discovery source for Solana)
+  jupiter_enabled: true  # Enable Jupiter trending token discovery
+  jupiter_intervals: ["1h", "6h", "24h"]  # Which trending intervals to fetch (5m, 1h, 6h, 24h available)
+  jupiter_limit_per_interval: 100  # Max tokens per interval
+  jupiter_min_organic_score: 50  # Minimum organic score to include (0-100)
+  jupiter_min_holders: 100  # Minimum holder count
+  jupiter_priority_boost: 1.0  # Score boost for Jupiter-discovered tokens
+  
   # DexScreener search query terms per chain (controls discovery breadth)
   # Expanded queries to cast wider net for tokens meeting high trading thresholds
   dexscreener_queries:

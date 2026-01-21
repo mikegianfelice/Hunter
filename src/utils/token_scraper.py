@@ -441,11 +441,187 @@ def test_token_tradeability(token_address: str, chain_id: str = "solana") -> boo
         print(f"⚠️ Tradeability test failed for {token_address}: {e}")
         return False
 
+def fetch_jupiter_trending_tokens(intervals=None, limit_per_interval=100):
+    """
+    Fetch trending Solana tokens from Jupiter API.
+    
+    Args:
+        intervals: List of intervals to fetch (default: ["1h", "6h", "24h"])
+        limit_per_interval: Max tokens per interval (default: 100)
+    
+    Returns:
+        List of Jupiter token objects, or empty list if failed
+    """
+    try:
+        from src.config.secrets import JUPITER_API_KEY
+        
+        if not JUPITER_API_KEY:
+            print("⚠️ Jupiter API key not found, skipping Jupiter discovery")
+            return []
+    except ImportError:
+        print("⚠️ Could not import Jupiter API key, skipping Jupiter discovery")
+        return []
+    except Exception as e:
+        print(f"⚠️ Error loading Jupiter API key: {e}, skipping Jupiter discovery")
+        return []
+    
+    if intervals is None:
+        intervals = get_config("token_discovery.jupiter_intervals", ["1h", "6h", "24h"])
+    
+    all_tokens = []
+    seen_addresses = set()
+    
+    headers = {"x-api-key": JUPITER_API_KEY}
+    
+    for interval in intervals:
+        try:
+            url = f"https://api.jup.ag/tokens/v2/toptrending/{interval}?limit={limit_per_interval}"
+            print(f"🔍 Fetching Jupiter {interval} trending tokens...")
+            data = get_json(url, headers=headers, timeout=15, retries=2, backoff=1.0)
+            
+            if data and isinstance(data, list):
+                count = 0
+                for idx, token in enumerate(data):
+                    token_id = token.get("id")
+                    if token_id and token_id not in seen_addresses:
+                        # Add metadata about trending position and interval
+                        # Position is 1-indexed based on position in the trending list
+                        token["_jupiter_trending_position"] = idx + 1
+                        token["_jupiter_trending_interval"] = interval
+                        token["_source"] = "jupiter"
+                        all_tokens.append(token)
+                        seen_addresses.add(token_id)
+                        count += 1
+                print(f"✅ Fetched {count} unique tokens from Jupiter {interval} trending")
+            elif data:
+                print(f"⚠️ Unexpected Jupiter API response format for {interval}")
+        except Exception as e:
+            print(f"⚠️ Failed to fetch Jupiter {interval} trending: {e}")
+            continue
+    
+    print(f"🎯 Total Jupiter trending tokens: {len(all_tokens)}")
+    return all_tokens
+
+def transform_jupiter_token_to_common_format(jupiter_token):
+    """
+    Transform Jupiter token format to common format used by token scraper.
+    
+    Args:
+        jupiter_token: Jupiter API token object
+    
+    Returns:
+        Dictionary in common format, or None if transformation fails
+    """
+    try:
+        token_id = jupiter_token.get("id")
+        if not token_id:
+            return None
+        
+        # Extract volume from stats24h
+        stats24h = jupiter_token.get("stats24h", {})
+        buy_volume = float(stats24h.get("buyVolume", 0) or 0)
+        sell_volume = float(stats24h.get("sellVolume", 0) or 0)
+        volume24h = buy_volume + sell_volume
+        
+        # Extract price changes
+        stats5m = jupiter_token.get("stats5m", {})
+        stats1h = jupiter_token.get("stats1h", {})
+        price_change_5m = stats5m.get("priceChange")
+        price_change_1h = stats1h.get("priceChange")
+        price_change_24h = stats24h.get("priceChange")
+        
+        # Convert price changes from decimals (e.g., 0.16 = 16%) to percentages
+        if price_change_5m is not None:
+            price_change_5m = price_change_5m * 100
+        if price_change_1h is not None:
+            price_change_1h = price_change_1h * 100
+        if price_change_24h is not None:
+            price_change_24h = price_change_24h * 100
+        
+        # Get liquidity
+        liquidity = float(jupiter_token.get("liquidity", 0) or 0)
+        
+        # Get price
+        price = float(jupiter_token.get("usdPrice", 0) or 0)
+        
+        # Get symbol and name
+        symbol = (jupiter_token.get("symbol") or "").upper()
+        name = jupiter_token.get("name") or ""
+        
+        # Determine DEX (try to infer from firstPool or default to "jupiter")
+        dex = "jupiter"
+        first_pool = jupiter_token.get("firstPool", {})
+        if first_pool:
+            pool_id = first_pool.get("id", "")
+            # Could add logic here to determine DEX from pool ID if needed
+        
+        return {
+            "fetched_at": datetime.utcnow().isoformat(),
+            "symbol": symbol,
+            "address": token_id,
+            "dex": dex,
+            "chainId": "solana",  # Jupiter only returns Solana tokens
+            "priceUsd": price,
+            "volume24h": volume24h,
+            "liquidity": liquidity,
+            "priceChange5m": price_change_5m if price_change_5m is not None else "",
+            "priceChange1h": price_change_1h if price_change_1h is not None else "",
+            "priceChange24h": price_change_24h if price_change_24h is not None else "",
+            # Jupiter-specific metadata
+            "jupiter_validated": True,
+            "organic_score": jupiter_token.get("organicScore"),
+            "holder_count": jupiter_token.get("holderCount"),
+            "is_verified": jupiter_token.get("isVerified", False),
+            "trending_position": jupiter_token.get("_jupiter_trending_position"),
+            "trending_interval": jupiter_token.get("_jupiter_trending_interval"),
+            "source": "jupiter",
+            "name": name,
+        }
+    except Exception as e:
+        print(f"⚠️ Error transforming Jupiter token: {e}")
+        return None
+
 def fetch_trending_tokens(limit=200):  # INCREASED for more opportunities
     """Enhanced token discovery with better diversity and quality filtering"""
     headers = {"User-Agent": "Mozilla/5.0 (bot)"}
     all_pairs = []
-
+    jupiter_rows = []
+    
+    # Step 1: Fetch Jupiter trending tokens FIRST (primary source for Solana)
+    jupiter_enabled = get_config_bool("token_discovery.jupiter_enabled", True)
+    if jupiter_enabled:
+        try:
+            print("🚀 Fetching Jupiter trending tokens (primary source)...")
+            jupiter_tokens = fetch_jupiter_trending_tokens()
+            
+            if jupiter_tokens:
+                # Apply Jupiter-specific filters
+                min_organic_score = get_config_float("token_discovery.jupiter_min_organic_score", 50.0)
+                min_holders = get_config_float("token_discovery.jupiter_min_holders", 100.0)
+                
+                filtered_jupiter_tokens = []
+                for token in jupiter_tokens:
+                    organic_score = token.get("organicScore", 0)
+                    holder_count = token.get("holderCount", 0)
+                    
+                    if organic_score >= min_organic_score and holder_count >= min_holders:
+                        filtered_jupiter_tokens.append(token)
+                    else:
+                        print(f"🚫 Filtered Jupiter token {token.get('symbol', 'N/A')}: organic_score={organic_score:.1f} (min {min_organic_score}), holders={holder_count} (min {min_holders})")
+                
+                # Transform Jupiter tokens to common format
+                for token in filtered_jupiter_tokens:
+                    transformed = transform_jupiter_token_to_common_format(token)
+                    if transformed:
+                        jupiter_rows.append(transformed)
+                
+                print(f"✅ Processed {len(jupiter_rows)} Jupiter tokens after filtering")
+        except Exception as e:
+            print(f"⚠️ Jupiter discovery failed: {e}, continuing with DexScreener only")
+    
+    # Step 2: Fetch DexScreener tokens (secondary source, covers all chains)
+    print("🔍 Fetching DexScreener tokens (secondary source)...")
+    
     # Try multiple primary sources in a rotating deterministic order
     primary_urls = PRIMARY_URLS.copy()
     # Rotate list based on minute to avoid bias without randomness
@@ -488,32 +664,42 @@ def fetch_trending_tokens(limit=200):  # INCREASED for more opportunities
             except Exception as e:
                 print(f"⚠️ Fallback fetch failed ({u}): {e}")
 
-    if not all_pairs:
-        print("❌ Error: all trending sources failed.")
-        return []
-
+    # Step 3: Process DexScreener pairs and merge with Jupiter tokens
     # Remove duplicates based on pair address
     unique_pairs = []
     seen_addresses = set()
-    for pair in all_pairs:
-        addr = pair.get("pairAddress")
-        if addr and addr not in seen_addresses:
-            unique_pairs.append(pair)
-            seen_addresses.add(addr)
     
-    print(f"🔍 Found {len(unique_pairs)} unique trending tokens from {len(all_pairs)} total...")
+    # Track Jupiter addresses to avoid duplicates
+    jupiter_addresses = {row["address"] for row in jupiter_rows}
+    
+    for pair in all_pairs:
+        base_token = (pair.get("baseToken", {}) or {})
+        addr = base_token.get("address") or ""
+        
+        # Skip if this token was already found via Jupiter (Jupiter takes priority)
+        if addr and addr in jupiter_addresses:
+            continue
+        
+        pair_addr = pair.get("pairAddress")
+        if pair_addr and pair_addr not in seen_addresses:
+            unique_pairs.append(pair)
+            seen_addresses.add(pair_addr)
+    
+    print(f"🔍 Found {len(unique_pairs)} unique DexScreener tokens (after deduplication with Jupiter)")
+    print(f"📊 Total tokens: {len(jupiter_rows)} Jupiter + {len(unique_pairs)} DexScreener = {len(jupiter_rows) + len(unique_pairs)}")
 
     # Load supported chains from config early
     supported_chains = get_config("supported_chains", ["ethereum"])
     
     print(f"🔗 Supported chains: {supported_chains}")
     
-    # Enhanced filtering and scoring
+    # Step 4: Process DexScreener pairs and combine with Jupiter tokens
     fetched_at = datetime.utcnow().isoformat()
-    all_rows = []
-    valid_tokens_count = 0
+    all_rows = jupiter_rows.copy()  # Start with Jupiter tokens
+    valid_tokens_count = len(jupiter_rows)  # Count Jupiter tokens as valid
     unsupported_chain_count = 0
     
+    # Process DexScreener pairs
     for pair in unique_pairs:
         base_token = (pair.get("baseToken", {}) or {})
         symbol = base_token.get("symbol") or ""
@@ -606,10 +792,17 @@ def fetch_trending_tokens(limit=200):  # INCREASED for more opportunities
             "liquidity": liq,
             "priceChange5m": price_change_5m if price_change_5m is not None else "",
             "priceChange1h": price_change_1h if price_change_1h is not None else "",
-            "priceChange24h": price_change_24h if price_change_24h is not None else ""
+            "priceChange24h": price_change_24h if price_change_24h is not None else "",
+            "source": "dexscreener",  # Mark DexScreener tokens
+            "jupiter_validated": False,  # Not validated by Jupiter
         })
     
-    print(f"✅ Found {valid_tokens_count} valid tokens out of {len(unique_pairs)} total pairs")
+    jupiter_count = len([r for r in all_rows if r.get("source") == "jupiter"])
+    dexscreener_count = len([r for r in all_rows if r.get("source") == "dexscreener"])
+    
+    print(f"✅ Found {valid_tokens_count} valid tokens:")
+    print(f"   🚀 Jupiter: {jupiter_count} tokens")
+    print(f"   🔍 DexScreener: {dexscreener_count} tokens")
     print(f"⛔ Skipped {unsupported_chain_count} tokens from unsupported chains")
 
     if all_rows:
@@ -630,7 +823,23 @@ def fetch_trending_tokens(limit=200):  # INCREASED for more opportunities
         liquidity = row["liquidity"]
         
         # Calculate quality score with address for established token detection
-        score = calculate_token_score(symbol, volume24h, liquidity, chain, addr)
+        score = calculate_token_score(symbol, volume24h, liquidity, chain, row["address"])
+        
+        # Boost score for Jupiter-discovered tokens
+        jupiter_boost = 0.0
+        if row.get("jupiter_validated", False):
+            jupiter_priority_boost = get_config_float("token_discovery.jupiter_priority_boost", 1.0)
+            jupiter_boost = jupiter_priority_boost
+            
+            # Additional boosts for Jupiter tokens
+            organic_score = row.get("organic_score", 0)
+            if organic_score and organic_score > 80:
+                jupiter_boost += 0.5  # High organic score bonus
+            
+            if row.get("is_verified", False):
+                jupiter_boost += 0.3  # Verified token bonus
+        
+        score += jupiter_boost
         
         # Keyword filtering
         blocked = any(k in symbol for k in EXCLUDED_KEYWORDS)
@@ -642,7 +851,7 @@ def fetch_trending_tokens(limit=200):  # INCREASED for more opportunities
         
         # Only include tokens with good scores (balanced minimum for quality)
         if score >= 1:  # Minimum score of 1 for quality tokens (balanced)
-            scored_tokens.append({
+            token_dict = {
                 "symbol": symbol,
                 "address": row["address"],
                 "dex": row["dex"],
@@ -653,18 +862,37 @@ def fetch_trending_tokens(limit=200):  # INCREASED for more opportunities
                 "priceChange5m": row.get("priceChange5m", ""),
                 "priceChange1h": row.get("priceChange1h", ""),
                 "priceChange24h": row.get("priceChange24h", ""),
-                "score": score
-            })
+                "score": score,
+                "source": row.get("source", "unknown"),
+                "jupiter_validated": row.get("jupiter_validated", False),
+            }
+            
+            # Add Jupiter-specific metadata if available
+            if row.get("jupiter_validated"):
+                token_dict["organic_score"] = row.get("organic_score")
+                token_dict["holder_count"] = row.get("holder_count")
+                token_dict["is_verified"] = row.get("is_verified", False)
+                token_dict["trending_position"] = row.get("trending_position")
+                token_dict["trending_interval"] = row.get("trending_interval")
+            
+            scored_tokens.append(token_dict)
         else:
             print(f"⛔ {symbol} rejected - score too low: {score}/8")
     
-    # Prioritize established tokens and known tradeable tokens
+    # Prioritize tokens: Jupiter trending → established → known tradeable → unknown
+    jupiter_trending = []
     established_tokens = []
     known_tradeable = []
     unknown_tokens = []
     
     for token in scored_tokens:
-        if token["address"] in ESTABLISHED_TOKENS:
+        # Highest priority: Jupiter-discovered tokens
+        if token.get("jupiter_validated", False):
+            jupiter_trending.append(token)
+            pos = token.get("trending_position", "?")
+            interval = token.get("trending_interval", "?")
+            print(f"🚀 {token['symbol']} - JUPITER TRENDING (#{pos} in {interval}): Score {token['score']:.2f}")
+        elif token["address"] in ESTABLISHED_TOKENS:
             established_tokens.append(token)
             print(f"🏆 {token['symbol']} - ESTABLISHED TOKEN (whitelisted): {ESTABLISHED_TOKENS[token['address']]}")
         elif token["address"] in KNOWN_TRADEABLE_TOKENS:
@@ -674,12 +902,14 @@ def fetch_trending_tokens(limit=200):  # INCREASED for more opportunities
             unknown_tokens.append(token)
     
     # Sort by score (highest first) within each category
+    # For Jupiter tokens, also sort by trending position (lower = better)
+    jupiter_trending.sort(key=lambda x: (x["score"], -x.get("trending_position", 999)), reverse=True)
     established_tokens.sort(key=lambda x: x["score"], reverse=True)
     known_tradeable.sort(key=lambda x: x["score"], reverse=True)
     unknown_tokens.sort(key=lambda x: x["score"], reverse=True)
     
-    # Combine: established first, then known tradeable, then unknown
-    all_tokens = established_tokens + known_tradeable + unknown_tokens
+    # Combine: Jupiter trending first (highest priority), then established, then known tradeable, then unknown
+    all_tokens = jupiter_trending + established_tokens + known_tradeable + unknown_tokens
     
     # Sort by volume and liquidity before applying diversity filter
     # This ensures we keep the highest quality tokens for each symbol
@@ -695,9 +925,15 @@ def fetch_trending_tokens(limit=200):  # INCREASED for more opportunities
     # Take top tokens up to limit
     tokens_for_trading = tradeable_tokens[:limit]
     
-    # Remove score from final output
+    # Remove internal metadata from final output
     for token in tokens_for_trading:
         token.pop("score", None)
+        # Keep source and jupiter_validated for debugging, but remove other Jupiter metadata
+        token.pop("organic_score", None)
+        token.pop("holder_count", None)
+        token.pop("trending_position", None)
+        token.pop("trending_interval", None)
+        token.pop("name", None)
     
     print(f"🎯 Selected {len(tokens_for_trading)} tradeable, high-quality tokens for trading")
     

@@ -55,6 +55,7 @@ if secrets:
     BASE_RPC_URL = secrets.get("BASE_RPC_URL", "https://mainnet.base.org")
     HELIUS_API_KEY = secrets.get("HELIUS_API_KEY")
     SOLANA_RPC_URL = _derive_solana_rpc(secrets.get("SOLANA_RPC_URL"), HELIUS_API_KEY)
+    JUPITER_API_KEY = secrets.get("JUPITER_API_KEY")
 else:
     # Fallback to environment variables (for backward compatibility)
     
@@ -72,6 +73,7 @@ else:
     BASE_RPC_URL = os.getenv("BASE_RPC_URL", "https://mainnet.base.org")
     HELIUS_API_KEY = os.getenv("HELIUS_API_KEY")
     SOLANA_RPC_URL = _derive_solana_rpc(os.getenv("SOLANA_RPC_URL"), HELIUS_API_KEY)
+    JUPITER_API_KEY = os.getenv("JUPITER_API_KEY")
 
 # Validate required secrets
 def validate_secrets():
