@@ -379,7 +379,7 @@ wallet_tiers: {
     "max_balance": 4999,
     "base_position_size_percent": 0.11,  # Increased from 0.065 (69% increase) - better capital utilization
     "max_position_size_percent": 0.19,   # Increased from 0.13 (46% increase) - capitalize on excellent opportunities
-    "max_total_exposure_percent": 0.6,
+    "max_total_exposure_percent": 0.8,
     "max_wallet_usage_percent": 0.10,
     "description": "Scaling Phase - Moderate (percentage-based for dynamic scaling)"
   },
