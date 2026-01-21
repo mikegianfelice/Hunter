@@ -2005,12 +2005,22 @@ class AIIntegrationEngine:
                         execution_recommendation = execution_recommendation.lower()
 
                     if optimal_timing in {"avoid", "avoid_execution"} or execution_recommendation in {"avoid_execution"}:
+                        # Hard block: microstructure says avoid (safety override)
                         recommendations["action"] = "avoid"
                         recommendations["position_size"] = 0.0
                         recommendations["reasoning"].append("Microstructure timing: avoid execution")
                     elif optimal_timing in {"wait"} or execution_recommendation in {"execute_cautious"}:
-                        recommendations["action"] = "hold"
-                        recommendations["reasoning"].append("Microstructure timing suggests waiting")
+                        # Advisory: reduce position size and confidence, but don't block tokens that passed quality filters
+                        # Only downgrade if action is already a buy signal (respects quality filter pass)
+                        current_action = recommendations.get("action", "hold")
+                        if current_action in {"weak_buy", "buy", "strong_buy"}:
+                            # Token passed quality filters - reduce position size and confidence instead of blocking
+                            recommendations["position_size"] *= 0.7  # Reduce position by 30%
+                            recommendations["confidence"] = recommendations.get("confidence", 0.5) * 0.9  # Reduce confidence by 10%
+                            recommendations["reasoning"].append("Microstructure timing suggests caution - reduced position size")
+                        else:
+                            # Action was already hold/avoid - keep it as is
+                            recommendations["reasoning"].append("Microstructure timing suggests waiting")
                     elif execution_recommendation in {"execute_immediately", "execute_optimal"}:
                         # Reinforce buy signal if microstructure strongly supports execution
                         # BUT: Don't override if momentum blocked the action (momentum takes precedence)
