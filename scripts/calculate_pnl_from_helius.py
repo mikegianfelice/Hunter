@@ -385,6 +385,12 @@ def calculate_wallet_value_over_time_from_helius(
     api_tracker = get_tracker()
     initial_call_count = api_tracker.get_count('helius')
     
+    # Wait a bit before starting to avoid rate limits if other processes are using Helius API
+    # This is especially important if the trading bot is running concurrently
+    import time
+    print("⏳ Waiting 3 seconds before starting to avoid rate limit conflicts...")
+    time.sleep(3)
+    
     # Load cache
     cache = load_helius_cache() if not force_refresh else None
     use_cache = cache is not None

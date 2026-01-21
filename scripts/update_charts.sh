@@ -128,6 +128,11 @@ if [ -f "$PROJECT_ROOT/.venv/bin/python" ]; then
     PYTHON_CMD="$PROJECT_ROOT/.venv/bin/python"
 fi
 
+# Wait before starting to avoid rate limits if bot is running concurrently
+# This gives any concurrent Helius API calls time to complete
+echo "⏳ Waiting 5 seconds before starting chart generation to avoid rate limit conflicts..."
+sleep 5
+
 # Generate 30-day chart
 $PYTHON_CMD scripts/plot_wallet_value.py --days 30 --type percentage --save docs/performance_chart.png 2>&1
 CHART30_EXIT=$?
