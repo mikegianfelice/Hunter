@@ -1247,7 +1247,8 @@ class AIIntegrationEngine:
             return {"confidence": 0.5}
     
     def _calculate_overall_score(self, sentiment: Dict, prediction: Dict, risk: Dict, 
-                                market: Dict, technical: Dict, market_data: Optional[MarketData] = None) -> float:
+                                market: Dict, technical: Dict, market_data: Optional[MarketData] = None,
+                                token_data: Optional[Dict] = None) -> float:
         """Calculate overall AI analysis score with actual token metrics (Fix 1)"""
         try:
             # Weighted combination of all analysis components
@@ -1305,16 +1306,63 @@ class AIIntegrationEngine:
                 volume_score = 0.5
             market_score = (liquidity_score * 0.5) + (volume_score * 0.5)
             
-            # Technical: Use actual technical or calculate from price action
+            # Technical: Context-aware calculation considering verification status and quality metrics
             technical_score = technical.get("technical_score", 0.5)
             if technical_score == 0.5 and market_data:  # Likely defaulted
-                # Calculate from price momentum and volatility
+                # Calculate from price momentum and volatility with context awareness
                 # IMPORTANT: Don't use abs() - negative momentum should be penalized
                 price_change = getattr(market_data, 'price_change_24h', 0)
-                # Positive momentum = good technical, negative = bad
-                if price_change > 0.15:  # Too volatile (positive)
-                    technical_score = 0.4
-                elif price_change > 0.02:  # Moderate positive momentum = good (2-15%)
+                
+                # Context-aware scoring: Check if token is verified and has strong fundamentals
+                is_verified = False
+                has_strong_fundamentals = False
+                
+                if token_data:
+                    # Check verification status (can be from multiple sources)
+                    is_verified = (
+                        token_data.get("is_verified", False) or
+                        token_data.get("jupiter_validated", False) or
+                        token_data.get("verified", False)
+                    )
+                
+                if market_data:
+                    # Strong fundamentals: liquidity > $500k AND volume > $1M
+                    # These thresholds indicate legitimate trading activity
+                    has_strong_fundamentals = (
+                        market_data.liquidity >= 500000 and
+                        market_data.volume_24h >= 1000000
+                    )
+                
+                # Context-aware momentum scoring
+                # For verified tokens with strong fundamentals, high momentum is more likely legitimate
+                # (e.g., newly released verified tokens with strong initial adoption)
+                if price_change > 0.15:  # High positive momentum (>15%)
+                    if is_verified and has_strong_fundamentals:
+                        # Verified token with strong fundamentals: high momentum is acceptable
+                        # Scale score based on momentum level (capped at reasonable levels)
+                        if price_change > 2.0:  # >200% - still very high, moderate penalty
+                            technical_score = 0.55
+                        elif price_change > 1.0:  # >100% - high but acceptable for new launches
+                            technical_score = 0.65
+                        else:  # 15-100% - good momentum for verified tokens
+                            technical_score = 0.7
+                        
+                        # Log context-aware bonus application
+                        log_info("ai.context_aware_technical",
+                                f"Context-aware technical score for {market_data.symbol}: "
+                                f"verified={is_verified}, strong_fundamentals={has_strong_fundamentals}, "
+                                f"momentum={price_change*100:.1f}%, technical_score={technical_score:.3f}",
+                                symbol=market_data.symbol,
+                                is_verified=is_verified,
+                                has_strong_fundamentals=has_strong_fundamentals,
+                                price_change_24h=price_change,
+                                technical_score=technical_score,
+                                liquidity=market_data.liquidity if market_data else 0,
+                                volume_24h=market_data.volume_24h if market_data else 0)
+                    else:
+                        # Unverified or weak fundamentals: penalize high volatility
+                        technical_score = 0.4
+                elif price_change > 0.02:  # Moderate positive momentum (2-15%)
                     technical_score = 0.6
                 elif price_change > -0.02:  # Near zero = neutral (-2% to +2%)
                     technical_score = 0.5
@@ -1763,8 +1811,8 @@ class AIIntegrationEngine:
                                              token_data: Optional[Dict] = None) -> float:
         """Calculate overall AI analysis score with all modules"""
         try:
-            # Start with base score from core analysis (pass market_data for Fix 1)
-            base_score = self._calculate_overall_score(sentiment, prediction, risk, market, technical, market_data)
+            # Start with base score from core analysis (pass market_data and token_data for context-aware scoring)
+            base_score = self._calculate_overall_score(sentiment, prediction, risk, market, technical, market_data, token_data)
             
             # Extract scores from new modules
             context_score = 0.5
@@ -1856,7 +1904,7 @@ class AIIntegrationEngine:
             
         except Exception as e:
             log_error(f"Error calculating comprehensive overall score: {e}")
-            return self._calculate_overall_score(sentiment, prediction, risk, market, technical, market_data)
+            return self._calculate_overall_score(sentiment, prediction, risk, market, technical, market_data, token_data)
     
     def _generate_recommendations_comprehensive(self, overall_score: float, sentiment: Dict,
                                               prediction: Dict, risk: Dict, market: Dict,
