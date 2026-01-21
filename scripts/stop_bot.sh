@@ -56,6 +56,33 @@ kill_processes() {
     fi
 }
 
+# Stop scheduled chart update services (launchd)
+echo -e "${BLUE}📅 Checking for scheduled chart update services...${NC}"
+CHART_SERVICES=("com.hunter.update_charts" "com.hunter.sync_chart_data")
+for service in "${CHART_SERVICES[@]}"; do
+    if launchctl list "$service" >/dev/null 2>&1; then
+        echo -e "${YELLOW}🔍 Found launchd service: $service${NC}"
+        launchctl unload "$HOME/Library/LaunchAgents/${service}.plist" 2>/dev/null || true
+        launchctl remove "$service" 2>/dev/null || true
+        if launchctl list "$service" >/dev/null 2>&1; then
+            echo -e "${RED}❌ Failed to stop $service${NC}"
+        else
+            echo -e "${GREEN}✅ Stopped $service${NC}"
+        fi
+    fi
+done
+
+# Stop cron chart update job
+echo -e "${BLUE}⏰ Checking for cron chart update jobs...${NC}"
+if crontab -l 2>/dev/null | grep -q "cron_chart_update.sh"; then
+    echo -e "${YELLOW}🔍 Found cron chart update job${NC}"
+    echo -e "${BLUE}ℹ️  Cron job found but not removed (run manually to remove):${NC}"
+    echo -e "${YELLOW}   crontab -l | grep -v cron_chart_update.sh | crontab -${NC}"
+    echo -e "${BLUE}   Or edit with: crontab -e${NC}"
+else
+    echo -e "${BLUE}ℹ️  No cron chart update jobs found${NC}"
+fi
+
 # Stop screen sessions first
 if command -v screen &> /dev/null; then
     echo -e "${BLUE}📺 Checking for screen sessions...${NC}"
