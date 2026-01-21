@@ -1256,129 +1256,147 @@ class EnhancedAsyncTradingEngine:
                             log_error("trading.holder_concentration_error",
                                     f"Holder concentration check exception for {token.get('symbol', 'UNKNOWN')} (fail-open mode): {e}")
                     
-                    # Proceed with candle fetch (token_address already validated above)
-                    log_info("trading.candle_validation.start",
-                            f"Fetching 15-minute candles for {token.get('symbol', 'UNKNOWN')}",
-                            symbol=token.get("symbol"),
-                            token_address=token_address[:8] + "...",
-                            chain_id=chain_id)
+                    # Check if token has strong fundamentals (bypass candle fetch for efficiency)
+                    # Strong fundamentals: liquidity >= $500k AND volume >= $1M
+                    has_strong_fundamentals = liquidity >= 500000 and volume_24h >= 1000000
                     
-                    # Fetch 15-minute candles (6 hours = 24 candles)
-                    candles_15m = market_data_fetcher.get_candlestick_data(
-                        token_address=token_address,
-                        chain_id=chain_id,
-                        hours=6,  # 6 hours = 24 candles (4 per hour)
-                        force_fetch=False  # Use cache if available
-                    )
-                    
-                    if not candles_15m:
-                        log_error("trading.candle_validation.no_candles",
-                                f"Token {token.get('symbol', 'UNKNOWN')} blocked: no candles returned",
+                    if has_strong_fundamentals:
+                        # Token has strong fundamentals - skip expensive candle fetch
+                        # Will rely on external momentum data in check_buy_signal
+                        log_info("trading.candle_validation.skipped_strong_fundamentals",
+                                f"Skipping candle fetch for token {token.get('symbol', 'UNKNOWN')} with strong fundamentals (liquidity=${liquidity:,.0f}, volume_24h=${volume_24h:,.0f})",
+                                symbol=token.get("symbol"),
+                                token_address=token_address[:8] + "...",
+                                chain_id=chain_id,
+                                volume_24h=volume_24h,
+                                liquidity=liquidity)
+                        token['candles_validated'] = False
+                        token['candles_15m'] = None
+                        enhanced_token["approved_for_trading"] = True
+                    else:
+                        # Proceed with candle fetch (token_address already validated above)
+                        log_info("trading.candle_validation.start",
+                                f"Fetching 15-minute candles for {token.get('symbol', 'UNKNOWN')}",
                                 symbol=token.get("symbol"),
                                 token_address=token_address[:8] + "...",
                                 chain_id=chain_id)
-                        enhanced_token["approved_for_trading"] = False
-                        enhanced_token["rejection_reason"] = "no_candles_returned"
-                    else:
-                        # Quality validation already happened in market_data_fetcher
-                        # If candles exist, they passed lenient or strict validation
-                        if len(candles_15m) < 16:
-                            logger.warning(
-                                f"Token {token.get('symbol', 'UNKNOWN')} has {len(candles_15m)} candles (<16 ideal), "
-                                f"but passed quality validation - continuing"
-                            )
-                        # Validate candle quality (check OHLC integrity)
-                        invalid_count = 0
-                        for idx, c in enumerate(candles_15m):
-                            high = c.get('high', 0)
-                            low = c.get('low', 0)
-                            close = c.get('close', 0)
-                            open_price = c.get('open', 0)
-                            
-                            if high < low or close < low or close > high or open_price < low or open_price > high:
-                                invalid_count += 1
-                                if invalid_count <= 3:  # Log first 3 invalid candles
-                                    log_error("trading.candle_validation.invalid_ohlc_detail",
-                                            f"Invalid OHLC at candle {idx}: high={high:.8f}, low={low:.8f}, open={open_price:.8f}, close={close:.8f}",
-                                            symbol=token.get("symbol"),
-                                            candle_index=idx,
-                                            high=high,
-                                            low=low,
-                                            open=open_price,
-                                            close=close)
                         
-                        if invalid_count > 0:
-                            log_error("trading.candle_validation.invalid_ohlc",
-                                    f"Token {token.get('symbol', 'UNKNOWN')} blocked: {invalid_count} invalid OHLC candles",
+                        # Fetch 15-minute candles (6 hours = 24 candles)
+                        candles_15m = market_data_fetcher.get_candlestick_data(
+                            token_address=token_address,
+                            chain_id=chain_id,
+                            hours=6,  # 6 hours = 24 candles (4 per hour)
+                            force_fetch=False  # Use cache if available
+                        )
+                        
+                        if not candles_15m:
+                            log_error("trading.candle_validation.no_candles",
+                                    f"Token {token.get('symbol', 'UNKNOWN')} blocked: no candles returned",
                                     symbol=token.get("symbol"),
-                                    invalid_candles=invalid_count,
-                                    total_candles=len(candles_15m),
-                                    token_address=token_address[:8] + "...")
+                                    token_address=token_address[:8] + "...",
+                                    chain_id=chain_id)
                             enhanced_token["approved_for_trading"] = False
-                            enhanced_token["rejection_reason"] = f"invalid_ohlc_{invalid_count}"
+                            enhanced_token["rejection_reason"] = "no_candles_returned"
                         else:
-                            # Calculate technical indicators from candles
-                            try:
-                                tech_indicators = TechnicalIndicators()
-                                indicators = tech_indicators.calculate_all_indicators(candles_15m, include_confidence=True)
+                            # Quality validation already happened in market_data_fetcher
+                            # If candles exist, they passed lenient or strict validation
+                            if len(candles_15m) < 16:
+                                logger.warning(
+                                    f"Token {token.get('symbol', 'UNKNOWN')} has {len(candles_15m)} candles (<16 ideal), "
+                                    f"but passed quality validation - continuing"
+                                )
+                            # Validate candle quality (check OHLC integrity)
+                            invalid_count = 0
+                            for idx, c in enumerate(candles_15m):
+                                high = c.get('high', 0)
+                                low = c.get('low', 0)
+                                close = c.get('close', 0)
+                                open_price = c.get('open', 0)
                                 
-                                # Extract VWAP and other indicators
-                                vwap_dict = indicators.get('vwap', None)
-                                rsi = indicators.get('rsi', None)
-                                
-                                # Extract actual VWAP value (it's a dict with 'vwap' key)
-                                vwap_value = None
-                                if vwap_dict:
-                                    if isinstance(vwap_dict, dict):
-                                        vwap_value = vwap_dict.get('vwap')
-                                    else:
-                                        vwap_value = vwap_dict  # Fallback if it's already a float
-                                
-                                # Calculate momentum from candles (first vs last candle)
-                                first_price = candles_15m[0].get('close', 0)
-                                last_price = candles_15m[-1].get('close', 0)
-                                candle_momentum = None
-                                if first_price > 0:
-                                    candle_momentum = (last_price - first_price) / first_price
-                                
-                                # Store in token dict for check_buy_signal to use
-                                token['candles_15m'] = candles_15m
-                                token['candles_validated'] = True
-                                token['candle_momentum'] = candle_momentum
-                                
-                                if vwap_dict:
-                                    token['vwap'] = vwap_dict  # Store full dict for other uses
-                                if rsi:
-                                    token['rsi'] = rsi
-                                if indicators:
-                                    token['technical_indicators'] = indicators
-                                
-                                # Format values safely before using in f-string to avoid format specifier errors
-                                vwap_str = f"{vwap_value:.8f}" if vwap_value is not None else "N/A"
-                                momentum_str = f"{candle_momentum*100:.4f}%" if candle_momentum is not None else "N/A"
-                                
-                                log_info("trading.candle_validation.passed",
-                                        f"Token {token.get('symbol', 'UNKNOWN')} passed candle validation: {len(candles_15m)} candles, VWAP={vwap_str}, momentum={momentum_str}",
+                                if high < low or close < low or close > high or open_price < low or open_price > high:
+                                    invalid_count += 1
+                                    if invalid_count <= 3:  # Log first 3 invalid candles
+                                        log_error("trading.candle_validation.invalid_ohlc_detail",
+                                                f"Invalid OHLC at candle {idx}: high={high:.8f}, low={low:.8f}, open={open_price:.8f}, close={close:.8f}",
+                                                symbol=token.get("symbol"),
+                                                candle_index=idx,
+                                                high=high,
+                                                low=low,
+                                                open=open_price,
+                                                close=close)
+                            
+                            if invalid_count > 0:
+                                log_error("trading.candle_validation.invalid_ohlc",
+                                        f"Token {token.get('symbol', 'UNKNOWN')} blocked: {invalid_count} invalid OHLC candles",
                                         symbol=token.get("symbol"),
-                                        candles_count=len(candles_15m),
-                                        vwap=vwap_value,  # Store the numeric value for logging
-                                        candle_momentum=candle_momentum,
-                                        rsi=rsi,
-                                        token_address=token_address[:8] + "...")
-                                
-                                # Set approved_for_trading to True after successful candle validation
-                                # This allows check_buy_signal to run
-                                enhanced_token["approved_for_trading"] = True
-                                
-                            except Exception as indicator_error:
-                                log_error("trading.candle_validation.indicator_error",
-                                        f"Error calculating indicators for {token.get('symbol', 'UNKNOWN')}: {indicator_error}",
-                                        symbol=token.get("symbol"),
-                                        error=str(indicator_error),
-                                        error_type=type(indicator_error).__name__,
+                                        invalid_candles=invalid_count,
+                                        total_candles=len(candles_15m),
                                         token_address=token_address[:8] + "...")
                                 enhanced_token["approved_for_trading"] = False
-                                enhanced_token["rejection_reason"] = f"indicator_error_{str(indicator_error)}"
+                                enhanced_token["rejection_reason"] = f"invalid_ohlc_{invalid_count}"
+                            else:
+                                # Calculate technical indicators from candles
+                                try:
+                                    tech_indicators = TechnicalIndicators()
+                                    indicators = tech_indicators.calculate_all_indicators(candles_15m, include_confidence=True)
+                                    
+                                    # Extract VWAP and other indicators
+                                    vwap_dict = indicators.get('vwap', None)
+                                    rsi = indicators.get('rsi', None)
+                                    
+                                    # Extract actual VWAP value (it's a dict with 'vwap' key)
+                                    vwap_value = None
+                                    if vwap_dict:
+                                        if isinstance(vwap_dict, dict):
+                                            vwap_value = vwap_dict.get('vwap')
+                                        else:
+                                            vwap_value = vwap_dict  # Fallback if it's already a float
+                                    
+                                    # Calculate momentum from candles (first vs last candle)
+                                    first_price = candles_15m[0].get('close', 0)
+                                    last_price = candles_15m[-1].get('close', 0)
+                                    candle_momentum = None
+                                    if first_price > 0:
+                                        candle_momentum = (last_price - first_price) / first_price
+                                    
+                                    # Store in token dict for check_buy_signal to use
+                                    token['candles_15m'] = candles_15m
+                                    token['candles_validated'] = True
+                                    token['candle_momentum'] = candle_momentum
+                                    
+                                    if vwap_dict:
+                                        token['vwap'] = vwap_dict  # Store full dict for other uses
+                                    if rsi:
+                                        token['rsi'] = rsi
+                                    if indicators:
+                                        token['technical_indicators'] = indicators
+                                    
+                                    # Format values safely before using in f-string to avoid format specifier errors
+                                    vwap_str = f"{vwap_value:.8f}" if vwap_value is not None else "N/A"
+                                    momentum_str = f"{candle_momentum*100:.4f}%" if candle_momentum is not None else "N/A"
+                                    
+                                    log_info("trading.candle_validation.passed",
+                                            f"Token {token.get('symbol', 'UNKNOWN')} passed candle validation: {len(candles_15m)} candles, VWAP={vwap_str}, momentum={momentum_str}",
+                                            symbol=token.get("symbol"),
+                                            candles_count=len(candles_15m),
+                                            vwap=vwap_value,  # Store the numeric value for logging
+                                            candle_momentum=candle_momentum,
+                                            rsi=rsi,
+                                            token_address=token_address[:8] + "...")
+                                    
+                                    # Set approved_for_trading to True after successful candle validation
+                                    # This allows check_buy_signal to run
+                                    enhanced_token["approved_for_trading"] = True
+                                    
+                                except Exception as indicator_error:
+                                    log_error("trading.candle_validation.indicator_error",
+                                            f"Error calculating indicators for {token.get('symbol', 'UNKNOWN')}: {indicator_error}",
+                                            symbol=token.get("symbol"),
+                                            error=str(indicator_error),
+                                            error_type=type(indicator_error).__name__,
+                                            token_address=token_address[:8] + "...")
+                                    enhanced_token["approved_for_trading"] = False
+                                    enhanced_token["rejection_reason"] = f"indicator_error_{str(indicator_error)}"
                         
                 except Exception as candle_error:
                     log_error("trading.candle_validation.error",
