@@ -385,17 +385,118 @@ def calculate_wallet_value_over_time_from_helius(
     api_tracker = get_tracker()
     initial_call_count = api_tracker.get_count('helius')
     
-    # Wait a bit before starting to avoid rate limits if other processes are using Helius API
-    # This is especially important if the trading bot is running concurrently
-    import time
-    print("⏳ Waiting 3 seconds before starting to avoid rate limit conflicts...")
-    time.sleep(3)
-    
-    # Load cache
+    # Load cache first to check if we can skip API calls
     cache = load_helius_cache() if not force_refresh else None
     use_cache = cache is not None
     
+    # Check if cache is recent enough to skip API calls entirely
+    # We should skip API calls only if BOTH:
+    # 1. Cache was updated recently (< 1 hour ago)
+    # 2. Latest trade in cache is also recent (< 1 hour ago)
+    # This ensures we don't skip fetching when cache was updated but contains old data
+    cache_is_recent = False
     if use_cache:
+        last_update = cache['last_update']
+        if isinstance(last_update, str):
+            last_update = datetime.fromisoformat(last_update.replace('Z', '+00:00'))
+        cache_age = datetime.now(timezone.utc) - last_update
+        
+        # Check latest trade age
+        cached_trades = cache.get('completed_trades', [])
+        latest_trade_time = None
+        if cached_trades:
+            for trade in cached_trades:
+                sell_time = trade.get('sell_time')
+                if sell_time:
+                    if isinstance(sell_time, str):
+                        sell_time_dt = datetime.fromisoformat(sell_time.replace('Z', '+00:00'))
+                    else:
+                        sell_time_dt = datetime.fromtimestamp(sell_time, tz=timezone.utc)
+                    if latest_trade_time is None or sell_time_dt > latest_trade_time:
+                        latest_trade_time = sell_time_dt
+        
+        # Only skip API calls if cache is recent AND latest trade is recent
+        cache_update_recent = cache_age < timedelta(hours=1)
+        latest_trade_recent = latest_trade_time and (datetime.now(timezone.utc) - latest_trade_time) < timedelta(hours=1)
+        cache_is_recent = cache_update_recent and latest_trade_recent
+        
+        if cache_is_recent:
+            print(f"📦 Using recent cache (updated {cache_age.total_seconds()/60:.1f} minutes ago)")
+            if latest_trade_time:
+                trade_age = (datetime.now(timezone.utc) - latest_trade_time).total_seconds()/60
+                print(f"   Latest trade: {trade_age:.1f} minutes ago")
+            print("   Skipping API calls to avoid rate limits - using cached data only\n")
+        elif cache_update_recent and not latest_trade_recent:
+            print(f"📦 Cache was updated {cache_age.total_seconds()/60:.1f} minutes ago")
+            if latest_trade_time:
+                trade_age_hours = (datetime.now(timezone.utc) - latest_trade_time).total_seconds()/3600
+                print(f"   BUT latest trade is {trade_age_hours:.1f} hours old")
+            print("   Will fetch new transactions to check for completed trades...\n")
+        else:
+            print(f"📦 Cache exists but is {cache_age.total_seconds()/3600:.1f} hours old")
+            print("   Will fetch new transactions...\n")
+    
+    # Rate limit check: Test if we can make an API call before starting
+    import time
+    if not cache_is_recent:
+        print("🔍 Checking rate limit status before starting...")
+        client = HeliusClient(HELIUS_API_KEY)
+        
+        # Test with a small request to check if we're rate-limited
+        rate_limit_check_passed = False
+        for test_attempt in range(3):
+            try:
+                # Make a minimal test call (get recent signatures only)
+                test_sigs = client._get_signatures_for_address(
+                    SOLANA_WALLET_ADDRESS,
+                    limit=1,
+                    before=None
+                )
+                rate_limit_check_passed = True
+                break
+            except Exception as e:
+                error_str = str(e).lower()
+                is_rate_limit = False
+                if hasattr(e, 'response') and hasattr(e.response, 'status_code'):
+                    is_rate_limit = e.response.status_code == 429
+                else:
+                    is_rate_limit = "429" in error_str or "rate limit" in error_str or "too many requests" in error_str
+                
+                if is_rate_limit:
+                    wait_time = 10 * (test_attempt + 1)  # 10s, 20s, 30s
+                    print(f"⚠️ Rate limit detected (test attempt {test_attempt + 1}/3), waiting {wait_time}s...")
+                    time.sleep(wait_time)
+                else:
+                    # Not a rate limit error, proceed anyway
+                    rate_limit_check_passed = True
+                    break
+        
+        if not rate_limit_check_passed:
+            print("\n⚠️ Rate limit check failed - using cached data only to avoid further rate limits")
+            print("   💡 Tip: Wait a few minutes and run again to fetch new transactions\n")
+            cache_is_recent = True  # Force use of cache
+        else:
+            print("✅ Rate limit check passed, proceeding with API calls")
+            # Longer delay before starting to avoid rate limit conflicts
+            # This gives the API time to reset rate limit counters
+            initial_delay = 3.0
+            print(f"   Waiting {initial_delay:.1f}s before starting to respect rate limits...\n")
+            time.sleep(initial_delay)
+    
+    # If using recent cache, skip API calls entirely
+    if cache_is_recent:
+        # Use cached data directly
+        last_update = cache['last_update']
+        if isinstance(last_update, str):
+            last_update = datetime.fromisoformat(last_update.replace('Z', '+00:00'))
+        processed_signatures = set(cache.get('processed_signatures', []))
+        cached_trades = cache.get('completed_trades', [])
+        cached_deposits = cache.get('deposits', [])
+        cached_withdrawals = cache.get('withdrawals', [])
+        all_transactions = []  # No new transactions to fetch
+        fetch_error = None
+        fetch_start = None  # Not needed when using cache only
+    elif use_cache:
         last_update = cache['last_update']
         if isinstance(last_update, str):
             last_update = datetime.fromisoformat(last_update.replace('Z', '+00:00'))
@@ -426,6 +527,19 @@ def calculate_wallet_value_over_time_from_helius(
             fetch_start = min(latest_trade_date - timedelta(minutes=5), last_update - timedelta(minutes=5))
         else:
             fetch_start = last_update - timedelta(minutes=5)  # 5 min buffer for safety
+        
+        client = HeliusClient(HELIUS_API_KEY)
+        wallet = SOLANA_WALLET_ADDRESS.lower()
+        sol_price = get_sol_price_usd()
+        
+        # Fetch transactions (only new ones if using cache)
+        print("📡 Fetching transactions from Helius...")
+        all_transactions = []
+        before_signature = None
+        # When using cache, reduce pages significantly to minimize API calls (was 10, now 3-5)
+        # Only fetch a few pages since new transactions are recent
+        max_pages = 3 if use_cache else 50
+        fetch_error = None
     else:
         print("📦 No cache found - performing full historical pull\n")
         processed_signatures = set()
@@ -433,136 +547,165 @@ def calculate_wallet_value_over_time_from_helius(
         cached_deposits = []
         cached_withdrawals = []
         fetch_start = start_date
+        
+        client = HeliusClient(HELIUS_API_KEY)
+        wallet = SOLANA_WALLET_ADDRESS.lower()
+        sol_price = get_sol_price_usd()
+        
+        # Fetch transactions
+        print("📡 Fetching transactions from Helius...")
+        all_transactions = []
+        before_signature = None
+        max_pages = 50  # Full refresh needs more pages
+        fetch_error = None
     
-    client = HeliusClient(HELIUS_API_KEY)
-    wallet = SOLANA_WALLET_ADDRESS.lower()
-    sol_price = get_sol_price_usd()
-    
-    # Fetch transactions (only new ones if using cache)
-    print("📡 Fetching transactions from Helius...")
-    all_transactions = []
-    before_signature = None
-    # When using cache, we only need a few pages (new transactions are recent)
-    # For full refresh, fetch more pages for longer history
-    max_pages = 10 if use_cache else 50
-    fetch_error = None
-    
-    # Add delay between requests to avoid rate limits
-    import time
-    
-    try:
-        for page in range(max_pages):
-            # Add delay between requests to respect rate limits (especially important when fetching many pages)
-            if page > 0:
-                time.sleep(2.0)  # 2 second delay between pages to avoid rate limits (very conservative)
-            
-            try:
-                transactions = client.get_address_transactions(
-                    SOLANA_WALLET_ADDRESS,
-                    limit=200,
-                    before=before_signature,
-                )
-            except Exception as e:
-                fetch_error = e
-                error_str = str(e).lower()
+    # Only fetch if not using recent cache
+    if not cache_is_recent:
+        # Add delay between requests to avoid rate limits
+        import time
+        
+        try:
+            for page in range(max_pages):
+                # Add delay between requests to respect rate limits (especially important when fetching many pages)
+                # Increased delay when using cache (fewer pages needed) to be more conservative
+                # Increased delays to be more conservative with Helius rate limits
+                if page > 0:
+                    delay = 5.0 if use_cache else 4.0  # Increased delays: 5s when using cache, 4s for full refresh
+                    print(f"   Waiting {delay:.1f}s before fetching page {page + 1}/{max_pages}...")
+                    time.sleep(delay)
                 
-                # Check if it's a rate limit error (429)
-                # Check both HTTPError status code and error message
-                is_rate_limit = False
-                if hasattr(e, 'response') and hasattr(e.response, 'status_code'):
-                    is_rate_limit = e.response.status_code == 429
-                else:
-                    is_rate_limit = "429" in error_str or "rate limit" in error_str or "too many requests" in error_str
-                
-                if is_rate_limit and page < max_pages - 1:
-                    # Wait longer for rate limits before retrying (exponential backoff)
-                    wait_time = min(60, 10 * (page + 1))  # Up to 60 seconds, more conservative
-                    print(f"⚠️ Rate limit (429) hit (page {page + 1}/{max_pages}), waiting {wait_time}s before retry...")
-                    time.sleep(wait_time)
-                    continue  # Retry this page
-                
-                print(f"⚠️ Error fetching transactions from Helius (page {page + 1}): {e}")
-                # If we have cached data, we can still proceed with cached data
-                if use_cache:
-                    if all_transactions:
-                        print("   Using cached data and previously fetched transactions...")
+                try:
+                    transactions = client.get_address_transactions(
+                        SOLANA_WALLET_ADDRESS,
+                        limit=200,
+                        before=before_signature,
+                    )
+                except Exception as e:
+                    fetch_error = e
+                    error_str = str(e).lower()
+                    
+                    # Check if it's a rate limit error (429)
+                    # Check both HTTPError status code and error message
+                    is_rate_limit = False
+                    if hasattr(e, 'response') and hasattr(e.response, 'status_code'):
+                        is_rate_limit = e.response.status_code == 429
                     else:
-                        print("   Using cached data only (no new transactions fetched)...")
+                        is_rate_limit = "429" in error_str or "rate limit" in error_str or "too many requests" in error_str
+                    
+                    if is_rate_limit:
+                        # If we hit rate limit, use cached data if available
+                        if use_cache:
+                            print(f"\n⚠️ Rate limit (429) hit (page {page + 1}/{max_pages})")
+                            print(f"   Helius API rate limit exceeded - retries exhausted")
+                            if all_transactions:
+                                print(f"   ✅ Using cached data + {len(all_transactions)} newly fetched transactions")
+                            else:
+                                print(f"   ✅ Using cached data only (no new transactions fetched)")
+                            print(f"   💡 Tip: Wait a few minutes and run again, or use --force-refresh to retry\n")
+                            break  # Stop fetching, use cache
+                        elif page < max_pages - 1:
+                            # Wait longer for rate limits before retrying (exponential backoff)
+                            wait_time = min(90, 20 * (page + 1))  # Increased: up to 90 seconds, more conservative
+                            print(f"\n⚠️ Rate limit (429) hit (page {page + 1}/{max_pages})")
+                            print(f"   Waiting {wait_time}s before retry (exponential backoff)...")
+                            print(f"   This helps avoid further rate limit hits\n")
+                            time.sleep(wait_time)
+                            continue  # Retry this page
+                        else:
+                            # Last page and rate limited - fail gracefully
+                            print(f"\n⚠️ Rate limit (429) hit on final page after all retries")
+                            print(f"   Cannot proceed without transaction data")
+                            print(f"   💡 Tip: Wait a few minutes and run again\n")
+                            raise
+                    
+                    print(f"⚠️ Error fetching transactions from Helius (page {page + 1}): {e}")
+                    # If we have cached data, we can still proceed with cached data
+                    if use_cache:
+                        if all_transactions:
+                            print("   Using cached data and previously fetched transactions...")
+                        else:
+                            print("   Using cached data only (no new transactions fetched)...")
+                        break
+                    # For first run without cache, we need at least some data
+                    if not use_cache and page == 0:
+                        print("❌ Cannot proceed without any transaction data")
+                        raise
+                    # For subsequent pages without cache, continue with what we have
                     break
-                # For first run without cache, we need at least some data
-                if not use_cache and page == 0:
-                    print("❌ Cannot proceed without any transaction data")
-                    raise
-                # For subsequent pages without cache, continue with what we have
-                break
-            
-            if not transactions:
-                break
-            
-            # Filter by date range and skip already processed transactions
-            page_txs = []
-            earliest_in_page = None
-            new_tx_count = 0
-            
-            for tx in transactions:
-                ts = tx.get('timestamp')
-                if not ts:
-                    continue
-                tx_time = datetime.fromtimestamp(ts, tz=timezone.utc)
-                tx_sig = tx.get('signature')
                 
-                # Skip if already processed (when using cache)
-                if use_cache and tx_sig and tx_sig in processed_signatures:
-                    continue
+                if not transactions:
+                    break
                 
-                # Only fetch transactions since fetch_start (or in date range for first run)
+                # Filter by date range and skip already processed transactions
+                page_txs = []
+                earliest_in_page = None
+                new_tx_count = 0
+                
+                for tx in transactions:
+                    ts = tx.get('timestamp')
+                    if not ts:
+                        continue
+                    tx_time = datetime.fromtimestamp(ts, tz=timezone.utc)
+                    tx_sig = tx.get('signature')
+                    
+                    # Skip if already processed (when using cache)
+                    if use_cache and tx_sig and tx_sig in processed_signatures:
+                        continue
+                    
+                    # Only fetch transactions since fetch_start (or in date range for first run)
+                    if use_cache:
+                        if tx_time >= fetch_start and tx_time < end_date:
+                            page_txs.append(tx)
+                            new_tx_count += 1
+                    else:
+                        if start_date <= tx_time < end_date:
+                            page_txs.append(tx)
+                    
+                    if earliest_in_page is None or tx_time < earliest_in_page:
+                        earliest_in_page = tx_time
+                
+                all_transactions.extend(page_txs)
+                
+                # Stop if we've gone too far back
                 if use_cache:
-                    if tx_time >= fetch_start and tx_time < end_date:
-                        page_txs.append(tx)
-                        new_tx_count += 1
+                    # When using cache, stop if we've gone before fetch_start
+                    if earliest_in_page and earliest_in_page < fetch_start:
+                        break
                 else:
-                    if start_date <= tx_time < end_date:
-                        page_txs.append(tx)
+                    # First run: stop if before start_date
+                    if earliest_in_page and earliest_in_page < start_date:
+                        break
                 
-                if earliest_in_page is None or tx_time < earliest_in_page:
-                    earliest_in_page = tx_time
-            
-            all_transactions.extend(page_txs)
-            
-            # Stop if we've gone too far back
+                # If using cache and no new transactions found, we're done
+                if use_cache and new_tx_count == 0 and page_txs:
+                    break
+                
+                # Prepare for next page
+                before_signature = transactions[-1].get('signature')
+                if not before_signature:
+                    break
+        
+        except Exception as e:
+            # If we have cached data, we can still proceed even if we couldn't fetch new transactions
             if use_cache:
-                # When using cache, stop if we've gone before fetch_start
-                if earliest_in_page and earliest_in_page < fetch_start:
-                    break
+                if all_transactions:
+                    print(f"⚠️ Error during transaction fetch, but continuing with {len(all_transactions)} cached/new transactions: {e}")
+                else:
+                    print(f"⚠️ Error fetching new transactions, but will use existing cached data: {e}")
+                fetch_error = e
+                # Continue processing with cached data - don't raise
             else:
-                # First run: stop if before start_date
-                if earliest_in_page and earliest_in_page < start_date:
-                    break
-            
-            # If using cache and no new transactions found, we're done
-            if use_cache and new_tx_count == 0 and page_txs:
-                break
-            
-            # Prepare for next page
-            before_signature = transactions[-1].get('signature')
-            if not before_signature:
-                break
+                # No cached data available, this is a critical error
+                print(f"❌ Critical error fetching transactions: {e}")
+                raise
     
-    except Exception as e:
-        # If we have cached data, we can still proceed even if we couldn't fetch new transactions
-        if use_cache:
-            if all_transactions:
-                print(f"⚠️ Error during transaction fetch, but continuing with {len(all_transactions)} cached/new transactions: {e}")
-            else:
-                print(f"⚠️ Error fetching new transactions, but will use existing cached data: {e}")
-            fetch_error = e
-            # Continue processing with cached data - don't raise
-        else:
-            # No cached data available, this is a critical error
-            print(f"❌ Critical error fetching transactions: {e}")
-            raise
-    
-    print(f"   Found {len(all_transactions)} transactions in date range\n")
+    # Print summary of what we're processing
+    if cache_is_recent:
+        print(f"   Using cached data only (no new transactions fetched)")
+        print(f"   Cached transactions: {len(processed_signatures)}")
+        print(f"   Cached trades: {len(cached_trades)}\n")
+    else:
+        print(f"   Found {len(all_transactions)} new transactions in date range\n")
     
     # Track positions: token -> list of (buy_amount, buy_cost, buy_time, buy_tx)
     positions: Dict[str, List[Tuple[float, float, datetime, Dict]]] = defaultdict(list)

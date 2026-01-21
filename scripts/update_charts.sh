@@ -128,10 +128,60 @@ if [ -f "$PROJECT_ROOT/.venv/bin/python" ]; then
     PYTHON_CMD="$PROJECT_ROOT/.venv/bin/python"
 fi
 
-# Wait before starting to avoid rate limits if bot is running concurrently
-# This gives any concurrent Helius API calls time to complete
-echo "⏳ Waiting 5 seconds before starting chart generation to avoid rate limit conflicts..."
-sleep 5
+# Check API usage before starting to avoid rate limits
+echo "🔍 Checking API usage before starting..."
+if command -v python3 &> /dev/null; then
+    API_CHECK=$(python3 << 'PYTHON_SCRIPT'
+from src.utils.api_tracker import get_tracker
+t = get_tracker()
+helius_count = t.get_count('helius')
+daily_limit = 300000
+usage_pct = (helius_count / daily_limit) * 100
+remaining = daily_limit - helius_count
+
+print(f"{helius_count}|{daily_limit}|{usage_pct:.1f}|{remaining}")
+
+# Check if we're close to rate limits
+if usage_pct > 80:
+    print("HIGH", end="")
+elif usage_pct > 50:
+    print("MEDIUM", end="")
+else:
+    print("LOW", end="")
+PYTHON_SCRIPT
+    2>/dev/null)
+    
+    if [ -n "$API_CHECK" ]; then
+        HELIUS_COUNT=$(echo "$API_CHECK" | head -1 | cut -d'|' -f1)
+        DAILY_LIMIT=$(echo "$API_CHECK" | head -1 | cut -d'|' -f2)
+        USAGE_PCT=$(echo "$API_CHECK" | head -1 | cut -d'|' -f3)
+        REMAINING=$(echo "$API_CHECK" | head -1 | cut -d'|' -f4)
+        STATUS=$(echo "$API_CHECK" | tail -1)
+        
+        echo "   Helius API usage: $HELIUS_COUNT / $DAILY_LIMIT ($USAGE_PCT%)"
+        echo "   Remaining today: $REMAINING calls"
+        
+        if [ "$STATUS" = "HIGH" ]; then
+            echo "⚠️  High API usage detected - will use cached data more aggressively"
+            echo "⏳ Waiting 10 seconds before starting to let rate limits cool down..."
+            sleep 10
+        elif [ "$STATUS" = "MEDIUM" ]; then
+            echo "⏳ Waiting 5 seconds before starting to avoid rate limit conflicts..."
+            sleep 5
+        else
+            echo "✅ API usage is low - proceeding"
+            sleep 2
+        fi
+    else
+        echo "⚠️  Could not check API usage - proceeding with caution"
+        echo "⏳ Waiting 5 seconds before starting..."
+        sleep 5
+    fi
+else
+    echo "⚠️  Python3 not available for API check - proceeding with caution"
+    echo "⏳ Waiting 5 seconds before starting..."
+    sleep 5
+fi
 
 # Generate 30-day chart
 $PYTHON_CMD scripts/plot_wallet_value.py --days 30 --type percentage --save docs/performance_chart.png 2>&1
