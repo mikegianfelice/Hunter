@@ -771,7 +771,13 @@ def reconcile_wallet_with_positions(
                 if token_address_lower not in wallet_addresses:
                     # Check balance to confirm
                     balance = _check_token_balance_on_chain(token_address, chain_id)
-                    if balance == 0.0 or (balance > 0 and balance < min_balance_threshold):
+                    # If balance check failed (-1.0), retry without cache to be sure
+                    if balance == -1.0:
+                        print(f"⚠️ Balance check failed for {symbol}, retrying without cache...")
+                        balance = _check_token_balance_on_chain(token_address, chain_id, use_cache=False)
+                    
+                    # Remove if: zero balance, failed check (trust wallet scan), or dust balance
+                    if balance == 0.0 or balance == -1.0 or (balance > 0 and balance < min_balance_threshold):
                         # Position closed - mark as removed
                         positions_to_remove.append(position_key)
                         
@@ -779,7 +785,8 @@ def reconcile_wallet_with_positions(
                         trade_id = position_data.get("trade_id") if isinstance(position_data, dict) else None
                         _mark_trade_as_closed_in_performance_data(token_address, chain_id, trade_id)
                         
-                        print(f"✅ Removed position: {symbol} ({token_address[:8]}...{token_address[-8:]}) - zero balance")
+                        reason = "zero balance" if balance == 0.0 else ("balance check failed" if balance == -1.0 else "dust balance")
+                        print(f"✅ Removed position: {symbol} ({token_address[:8]}...{token_address[-8:]}) - {reason}")
             
             for key in positions_to_remove:
                 # Get position data before removing (needed for cache invalidation)
