@@ -2951,7 +2951,7 @@ def _main_loop():
             try:
                 monitor_all_positions()
                 cycle_end = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                print(f"[{cycle_end}] ✅ Monitoring cycle complete, sleeping 30s...\n")
+                print(f"[{cycle_end}] ✅ Monitoring cycle complete, sleeping 15s...\n")
             except Exception as e:
                 cycle_end = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 print(f"\n[{cycle_end}] ❌ ERROR in monitoring cycle: {e}")
@@ -2959,7 +2959,7 @@ def _main_loop():
                 print(f"[{cycle_end}] Traceback:\n{traceback.format_exc()}")
                 print(f"[{cycle_end}] ⚠️ Continuing to next cycle...\n")
                 # Don't re-raise - allow loop to continue
-            time.sleep(60)  # poll interval (increased from 30s to reduce RPC calls)
+            time.sleep(15)  # poll interval (15 seconds)
     finally:
         # Always remove lock on exit
         _remove_lock()
