@@ -1119,7 +1119,13 @@ class EnhancedAsyncTradingEngine:
                     liquidity=round(liquidity, 0),
                     passes_ai_filters=passes_ai_filters)
             
-            if action == "buy" and confidence > 0.7 and passes_ai_filters:
+            # Allow both "buy" and "weak_buy" actions, with different confidence thresholds
+            # weak_buy uses lower confidence threshold (0.6) and will get smaller position size
+            is_weak_buy = action == "weak_buy"
+            is_regular_buy = action == "buy"
+            confidence_threshold = 0.6 if is_weak_buy else 0.7
+            
+            if (is_regular_buy or is_weak_buy) and confidence > confidence_threshold and passes_ai_filters:
                 # CRITICAL: Perform checks in order to save API calls:
                 # 1. Hyperactivity check (no API call)
                 # 2. Holder concentration check (cached RPC calls - blocks before expensive candle fetch)
@@ -1481,6 +1487,22 @@ class EnhancedAsyncTradingEngine:
                     
                     # Apply quality multiplier to scaled size
                     quality_adjusted_size = scaled_size * quality_multiplier
+                    
+                    # Apply weak_buy position size reduction (50% of regular buy size)
+                    # Store action type for position sizing adjustment
+                    action_type = action  # This is either "buy" or "weak_buy" at this point
+                    if action_type == "weak_buy":
+                        # Reduce position size to 50% for weak_buy signals
+                        weak_buy_multiplier = 0.5
+                        size_before_weak_buy = quality_adjusted_size
+                        quality_adjusted_size = quality_adjusted_size * weak_buy_multiplier
+                        log_info("trading.weak_buy_sizing",
+                                f"Weak buy position size reduction for {token.get('symbol', 'UNKNOWN')}: "
+                                f"${size_before_weak_buy:.2f} × {weak_buy_multiplier:.2f} = ${quality_adjusted_size:.2f}",
+                                symbol=token.get("symbol"),
+                                weak_buy_multiplier=weak_buy_multiplier,
+                                size_before_reduction=round(size_before_weak_buy, 3),
+                                adjusted_size=round(quality_adjusted_size, 3))
                     
                     # Ensure position size is within tier bounds (safety check)
                     final_position_size = max(tier_base_size, min(quality_adjusted_size, tier_max_size))
