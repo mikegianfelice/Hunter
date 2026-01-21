@@ -1257,8 +1257,10 @@ class EnhancedAsyncTradingEngine:
                                     f"Holder concentration check exception for {token.get('symbol', 'UNKNOWN')} (fail-open mode): {e}")
                     
                     # Check if token has strong fundamentals (bypass candle fetch for efficiency)
-                    # Strong fundamentals: liquidity >= $500k AND volume >= $1M
-                    has_strong_fundamentals = liquidity >= 500000 and volume_24h >= 1000000
+                    # Use same thresholds as token eligibility check for consistency
+                    min_liquidity = get_config_float("min_liquidity_usd_for_buy", 200000)
+                    min_volume = get_config_float("min_volume_24h_for_buy", 200000)
+                    has_strong_fundamentals = liquidity >= min_liquidity and volume_24h >= min_volume
                     
                     if has_strong_fundamentals:
                         # Token has strong fundamentals - skip expensive candle fetch
