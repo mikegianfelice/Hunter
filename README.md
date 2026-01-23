@@ -33,7 +33,7 @@ Top candidates are ranked by volume and passed to the analysis system for deeper
 Before entering any trade, tokens must pass multiple analysis-driven checks:
 - **Quality Score** ≥ 65% (combines sentiment, technical analysis, price prediction)
 - **Success Probability** ≥ 60% (prediction of profitable outcome based on weighted analysis)
-- **Holder Concentration** < 60% (blocks tokens where top 10 holders own 60% or more)
+- **Holder Concentration** < 50% (blocks tokens where top 10 holders own 50% or more; 45-50% is yellow zone with reduced position size)
 - **Order-Flow Defense** - Blocks tokens with suspicious trading patterns:
   - Minimum 55% buy dominance (more buyers than sellers)
   - Maximum 20% from single wallet (prevents single-wallet pumps)
