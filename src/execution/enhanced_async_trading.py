@@ -972,6 +972,7 @@ class EnhancedAsyncTradingEngine:
         # OPTIMIZATION: Skip analysis if at max positions (saves API calls and compute)
         try:
             from src.core.risk_manager import _open_positions_count
+            from src.config.config_loader import get_config_int
             open_count = _open_positions_count()
             max_concurrent = get_config_int("max_concurrent_positions", 5)
             

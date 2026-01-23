@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-View candles built from 5-minute price snapshots for pippin and fartcoin.
+View candles built from 5-minute price snapshots for tracked tokens (pippin, fartcoin, usor).
 """
 
 import sys
@@ -67,7 +67,7 @@ if __name__ == "__main__":
     import argparse
     
     parser = argparse.ArgumentParser(description="View price snapshot candles")
-    parser.add_argument("token", choices=["pippin", "fartcoin"], help="Token to view")
+    parser.add_argument("token", choices=["pippin", "fartcoin", "usor"], help="Token to view")
     parser.add_argument("--hours", type=int, default=24, help="Hours of history")
     parser.add_argument("--interval", choices=["5m", "15m", "1h"], default="15m", help="Candle interval")
     

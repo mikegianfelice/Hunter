@@ -9,13 +9,15 @@ from .db import get_connection
 
 _LOCK = threading.Lock()
 
-# Token addresses for pippin and fartcoin
+# Token addresses for tracked tokens
 PIPPIN_ADDRESS = "Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump"  # Correct Pippin token address
 FARTCOIN_ADDRESS = "9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump"
+USOR_ADDRESS = "USoRyaQjch6E18nCdDvWoRgTo6osQs9MUd8JXEsspWR"
 
 TRACKED_TOKENS = {
     "pippin": PIPPIN_ADDRESS,
     "fartcoin": FARTCOIN_ADDRESS,
+    "usor": USOR_ADDRESS,
 }
 
 # 5-minute interval (300 seconds)

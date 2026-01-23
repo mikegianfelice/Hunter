@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Background service to track 5-minute price snapshots for pippin and fartcoin.
+Background service to track 5-minute price snapshots for tracked tokens (pippin, fartcoin, usor).
 Run this as a background process to continuously track prices every 5 minutes.
 """
 
@@ -49,7 +49,7 @@ def track_prices():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     
-    print("🚀 Starting 5-minute price tracker for pippin and fartcoin...")
+    print("🚀 Starting 5-minute price tracker...")
     print(f"📊 Tracking tokens: {list(TRACKED_TOKENS.keys())}")
     print(f"⏱️  Interval: {INTERVAL_SECONDS // 60} minutes")
     print(f"📈 Expected API calls: ~{len(TRACKED_TOKENS) * (24 * 60 // (INTERVAL_SECONDS // 60))} per day")
