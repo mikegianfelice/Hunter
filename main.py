@@ -177,7 +177,15 @@ async def run_enhanced_trading_mode():
                      "❌ Preflight checks failed. Please fix errors before starting trading.")
             return False
         
-        await run_enhanced_async_trading()
+        # Start price tracker
+        from src.deployment.production_manager import ProductionManager
+        pm = ProductionManager()
+        price_tracker_task = asyncio.create_task(pm.run_price_tracker())
+        
+        # Start trading
+        trading_task = asyncio.create_task(run_enhanced_async_trading())
+        
+        await asyncio.gather(price_tracker_task, trading_task, return_exceptions=True)
         return True
     except Exception as e:
         log_error("main.enhanced_trading", f"Enhanced trading failed: {e}")

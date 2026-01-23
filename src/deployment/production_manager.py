@@ -571,6 +571,48 @@ class ProductionManager:
                 log_error(f"Error in health monitoring: {e}")
                 await asyncio.sleep(60)
     
+    async def run_price_tracker(self):
+        """Run 5-minute price tracker for tracked tokens"""
+        from src.storage.minute_price_tracker import (
+            store_price_snapshot,
+            TRACKED_TOKENS,
+            INTERVAL_SECONDS,
+        )
+        from src.execution.jupiter_executor import JupiterCustomExecutor
+        
+        log_info("production.price_tracker", "🚀 Starting 5-minute price tracker")
+        log_info("production.price_tracker", f"📊 Tracking tokens: {list(TRACKED_TOKENS.keys())}")
+        
+        executor = JupiterCustomExecutor()
+        
+        while True:
+            try:
+                current_time = time.time()
+                current_interval = int(current_time // INTERVAL_SECONDS) * INTERVAL_SECONDS
+                
+                for token_name, token_address in TRACKED_TOKENS.items():
+                    try:
+                        price = executor.get_token_price_usd(token_address)
+                        if price and price > 0:
+                            stored = store_price_snapshot(token_address, price, current_time)
+                            if stored:
+                                log_info(
+                                    "production.price_tracker",
+                                    f"✅ {token_name}: ${price:.8f}",
+                                    token=token_name,
+                                    price=price,
+                                )
+                    except Exception as e:
+                        log_error("production.price_tracker", f"Error tracking {token_name}: {e}")
+                
+                # Sleep until next 5-minute interval
+                sleep_time = INTERVAL_SECONDS - (time.time() % INTERVAL_SECONDS) + 1
+                await asyncio.sleep(min(sleep_time, INTERVAL_SECONDS))
+                
+            except Exception as e:
+                log_error("production.price_tracker", f"Error in price tracker loop: {e}")
+                await asyncio.sleep(INTERVAL_SECONDS)
+    
     async def start_production_system(self):
         """Start the complete production system"""
         log_info("production.start", "Starting production trading system")
@@ -640,6 +682,9 @@ class ProductionManager:
             # Start health monitoring
             health_task = asyncio.create_task(self.run_health_monitoring())
             
+            # Start price tracker
+            price_tracker_task = asyncio.create_task(self.run_price_tracker())
+            
             # Start main trading system
             from src.execution.enhanced_async_trading import run_enhanced_async_trading
             trading_task = asyncio.create_task(run_enhanced_async_trading())
@@ -649,7 +694,7 @@ class ProductionManager:
             dashboard_task = asyncio.create_task(start_realtime_dashboard())
             
             # Wait for all tasks
-            tasks = [health_task, trading_task, dashboard_task]
+            tasks = [health_task, price_tracker_task, trading_task, dashboard_task]
             if indexer_task:
                 tasks.append(indexer_task)
             await asyncio.gather(
