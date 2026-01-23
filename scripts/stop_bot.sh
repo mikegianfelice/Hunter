@@ -27,24 +27,54 @@ kill_processes() {
         
         # Try graceful termination first
         echo -e "${BLUE}📤 Sending TERM signal to $description...${NC}"
-        kill -TERM $pids 2>/dev/null || true
+        for pid in $pids; do
+            kill -TERM "$pid" 2>/dev/null || true
+        done
         
-        # Wait a moment for graceful shutdown
-        sleep 2
+        # Wait longer for graceful shutdown
+        sleep 3
         
         # Check if processes are still running
         local remaining_pids=$(ps aux | grep -E "$pattern" | grep -v grep | awk '{print $2}' | tr '\n' ' ')
         
         if [ -n "$remaining_pids" ]; then
             echo -e "${YELLOW}⚠️  Some $description processes still running, forcing kill...${NC}"
-            kill -KILL $remaining_pids 2>/dev/null || true
-            sleep 1
+            # Try KILL signal multiple times with increasing wait times
+            for attempt in 1 2 3; do
+                for pid in $remaining_pids; do
+                    # Check if process still exists and is not a zombie
+                    if ps -p "$pid" > /dev/null 2>&1; then
+                        local state=$(ps -p "$pid" -o state= 2>/dev/null | tr -d ' ')
+                        if [ "$state" != "Z" ]; then  # Not a zombie
+                            kill -KILL "$pid" 2>/dev/null || true
+                        fi
+                    fi
+                done
+                sleep 2
+                # Re-check remaining PIDs
+                remaining_pids=$(ps aux | grep -E "$pattern" | grep -v grep | awk '{print $2}' | tr '\n' ' ')
+                if [ -z "$remaining_pids" ]; then
+                    break
+                fi
+            done
         fi
         
-        # Final check
-        local final_pids=$(ps aux | grep -E "$pattern" | grep -v grep | awk '{print $2}' | tr '\n' ' ')
+        # Final check - filter out zombie processes
+        local final_pids=""
+        local all_final_pids=$(ps aux | grep -E "$pattern" | grep -v grep | awk '{print $2}' | tr '\n' ' ')
+        for pid in $all_final_pids; do
+            if ps -p "$pid" > /dev/null 2>&1; then
+                local state=$(ps -p "$pid" -o state= 2>/dev/null | tr -d ' ')
+                if [ "$state" != "Z" ]; then  # Not a zombie, it's still running
+                    final_pids="$final_pids $pid"
+                fi
+            fi
+        done
+        final_pids=$(echo "$final_pids" | tr ' ' '\n' | grep -v '^$' | tr '\n' ' ')
+        
         if [ -n "$final_pids" ]; then
             echo -e "${RED}❌ Failed to kill some $description processes: $final_pids${NC}"
+            echo -e "${YELLOW}💡 Try manually: kill -9 $final_pids${NC}"
             return 1
         else
             echo -e "${GREEN}✅ Successfully stopped $description${NC}"
@@ -206,7 +236,31 @@ PYTHON_SCRIPT
 else
     echo -e "${RED}❌ $remaining_processes trading bot processes still running${NC}"
     echo -e "${YELLOW}Remaining processes:${NC}"
-    ps aux | grep -E "(python.*main\.py|.*hunter.*|.*trading.*)" | grep -v grep
-    echo -e "${YELLOW}Try manually: kill -9 \$(ps aux | grep 'python.*main.py' | grep -v grep | awk '{print \$2}')${NC}"
+    ps aux | grep -E "(python.*main\.py|monitor_position\.py|monitor_watchdog\.py|track_minute_prices\.py|enhanced_async_trading\.py|multi_chain_executor\.py|.*hunter.*|.*trading.*)" | grep -v grep
+    
+    # Try one more aggressive kill attempt
+    echo -e "${YELLOW}🔄 Attempting final aggressive kill...${NC}"
+    remaining_pids=$(ps aux | grep -E "(python.*main\.py|monitor_position\.py|monitor_watchdog\.py|track_minute_prices\.py|enhanced_async_trading\.py|multi_chain_executor\.py|.*hunter.*|.*trading.*)" | grep -v grep | awk '{print $2}' | tr '\n' ' ')
+    if [ -n "$remaining_pids" ]; then
+        for pid in $remaining_pids; do
+            if ps -p "$pid" > /dev/null 2>&1; then
+                state=$(ps -p "$pid" -o state= 2>/dev/null | tr -d ' ')
+                if [ "$state" != "Z" ]; then  # Not a zombie
+                    echo -e "${YELLOW}   Killing PID $pid (state: $state)...${NC}"
+                    kill -9 "$pid" 2>/dev/null || true
+                fi
+            fi
+        done
+        sleep 2
+        
+        # Final check after aggressive kill
+        final_remaining=$(ps aux | grep -E "(python.*main\.py|monitor_position\.py|monitor_watchdog\.py|track_minute_prices\.py|enhanced_async_trading\.py|multi_chain_executor\.py|.*hunter.*|.*trading.*)" | grep -v grep | wc -l)
+        if [ "$final_remaining" -eq 0 ]; then
+            echo -e "${GREEN}✅ All processes killed after aggressive attempt${NC}"
+            exit 0
+        fi
+    fi
+    
+    echo -e "${YELLOW}Try manually: kill -9 \$(ps aux | grep -E '(python.*main\.py|monitor_position\.py)' | grep -v grep | awk '{print \$2}')${NC}"
     exit 1
 fi
