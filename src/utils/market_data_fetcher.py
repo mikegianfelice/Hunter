@@ -1626,6 +1626,48 @@ class MarketDataFetcher:
                     )
                     return cached['data']  # Use stale cache to save calls
         
+        # SOLANA: Check tracked price data first for pippin/fartcoin (no API calls, consistent data)
+        if chain_id.lower() == "solana":
+            try:
+                from src.storage.minute_price_tracker import (
+                    TRACKED_TOKENS, get_price_snapshots, build_candles_from_snapshots
+                )
+                # Check if this is a tracked token (pippin or fartcoin)
+                if token_address.lower() in [addr.lower() for addr in TRACKED_TOKENS.values()]:
+                    # Use tracked 5-minute price snapshots to build candles
+                    end_time = target_timestamp if target_timestamp else current_time
+                    start_time = end_time - (hours * 3600)
+                    snapshots = get_price_snapshots(token_address, start_time, end_time)
+                    
+                    # Need minimum 12 snapshots (1 hour) for basic analysis, prefer 16+ (4 hours) for accuracy
+                    if snapshots and len(snapshots) >= 12:
+                        # Build 15-minute candles from 5-minute snapshots
+                        candles = build_candles_from_snapshots(snapshots, 900)  # 900 seconds = 15 minutes
+                        if candles and len(candles) >= 12:
+                            logger.info(
+                                f"✅ Using tracked price data for {token_address[:8]}... "
+                                f"({len(candles)} candles from {len(snapshots)} snapshots)"
+                            )
+                            # Cache the result
+                            self.candlestick_cache_helius[cache_key] = {
+                                'data': candles,
+                                'timestamp': current_time,
+                                'source': 'tracked_price_data'
+                            }
+                            return candles
+                        elif candles:
+                            logger.debug(
+                                f"Tracked price data insufficient for {token_address[:8]}... "
+                                f"({len(candles)} candles < 12 required), falling back to Helius"
+                            )
+                    else:
+                        logger.debug(
+                            f"Tracked price data not yet available for {token_address[:8]}... "
+                            f"({len(snapshots) if snapshots else 0} snapshots < 12 required), falling back to Helius"
+                        )
+            except Exception as e:
+                logger.debug(f"Tracked price data check failed for {token_address[:8]}...: {e}, falling back to Helius")
+        
         # SOLANA: Try indexed swaps first (fast, no API calls), then targeted backfill, then DEX API, then RPC
         if chain_id.lower() == "solana":
             # First, try indexed swap events from SQLite (fastest, no API calls)
