@@ -110,6 +110,9 @@ kill_processes "python.*main\.py" "Python trading bot"
 kill_processes "monitor_position\.py" "Position monitor"
 kill_processes "monitor_watchdog\.py" "Monitor watchdog"
 
+# Kill price tracker process
+kill_processes "track_minute_prices\.py" "Minute price tracker"
+
 # Kill async trading executors/workers
 kill_processes "enhanced_async_trading\.py" "Enhanced async trading engine"
 kill_processes "multi_chain_executor\.py" "Multi-chain executor"
@@ -144,7 +147,7 @@ fi
 
 # Final verification
 echo -e "${BLUE}🔍 Final verification...${NC}"
-remaining_processes=$(ps aux | grep -E "(python.*main\.py|monitor_position\.py|monitor_watchdog\.py|enhanced_async_trading\.py|multi_chain_executor\.py|.*hunter.*|.*trading.*)" | grep -v grep | wc -l)
+remaining_processes=$(ps aux | grep -E "(python.*main\.py|monitor_position\.py|monitor_watchdog\.py|track_minute_prices\.py|enhanced_async_trading\.py|multi_chain_executor\.py|.*hunter.*|.*trading.*)" | grep -v grep | wc -l)
 
 if [ "$remaining_processes" -eq 0 ]; then
     echo -e "${GREEN}✅ All trading bot processes stopped successfully!${NC}"
