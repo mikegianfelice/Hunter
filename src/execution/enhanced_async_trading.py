@@ -1302,11 +1302,29 @@ class EnhancedAsyncTradingEngine:
                         else:
                             # Quality validation already happened in market_data_fetcher
                             # If candles exist, they passed lenient or strict validation
-                            if len(candles_15m) < 16:
+                            # However, enforce absolute minimum candle count as a safety check
+                            from src.config.config_loader import get_config_int
+                            absolute_min_candles = get_config_int('helius_15m_candle_policy.absolute_min_candles', 12)
+                            
+                            if len(candles_15m) < absolute_min_candles:
+                                log_error("trading.candle_validation.insufficient_candles",
+                                        f"Token {token.get('symbol', 'UNKNOWN')} blocked: insufficient candles ({len(candles_15m)} < {absolute_min_candles} minimum)",
+                                        symbol=token.get("symbol"),
+                                        candles_count=len(candles_15m),
+                                        minimum_required=absolute_min_candles,
+                                        token_address=token_address[:8] + "...")
+                                enhanced_token["approved_for_trading"] = False
+                                enhanced_token["rejection_reason"] = f"insufficient_candles_{len(candles_15m)}_min_{absolute_min_candles}"
+                            elif len(candles_15m) < 16:
                                 logger.warning(
                                     f"Token {token.get('symbol', 'UNKNOWN')} has {len(candles_15m)} candles (<16 ideal), "
                                     f"but passed quality validation - continuing"
                                 )
+                            
+                            # Only proceed with OHLC validation if we have minimum candles
+                            if not enhanced_token.get("approved_for_trading", False):
+                                continue
+                            
                             # Validate candle quality (check OHLC integrity)
                             invalid_count = 0
                             for idx, c in enumerate(candles_15m):

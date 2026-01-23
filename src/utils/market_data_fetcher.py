@@ -2842,7 +2842,7 @@ class MarketDataFetcher:
                 
                 # Early-stop configuration
                 rpc_early_stop_enabled = get_config('helius_15m_candle_policy.rpc_early_stop_enabled', True)
-                rpc_min_sigs_in_window = get_config_int('helius_15m_candle_policy.rpc_min_sigs_in_window', 500)
+                rpc_min_sigs_in_window = get_config_int('helius_15m_candle_policy.rpc_min_sigs_in_window', 1000)
                 rpc_min_coverage_hours = get_config_float('helius_15m_candle_policy.rpc_min_coverage_hours', 4.0)
                 
                 logger.info(
@@ -2928,11 +2928,11 @@ class MarketDataFetcher:
                                 if window_newest_bound is None or page_window_newest > window_newest_bound:
                                     window_newest_bound = page_window_newest
                             
-                            # HYPERACTIVITY GUARD: Check after 500 sigs or page 5
+                            # HYPERACTIVITY GUARD: Check after 1000 sigs or page 5
                             # This prevents excessive API calls for tokens with extremely high transaction volume
                             should_check_hyperactivity = (
                                 (pages_used == 5) or  # At end of page 5
-                                (count_in_window >= 500)  # Or after collecting 500 sigs
+                                (count_in_window >= 1000)  # Or after collecting 1000 sigs
                             )
                             
                             if should_check_hyperactivity and rpc_early_stop_enabled:
@@ -2958,12 +2958,12 @@ class MarketDataFetcher:
                                         )
                                         break  # Stop pagination early
                                     
-                                    # Case 1: < 1.0h coverage (>500 sig/hour) - abort and mark as hyperactive_skip
+                                    # Case 1: < 1.0h coverage (>1000 sig/hour) - abort and mark as hyperactive_skip
                                     if hours_covered < 1.0:
                                         logger.warning(
                                             f"HYPERACTIVITY_GUARD: token={token_address[:8]}, pool={pool_address[:8]}, "
                                             f"aborting fetch - {count_in_window} sigs in {hours_covered:.2f}h "
-                                            f"({sigs_per_hour:.0f} sig/hour > 500 threshold). "
+                                            f"({sigs_per_hour:.0f} sig/hour > 1000 threshold). "
                                             f"Marking as hyperactive_skip."
                                         )
                                         self._hyperactive_skip_tokens[token_address.lower()] = time.time()

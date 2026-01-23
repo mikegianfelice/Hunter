@@ -10,7 +10,7 @@ from .db import get_connection
 _LOCK = threading.Lock()
 
 # Token addresses for pippin and fartcoin
-PIPPIN_ADDRESS = "2kbwgSjPbKig5sFTvo6YoPKGVErMQ8bt9UDBrALz4SZct7T3JhnJjSnaFo23LwRB4Vo97y2WyNoaMuehCXTRj4B3"
+PIPPIN_ADDRESS = "Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump"  # Correct Pippin token address
 FARTCOIN_ADDRESS = "9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump"
 
 TRACKED_TOKENS = {

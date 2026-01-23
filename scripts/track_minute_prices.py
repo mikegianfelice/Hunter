@@ -63,7 +63,12 @@ def track_prices():
             for token_name, token_address in TRACKED_TOKENS.items():
                 price = get_token_price(token_address)
                 
-                if price > 0:
+                # Fallback value from Jupiter executor when all APIs fail (0.000001)
+                # Also check for 0.00001 which might be another fallback threshold
+                FALLBACK_PRICE = 0.000001
+                is_fallback = abs(price - FALLBACK_PRICE) < 1e-9 or abs(price - 0.00001) < 1e-9
+                
+                if price > 0 and not is_fallback:
                     stored = store_price_snapshot(token_address, price, current_time)
                     if stored:
                         log_info(
@@ -74,6 +79,13 @@ def track_prices():
                             timestamp=current_interval,
                         )
                     # If not stored, it means we already have data for this interval (duplicate)
+                elif is_fallback:
+                    log_error(
+                        "price_tracker.fallback_price_skipped",
+                        f"⚠️ {token_name}: Skipping fallback price ${price:.8f} (price fetch failed - all APIs unavailable)",
+                        token=token_name,
+                        price=price,
+                    )
                 else:
                     log_error(
                         "price_tracker.price_zero",
