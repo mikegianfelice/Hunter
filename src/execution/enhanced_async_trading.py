@@ -212,10 +212,19 @@ class EnhancedAsyncTradingEngine:
             return
         
         try:
-            summary = await asyncio.to_thread(
-                reconcile_positions_and_pnl,
-                limit=self.helius_reconciliation_limit,
+            # Add timeout to prevent blocking indefinitely (5 minutes max)
+            reconciliation_timeout = get_config_int("helius_reconciliation_timeout_seconds", 300)
+            summary = await asyncio.wait_for(
+                asyncio.to_thread(
+                    reconcile_positions_and_pnl,
+                    limit=self.helius_reconciliation_limit,
+                ),
+                timeout=reconciliation_timeout
             )
+        except asyncio.TimeoutError:
+            log_error("trading.helius_reconcile_timeout", 
+                     f"Helius reconciliation timed out after {reconciliation_timeout}s - this may indicate API issues")
+            return
         except Exception as e:
             log_error("trading.helius_reconcile_error", f"Helius reconciliation failed: {e}")
             return
