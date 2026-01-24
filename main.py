@@ -191,6 +191,26 @@ async def run_enhanced_trading_mode():
         log_error("main.enhanced_trading", f"Enhanced trading failed: {e}")
         return False
 
+async def run_price_tracker_mode():
+    """Run price tracker only mode (no trading)"""
+    log_info("price_tracker.start", "📊 Starting Price Tracker Mode (No Trading)")
+    
+    global production_manager
+    
+    try:
+        # Initialize production manager for price tracker
+        production_manager = ProductionManager()
+        
+        # Run price tracker only
+        await production_manager.run_price_tracker()
+        
+        return True
+        
+    except Exception as e:
+        log_error("main.price_tracker", f"Price tracker mode failed: {e}")
+        return False
+
+
 def print_banner():
     """Print application banner"""
     banner = """
@@ -217,6 +237,7 @@ Modes:
   backtest       Run backtesting mode
   optimize       Run strategy optimization
   health         Check system health
+  price-tracker  Run price tracker only (no trading)
 
 Options:
   --symbols SYMBOLS    Comma-separated list of symbols (for backtest/optimize)
@@ -351,6 +372,8 @@ async def main():
         elif mode == "optimize":
             result = await run_optimization_mode(symbols, start_date, end_date)
             success = result is not None
+        elif mode == "price-tracker":
+            success = await run_price_tracker_mode()
         elif mode == "health":
             success = await check_system_health()
         elif mode == "help":
