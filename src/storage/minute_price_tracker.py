@@ -13,11 +13,15 @@ _LOCK = threading.Lock()
 PIPPIN_ADDRESS = "Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump"  # Correct Pippin token address
 FARTCOIN_ADDRESS = "9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump"
 USOR_ADDRESS = "USoRyaQjch6E18nCdDvWoRgTo6osQs9MUd8JXEsspWR"
+ONE_ADDRESS = "GMvCfcZg8YvkkQmwDaAzCtHDrrEtgE74nQpQ7xNabonk"
+USELESS_ADDRESS = "Dz9mQ9NzkBcCsuGPFJ3r1bS4wgqKMHBPiVuniW8Mbonk"
 
 TRACKED_TOKENS = {
     "pippin": PIPPIN_ADDRESS,
     "fartcoin": FARTCOIN_ADDRESS,
     "usor": USOR_ADDRESS,
+    "one": ONE_ADDRESS,
+    "useless": USELESS_ADDRESS,
 }
 
 # 5-minute interval (300 seconds)
