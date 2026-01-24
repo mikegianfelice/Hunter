@@ -436,52 +436,13 @@ def calculate_wallet_value_over_time_from_helius(
             print(f"📦 Cache exists but is {cache_age.total_seconds()/3600:.1f} hours old")
             print("   Will fetch new transactions...\n")
     
-    # Rate limit check: Test if we can make an API call before starting
+    # Add a brief delay before starting to avoid rate limit conflicts
+    # The fetch loop will handle rate limits if they occur
     import time
     if not cache_is_recent:
-        print("🔍 Checking rate limit status before starting...")
-        client = HeliusClient(HELIUS_API_KEY)
-        
-        # Test with a small request to check if we're rate-limited
-        rate_limit_check_passed = False
-        for test_attempt in range(3):
-            try:
-                # Make a minimal test call (get recent signatures only)
-                test_sigs = client._get_signatures_for_address(
-                    SOLANA_WALLET_ADDRESS,
-                    limit=1,
-                    before=None
-                )
-                rate_limit_check_passed = True
-                break
-            except Exception as e:
-                error_str = str(e).lower()
-                is_rate_limit = False
-                if hasattr(e, 'response') and hasattr(e.response, 'status_code'):
-                    is_rate_limit = e.response.status_code == 429
-                else:
-                    is_rate_limit = "429" in error_str or "rate limit" in error_str or "too many requests" in error_str
-                
-                if is_rate_limit:
-                    wait_time = 10 * (test_attempt + 1)  # 10s, 20s, 30s
-                    print(f"⚠️ Rate limit detected (test attempt {test_attempt + 1}/3), waiting {wait_time}s...")
-                    time.sleep(wait_time)
-                else:
-                    # Not a rate limit error, proceed anyway
-                    rate_limit_check_passed = True
-                    break
-        
-        if not rate_limit_check_passed:
-            print("\n⚠️ Rate limit check failed - using cached data only to avoid further rate limits")
-            print("   💡 Tip: Wait a few minutes and run again to fetch new transactions\n")
-            cache_is_recent = True  # Force use of cache
-        else:
-            print("✅ Rate limit check passed, proceeding with API calls")
-            # Longer delay before starting to avoid rate limit conflicts
-            # This gives the API time to reset rate limit counters
-            initial_delay = 3.0
-            print(f"   Waiting {initial_delay:.1f}s before starting to respect rate limits...\n")
-            time.sleep(initial_delay)
+        print("📡 Proceeding with transaction fetch...")
+        print("   Rate limits will be handled automatically during fetch\n")
+        time.sleep(2.0)  # Brief delay to avoid immediate rate limit conflicts
     
     # If using recent cache, skip API calls entirely
     if cache_is_recent:
