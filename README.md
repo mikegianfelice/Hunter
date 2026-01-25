@@ -31,10 +31,10 @@ Top candidates are ranked by volume and passed to the analysis system for deeper
 
 ### **2. Entry Decision** ✅
 Before entering any trade, tokens must pass multiple analysis-driven checks:
-- **Quality Score** ≥ 65% (combines sentiment, technical analysis, price prediction)
+- **Quality Score** ≥ 60% (configurable, default 60%; combines sentiment, technical analysis, price prediction)
 - **Success Probability** ≥ 60% (prediction of profitable outcome based on weighted analysis)
-- **Holder Concentration** < 50% (blocks tokens where top 10 holders own 50% or more; 45-50% is yellow zone with reduced position size)
-- **Order-Flow Defense** - Blocks tokens with suspicious trading patterns:
+- **Holder Concentration** < 50% (configurable, default 50%; blocks tokens where top 10 holders own 50% or more; 45-50% is yellow zone with reduced position size)
+- **Order-Flow Defense** (Solana) - Blocks tokens with suspicious trading patterns:
   - Minimum 55% buy dominance (more buyers than sellers)
   - Maximum 20% from single wallet (prevents single-wallet pumps)
   - Minimum 12 unique buyers (ensures diverse participation)
@@ -42,36 +42,46 @@ Before entering any trade, tokens must pass multiple analysis-driven checks:
   - Minimum $15k buy volume in last 2 minutes
   - Minimum 25 total trades in lookback window
 - **Hyperactivity Filter** - Blocks tokens with extremely high transaction volume:
-  - Detects tokens with >500 transactions/hour or <1 hour of time coverage
+  - Detects tokens with >1000 transactions/hour or <1 hour of time coverage
   - Prevents excessive API calls and filters out bot/wash trading activity
   - Tokens are blocked for 1 hour cooldown period after detection
 - **Risk Score** ≤ 50% (lower is safer)
-- **Recommendation** = "buy" with >70% confidence
+- **Recommendation** = "buy" or "weak_buy" with ≥70% confidence (regular buy) or ≥60% confidence (weak buy)
 - **Momentum Requirements**:
-  - Minimum 1.5% momentum (weighted average across 5m, 1h, 24h timeframes)
-  - Both 5m and 1h momentum must be positive (alignment requirement)
-  - 24h momentum must be positive (longer-term trend confirmation, with override for strong recent momentum)
-  - Momentum acceleration: 5m momentum must exceed 1h by at least 0.2%
-  - Minimum 2.5% 5m momentum for velocity check (filters slow pumps)
-- **Volume Momentum**: Volume must be increasing (if volume change data available)
+  - Minimum 1.5% momentum (always checked; uses token data when external momentum disabled)
+  - **When external momentum enabled** (currently disabled by default):
+    - Weighted average across 5m, 1h, 24h timeframes
+    - Both 5m and 1h momentum must be positive (alignment requirement)
+    - 24h momentum must be positive (longer-term trend confirmation, with override for strong recent momentum)
+    - Momentum acceleration: 5m momentum must exceed 1h by at least 0.2%
+    - Minimum 2.5% 5m momentum for velocity check (filters slow pumps)
+- **Volume Momentum**: Volume must be increasing (if volume change data available; requires 10% increase in 1h)
 - **RSI Filter**: Rejects overbought tokens (RSI > 70)
+- **VWAP Entry Filter**: Requires price to be at or above VWAP (Volume Weighted Average Price):
+  - Hard blocks entries below VWAP (requires buying strength)
+  - Allows entries near VWAP (within 2% tolerance - preferred pullback zone)
+  - Allows entries extended above VWAP (>5% above) but requires extra momentum confirmation
+- **15-Minute Candle Validation**: For tokens without strong fundamentals, validates 15-minute candlestick data from Helius DEX swaps (minimum 12 candles required, ideal 16+)
 
 Only tokens passing all criteria are considered for trading.
 
 ### **3. Exit Strategy** 💰
 The bot continuously monitors all open positions and automatically sells when:
 - **Take Profit** is hit: 10% gain (default, can be dynamic based on market conditions, up to 20% for high-quality tokens)
-- **Stop Loss** is triggered: 3% loss
-- **Trailing Stop** activates: Locks in profits if price drops 5% from peak
+- **Stop Loss** is triggered: 3% loss (with 15% slippage buffer for execution)
+- **Trailing Stop** activates: Locks in profits if price drops 5% from peak (configurable, default 5%)
 - **Volume Exit**: Exits if trading volume drops 50% from entry average (requires 1%+ profit, requires 2 confirmations to avoid false exits)
-- **Technical Exit Signals**: Exits based on technical indicators when profitable (minimum 2% profit required):
-  - RSI Overbought: RSI > 70
+- **Technical Exit Signals**: Exits based on technical indicators when profitable (minimum 2% profit required, configurable):
+  - RSI Overbought: RSI > 70 (configurable threshold)
   - MACD Bearish Crossover: MACD line crosses below signal line
-  - Bollinger Bands: Price at 85%+ of upper band
+  - Bollinger Bands: Price at 85%+ of upper band (configurable threshold)
   - VWAP Below + Declining Volume: Price below VWAP with declining volume trend
-- **Token Delisted**: Auto-sells if token becomes untradeable
+- **Momentum Decay Exit**: Exits if momentum drops below threshold (0.5% default) with consecutive confirmations (2 checks default)
+- **Structure Failure Exit**: Exits if price structure breaks down (2% break threshold, minimum 5 minutes age)
+- **Partial Take-Profit Manager**: Staged profit-taking with adaptive trailing stops (sells 50% at first target, manages remaining position)
+- **Token Delisted**: Auto-sells if token becomes untradeable (detected after 5 consecutive price fetch failures)
 
-All positions are monitored in real-time, and exits execute automatically on-chain.
+All positions are monitored in real-time (every 30 seconds), and exits execute automatically on-chain with comprehensive verification.
 
 ---
 
@@ -218,13 +228,13 @@ The bot now features a sophisticated **tiered position sizing system** that scal
 #### **📈 Tier Structure**
 | Tier | Balance Range | Base Position | Max Position | Max Exposure | Description |
 |------|---------------|---------------|--------------|--------------|-------------|
-| **Tier 1** | $100 - $499 | 5% ($5-$25) | 12% ($12-$60) | 80% | Learning Phase - Higher leverage for rapid compounding |
-| **Tier 2** | $500 - $4,999 | 5% ($25-$250) | 10% ($50-$500) | 50% | Scaling Phase - Moderate |
-| **Tier 3** | $5,000 - $19,999 | 4% ($200-$800) | 8% ($400-$1,600) | 40% | Acceleration Phase - Aggressive |
-| **Tier 4** | $20,000 - $99,999 | 3% ($600-$3,000) | 6% ($1,200-$6,000) | 30% | Professional Phase - Maximum |
-| **Tier 5** | $100,000+ | 2% ($2,000+) | 5% ($5,000+) | 20% | Institutional Phase - Elite |
+| **Tier 1** | $100 - $499 | 9% ($9-$45) | 19% ($19-$95) | 80% | Learning Phase - Higher leverage for rapid compounding |
+| **Tier 2** | $500 - $4,999 | 11% ($55-$550) | 19% ($95-$950) | 80% | Scaling Phase - Moderate |
+| **Tier 3** | $5,000 - $19,999 | 7% ($350-$1,400) | 13% ($650-$2,600) | 40% | Acceleration Phase - Aggressive |
+| **Tier 4** | $20,000 - $99,999 | 5.5% ($1,100-$5,500) | 10% ($2,000-$10,000) | 30% | Professional Phase - Maximum |
+| **Tier 5** | $100,000+ | 3.5% ($3,500+) | 8% ($8,000+) | 20% | Institutional Phase - Elite |
 
-*Note: Position sizes scale dynamically as percentages of wallet balance. Dollar amounts shown are examples at tier boundaries.*
+*Note: Position sizes scale dynamically as percentages of wallet balance. Dollar amounts shown are examples at tier boundaries. Updated values reflect increased capital utilization for better growth.*
 
 #### **🚀 Key Benefits**
 - **Unified Risk Management**: Total portfolio value determines your tier, not individual chain balances
@@ -244,28 +254,43 @@ wallet_tiers:
   tier_1:
     min_balance: 100
     max_balance: 499
-    base_position_size_percent: 0.05
-    max_position_size_percent: 0.12
+    base_position_size_percent: 0.09  # Increased from 0.05 (80% increase)
+    max_position_size_percent: 0.19  # Increased from 0.12 (58% increase)
     max_total_exposure_percent: 0.8
     max_wallet_usage_percent: 0.4
     description: "Learning Phase - Higher leverage for rapid compounding"
   tier_2:
     min_balance: 500
     max_balance: 4999
-    base_position_size_percent: 0.05
-    max_position_size_percent: 0.10
-    max_total_exposure_percent: 0.5
+    base_position_size_percent: 0.11  # Increased from 0.065 (69% increase)
+    max_position_size_percent: 0.19  # Increased from 0.13 (46% increase)
+    max_total_exposure_percent: 0.8
     max_wallet_usage_percent: 0.10
     description: "Scaling Phase - Moderate"
   tier_3:
     min_balance: 5000
     max_balance: 19999
-    base_position_size_percent: 0.04
-    max_position_size_percent: 0.08
+    base_position_size_percent: 0.07  # Increased from 0.04 (75% increase)
+    max_position_size_percent: 0.13  # Increased from 0.08 (63% increase)
     max_total_exposure_percent: 0.4
     max_wallet_usage_percent: 0.10
     description: "Acceleration Phase - Aggressive"
-  # ... additional tiers
+  tier_4:
+    min_balance: 20000
+    max_balance: 99999
+    base_position_size_percent: 0.055  # Increased from 0.03 (83% increase)
+    max_position_size_percent: 0.10   # Increased from 0.06 (67% increase)
+    max_total_exposure_percent: 0.3
+    max_wallet_usage_percent: 0.10
+    description: "Professional Phase - Maximum"
+  tier_5:
+    min_balance: 100000
+    max_balance: 999999
+    base_position_size_percent: 0.035  # Increased from 0.02 (75% increase)
+    max_position_size_percent: 0.08    # Increased from 0.05 (60% increase)
+    max_total_exposure_percent: 0.2
+    max_wallet_usage_percent: 0.10
+    description: "Institutional Phase - Elite"
 ```
 
 ### ⚠️ Current Solana/Jupiter API Status (Updated)
@@ -621,8 +646,8 @@ use_dynamic_tp: true          # Enable dynamic take profit (8-20% range)
 
 # Token Discovery Configuration
 token_discovery:
-  tokens_per_chain: 60           # Number of tokens to fetch per chain (increased for more opportunities)
-  max_tokens_total: 120          # Safety cap across all chains
+  tokens_per_chain: 100          # Number of tokens to fetch per chain (increased for more opportunities)
+  max_tokens_total: 200          # Safety cap across all chains (increased to support expanded discovery)
   prefilter_min_volume_24h: 5000  # Minimum volume during discovery (filters dead pairs)
   prefilter_min_liquidity_usd: 20000  # Minimum liquidity during discovery
   dexscreener_queries:
@@ -643,10 +668,10 @@ token_discovery:
       - volume
 
 # Strategy Thresholds (Improved Entry Quality)
-min_quality_score: 65         # Minimum quality score (0-100)
+min_quality_score: 60         # Minimum quality score (0-100, configurable)
 min_volume_24h_for_buy: 750000   # $750k minimum 24h volume - raised from $500k to improve win rate and PnL
 min_liquidity_usd_for_buy: 750000 # $750k minimum liquidity - raised from $500k to improve win rate and PnL
-min_momentum_pct: 0.05        # 5% minimum momentum - raised from 2.5% for higher quality trades and better PnL
+min_momentum_pct: 0.015       # 1.5% minimum momentum for external momentum (weighted average of 5m, 1h, 24h)
 
 # Risk Management (Current Settings)
 max_concurrent_positions: 4   # Maximum open positions (reduced from 6 to focus on quality)
@@ -1009,7 +1034,7 @@ def _detect_delisted_token(token_address: str, consecutive_failures: int) -> boo
    - Verify API endpoints are accessible
    - Adjust trending thresholds in config.yaml
    - Check if tokens are being filtered as promotional
-   - **Increase discovery limits**: Adjust `token_discovery.tokens_per_chain` (default: 60)
+   - **Increase discovery limits**: Adjust `token_discovery.tokens_per_chain` (default: 100)
    - **Expand queries**: Add more search terms to `token_discovery.dexscreener_queries`
    - **Lower prefilters**: Reduce `token_discovery.prefilter_min_volume_24h` or `prefilter_min_liquidity_usd` if too restrictive
    - **Check query stats**: Review `trading.discovery_query_stats` logs to see where tokens are being filtered

@@ -308,7 +308,7 @@ class CentralizedRiskManager:
                 # If data is available, optionally hard-block on high concentration
                 # FIXED: More robust check - ensure holder_check is dict, has no error, and block_on_high_risk is enabled
                 if isinstance(holder_check, dict) and not holder_check.get("error") and block_on_high_risk:
-                    threshold = get_config_float("holder_concentration_threshold", 60.0)
+                    threshold = get_config_float("holder_concentration_threshold", 50.0)
                     percentage = holder_check.get("top_10_percentage", 0)
                     
                     # Validate percentage is a number
@@ -435,7 +435,7 @@ class CentralizedRiskManager:
                     else:
                         logger.info(f"Holder concentration check failed (fail-open) for {symbol} ({token_address}) on {chain_id}: {error_msg}. Not adding risk penalty.")
                 elif not holder_check.get("error"):
-                    threshold = get_config_float("holder_concentration_threshold", 60.0)
+                    threshold = get_config_float("holder_concentration_threshold", 50.0)
                     percentage = holder_check.get("top_10_percentage", 0)
                     
                     # Validate percentage is a number
@@ -472,7 +472,7 @@ class CentralizedRiskManager:
         # - 45% to threshold: yellow zone - allow only if other signals are strong, and reduce position size
         # - >= threshold: red zone - already hard-blocked earlier via holder_concentration_threshold
         yellow_floor = 45.0
-        hard_block_threshold = get_config_float("holder_concentration_threshold", 65.0)  # Use same threshold as hard block
+        hard_block_threshold = get_config_float("holder_concentration_threshold", 50.0)  # Use same threshold as hard block
         holder_concentration_position_multiplier = 1.0
         yellow_zone = False
         
@@ -900,7 +900,7 @@ class CentralizedRiskManager:
         
         # Holder concentration recommendations
         if holder_concentration_pct > 0:
-            threshold = get_config_float("holder_concentration_threshold", 60.0)
+            threshold = get_config_float("holder_concentration_threshold", 50.0)
             if holder_concentration_pct >= threshold:
                 recommendations.append(f"⚠️ High holder concentration: {holder_concentration_pct:.1f}% - potential rug pull risk")
             elif holder_concentration_pct >= threshold * 0.8:

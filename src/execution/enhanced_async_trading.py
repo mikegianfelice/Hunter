@@ -1206,7 +1206,7 @@ class EnhancedAsyncTradingEngine:
                             
                             if holder_check and not holder_check.get("error"):
                                 holder_concentration_pct = holder_check.get("top_10_percentage", 100.0)
-                                threshold = get_config_float("holder_concentration_threshold", 65.0)
+                                threshold = get_config_float("holder_concentration_threshold", 50.0)
                                 
                                 if holder_concentration_pct >= threshold:
                                     # HARD BLOCK: Exceeds threshold, reject immediately (saves candle fetch API call)

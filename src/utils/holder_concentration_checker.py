@@ -98,7 +98,7 @@ def check_holder_concentration(token_address: str, chain_id: str = "solana") -> 
             return result
         
         # Determine risk level
-        threshold = get_config_float("holder_concentration_threshold", 60.0)
+        threshold = get_config_float("holder_concentration_threshold", 50.0)
         
         if result.get("error"):
             error_type = result.get("error_type", "unknown")
