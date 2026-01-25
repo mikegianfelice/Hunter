@@ -15,6 +15,7 @@ FARTCOIN_ADDRESS = "9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump"
 USOR_ADDRESS = "USoRyaQjch6E18nCdDvWoRgTo6osQs9MUd8JXEsspWR"
 ONE_ADDRESS = "GMvCfcZg8YvkkQmwDaAzCtHDrrEtgE74nQpQ7xNabonk"
 USELESS_ADDRESS = "Dz9mQ9NzkBcCsuGPFJ3r1bS4wgqKMHBPiVuniW8Mbonk"
+AVICI_ADDRESS = "BANKJmvhT8tiJRsBSS1n2HryMBPvT5Ze4HU95DUAmeta"
 
 TRACKED_TOKENS = {
     "pippin": PIPPIN_ADDRESS,
@@ -22,6 +23,7 @@ TRACKED_TOKENS = {
     "usor": USOR_ADDRESS,
     "one": ONE_ADDRESS,
     "useless": USELESS_ADDRESS,
+    "avici": AVICI_ADDRESS,
 }
 
 # 5-minute interval (300 seconds)

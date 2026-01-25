@@ -6,6 +6,8 @@ import yaml
 import csv
 import signal
 from datetime import datetime, timedelta
+# Create an alias to avoid scoping issues in functions
+_dt = datetime
 from pathlib import Path
 from typing import Tuple, Dict, Any, Optional
 
@@ -1532,7 +1534,8 @@ def monitor_all_positions():
             continue
 
         trade_id_str = f" [Trade: {trade_id}]" if trade_id else ""
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # Use _dt alias to avoid scoping issues
+        timestamp = _dt.now().strftime("%Y-%m-%d %H:%M:%S")
         print(f"\n[{timestamp}] 🔍 Monitoring token: {symbol} ({token_address}) on {chain_id.upper()}{trade_id_str}")
         print(f"[{timestamp}] 🎯 Entry price: ${entry_price:.6f}")
 
@@ -1546,10 +1549,10 @@ def monitor_all_positions():
                     entry_timestamp_str = position_data.get("timestamp")
                     
                     if entry_timestamp_str:
-                        entry_time = datetime.fromisoformat(entry_timestamp_str.replace("Z", "+00:00"))
+                        entry_time = _dt.fromisoformat(entry_timestamp_str.replace("Z", "+00:00"))
                         if entry_time.tzinfo is None:
-                            entry_time = entry_time.replace(tzinfo=datetime.now().tzinfo)
-                        current_time = datetime.now(entry_time.tzinfo)
+                            entry_time = entry_time.replace(tzinfo=_dt.now().tzinfo)
+                        current_time = _dt.now(entry_time.tzinfo)
                         duration = current_time - entry_time
                         duration_hours = duration.total_seconds() / 3600
                         
@@ -1731,7 +1734,7 @@ def monitor_all_positions():
             print(f"🔄 Will retry price fetch on next cycle...")
             continue
 
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = _dt.now().strftime("%Y-%m-%d %H:%M:%S")
         print(f"[{timestamp}] 📈 Current price: ${current_price:.6f}")
         
         # UPGRADE #4: Update recent_prices array for structure failure detection (every cycle)
@@ -1986,7 +1989,7 @@ def monitor_all_positions():
                                     position_data["partial_sell_pct"] = action.size_pct
                                     position_data["partial_sell_tx"] = tx
                                     position_data["partial_sell_price"] = current_price
-                                    position_data["partial_sell_time"] = datetime.now().isoformat()
+                                    position_data["partial_sell_time"] = _dt.now().isoformat()
                         else:
                             # Transaction verification failed, but sell may have succeeded on-chain
                             # Log a warning and attempt to verify via balance check as fallback
@@ -2036,7 +2039,7 @@ def monitor_all_positions():
                                                         if isinstance(position_data, dict):
                                                             failed_remaining_sell_attempts = position_data.get("failed_remaining_sell_attempts", 0) + 1
                                                             position_data["failed_remaining_sell_attempts"] = failed_remaining_sell_attempts
-                                                            position_data["last_remaining_sell_attempt"] = datetime.now().isoformat()
+                                                            position_data["last_remaining_sell_attempt"] = _dt.now().isoformat()
                                                             
                                                             # If we've tried multiple times, clear partial TP state to prevent loops
                                                             if failed_remaining_sell_attempts >= 3:
@@ -2165,7 +2168,7 @@ def monitor_all_positions():
                                                             position_data["partial_sell_pct"] = action.size_pct
                                                             position_data["partial_sell_tx"] = None  # No tx hash available
                                                             position_data["partial_sell_price"] = current_price
-                                                            position_data["partial_sell_time"] = datetime.now().isoformat()
+                                                            position_data["partial_sell_time"] = _dt.now().isoformat()
                                                             # Clear any failed attempt counters
                                                             position_data.pop("failed_remaining_sell_attempts", None)
                                                             position_data.pop("last_remaining_sell_attempt", None)
@@ -2791,10 +2794,9 @@ def monitor_all_positions():
                 # Check minimum position age
                 position_timestamp = position_data.get("timestamp")
                 if position_timestamp:
-                    from datetime import datetime
                     try:
-                        entry_time = datetime.fromisoformat(position_timestamp.replace('Z', '+00:00'))
-                        position_age_seconds = (datetime.now(entry_time.tzinfo) - entry_time).total_seconds()
+                        entry_time = _dt.fromisoformat(position_timestamp.replace('Z', '+00:00'))
+                        position_age_seconds = (_dt.now(entry_time.tzinfo) - entry_time).total_seconds()
                         min_age = config.get('structure_failure_min_age_seconds', 300)
                         
                         if position_age_seconds >= min_age:
