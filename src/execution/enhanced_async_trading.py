@@ -1536,6 +1536,23 @@ class EnhancedAsyncTradingEngine:
                     # Apply quality multiplier to scaled size
                     quality_adjusted_size = scaled_size * quality_multiplier
                     
+                    # UPGRADE #3: Regime-based position sizing throttle
+                    regime_throttle_enabled = get_config_bool("regime_sideways_throttle", True)
+                    if regime_throttle_enabled and regime_data:
+                        regime = regime_data.get("regime", "unknown")
+                        if regime in ['sideways_market', 'recovery_market']:
+                            regime_multiplier = get_config_float("regime_throttle_position_multiplier", 0.7)
+                            size_before_regime = quality_adjusted_size
+                            quality_adjusted_size = quality_adjusted_size * regime_multiplier
+                            log_info("trading.regime_throttle",
+                                    f"Regime throttle applied for {token.get('symbol', 'UNKNOWN')}: "
+                                    f"${size_before_regime:.2f} × {regime_multiplier:.2f} ({regime} regime) = ${quality_adjusted_size:.2f}",
+                                    symbol=token.get("symbol"),
+                                    regime=regime,
+                                    regime_multiplier=regime_multiplier,
+                                    size_before=round(size_before_regime, 3),
+                                    size_after=round(quality_adjusted_size, 3))
+                    
                     # Apply weak_buy position size reduction (50% of regular buy size)
                     # Store action type for position sizing adjustment
                     action_type = action  # This is either "buy" or "weak_buy" at this point
@@ -1931,6 +1948,21 @@ class EnhancedAsyncTradingEngine:
                             "position_size_usd": position_size,  # Intended size
                             "intended_position_size_usd": position_size,  # Track intended for partial fill detection
                         }
+                        # UPGRADE #1: Pass momentum and VWAP data for entry snapshot storage
+                        # Copy momentum/VWAP data from token dict if available
+                        if token.get('candle_momentum') is not None:
+                            position_token['candle_momentum'] = token.get('candle_momentum')
+                        if token.get('candles_15m'):
+                            position_token['candles_15m'] = token.get('candles_15m')
+                            position_token['candles_validated'] = token.get('candles_validated', False)
+                        if token.get('technical_indicators'):
+                            position_token['technical_indicators'] = token.get('technical_indicators')
+                        if token.get('vwap'):
+                            position_token['vwap'] = token.get('vwap')
+                        # Copy DexScreener momentum data
+                        for key in ['priceChange5m', 'priceChange1h', 'priceChange24h', 'momentum_5m', 'momentum_1h', 'momentum_24h']:
+                            if key in token:
+                                position_token[key] = token[key]
                         try:
                             from src.execution.multi_chain_executor import _log_position, _launch_monitor_detached
                             for attempt in range(max_retries):

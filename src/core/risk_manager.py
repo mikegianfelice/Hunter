@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from web3 import Web3
 
 from src.config.secrets import INFURA_URL, WALLET_ADDRESS
-from src.config.config_loader import get_config, get_config_int, get_config_float
+from src.config.config_loader import get_config, get_config_int, get_config_float, get_config_bool
 from src.storage.positions import load_positions as load_positions_store
 from src.storage.risk import (
     load_risk_state as load_risk_state_store,
@@ -575,6 +575,71 @@ def allow_new_trade(trade_amount_usd: float, token_address: str = None, chain_id
     tier_name = config.get('TIER_NAME', 'unknown')
     tier_description = config.get('TIER_DESCRIPTION', 'Unknown Tier')
     print(f"🎯 Risk Manager - Tier: {tier_name} ({tier_description}), Combined Balance: ${combined_wallet_balance:.2f}")
+
+    # UPGRADE #3: Regime Detection Enforcement (stop trading sooner)
+    regime_enabled = get_config_bool("regime_enforcement_enabled", True)
+    if regime_enabled:
+        try:
+            from src.ai.ai_market_regime_detector import ai_market_regime_detector
+            regime_data = ai_market_regime_detector.detect_market_regime()
+            regime = regime_data.get('regime', 'unknown')
+            confidence = regime_data.get('confidence', 0.0)
+            
+            bear_threshold = get_config_float("regime_bear_market_threshold", 0.60)
+            vol_threshold = get_config_float("regime_high_volatility_threshold", 0.50)
+            
+            # Block trades in unfavorable regimes
+            if regime == 'bear_market' and confidence > bear_threshold:
+                reason = f"regime_bear_market_blocked_confidence_{confidence:.2f}_threshold_{bear_threshold:.2f}"
+                from src.monitoring.structured_logger import log_info
+                log_info("regime.enforcement.blocked",
+                        f"Trade blocked by regime enforcement: {regime} regime",
+                        context={
+                            "regime_state": regime,
+                            "regime_confidence": confidence,
+                            "action": "blocked",
+                            "threshold": bear_threshold,
+                            "reason": reason,
+                        })
+                print(f"🚫 Trade blocked by regime enforcement: {regime} regime (confidence: {confidence:.2f} > {bear_threshold:.2f})")
+                return False, reason, False, 0.0
+            
+            if regime == 'high_volatility' and confidence > vol_threshold:
+                reason = f"regime_high_volatility_blocked_confidence_{confidence:.2f}_threshold_{vol_threshold:.2f}"
+                from src.monitoring.structured_logger import log_info
+                log_info("regime.enforcement.blocked",
+                        f"Trade blocked by regime enforcement: {regime} regime",
+                        context={
+                            "regime_state": regime,
+                            "regime_confidence": confidence,
+                            "action": "blocked",
+                            "threshold": vol_threshold,
+                            "reason": reason,
+                        })
+                print(f"🚫 Trade blocked by regime enforcement: {regime} regime (confidence: {confidence:.2f} > {vol_threshold:.2f})")
+                return False, reason, False, 0.0
+            
+            # Throttle in sideways/choppy markets (reduce max concurrent positions)
+            if regime in ['sideways_market', 'recovery_market'] and get_config_bool("regime_sideways_throttle", True):
+                throttle_multiplier = get_config_float("regime_throttle_position_multiplier", 0.7)
+                # Reduce max concurrent positions
+                original_max = config['MAX_CONCURRENT_POS']
+                config['MAX_CONCURRENT_POS'] = max(1, int(original_max * throttle_multiplier))
+                from src.monitoring.structured_logger import log_info
+                log_info("regime.enforcement.throttled",
+                        f"Regime throttle active: {regime} regime",
+                        context={
+                            "regime_state": regime,
+                            "regime_confidence": confidence,
+                            "action": "throttled",
+                            "size_multiplier": throttle_multiplier,
+                            "max_positions_original": original_max,
+                            "max_positions_effective": config['MAX_CONCURRENT_POS'],
+                        })
+                print(f"⚠️ Regime throttle active: {regime} regime - reduced max concurrent positions from {original_max} to {config['MAX_CONCURRENT_POS']}")
+        except Exception as e:
+            print(f"⚠️ Regime enforcement check failed: {e}")
+            # Don't block trades if regime check fails - fail open
 
     # paused by circuit breaker?
     if s.get("paused_until", 0) > _now_ts():

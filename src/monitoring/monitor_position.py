@@ -19,7 +19,7 @@ from src.execution.base_executor import sell_token as sell_token_base
 from src.execution.solana_executor import sell_token_solana
 from src.utils.utils import fetch_token_price_usd
 from src.monitoring.telegram_bot import send_telegram_message
-from src.config.config_loader import get_config, get_config_float
+from src.config.config_loader import get_config, get_config_float, get_config_int, get_config_bool
 from src.utils.position_sync import (
     sync_all_open_positions,
     update_open_positions_from_wallet,
@@ -45,7 +45,19 @@ def get_monitor_config():
         'MIN_TP': get_config_float("min_take_profit", 0.08),
         'QUALITY_TP_BONUS': get_config_float("quality_tp_bonus", 0.03),
         'VOLUME_TP_BONUS': get_config_float("volume_tp_bonus", 0.02),
-        'LIQUIDITY_TP_BONUS': get_config_float("liquidity_tp_bonus", 0.02)
+        'LIQUIDITY_TP_BONUS': get_config_float("liquidity_tp_bonus", 0.02),
+        # UPGRADE #1: Momentum Decay Exit
+        'ENABLE_MOMENTUM_DECAY_EXIT': get_config("enable_momentum_decay_exit", True),
+        'momentum_decay_threshold': get_config_float("momentum_decay_threshold", 0.005),
+        'momentum_decay_delta': get_config_float("momentum_decay_delta", 0.01),
+        'momentum_decay_consecutive_checks': get_config_int("momentum_decay_consecutive_checks", 2),
+        # UPGRADE #4: Structure Failure Exit
+        'ENABLE_STRUCTURE_FAILURE_EXIT': get_config("enable_structure_failure_exit", True),
+        'structure_failure_min_age_seconds': get_config_int("structure_failure_min_age_seconds", 300),
+        'structure_break_threshold': get_config_float("structure_break_threshold", 0.02),
+        'structure_lookback_candles': get_config_int("structure_lookback_candles", 20),
+        'structure_recent_prices_window': get_config_int("structure_recent_prices_window", 10),
+        'stop_loss_slippage_buffer': get_config_float("stop_loss_slippage_buffer", 0.15),
     }
 
 # Use absolute paths based on project root
@@ -327,24 +339,173 @@ def load_delisted_tokens():
 def save_delisted_tokens(delisted):
     save_delisted_state(delisted or {})
 
-def log_trade(token, entry_price, exit_price, reason="normal"):
+def _compute_mfe_mae(position_data: dict, entry_price: float, exit_price: float) -> tuple:
+    """
+    Compute Max Favorable Excursion (MFE) and Max Adverse Excursion (MAE) from position data.
+    Returns (mfe_pct, mae_pct) as percentages.
+    """
+    if not isinstance(position_data, dict):
+        return None, None
+    
+    peak_price = position_data.get("peak_price")
+    low_price = position_data.get("low_price")
+    
+    # Initialize with entry price if not tracked
+    if peak_price is None:
+        peak_price = entry_price
+    if low_price is None:
+        low_price = entry_price
+    
+    # MFE: max gain from entry (peak - entry) / entry
+    mfe_pct = ((peak_price - entry_price) / entry_price * 100) if entry_price > 0 else None
+    
+    # MAE: max loss from entry (entry - low) / entry (negative value)
+    mae_pct = ((entry_price - low_price) / entry_price * 100) if entry_price > 0 else None
+    
+    return mfe_pct, mae_pct
+
+def _get_holding_time_sec(position_data: dict) -> float:
+    """Get holding time in seconds from position data."""
+    if not isinstance(position_data, dict):
+        return None
+    
+    entry_timestamp = position_data.get("timestamp")
+    if not entry_timestamp:
+        return None
+    
+    try:
+        entry_time = datetime.fromisoformat(entry_timestamp.replace("Z", "+00:00"))
+        if entry_time.tzinfo is None:
+            entry_time = entry_time.replace(tzinfo=datetime.now().tzinfo)
+        exit_time = datetime.now(entry_time.tzinfo)
+        return (exit_time - entry_time).total_seconds()
+    except Exception:
+        return None
+
+def _normalize_exit_reason(reason: str) -> str:
+    """
+    Normalize exit reason to canonical values.
+    Returns one of: momentum_decay | structure_failure | stop_loss | take_profit | 
+                    trailing_stop | volume_exit | delisting | technical_exit | manual | error
+    """
+    reason_lower = reason.lower()
+    
+    if "momentum_decay" in reason_lower or "momentum_below" in reason_lower:
+        return "momentum_decay"
+    elif "structure_failure" in reason_lower or "structure_break" in reason_lower:
+        return "structure_failure"
+    elif "stop_loss" in reason_lower or "stop-loss" in reason_lower:
+        return "stop_loss"
+    elif "take_profit" in reason_lower or "take-profit" in reason_lower:
+        return "take_profit"
+    elif "trailing_stop" in reason_lower or "trailing-stop" in reason_lower:
+        return "trailing_stop"
+    elif "volume_exit" in reason_lower or "volume_deterioration" in reason_lower:
+        return "volume_exit"
+    elif "delisted" in reason_lower or "delisting" in reason_lower:
+        return "delisting"
+    elif "technical_exit" in reason_lower:
+        return "technical_exit"
+    elif "manual" in reason_lower or "reconciliation" in reason_lower:
+        return "manual"
+    else:
+        return "error"  # Unknown reason
+
+def _log_trade_exit(token_address: str, symbol: str, entry_price: float, exit_price: float, 
+                    reason: str, position_data: dict = None, tx_hash: str = None):
+    """
+    Enhanced trade exit logging with canonical reason, MFE/MAE, and holding time.
+    This is the canonical exit logging function - all exits should use this.
+    """
+    # Compute MFE/MAE from position data
+    mfe_pct, mae_pct = _compute_mfe_mae(position_data, entry_price, exit_price) if position_data else (None, None)
+    
+    # Get holding time
+    holding_time_sec = _get_holding_time_sec(position_data) if position_data else None
+    
+    # Get entry/exit timestamps
+    entry_time = position_data.get("timestamp") if position_data else None
+    exit_time = datetime.now().isoformat()
+    
+    # Log with enhanced fields
+    log_trade(token_address, entry_price, exit_price, reason,
+              entry_time=entry_time, exit_time=exit_time, tx_hash=tx_hash,
+              mfe_pct=mfe_pct, mae_pct=mae_pct, holding_time_sec=holding_time_sec)
+
+def log_trade(token, entry_price, exit_price, reason="normal", 
+              entry_time=None, exit_time=None, tx_hash=None, 
+              mfe_pct=None, mae_pct=None, holding_time_sec=None):
+    """
+    Log trade exit with canonical exit reason and optional telemetry.
+    
+    Args:
+        token: Token address/symbol
+        entry_price: Entry price
+        exit_price: Exit price
+        reason: Exit reason (will be normalized)
+        entry_time: ISO timestamp of entry (optional)
+        exit_time: ISO timestamp of exit (optional)
+        tx_hash: Transaction hash (optional)
+        mfe_pct: Max favorable excursion % (optional)
+        mae_pct: Max adverse excursion % (optional)
+        holding_time_sec: Holding time in seconds (optional)
+    """
     pnl_pct = ((exit_price - entry_price) / entry_price) * 100 if entry_price else 0.0
+    canonical_reason = _normalize_exit_reason(reason)
+    
     row = {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "token": token,
         "entry_price": entry_price,
         "exit_price": exit_price,
         "pnl_pct": round(pnl_pct, 2),
-        "reason": reason
+        "reason": reason,  # Keep original for backward compatibility
+        "exit_reason": canonical_reason,  # Canonical reason
     }
+    
+    # Add optional fields if provided
+    if entry_time:
+        row["entry_time"] = entry_time
+    if exit_time:
+        row["exit_time"] = exit_time
+    if tx_hash:
+        row["tx_hash"] = tx_hash
+    if mfe_pct is not None:
+        row["mfe_pct"] = round(mfe_pct, 2)
+    if mae_pct is not None:
+        row["mae_pct"] = round(mae_pct, 2)
+    if holding_time_sec is not None:
+        row["holding_time_sec"] = round(holding_time_sec, 0)
+    
     file_exists = LOG_FILE.exists()
     try:
         LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(LOG_FILE, "a", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=row.keys())
+            # Get all possible fieldnames (union of existing and new)
+            all_fields = ["timestamp", "token", "entry_price", "exit_price", "pnl_pct", "reason", 
+                         "exit_reason", "entry_time", "exit_time", "tx_hash", "mfe_pct", "mae_pct", "holding_time_sec"]
+            writer = csv.DictWriter(f, fieldnames=all_fields, extrasaction='ignore')
             if not file_exists:
                 writer.writeheader()
             writer.writerow(row)
+        
+        # Structured log for observability
+        log_info("trade.exit",
+                f"Trade exit: {canonical_reason} | Token: {token} | PnL: {pnl_pct:.2f}%",
+                context={
+                    "token": token,
+                    "exit_reason": canonical_reason,
+                    "entry_price": entry_price,
+                    "exit_price": exit_price,
+                    "pnl_pct": pnl_pct,
+                    "original_reason": reason,
+                    "entry_time": entry_time,
+                    "exit_time": exit_time,
+                    "tx_hash": tx_hash,
+                    "mfe_pct": mfe_pct,
+                    "mae_pct": mae_pct,
+                    "holding_time_sec": holding_time_sec,
+                })
         print(f"📄 Trade logged: {row}")
     except Exception as e:
         print(f"⚠️ Failed to write trade log: {e}")
@@ -1511,7 +1672,8 @@ def monitor_all_positions():
                     print(f"💸 Investment lost: ${entry_price:.6f}")
                     
                     # Log as delisted trade
-                    log_trade(token_address, entry_price, 0.0, "delisted")
+                    _log_trade_exit(token_address, symbol, entry_price, 0.0, "delisted",
+                                  position_data=position_data if isinstance(position_data, dict) else None)
                     
                     # Update performance tracker with exit
                     trade = _find_open_trade_by_address(token_address, chain_id)
@@ -1571,6 +1733,36 @@ def monitor_all_positions():
 
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         print(f"[{timestamp}] 📈 Current price: ${current_price:.6f}")
+        
+        # UPGRADE #4: Update recent_prices array for structure failure detection (every cycle)
+        # Also track MFE/MAE (max favorable/adverse excursion) for trade summary
+        if isinstance(position_data, dict):
+            recent_prices = position_data.get("recent_prices", [])
+            if not recent_prices:
+                # Initialize with entry price if empty (backward compatibility)
+                entry_price_for_init = float(position_data.get("entry_price", current_price))
+                recent_prices = [entry_price_for_init]
+            
+            # Add current price
+            recent_prices.append(current_price)
+            window_size = get_config_int("structure_recent_prices_window", 10)
+            if len(recent_prices) > window_size:
+                recent_prices = recent_prices[-window_size:]
+            
+            # Track peak and low prices for MFE/MAE calculation
+            peak_price = position_data.get("peak_price", original_entry_price)
+            low_price = position_data.get("low_price", original_entry_price)
+            
+            if current_price > peak_price:
+                peak_price = current_price
+                position_data["peak_price"] = peak_price
+            if current_price < low_price:
+                low_price = current_price
+                position_data["low_price"] = low_price
+            
+            # Update position
+            position_data["recent_prices"] = recent_prices
+            updated_positions[position_key] = position_data
         
         # Calculate gain based on original entry price (for partial positions, use original_entry_price if available)
         original_entry_price = position_data.get("original_entry_price", entry_price) if isinstance(position_data, dict) else entry_price
@@ -2037,7 +2229,8 @@ def monitor_all_positions():
                 print(f"⚠️ [PRE-SELL CHECK] Balance check failed, proceeding with sell attempt...")
             elif pre_sell_balance <= 0.0 or pre_sell_balance < 0.000001:
                 print(f"✅ [PRE-SELL CHECK] Token already sold, cleaning up...")
-                log_trade(token_address, entry_price, current_price, f"technical_exit_{technical_exit_reason}")
+                _log_trade_exit(token_address, symbol, entry_price, current_price, f"technical_exit_{technical_exit_reason}",
+                              position_data=position_data if isinstance(position_data, dict) else None, tx_hash=tx)
                 if trade:
                     position_size = trade.get('position_size_usd', 0)
                     pnl_usd = gain * position_size
@@ -2098,7 +2291,8 @@ def monitor_all_positions():
                     print(f"❌ [TECHNICAL EXIT] Sell verification failed, will retry on next cycle")
                     continue
                 
-                log_trade(token_address, entry_price, current_price, f"technical_exit_{technical_exit_reason}")
+                _log_trade_exit(token_address, symbol, entry_price, current_price, f"technical_exit_{technical_exit_reason}",
+                              position_data=position_data if isinstance(position_data, dict) else None, tx_hash=tx)
                 if trade:
                     position_size = trade.get('position_size_usd', 0)
                     pnl_usd = gain * position_size
@@ -2154,7 +2348,8 @@ def monitor_all_positions():
                 print(f"⚠️ [PRE-SELL CHECK] Balance check failed, proceeding with sell attempt...")
             elif pre_sell_balance <= 0.0 or pre_sell_balance < 0.000001:
                 print(f"✅ [PRE-SELL CHECK] Token already sold, cleaning up...")
-                log_trade(token_address, entry_price, current_price, f"volume_exit_{volume_exit_reason}")
+                _log_trade_exit(token_address, symbol, entry_price, current_price, f"volume_exit_{volume_exit_reason}",
+                              position_data=position_data if isinstance(position_data, dict) else None, tx_hash=tx)
                 if trade:
                     position_size = trade.get('position_size_usd', 0)
                     pnl_usd = gain * position_size
@@ -2170,7 +2365,8 @@ def monitor_all_positions():
             # Execute sell
             tx = _sell_token_multi_chain(token_address, chain_id, symbol)
             if tx:
-                log_trade(token_address, entry_price, current_price, f"volume_exit_{volume_exit_reason}")
+                _log_trade_exit(token_address, symbol, entry_price, current_price, f"volume_exit_{volume_exit_reason}",
+                              position_data=position_data if isinstance(position_data, dict) else None, tx_hash=tx)
                 if trade:
                     position_size = trade.get('position_size_usd', 0)
                     pnl_usd = gain * position_size
@@ -2210,7 +2406,8 @@ def monitor_all_positions():
                 print(f"✅ [PRE-SELL CHECK] Token balance is zero/dust ({pre_sell_balance:.8f}) - position already sold, cleaning up...")
                 
                 # Log the trade exit
-                log_trade(token_address, entry_price, current_price, "take_profit")
+                _log_trade_exit(token_address, symbol, entry_price, current_price, "take_profit",
+                              position_data=position_data if isinstance(position_data, dict) else None, tx_hash=tx)
                 
                 # Update performance tracker
                 trade = _find_open_trade_by_address(token_address, chain_id)
@@ -2290,7 +2487,8 @@ def monitor_all_positions():
                     print(f"❌ [TAKE PROFIT] Sell verification failed, will retry on next cycle")
                     continue
                 
-                log_trade(token_address, entry_price, current_price, "take_profit")
+                _log_trade_exit(token_address, symbol, entry_price, current_price, "take_profit",
+                              position_data=position_data if isinstance(position_data, dict) else None, tx_hash=tx)
                 
                 # Update performance tracker with exit
                 if trade:
@@ -2429,6 +2627,250 @@ def monitor_all_positions():
                     # Don't remove position - keep monitoring to retry
             continue  # move to next token
 
+        # UPGRADE #1: Momentum Decay Exit (strategy integrity - before stop-loss)
+        momentum_decay_exit_reason = None
+        if config.get('ENABLE_MOMENTUM_DECAY_EXIT', True) and isinstance(position_data, dict):
+            try:
+                entry_momentum_score = position_data.get("entry_momentum_score")
+                entry_momentum_source = position_data.get("entry_momentum_source")
+                
+                # Skip if entry momentum not available (old positions or entry-time failure)
+                if entry_momentum_score is None:
+                    # Old position without momentum data - skip decay check (backward compatibility)
+                    pass
+                else:
+                    # Get current momentum using same logic as entry
+                    from src.core.strategy import _calculate_momentum_score
+                    from src.config.config_loader import get_config_values
+                    
+                    # Build token dict for momentum calculation
+                    current_token = {
+                        "address": token_address,
+                        "symbol": symbol,
+                        "priceUsd": current_price,
+                        "priceChange5m": None,  # Will fetch from DexScreener if needed
+                        "priceChange1h": None,
+                        "priceChange24h": None,
+                        "candles_validated": False,
+                        "candles_15m": None,
+                        "technical_indicators": {},
+                    }
+                    
+                    # Try to get current momentum from DexScreener
+                    try:
+                        import requests
+                        dexscreener_url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
+                        response = requests.get(dexscreener_url, timeout=10)
+                        if response.status_code == 200:
+                            data = response.json()
+                            pairs = data.get("pairs", [])
+                            if pairs:
+                                pair = pairs[0]  # Use first pair
+                                price_change = pair.get("priceChange", {})
+                                current_token["priceChange5m"] = price_change.get("m5")
+                                current_token["priceChange1h"] = price_change.get("h1")
+                                current_token["priceChange24h"] = price_change.get("h24")
+                    except Exception:
+                        pass  # Continue without DexScreener data
+                    
+                    current_config = get_config_values()
+                    current_momentum_score, current_source, _ = _calculate_momentum_score(current_token, current_config)
+                    
+                    if current_momentum_score is not None:
+                        momentum_decay_threshold = config.get('momentum_decay_threshold', 0.005)
+                        momentum_decay_delta = config.get('momentum_decay_delta', 0.01)
+                        momentum_decay_consecutive = config.get('momentum_decay_consecutive_checks', 2)
+                        
+                        momentum_decay_amount = entry_momentum_score - current_momentum_score
+                        decay_checks = position_data.get("momentum_decay_checks", 0)
+                        last_decay_log = position_data.get("momentum_decay_last_log_check", 0)
+                        current_time_ts = time.time()
+                        
+                        # Rate-limited momentum decay telemetry (log every 5 checks or when state changes)
+                        should_log_telemetry = (
+                            (decay_checks == 0 and momentum_decay_amount > momentum_decay_delta) or  # Decay started
+                            (decay_checks > 0 and momentum_decay_amount <= momentum_decay_delta) or  # Decay recovered
+                            (current_time_ts - last_decay_log > 300) or  # 5 minutes since last log
+                            (decay_checks % 5 == 0 and decay_checks > 0)  # Every 5 consecutive checks
+                        )
+                        
+                        if should_log_telemetry:
+                            log_info("momentum_decay.check",
+                                    f"Momentum decay check: entry={entry_momentum_score:.4f}, current={current_momentum_score:.4f}, decay={momentum_decay_amount:.4f}, consecutive={decay_checks}",
+                                    context={
+                                        "token": token_address,
+                                        "symbol": symbol,
+                                        "entry_momentum_score": entry_momentum_score,
+                                        "current_momentum_score": current_momentum_score,
+                                        "entry_momentum_source": entry_momentum_source,
+                                        "current_momentum_source": current_source,
+                                        "decay_delta": momentum_decay_amount,
+                                        "decay_consecutive_count": decay_checks,
+                                        "momentum_decay_threshold": momentum_decay_threshold,
+                                        "momentum_decay_delta": momentum_decay_delta,
+                                    })
+                            position_data["momentum_decay_last_log_check"] = current_time_ts
+                            updated_positions[position_key] = position_data
+                        
+                        # Check absolute threshold
+                        if current_momentum_score < momentum_decay_threshold:
+                            momentum_decay_exit_reason = f"momentum_below_threshold_{current_momentum_score:.4f}_vs_{momentum_decay_threshold:.4f}"
+                        
+                        # Check decay delta
+                        if momentum_decay_amount > momentum_decay_delta:
+                            # Track consecutive decay checks
+                            decay_checks = position_data.get("momentum_decay_checks", 0) + 1
+                            position_data["momentum_decay_checks"] = decay_checks
+                            updated_positions[position_key] = position_data
+                            
+                            if decay_checks >= momentum_decay_consecutive:
+                                momentum_decay_exit_reason = f"momentum_decay_{momentum_decay_amount:.4f}_over_{momentum_decay_consecutive}_checks"
+                        else:
+                            # Reset decay counter if momentum recovered
+                            if position_data.get("momentum_decay_checks", 0) > 0:
+                                position_data["momentum_decay_checks"] = 0
+                                updated_positions[position_key] = position_data
+                        
+                        if momentum_decay_exit_reason:
+                            # Log momentum decay exit trigger
+                            trigger_reason = "below_threshold" if current_momentum_score < momentum_decay_threshold else "decay_delta_consecutive"
+                            log_info("momentum_decay.trigger",
+                                    f"Momentum decay exit triggered: {trigger_reason}",
+                                    context={
+                                        "token": token_address,
+                                        "symbol": symbol,
+                                        "entry_momentum_score": entry_momentum_score,
+                                        "current_momentum_score": current_momentum_score,
+                                        "decay_delta": momentum_decay_amount,
+                                        "decay_consecutive_count": decay_checks,
+                                        "trigger_reason": trigger_reason,
+                                    })
+                            print(f"\n{'='*60}")
+                            print(f"📉 MOMENTUM DECAY EXIT TRIGGERED!")
+                            print(f"Token: {symbol} ({token_address[:8]}...{token_address[-8:]})")
+                            print(f"Entry Momentum: {entry_momentum_score:.4f} ({entry_momentum_source})")
+                            print(f"Current Momentum: {current_momentum_score:.4f} ({current_source})")
+                            print(f"Decay: {momentum_decay_amount:.4f}")
+                            print(f"Reason: {momentum_decay_exit_reason}")
+                            
+                            # Execute sell
+                            tx = _sell_token_multi_chain(token_address, chain_id, symbol)
+                            if tx:
+                                _log_trade_exit(token_address, symbol, original_entry_price, current_price, 
+                                              f"momentum_decay_{momentum_decay_exit_reason}", 
+                                              position_data=position_data, tx_hash=tx)
+                                if trade:
+                                    position_size = trade.get('position_size_usd', 0)
+                                    pnl_usd = gain * position_size
+                                    from src.core.performance_tracker import performance_tracker
+                                    performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, f"momentum_decay_{momentum_decay_exit_reason}")
+                                
+                                _cleanup_closed_position(position_key, token_address, chain_id)
+                                send_telegram_message(
+                                    f"📉 Momentum Decay Exit!\n"
+                                    f"Token: {symbol} ({token_address[:8]}...{token_address[-8:]})\n"
+                                    f"Entry Momentum: {entry_momentum_score:.4f}\n"
+                                    f"Current Momentum: {current_momentum_score:.4f}\n"
+                                    f"Decay: {momentum_decay_amount:.4f}\n"
+                                    f"Entry: ${original_entry_price:.6f}\n"
+                                    f"Exit: ${current_price:.6f} ({gain * 100:.2f}%)\n"
+                                    f"TX: {tx}"
+                                )
+                                closed_positions.append(position_key)
+                                updated_positions.pop(position_key, None)
+                                continue
+            except Exception as e:
+                print(f"⚠️ Momentum decay exit check error: {e}")
+                import traceback
+                traceback.print_exc()
+
+        # UPGRADE #4: Structure Failure Exit (strategy integrity - before stop-loss)
+        structure_failure_exit_reason = None
+        if config.get('ENABLE_STRUCTURE_FAILURE_EXIT', True) and isinstance(position_data, dict):
+            try:
+                # Check minimum position age
+                position_timestamp = position_data.get("timestamp")
+                if position_timestamp:
+                    from datetime import datetime
+                    try:
+                        entry_time = datetime.fromisoformat(position_timestamp.replace('Z', '+00:00'))
+                        position_age_seconds = (datetime.now(entry_time.tzinfo) - entry_time).total_seconds()
+                        min_age = config.get('structure_failure_min_age_seconds', 300)
+                        
+                        if position_age_seconds >= min_age:
+                            structure_break_threshold = config.get('structure_break_threshold', 0.02)
+                            
+                            # Try candles first (preferred method)
+                            # Try to get candles from stored position data
+                            candles = None
+                            if isinstance(position_data, dict):
+                                candles = position_data.get('candles_15m')
+                            
+                            if candles and len(candles) >= 4:
+                                # Use candles to detect swing low break
+                                lookback = config.get('structure_lookback_candles', 20)
+                                lookback_candles = candles[-lookback:] if len(candles) >= lookback else candles
+                                
+                                # Find swing low (minimum low in lookback window)
+                                swing_low = min(float(c.get('low', current_price)) for c in lookback_candles)
+                                
+                                # Check if current price broke below swing low
+                                break_pct = (swing_low - current_price) / swing_low if swing_low > 0 else 0
+                                if break_pct >= structure_break_threshold:
+                                    structure_failure_exit_reason = f"structure_break_candle_swing_low_{swing_low:.6f}_break_{break_pct:.4f}"
+                            else:
+                                # Fallback: use recent prices array (already updated above)
+                                recent_prices = position_data.get("recent_prices", [])
+                                
+                                if len(recent_prices) >= 3:  # Need at least 3 prices
+                                    # Find support level (minimum price in window, excluding current)
+                                    support_level = min(recent_prices[:-1]) if len(recent_prices) > 1 else min(recent_prices)
+                                    
+                                    # Check if current price broke below support
+                                    if current_price < support_level:
+                                        break_pct = (support_level - current_price) / support_level if support_level > 0 else 0
+                                        if break_pct >= structure_break_threshold:
+                                            structure_failure_exit_reason = f"structure_break_price_support_{support_level:.6f}_break_{break_pct:.4f}"
+                            
+                            if structure_failure_exit_reason:
+                                print(f"\n{'='*60}")
+                                print(f"🏗️ STRUCTURE FAILURE EXIT TRIGGERED!")
+                                print(f"Token: {symbol} ({token_address[:8]}...{token_address[-8:]})")
+                                print(f"Position Age: {position_age_seconds:.0f}s")
+                                print(f"Current Price: ${current_price:.6f}")
+                                print(f"Reason: {structure_failure_exit_reason}")
+                                
+                                # Execute sell
+                                tx = _sell_token_multi_chain(token_address, chain_id, symbol)
+                                if tx:
+                                    _log_trade_exit(token_address, symbol, original_entry_price, current_price,
+                                                  f"structure_failure_{structure_failure_exit_reason}",
+                                                  position_data=position_data, tx_hash=tx)
+                                    if trade:
+                                        position_size = trade.get('position_size_usd', 0)
+                                        pnl_usd = gain * position_size
+                                        from src.core.performance_tracker import performance_tracker
+                                        performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, f"structure_failure_{structure_failure_exit_reason}")
+                                    
+                                    _cleanup_closed_position(position_key, token_address, chain_id)
+                                    send_telegram_message(
+                                        f"🏗️ Structure Failure Exit!\n"
+                                        f"Token: {symbol} ({token_address[:8]}...{token_address[-8:]})\n"
+                                        f"Reason: {structure_failure_exit_reason}\n"
+                                        f"Entry: ${original_entry_price:.6f}\n"
+                                        f"Exit: ${current_price:.6f} ({gain * 100:.2f}%)\n"
+                                        f"TX: {tx}"
+                                    )
+                                    closed_positions.append(position_key)
+                                    updated_positions.pop(position_key, None)
+                                    continue
+                    except Exception as e:
+                        print(f"⚠️ Structure failure exit check error: {e}")
+            except Exception as e:
+                print(f"⚠️ Structure failure exit check error: {e}")
+                import traceback
+                traceback.print_exc()
+
         # Hard stop-loss (only if not already handled by Partial TP Manager)
         # Calculate effective stop loss with slippage buffer to account for execution slippage
         stop_loss_slippage_buffer = config.get('stop_loss_slippage_buffer', 0.15)
@@ -2457,7 +2899,8 @@ def monitor_all_positions():
                 print(f"✅ [PRE-SELL CHECK] Token balance is zero/dust ({pre_sell_balance:.8f}) - position already sold, cleaning up...")
                 
                 # Log the trade exit
-                log_trade(token_address, original_entry_price, current_price, "stop_loss")
+                _log_trade_exit(token_address, symbol, original_entry_price, current_price, "stop_loss",
+                              position_data=position_data if isinstance(position_data, dict) else None)
                 
                 # Update performance tracker
                 trade = _find_open_trade_by_address(token_address, chain_id)
@@ -2724,7 +3167,8 @@ def monitor_all_positions():
                 print(f"✅ [PRE-SELL CHECK] Token balance is zero/dust ({pre_sell_balance:.8f}) - position already sold, cleaning up...")
                 
                 # Log the trade exit
-                log_trade(token_address, entry_price, current_price, "trailing_stop")
+                _log_trade_exit(token_address, symbol, entry_price, current_price, "trailing_stop",
+                              position_data=position_data if isinstance(position_data, dict) else None, tx_hash=tx)
                 
                 # Update performance tracker
                 trade = _find_open_trade_by_address(token_address, chain_id)
@@ -2803,7 +3247,8 @@ def monitor_all_positions():
                     print(f"❌ [TRAILING STOP] Sell verification failed, will retry on next cycle")
                     continue
                 
-                log_trade(token_address, entry_price, current_price, "trailing_stop")
+                _log_trade_exit(token_address, symbol, entry_price, current_price, "trailing_stop",
+                              position_data=position_data if isinstance(position_data, dict) else None, tx_hash=tx)
                 
                 # Update performance tracker with exit
                 trade = _find_open_trade_by_address(token_address, chain_id)
@@ -2871,7 +3316,8 @@ def monitor_all_positions():
                 if balance_check_passed:
                     # Sell actually succeeded - log it and remove position
                     print(f"✅ [RECOVERY] Trailing stop sell succeeded (verified by balance check), logging trade...")
-                    log_trade(token_address, entry_price, current_price, "trailing_stop")
+                    _log_trade_exit(token_address, symbol, entry_price, current_price, "trailing_stop",
+                              position_data=position_data if isinstance(position_data, dict) else None, tx_hash=tx)
                     
                     # Update performance tracker
                     trade = _find_open_trade_by_address(token_address, chain_id)

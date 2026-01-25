@@ -266,6 +266,8 @@ def _log_position(token: dict, *, trade_id: Optional[str] = None, entry_time: Op
         "symbol": token.get("symbol", "?"),
         "timestamp": timestamp,
         "address": addr,
+        "peak_price": entry,  # Initialize peak/low for MFE/MAE tracking
+        "low_price": entry,
     }
 
     if "position_size_usd" in token:
@@ -273,6 +275,49 @@ def _log_position(token: dict, *, trade_id: Optional[str] = None, entry_time: Op
 
     if trade_id:
         position_data["trade_id"] = trade_id
+
+    # UPGRADE #1: Store entry momentum snapshot for decay detection
+    try:
+        from src.core.strategy import _calculate_momentum_score
+        from src.config.config_loader import get_config_values
+        
+        config = get_config_values()
+        momentum_score, momentum_source, momentum_data = _calculate_momentum_score(token, config)
+        
+        if momentum_score is not None:
+            position_data["entry_momentum_score"] = float(momentum_score)
+            position_data["entry_momentum_source"] = momentum_source
+            position_data["entry_momentum_5m"] = momentum_data.get('momentum_5m')
+            position_data["entry_momentum_1h"] = momentum_data.get('momentum_1h')
+            position_data["entry_momentum_24h"] = momentum_data.get('momentum_24h')
+            position_data["entry_momentum_timestamp"] = timestamp
+            print(f"📊 Stored entry momentum snapshot: score={momentum_score:.4f}, source={momentum_source}")
+    except Exception as e:
+        print(f"⚠️ Failed to store entry momentum snapshot: {e}")
+        # Don't fail position creation if momentum storage fails
+    
+    # UPGRADE #2: Store entry VWAP if available
+    try:
+        tech_indicators = token.get('technical_indicators', {})
+        vwap_dict = tech_indicators.get('vwap') or token.get('vwap')
+        vwap_value = None
+        
+        if isinstance(vwap_dict, dict):
+            vwap_value = vwap_dict.get('vwap')
+        elif isinstance(vwap_dict, (int, float)):
+            vwap_value = float(vwap_dict)
+        
+        if vwap_value and vwap_value > 0:
+            position_data["entry_vwap"] = float(vwap_value)
+            position_data["entry_price_vs_vwap_pct"] = ((entry - vwap_value) / vwap_value) if vwap_value > 0 else 0.0
+    except Exception as e:
+        print(f"⚠️ Failed to store entry VWAP: {e}")
+    
+    # UPGRADE #4: Initialize recent_prices array for structure failure detection
+    try:
+        position_data["recent_prices"] = [float(entry)]  # Initialize with entry price
+    except Exception as e:
+        print(f"⚠️ Failed to initialize recent_prices: {e}")
 
     upsert_position(position_key, position_data)
     try:

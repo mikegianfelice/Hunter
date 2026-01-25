@@ -148,5 +148,10 @@ def get_config_values():
         'ENABLE_VOLUME_MOMENTUM_CHECK': get_config_bool("enable_volume_momentum_check", True),
         'MIN_VOLUME_CHANGE_1H': get_config_float("min_volume_change_1h", 0.1),
         'ENABLE_RSI_FILTER': get_config_bool("enable_rsi_filter", True),
-        'RSI_OVERBOUGHT_THRESHOLD': get_config_float("rsi_overbought_threshold", 70)
+        'RSI_OVERBOUGHT_THRESHOLD': get_config_float("rsi_overbought_threshold", 70),
+        # UPGRADE #2: VWAP Entry Filter
+        'ENABLE_VWAP_ENTRY_FILTER': get_config_bool("enable_vwap_entry_filter", True),
+        'VWAP_ENTRY_REQUIRED': get_config_bool("vwap_entry_required", True),
+        'MAX_VWAP_EXTENSION_PCT': get_config_float("max_vwap_extension_pct", 0.05),
+        'VWAP_PULLBACK_TOLERANCE_PCT': get_config_float("vwap_pullback_tolerance_pct", 0.02)
     }

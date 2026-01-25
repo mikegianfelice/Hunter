@@ -90,6 +90,82 @@ def _pct_change(curr: float, prev: float) -> float:
         return 0.0
     return (curr - prev) / prev
 
+def _calculate_momentum_score(token: dict, config: dict) -> tuple:
+    """
+    Calculate momentum score from available sources (reusable for entry and exit).
+    Returns (momentum_score: float, source: str, momentum_data: dict) tuple.
+    momentum_score: Normalized score (0-1) or raw momentum value
+    source: "candle", "external", "token_data", or None
+    momentum_data: Dict with 5m/1h/24h values for tracking decay
+    """
+    momentum_data = {
+        'momentum_5m': None,
+        'momentum_1h': None,
+        'momentum_24h': None,
+    }
+    
+    # Try candle-based momentum first (most accurate)
+    if token.get('candles_validated') and token.get('candles_15m'):
+        candles = token['candles_15m']
+        candle_momentum = token.get('candle_momentum')
+        
+        if candle_momentum is not None and len(candles) >= 4:
+            # Extract individual timeframe momentum if available
+            tech_indicators = token.get('technical_indicators', {})
+            momentum_data['momentum_5m'] = token.get('priceChange5m')
+            momentum_data['momentum_1h'] = token.get('priceChange1h')
+            momentum_data['momentum_24h'] = token.get('priceChange24h')
+            
+            return candle_momentum, "candle", momentum_data
+    
+    # Try external momentum (DexScreener)
+    if config.get('ENABLE_EXTERNAL_MOMENTUM', True):
+        ext_momentum, ext_source = _get_external_momentum(token, config)
+        if ext_momentum is not None:
+            # Extract individual timeframes
+            def to_decimal(pct_val):
+                if pct_val is None or pct_val == "" or str(pct_val).lower() == "none" or str(pct_val).strip() == "":
+                    return None
+                try:
+                    val = float(pct_val)
+                    return val / 100.0 if abs(val) > 1 else val
+                except (ValueError, TypeError):
+                    return None
+            
+            momentum_data['momentum_5m'] = to_decimal(token.get('priceChange5m'))
+            momentum_data['momentum_1h'] = to_decimal(token.get('priceChange1h'))
+            momentum_data['momentum_24h'] = to_decimal(token.get('priceChange24h'))
+            
+            return ext_momentum, "external", momentum_data
+    
+    # Fallback to token data momentum
+    momentum_24h = token.get("momentum_24h") or token.get("priceChange24h")
+    momentum_1h = token.get("momentum_1h") or token.get("priceChange1h")
+    
+    def to_decimal(mom_val):
+        if mom_val is None or mom_val == "" or str(mom_val).lower() == "none" or str(mom_val).strip() == "":
+            return None
+        try:
+            val = float(mom_val)
+            return val / 100.0 if abs(val) > 1 else val
+        except (ValueError, TypeError):
+            return None
+    
+    mom_24h = to_decimal(momentum_24h)
+    mom_1h = to_decimal(momentum_1h)
+    mom_5m = to_decimal(token.get("priceChange5m"))
+    
+    momentum_data['momentum_5m'] = mom_5m
+    momentum_data['momentum_1h'] = mom_1h
+    momentum_data['momentum_24h'] = mom_24h
+    
+    if mom_1h is not None:
+        return mom_1h, "token_data", momentum_data
+    elif mom_24h is not None:
+        return mom_24h, "token_data", momentum_data
+    
+    return None, None, momentum_data
+
 def _get_external_momentum(token: dict, config: dict):
     """
     Get momentum from external historical data (DexScreener price changes).
@@ -1224,6 +1300,72 @@ def check_buy_signal(token: dict) -> bool:
                     return False
             except (ValueError, TypeError):
                 pass  # Skip if volume change data not parseable
+
+    # VWAP Entry Filter (UPGRADE #2: Strength filter)
+    if config.get('ENABLE_VWAP_ENTRY_FILTER', True):
+        vwap_entry_required = config.get('VWAP_ENTRY_REQUIRED', True)
+        max_vwap_extension_pct = config.get('MAX_VWAP_EXTENSION_PCT', 0.05)
+        vwap_pullback_tolerance_pct = config.get('VWAP_PULLBACK_TOLERANCE_PCT', 0.02)
+        
+        # Try to get VWAP from technical indicators or token dict
+        tech_indicators = token.get('technical_indicators', {})
+        vwap_dict = tech_indicators.get('vwap') or token.get('vwap')
+        vwap_value = None
+        
+        # Handle VWAP dict format (from TechnicalIndicators.calculate_vwap)
+        if isinstance(vwap_dict, dict):
+            vwap_value = vwap_dict.get('vwap')
+        elif isinstance(vwap_dict, (int, float)):
+            vwap_value = float(vwap_dict)
+        
+        if vwap_value and vwap_value > 0:
+            # VWAP available - apply filter
+            price_vs_vwap_pct = ((price - vwap_value) / vwap_value) if vwap_value > 0 else 0.0
+            
+            if vwap_entry_required and price < vwap_value:
+                # Hard block: price below VWAP
+                _log_trace(
+                    f"❌ VWAP entry filter blocked: price ${price:.6f} < VWAP ${vwap_value:.6f} ({price_vs_vwap_pct*100:.2f}% below)",
+                    level="info",
+                    event="strategy.buy.vwap_below_blocked",
+                    symbol=token.get("symbol"),
+                    price=price,
+                    vwap=vwap_value,
+                    price_vs_vwap_pct=price_vs_vwap_pct,
+                )
+                return False
+            
+            # Check for extended price (too far above VWAP)
+            if price_vs_vwap_pct > max_vwap_extension_pct:
+                # Price extended above VWAP - require extra momentum confirmation
+                _log_trace(
+                    f"⚠️ Price extended above VWAP: {price_vs_vwap_pct*100:.2f}% (threshold: {max_vwap_extension_pct*100:.2f}%) - requiring extra momentum confirmation",
+                    level="warning",
+                    event="strategy.buy.vwap_extended",
+                    symbol=token.get("symbol"),
+                    price_vs_vwap_pct=price_vs_vwap_pct,
+                    max_extension=max_vwap_extension_pct,
+                )
+                # Continue but momentum threshold will be checked below
+            elif abs(price_vs_vwap_pct) <= vwap_pullback_tolerance_pct:
+                # Price near VWAP (pullback) - preferred entry zone
+                _log_trace(
+                    f"✅ VWAP pullback entry: price ${price:.6f} near VWAP ${vwap_value:.6f} ({abs(price_vs_vwap_pct)*100:.2f}% distance)",
+                    level="info",
+                    event="strategy.buy.vwap_pullback",
+                    symbol=token.get("symbol"),
+                    price=price,
+                    vwap=vwap_value,
+                    distance_pct=abs(price_vs_vwap_pct),
+                )
+        else:
+            # VWAP unavailable - proceed without filter (don't block trades)
+            _log_trace(
+                "⚠️ VWAP unavailable - proceeding without VWAP filter",
+                level="info",
+                event="strategy.buy.vwap_unavailable",
+                symbol=token.get("symbol"),
+            )
 
     # Use candle-based momentum if available (most accurate - computed from validated 15m candles)
     # This takes priority over external momentum since it's computed from real on-chain data

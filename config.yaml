@@ -1761,6 +1761,36 @@ partial_tp_manager:
   trailing_stop_tightened: 0.05  # 5% trailing stop when tightened
   hard_stop_loss_pct: 0.03  # Hard stop loss at -3% (updated to match stop_loss)
 
+# === MOMENTUM DECAY EXIT ===
+# Exit positions when entry momentum fades (strategy integrity)
+enable_momentum_decay_exit: true  # Enable momentum decay exit
+momentum_decay_threshold: 0.005  # 0.5% absolute minimum momentum (exit if current momentum drops below this)
+momentum_decay_delta: 0.01  # 1% decay from entry momentum triggers exit
+momentum_decay_consecutive_checks: 2  # Require 2 consecutive monitor cycles showing decay before triggering
+
+# === VWAP ENTRY FILTER ===
+# Filter entries to only buy above VWAP (momentum strength requirement)
+enable_vwap_entry_filter: true  # Enable VWAP entry filter
+vwap_entry_required: true  # Hard block entries below VWAP (momentum requires buying strength)
+max_vwap_extension_pct: 0.05  # 5% above VWAP = extended, require extra momentum confirmation
+vwap_pullback_tolerance_pct: 0.02  # 2% pullback to VWAP = preferred entry zone
+
+# === REGIME DETECTION ENFORCEMENT ===
+# Tighten regime-based trading controls to avoid unfavorable conditions
+regime_enforcement_enabled: true  # Enable tightened regime enforcement
+regime_bear_market_threshold: 0.60  # Block new trades if bear market confidence >60% (was 80% - tightened)
+regime_high_volatility_threshold: 0.50  # Block new trades if high volatility confidence >50% (was 70% - tightened)
+regime_sideways_throttle: true  # Throttle position sizing in sideways/choppy markets
+regime_throttle_position_multiplier: 0.7  # Reduce position size by 30% in sideways markets (multiply by 0.7)
+
+# === STRUCTURE FAILURE EXIT ===
+# Exit on support/structure breaks (strategy integrity)
+enable_structure_failure_exit: true  # Enable structure failure exit
+structure_failure_min_age_seconds: 300  # 5 minutes minimum position age before structure check (avoid false triggers on new positions)
+structure_break_threshold: 0.02  # 2% break below support/swing low triggers exit
+structure_lookback_candles: 20  # Lookback window for swing low detection (20 candles = 5 hours for 15m candles)
+structure_recent_prices_window: 10  # Number of recent prices to track when candles unavailable (fallback method)
+
 # === AI TIME WINDOW SCHEDULER ===
 # Enable AI-powered time window scheduling for optimal entry timing
 # NOTE: The ai_time_window_scheduler module has been removed; keep this disabled
