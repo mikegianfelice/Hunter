@@ -73,6 +73,36 @@ DELISTED_TOKENS_FILE = _project_root / "data" / "delisted_tokens.json"
 # === Global for cleanup ===
 _running = True
 
+# Rate limit: Telegram when we skip stop-loss check due to price (avoid spam every 15s)
+_stop_loss_skip_telegram_last: Dict[str, float] = {}
+_STOP_LOSS_SKIP_TELEGRAM_INTERVAL_SEC = 600  # 10 minutes per position
+
+
+def _maybe_send_stop_loss_skip_telegram(
+    position_key: str,
+    symbol: str,
+    token_address: str,
+    chain_id: str,
+    reason: str,
+) -> None:
+    """Send Telegram when we skip stop-loss check due to price (rate-limited)."""
+    try:
+        now = time.time()
+        last = _stop_loss_skip_telegram_last.get(position_key, 0.0)
+        if now - last < _STOP_LOSS_SKIP_TELEGRAM_INTERVAL_SEC:
+            return
+        _stop_loss_skip_telegram_last[position_key] = now
+        send_telegram_message(
+            f"⚠️ Stop-loss check skipped (price unavailable)\n"
+            f"Token: {symbol} ({token_address[:8]}...{token_address[-8:]})\n"
+            f"Chain: {chain_id.upper()}\n"
+            f"Reason: {reason}\n"
+            f"Position may be at a loss. Monitor manually. Will retry next cycle.",
+            message_type="warning",
+        )
+    except Exception as e:
+        print(f"⚠️ Failed to send stop-loss skip Telegram: {e}")
+
 def _pid_is_alive(pid: int) -> bool:
     try:
         if pid <= 0:
@@ -1629,6 +1659,10 @@ def monitor_all_positions():
                     
                     if current_price == 0:
                         print(f"⏳ Holding position (price unavailable but token exists in wallet)...")
+                        _maybe_send_stop_loss_skip_telegram(
+                            position_key, symbol, token_address, chain_id,
+                            "price unavailable (holding; DexScreener fallback failed)",
+                        )
                         continue
                 elif balance == 0:
                     # Balance is zero - might be delisted or sold manually, track failure normally
@@ -1636,6 +1670,10 @@ def monitor_all_positions():
                 else:  # balance == -1.0 (check failed)
                     # Can't verify - skip this check to avoid false negatives
                     print(f"⏸️ Balance check failed for {symbol}, skipping failure tracking")
+                    _maybe_send_stop_loss_skip_telegram(
+                        position_key, symbol, token_address, chain_id,
+                        "balance check failed; skipping failure tracking",
+                    )
                     continue
             
             failure_counts[token_address] = failure_counts.get(token_address, 0) + 1
@@ -1648,6 +1686,10 @@ def monitor_all_positions():
                 if position_key in positions:
                     print(f"🛡️ Position {symbol} is actively tracked in open positions - skipping delisting check to prevent false positive")
                     failure_counts[token_address] = max(0, failure_counts[token_address] - 2)
+                    _maybe_send_stop_loss_skip_telegram(
+                        position_key, symbol, token_address, chain_id,
+                        "price unavailable; skipping delisting (tracked); stop-loss not checked",
+                    )
                     continue
                 
                 # BEFORE marking as delisted, verify the token doesn't exist in wallet
@@ -1668,6 +1710,10 @@ def monitor_all_positions():
                     failure_counts[token_address] = 0
                     # Continue monitoring but skip PnL calculations since we don't have price
                     print(f"⏳ Holding position (price unavailable but token exists in wallet)...")
+                    _maybe_send_stop_loss_skip_telegram(
+                        position_key, symbol, token_address, chain_id,
+                        "price unavailable (holding; balance verified, not delisted)",
+                    )
                     continue
                 else:
                     # Balance is 0 AND price fetch fails - likely delisted
@@ -1723,6 +1769,10 @@ def monitor_all_positions():
             # If we can't get price, we can't determine stop loss, so skip this cycle
             # but log the issue for visibility
             print(f"⚠️ Skipping stop loss check for {symbol} - price unavailable")
+            _maybe_send_stop_loss_skip_telegram(
+                position_key, symbol, token_address, chain_id,
+                "price unavailable",
+            )
             continue
 
         # Check if price is fallback value (0.000001) - indicates API failure, not actual price
@@ -1732,6 +1782,10 @@ def monitor_all_positions():
             print(f"⚠️ Price is fallback value ({FALLBACK_PRICE}) - all price APIs failed")
             print(f"⏳ Skipping stop-loss check for {symbol} to prevent false trigger")
             print(f"🔄 Will retry price fetch on next cycle...")
+            _maybe_send_stop_loss_skip_telegram(
+                position_key, symbol, token_address, chain_id,
+                "price fallback (all APIs failed)",
+            )
             continue
 
         timestamp = _dt.now().strftime("%Y-%m-%d %H:%M:%S")

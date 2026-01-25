@@ -1143,6 +1143,19 @@ def check_buy_signal(token: dict) -> bool:
         )
         return False
 
+    # CRITICAL: Require validated candles before trade entry (required for technical checks)
+    # Candles must be fetched and validated to ensure VWAP and other technical indicators are available
+    if not token.get('candles_validated') or not token.get('candles_15m'):
+        _log_trace(
+            f"❌ Candles not validated - blocking trade entry (candles_validated={token.get('candles_validated')}, candles_15m={'present' if token.get('candles_15m') else 'missing'})",
+            level="info",
+            event="strategy.buy.candles_not_validated",
+            symbol=token.get("symbol"),
+            candles_validated=token.get('candles_validated'),
+            has_candles_15m=bool(token.get('candles_15m')),
+        )
+        return False
+
     # Jupiter tradeability pre-check for Solana tokens (PRE-TRADE SAFETY CHECK)
     # This prevents attempting to buy tokens that cannot be traded on Jupiter
     if chain_id == "solana" and not is_trusted and config.get('ENABLE_JUPITER_PRE_CHECK', True):
@@ -1259,47 +1272,76 @@ def check_buy_signal(token: dict) -> bool:
         )
         return True
 
-    # RSI filter - avoid overbought entries
-    if config.get('ENABLE_RSI_FILTER', True):
-        rsi_threshold = config.get('RSI_OVERBOUGHT_THRESHOLD', 70)
-        # Try to get RSI from token dict (if available from technical indicators)
-        rsi = token.get("rsi")
-        if rsi is None:
-            # Try to get from technical_indicators nested dict
-            tech_indicators = token.get("technical_indicators", {})
-            if isinstance(tech_indicators, dict):
-                rsi = tech_indicators.get("rsi")
-        if rsi is not None and rsi > rsi_threshold:
+    # RSI filter - MANDATORY: avoid overbought entries (required for all trades)
+    rsi_threshold = config.get('RSI_OVERBOUGHT_THRESHOLD', 70)
+    # Try to get RSI from token dict (if available from technical indicators)
+    rsi = token.get("rsi")
+    if rsi is None:
+        # Try to get from technical_indicators nested dict
+        tech_indicators = token.get("technical_indicators", {})
+        if isinstance(tech_indicators, dict):
+            rsi = tech_indicators.get("rsi")
+    
+    # MANDATORY: Block if RSI unavailable (should be calculated from validated candles)
+    if rsi is None:
+        _log_trace(
+            f"❌ RSI filter blocked: RSI unavailable (required but not calculated from candles)",
+            level="info",
+            event="strategy.buy.rsi_unavailable_blocked",
+            symbol=token.get("symbol"),
+        )
+        return False
+    
+    # Block if overbought
+    if rsi > rsi_threshold:
+        _log_trace(
+            f"❌ Token overbought (RSI: {rsi:.1f} > {rsi_threshold})",
+            level="info",
+            event="strategy.buy.rsi_overbought",
+            symbol=token.get("symbol"),
+            rsi=rsi,
+            threshold=rsi_threshold,
+        )
+        return False
+
+    # Volume momentum check - MANDATORY: require increasing volume (required for all trades)
+    min_volume_change = config.get('MIN_VOLUME_CHANGE_1H', 0.1)
+    # Try to get volume change data (from DexScreener)
+    volume_change_1h = token.get("volumeChange1h")
+    
+    # MANDATORY: Block if volume change data unavailable
+    if volume_change_1h is None:
+        _log_trace(
+            f"❌ Volume momentum check blocked: volume change data unavailable (required but not available from DexScreener)",
+            level="info",
+            event="strategy.buy.volume_momentum_unavailable_blocked",
+            symbol=token.get("symbol"),
+        )
+        return False
+    
+    # Parse and validate volume change
+    try:
+        volume_change_pct = float(volume_change_1h) / 100.0 if float(volume_change_1h) > 1 else float(volume_change_1h)
+        if volume_change_pct < min_volume_change:
             _log_trace(
-                f"❌ Token overbought (RSI: {rsi:.1f} > {rsi_threshold})",
+                f"❌ Volume not increasing (1h change: {volume_change_pct*100:.1f}% < {min_volume_change*100:.1f}%)",
                 level="info",
-                event="strategy.buy.rsi_overbought",
+                event="strategy.buy.volume_momentum_fail",
                 symbol=token.get("symbol"),
-                rsi=rsi,
-                threshold=rsi_threshold,
+                volume_change=volume_change_pct,
+                required_change=min_volume_change,
             )
             return False
-
-    # Volume momentum check - require increasing volume
-    if config.get('ENABLE_VOLUME_MOMENTUM_CHECK', True):
-        min_volume_change = config.get('MIN_VOLUME_CHANGE_1H', 0.1)
-        # Try to get volume change data (if available from DexScreener)
-        volume_change_1h = token.get("volumeChange1h")
-        if volume_change_1h is not None:
-            try:
-                volume_change_pct = float(volume_change_1h) / 100.0 if float(volume_change_1h) > 1 else float(volume_change_1h)
-                if volume_change_pct < min_volume_change:
-                    _log_trace(
-                        f"❌ Volume not increasing (1h change: {volume_change_pct*100:.1f}% < {min_volume_change*100:.1f}%)",
-                        level="info",
-                        event="strategy.buy.volume_momentum_fail",
-                        symbol=token.get("symbol"),
-                        volume_change=volume_change_pct,
-                        required_change=min_volume_change,
-                    )
-                    return False
-            except (ValueError, TypeError):
-                pass  # Skip if volume change data not parseable
+    except (ValueError, TypeError) as e:
+        # MANDATORY: Block if volume change data is unparseable
+        _log_trace(
+            f"❌ Volume momentum check blocked: volume change data unparseable (required): {e}",
+            level="info",
+            event="strategy.buy.volume_momentum_parse_error_blocked",
+            symbol=token.get("symbol"),
+            error=str(e),
+        )
+        return False
 
     # VWAP Entry Filter (UPGRADE #2: Strength filter)
     if config.get('ENABLE_VWAP_ENTRY_FILTER', True):
@@ -1359,13 +1401,23 @@ def check_buy_signal(token: dict) -> bool:
                     distance_pct=abs(price_vs_vwap_pct),
                 )
         else:
-            # VWAP unavailable - proceed without filter (don't block trades)
-            _log_trace(
-                "⚠️ VWAP unavailable - proceeding without VWAP filter",
-                level="info",
-                event="strategy.buy.vwap_unavailable",
-                symbol=token.get("symbol"),
-            )
+            # VWAP unavailable - block trade if VWAP entry is required
+            if vwap_entry_required:
+                _log_trace(
+                    f"❌ VWAP entry filter blocked: VWAP unavailable (required but not calculated from candles)",
+                    level="info",
+                    event="strategy.buy.vwap_unavailable_blocked",
+                    symbol=token.get("symbol"),
+                )
+                return False
+            else:
+                # VWAP not required - log warning but allow trade
+                _log_trace(
+                    "⚠️ VWAP unavailable - proceeding without VWAP filter (not required)",
+                    level="warning",
+                    event="strategy.buy.vwap_unavailable",
+                    symbol=token.get("symbol"),
+                )
 
     # Use candle-based momentum if available (most accurate - computed from validated 15m candles)
     # This takes priority over external momentum since it's computed from real on-chain data
