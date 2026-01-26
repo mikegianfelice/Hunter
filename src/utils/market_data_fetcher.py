@@ -1602,7 +1602,73 @@ class MarketDataFetcher:
             cache_key += f":{int(target_timestamp)}"
         current_time = time.time()
         
-        # Check cache first (before acquiring lock - fast path)
+        # SOLANA: Check minute price tracker FIRST (no API calls, fastest, most reliable)
+        # This should be checked before cache since minute tracker data is always fresh (updated every 5 minutes)
+        if chain_id.lower() == "solana":
+            try:
+                from src.storage.minute_price_tracker import (
+                    get_price_snapshots, build_candles_from_snapshots, get_latest_price_snapshot
+                )
+                
+                # Check if token has ANY data in minute_price_tracker (not just tracked tokens)
+                # This allows any token that's being tracked to use this data source
+                latest_snapshot = get_latest_price_snapshot(token_address)
+                
+                if latest_snapshot:
+                    # Token has data in minute_price_tracker - use it as primary source
+                    end_time = target_timestamp if target_timestamp else current_time
+                    start_time = end_time - (hours * 3600)
+                    snapshots = get_price_snapshots(token_address, start_time, end_time)
+                    
+                    # More lenient minimum: 8 snapshots (40 minutes) for basic analysis
+                    # Prefer 12+ (1 hour) for better accuracy, but accept 8+ for quick decisions
+                    min_snapshots = 8
+                    min_candles = max(8, int(hours * 4 * 0.5))  # At least 8 candles, or 50% of expected
+                    
+                    if snapshots and len(snapshots) >= min_snapshots:
+                        # Build 15-minute candles from 5-minute snapshots
+                        candles = build_candles_from_snapshots(snapshots, 900)  # 900 seconds = 15 minutes
+                        
+                        if candles and len(candles) >= min_candles:
+                            time_span_hours = (snapshots[-1]['interval_timestamp'] - snapshots[0]['interval_timestamp']) / 3600.0 if len(snapshots) > 1 else 0
+                            logger.info(
+                                f"✅ Using minute_price_tracker data for {token_address[:8]}... "
+                                f"({len(candles)} candles from {len(snapshots)} snapshots, "
+                                f"time_span={time_span_hours:.1f}h)"
+                            )
+                            # Cache the result
+                            self.candlestick_cache_helius[cache_key] = {
+                                'data': candles,
+                                'timestamp': current_time,
+                                'source': 'minute_price_tracker'
+                            }
+                            self._save_candlestick_cache()
+                            return candles
+                        elif candles:
+                            logger.debug(
+                                f"Minute price tracker data insufficient for {token_address[:8]}... "
+                                f"({len(candles)} candles < {min_candles} required, {len(snapshots)} snapshots), "
+                                f"falling back to cache/indexed swaps"
+                            )
+                        else:
+                            logger.debug(
+                                f"Minute price tracker returned no candles for {token_address[:8]}... "
+                                f"(from {len(snapshots)} snapshots), falling back to cache/indexed swaps"
+                            )
+                    else:
+                        snapshot_count = len(snapshots) if snapshots else 0
+                        logger.debug(
+                            f"Minute price tracker insufficient snapshots for {token_address[:8]}... "
+                            f"({snapshot_count} < {min_snapshots} required), falling back to cache/indexed swaps"
+                        )
+            except Exception as e:
+                logger.warning(
+                    f"Minute price tracker check failed for {token_address[:8]}...: {e}, "
+                    f"falling back to cache/indexed swaps",
+                    exc_info=True
+                )
+        
+        # Check cache (after minute price tracker - cache is fallback)
         if not force_fetch and cache_key in self.candlestick_cache_helius:
             cached = self.candlestick_cache_helius[cache_key]
             cache_age = current_time - cached.get('timestamp', 0)
@@ -1625,48 +1691,6 @@ class MarketDataFetcher:
                         f"due to high API usage ({helius_calls}/300000)"
                     )
                     return cached['data']  # Use stale cache to save calls
-        
-        # SOLANA: Check tracked price data first for pippin/fartcoin (no API calls, consistent data)
-        if chain_id.lower() == "solana":
-            try:
-                from src.storage.minute_price_tracker import (
-                    TRACKED_TOKENS, get_price_snapshots, build_candles_from_snapshots
-                )
-                # Check if this is a tracked token (pippin or fartcoin)
-                if token_address.lower() in [addr.lower() for addr in TRACKED_TOKENS.values()]:
-                    # Use tracked 5-minute price snapshots to build candles
-                    end_time = target_timestamp if target_timestamp else current_time
-                    start_time = end_time - (hours * 3600)
-                    snapshots = get_price_snapshots(token_address, start_time, end_time)
-                    
-                    # Need minimum 12 snapshots (1 hour) for basic analysis, prefer 16+ (4 hours) for accuracy
-                    if snapshots and len(snapshots) >= 12:
-                        # Build 15-minute candles from 5-minute snapshots
-                        candles = build_candles_from_snapshots(snapshots, 900)  # 900 seconds = 15 minutes
-                        if candles and len(candles) >= 12:
-                            logger.info(
-                                f"✅ Using tracked price data for {token_address[:8]}... "
-                                f"({len(candles)} candles from {len(snapshots)} snapshots)"
-                            )
-                            # Cache the result
-                            self.candlestick_cache_helius[cache_key] = {
-                                'data': candles,
-                                'timestamp': current_time,
-                                'source': 'tracked_price_data'
-                            }
-                            return candles
-                        elif candles:
-                            logger.debug(
-                                f"Tracked price data insufficient for {token_address[:8]}... "
-                                f"({len(candles)} candles < 12 required), falling back to Helius"
-                            )
-                    else:
-                        logger.debug(
-                            f"Tracked price data not yet available for {token_address[:8]}... "
-                            f"({len(snapshots) if snapshots else 0} snapshots < 12 required), falling back to Helius"
-                        )
-            except Exception as e:
-                logger.debug(f"Tracked price data check failed for {token_address[:8]}...: {e}, falling back to Helius")
         
         # SOLANA: Try indexed swaps first (fast, no API calls), then targeted backfill, then DEX API, then RPC
         if chain_id.lower() == "solana":
