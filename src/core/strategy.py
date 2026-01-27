@@ -1304,44 +1304,62 @@ def check_buy_signal(token: dict) -> bool:
         )
         return False
 
-    # Volume momentum check - MANDATORY: require increasing volume (required for all trades)
-    min_volume_change = config.get('MIN_VOLUME_CHANGE_1H', 0.1)
-    # Try to get volume change data (from DexScreener)
-    volume_change_1h = token.get("volumeChange1h")
-    
-    # MANDATORY: Block if volume change data unavailable
-    if volume_change_1h is None:
-        _log_trace(
-            f"❌ Volume momentum check blocked: volume change data unavailable (required but not available from DexScreener)",
-            level="info",
-            event="strategy.buy.volume_momentum_unavailable_blocked",
-            symbol=token.get("symbol"),
-        )
-        return False
-    
-    # Parse and validate volume change
-    try:
-        volume_change_pct = float(volume_change_1h) / 100.0 if float(volume_change_1h) > 1 else float(volume_change_1h)
-        if volume_change_pct < min_volume_change:
+    # Volume momentum check - only if enabled in config
+    if config.get('ENABLE_VOLUME_MOMENTUM_CHECK', True):
+        min_volume_change = config.get('MIN_VOLUME_CHANGE_1H', 0.1)
+        # Try to get volume change data (from DexScreener)
+        volume_change_1h = token.get("volumeChange1h")
+        
+        # If check is enabled but data unavailable, block the trade
+        if volume_change_1h is None:
             _log_trace(
-                f"❌ Volume not increasing (1h change: {volume_change_pct*100:.1f}% < {min_volume_change*100:.1f}%)",
+                f"❌ Volume momentum check blocked: volume change data unavailable (required but not available from DexScreener) | volumeChange1h=None",
                 level="info",
-                event="strategy.buy.volume_momentum_fail",
+                event="strategy.buy.volume_momentum_unavailable_blocked",
                 symbol=token.get("symbol"),
-                volume_change=volume_change_pct,
-                required_change=min_volume_change,
+                volumeChange1h=None,
             )
             return False
-    except (ValueError, TypeError) as e:
-        # MANDATORY: Block if volume change data is unparseable
-        _log_trace(
-            f"❌ Volume momentum check blocked: volume change data unparseable (required): {e}",
-            level="info",
-            event="strategy.buy.volume_momentum_parse_error_blocked",
-            symbol=token.get("symbol"),
-            error=str(e),
-        )
-        return False
+        
+        # Parse and validate volume change
+        # volumeChange1h is stored as decimal (e.g., 0.1 = 10% increase, -0.5 = 50% decrease)
+        # Handle both decimal format (<= 1) and legacy percentage format (> 1) for backward compatibility
+        try:
+            volume_change_pct = float(volume_change_1h) / 100.0 if abs(float(volume_change_1h)) > 1 else float(volume_change_1h)
+            if volume_change_pct < min_volume_change:
+                _log_trace(
+                    f"❌ Volume not increasing (1h change: {volume_change_pct*100:.1f}% < {min_volume_change*100:.1f}%) | volumeChange1h={volume_change_1h:.4f}",
+                    level="info",
+                    event="strategy.buy.volume_momentum_fail",
+                    symbol=token.get("symbol"),
+                    volumeChange1h=volume_change_1h,
+                    volume_change=volume_change_pct,
+                    required_change=min_volume_change,
+                )
+                return False
+            else:
+                # Log successful volume momentum check
+                _log_trace(
+                    f"✅ Volume momentum check passed (1h change: {volume_change_pct*100:.1f}% >= {min_volume_change*100:.1f}%) | volumeChange1h={volume_change_1h:.4f}",
+                    level="info",
+                    event="strategy.buy.volume_momentum_pass",
+                    symbol=token.get("symbol"),
+                    volumeChange1h=volume_change_1h,
+                    volume_change=volume_change_pct,
+                    required_change=min_volume_change,
+                )
+        except (ValueError, TypeError) as e:
+            # Block if volume change data is unparseable
+            _log_trace(
+                f"❌ Volume momentum check blocked: volume change data unparseable (required): {e} | volumeChange1h={volume_change_1h}",
+                level="info",
+                event="strategy.buy.volume_momentum_parse_error_blocked",
+                symbol=token.get("symbol"),
+                volumeChange1h=volume_change_1h,
+                error=str(e),
+            )
+            return False
+    # If ENABLE_VOLUME_MOMENTUM_CHECK is False, skip this check entirely
 
     # VWAP Entry Filter (UPGRADE #2: Strength filter)
     if config.get('ENABLE_VWAP_ENTRY_FILTER', True):

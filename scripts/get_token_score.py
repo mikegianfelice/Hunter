@@ -49,18 +49,33 @@ async def fetch_token_data(symbol: str) -> Optional[Dict[str, Any]]:
             # Use first pair if no exact match
             best_pair = pairs[0]
         
+        # Extract volume data for volume change calculation
+        volume_24h = float(best_pair.get('volume', {}).get('h24', 0) if isinstance(best_pair.get('volume'), dict) else best_pair.get('volume24h', 0))
+        volume_1h = float(best_pair.get('volume', {}).get('h1', 0) if isinstance(best_pair.get('volume'), dict) else 0)
+        
+        # Calculate volume change 1h as decimal (0.1 = 10% increase)
+        # Compare current hour volume to 24h average hourly rate
+        volume_change_1h = None
+        if volume_24h > 0 and volume_1h > 0:
+            # Calculate decimal change: e.g., 0.1 = 10% increase, -0.5 = 50% decrease
+            volume_change_1h = (volume_1h * 24) / volume_24h - 1
+        elif volume_24h > 0:
+            # If h1 volume is 0 but h24 exists, it's a -1.0 change (100% decrease)
+            volume_change_1h = -1.0
+        
         # Convert DexScreener format to our token format
         token_data = {
             "symbol": best_pair.get('baseToken', {}).get('symbol', symbol),
             "address": best_pair.get('baseToken', {}).get('address', ''),
             "chainId": best_pair.get('chainId', 'ethereum').lower(),
             "priceUsd": float(best_pair.get('priceUsd', 0)),
-            "volume24h": float(best_pair.get('volume', {}).get('h24', 0) if isinstance(best_pair.get('volume'), dict) else best_pair.get('volume24h', 0)),
+            "volume24h": volume_24h,
             "liquidity": float(best_pair.get('liquidity', {}).get('usd', 0) if isinstance(best_pair.get('liquidity'), dict) else best_pair.get('liquidity', 0)),
             "marketCap": float(best_pair.get('fdv', 0)),
             "priceChange24h": float(best_pair.get('priceChange', {}).get('h24', 0) if isinstance(best_pair.get('priceChange'), dict) else best_pair.get('priceChange24h', 0)) / 100.0 if best_pair.get('priceChange', {}).get('h24') else 0.0,
             "priceChange5m": float(best_pair.get('priceChange', {}).get('m5', 0) if isinstance(best_pair.get('priceChange'), dict) else best_pair.get('priceChange5m', 0)) if best_pair.get('priceChange', {}).get('m5') else None,
             "priceChange1h": float(best_pair.get('priceChange', {}).get('h1', 0) if isinstance(best_pair.get('priceChange'), dict) else best_pair.get('priceChange1h', 0)) if best_pair.get('priceChange', {}).get('h1') else None,
+            "volumeChange1h": volume_change_1h,  # Decimal format (0.1 = 10% increase)
             "holders": 0,  # Not available from DexScreener
             "transactions24h": 0,  # Not available from DexScreener
             "social_mentions": 0,  # Not available from DexScreener

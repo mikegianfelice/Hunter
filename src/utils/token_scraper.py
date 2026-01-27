@@ -709,6 +709,7 @@ def fetch_trending_tokens(limit=200):  # INCREASED for more opportunities
         chain = pair.get("chainId") or ""
         price = float(pair.get("priceUsd") or 0)
         vol24 = float((pair.get("volume", {}) or {}).get("h24") or 0)
+        vol1h = float((pair.get("volume", {}) or {}).get("h1") or 0)
         liq = float((pair.get("liquidity", {}) or {}).get("usd") or 0)
         
         # Extract price change data from DexScreener (percentages: e.g., 5.5 means 5.5%)
@@ -716,6 +717,16 @@ def fetch_trending_tokens(limit=200):  # INCREASED for more opportunities
         price_change_5m = price_change.get("m5")  # 5 minute price change percentage
         price_change_1h = price_change.get("h1")  # 1 hour price change percentage
         price_change_24h = price_change.get("h24")  # 24 hour price change percentage
+        
+        # Calculate volume change 1h as decimal (0.1 = 10% increase)
+        # Compare current hour volume to 24h average hourly rate
+        volume_change_1h = None
+        if vol24 > 0 and vol1h > 0:
+            # Calculate decimal change: e.g., 0.1 = 10% increase, -0.5 = 50% decrease
+            volume_change_1h = (vol1h * 24) / vol24 - 1
+        elif vol24 > 0:
+            # If h1 volume is 0 but h24 exists, it's a -1.0 change (100% decrease)
+            volume_change_1h = -1.0
         
         # Early chain filtering - skip unsupported chains immediately
         if chain.lower() not in supported_chains:
@@ -793,6 +804,7 @@ def fetch_trending_tokens(limit=200):  # INCREASED for more opportunities
             "priceChange5m": price_change_5m if price_change_5m is not None else "",
             "priceChange1h": price_change_1h if price_change_1h is not None else "",
             "priceChange24h": price_change_24h if price_change_24h is not None else "",
+            "volumeChange1h": volume_change_1h,  # Decimal format (0.1 = 10% increase)
             "source": "dexscreener",  # Mark DexScreener tokens
             "jupiter_validated": False,  # Not validated by Jupiter
         })

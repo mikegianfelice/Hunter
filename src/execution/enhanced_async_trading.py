@@ -368,9 +368,22 @@ class EnhancedAsyncTradingEngine:
                                         # Calculate metrics
                                         price_usd = float(pair.get("priceUsd", 0))
                                         volume_24h = float(pair.get("volume", {}).get("h24", 0))
+                                        volume_1h = float(pair.get("volume", {}).get("h1", 0))
                                         liquidity_usd = float(pair.get("liquidity", {}).get("usd", 0))
                                         price_change_24h = float(pair.get("priceChange", {}).get("h24", 0))
                                         price_change_1h = float(pair.get("priceChange", {}).get("h1", 0))
+                                        
+                                        # Calculate volume change 1h as decimal (0.1 = 10% increase)
+                                        # Compare current hour volume to 24h average hourly rate
+                                        # Formula: (volume.h1 * 24) / volume.h24 - 1
+                                        # This gives decimal change vs 24h average (positive = increasing, negative = decreasing)
+                                        volume_change_1h = None
+                                        if volume_24h > 0 and volume_1h > 0:
+                                            # Calculate decimal change: e.g., 0.1 = 10% increase, -0.5 = 50% decrease
+                                            volume_change_1h = (volume_1h * 24) / volume_24h - 1
+                                        elif volume_24h > 0:
+                                            # If h1 volume is 0 but h24 exists, it's a -1.0 change (100% decrease)
+                                            volume_change_1h = -1.0
                                         
                                         # Skip tokens with poor metrics (using configurable thresholds)
                                         if price_usd <= 0 or volume_24h < min_vol or liquidity_usd < min_liq:
@@ -387,6 +400,7 @@ class EnhancedAsyncTradingEngine:
                                             "marketCap": float(pair.get("marketCap", 0)),
                                             "priceChange24h": price_change_24h,
                                             "priceChange1h": price_change_1h,
+                                            "volumeChange1h": volume_change_1h,  # Percentage change vs 24h average
                                             "holders": int(pair.get("holders", 0)),
                                             "transactions24h": int(pair.get("txns", {}).get("h24", {}).get("buys", 0)) + 
                                                              int(pair.get("txns", {}).get("h24", {}).get("sells", 0)),
@@ -1265,6 +1279,57 @@ class EnhancedAsyncTradingEngine:
                             enhanced_token["holder_concentration_pct"] = 100.0
                             log_error("trading.holder_concentration_error",
                                     f"Holder concentration check exception for {token.get('symbol', 'UNKNOWN')} (fail-open mode): {e}")
+                    
+                    # OPTIMIZATION: Volume momentum check BEFORE candle fetch to save API calls
+                    # This prevents fetching expensive candles if volume is decreasing
+                    from src.config.config_loader import get_config_values
+                    config = get_config_values()
+                    
+                    if config.get('ENABLE_VOLUME_MOMENTUM_CHECK', True):
+                        min_volume_change = config.get('MIN_VOLUME_CHANGE_1H', 0.1)
+                        volume_change_1h = token.get("volumeChange1h")
+                        
+                        if volume_change_1h is None:
+                            log_error("trading.volume_momentum_blocked",
+                                    f"Token {token.get('symbol', 'UNKNOWN')} BLOCKED: volume change data unavailable (required but not available from DexScreener) | volumeChange1h=None",
+                                    symbol=token.get("symbol"),
+                                    volumeChange1h=None)
+                            enhanced_token["approved_for_trading"] = False
+                            enhanced_token["rejection_reason"] = "volume_momentum_data_unavailable"
+                            continue  # Skip to next token (don't fetch candles)
+                        
+                        # Parse and validate volume change
+                        try:
+                            # Handle both decimal format (<= 1) and legacy percentage format (> 1)
+                            volume_change_pct = float(volume_change_1h) / 100.0 if abs(float(volume_change_1h)) > 1 else float(volume_change_1h)
+                            
+                            if volume_change_pct < min_volume_change:
+                                log_error("trading.volume_momentum_blocked",
+                                        f"Token {token.get('symbol', 'UNKNOWN')} BLOCKED: volume not increasing (1h change: {volume_change_pct*100:.1f}% < {min_volume_change*100:.1f}%) | volumeChange1h={volume_change_1h:.4f}",
+                                        symbol=token.get("symbol"),
+                                        volumeChange1h=volume_change_1h,
+                                        volume_change=volume_change_pct,
+                                        required_change=min_volume_change)
+                                enhanced_token["approved_for_trading"] = False
+                                enhanced_token["rejection_reason"] = f"volume_momentum_fail_{volume_change_pct:.4f}_{min_volume_change:.4f}"
+                                continue  # Skip to next token (don't fetch candles)
+                            else:
+                                # Volume check passed - log for visibility
+                                log_info("trading.volume_momentum_pass",
+                                        f"Volume momentum check passed for {token.get('symbol', 'UNKNOWN')} (1h change: {volume_change_pct*100:.1f}% >= {min_volume_change*100:.1f}%) | volumeChange1h={volume_change_1h:.4f}",
+                                        symbol=token.get("symbol"),
+                                        volumeChange1h=volume_change_1h,
+                                        volume_change=volume_change_pct,
+                                        required_change=min_volume_change)
+                        except (ValueError, TypeError) as e:
+                            log_error("trading.volume_momentum_blocked",
+                                    f"Token {token.get('symbol', 'UNKNOWN')} BLOCKED: volume change data unparseable (required): {e} | volumeChange1h={volume_change_1h}",
+                                    symbol=token.get("symbol"),
+                                    volumeChange1h=volume_change_1h,
+                                    error=str(e))
+                            enhanced_token["approved_for_trading"] = False
+                            enhanced_token["rejection_reason"] = f"volume_momentum_parse_error_{str(e)}"
+                            continue  # Skip to next token (don't fetch candles)
                     
                     # ALWAYS fetch and validate candles before trade entry (required for technical checks)
                     # This ensures VWAP and other technical indicators are available
