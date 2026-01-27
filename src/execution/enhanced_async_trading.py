@@ -1315,8 +1315,10 @@ class EnhancedAsyncTradingEngine:
                                 f"but passed quality validation - continuing"
                             )
                         
-                        # Only proceed with OHLC validation if we have minimum candles
-                        if not enhanced_token.get("approved_for_trading", False):
+                        # Only proceed with OHLC validation if token wasn't explicitly rejected
+                        # Check if approved_for_trading was explicitly set to False (rejection)
+                        # If key doesn't exist or is True, continue with validation
+                        if enhanced_token.get("approved_for_trading") is False:
                             continue
                         
                         # Validate candle quality (check OHLC integrity)
