@@ -1275,7 +1275,10 @@ class EnhancedAsyncTradingEngine:
                             chain_id=chain_id)
                     
                     # Fetch 15-minute candles (6 hours = 24 candles)
-                    candles_15m = market_data_fetcher.get_candlestick_data(
+                    # CRITICAL FIX: Run synchronous blocking function in thread pool to prevent event loop blocking
+                    # This prevents all concurrent async tasks from hanging when candle fetch blocks
+                    candles_15m = await asyncio.to_thread(
+                        market_data_fetcher.get_candlestick_data,
                         token_address=token_address,
                         chain_id=chain_id,
                         hours=6,  # 6 hours = 24 candles (4 per hour)
