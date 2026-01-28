@@ -477,6 +477,105 @@ class EnhancedAsyncTradingEngine:
             log_error("trading.fetch_error", f"Error fetching real tokens: {e}")
             return []
     
+    async def _fetch_tracked_tokens(self, chain: str) -> List[Dict]:
+        """
+        Fetch token data for minute_price_tracker TRACKED_TOKENS.
+        Always include these in selection so price tracking stays continuous.
+        Returns tokens in same format as _fetch_real_trending_tokens, with _is_tracked_token=True.
+        """
+        try:
+            from src.storage.minute_price_tracker import TRACKED_TOKENS
+        except ImportError:
+            log_warning("trading.tracked_tokens", "minute_price_tracker not available, skipping tracked tokens")
+            return []
+        
+        if not TRACKED_TOKENS:
+            return []
+        
+        # All current tracked tokens are Solana
+        if chain.lower() != "solana":
+            return []
+        
+        tracked_list = []
+        async with aiohttp.ClientSession() as session:
+            for name, address in TRACKED_TOKENS.items():
+                if not address:
+                    continue
+                try:
+                    url = f"https://api.dexscreener.com/latest/dex/tokens/{address}"
+                    async with session.get(url, timeout=10) as resp:
+                        if resp.status != 200:
+                            raise ValueError(f"HTTP {resp.status}")
+                        data = await resp.json()
+                        pairs = data.get("pairs") or []
+                        # Prefer Solana pairs
+                        sol_pairs = [p for p in pairs if (p.get("chainId") or "").lower() == "solana"]
+                        pair = (sol_pairs or pairs)[0] if (sol_pairs or pairs) else None
+                        if not pair:
+                            raise ValueError("no pairs")
+                        base = pair.get("baseToken", {}) or {}
+                        price_usd = float(pair.get("priceUsd") or 0)
+                        vol = pair.get("volume") or {}
+                        liq = pair.get("liquidity") or {}
+                        volume_24h = float(vol.get("h24") or 0)
+                        volume_1h = float(vol.get("h1") or 0)
+                        liquidity_usd = float(liq.get("usd") or 0)
+                        pc = pair.get("priceChange") or {}
+                        price_change_24h = float(pc.get("h24") or 0)
+                        price_change_1h = float(pc.get("h1") or 0)
+                        volume_change_1h = None
+                        if volume_24h > 0 and volume_1h > 0:
+                            volume_change_1h = (volume_1h * 24) / volume_24h - 1
+                        elif volume_24h > 0:
+                            volume_change_1h = -1.0
+                        token = {
+                            "symbol": base.get("symbol") or name,
+                            "address": base.get("address") or address,
+                            "chain": chain,
+                            "chainId": chain,
+                            "priceUsd": price_usd,
+                            "volume24h": volume_24h,
+                            "liquidity": liquidity_usd,
+                            "marketCap": float(pair.get("marketCap") or 0),
+                            "priceChange24h": price_change_24h,
+                            "priceChange1h": price_change_1h,
+                            "volumeChange1h": volume_change_1h,
+                            "dex": pair.get("dexId", ""),
+                            "pair_address": pair.get("pairAddress", ""),
+                            "timestamp": datetime.now().isoformat(),
+                            "_is_tracked_token": True,
+                        }
+                        tracked_list.append(token)
+                except Exception as e:
+                    # Minimal token dict so we still include it (filters bypassed for tracked)
+                    token = {
+                        "symbol": name,
+                        "address": address,
+                        "chain": chain,
+                        "chainId": chain,
+                        "priceUsd": 0.0,
+                        "volume24h": 1.0,
+                        "liquidity": 1.0,
+                        "marketCap": 0,
+                        "priceChange24h": 0,
+                        "priceChange1h": 0,
+                        "volumeChange1h": None,
+                        "dex": "",
+                        "pair_address": "",
+                        "timestamp": datetime.now().isoformat(),
+                        "_is_tracked_token": True,
+                    }
+                    tracked_list.append(token)
+                    log_warning("trading.tracked_tokens.fallback",
+                               f"Tracked token {name} API fetch failed, using minimal dict: {e}",
+                               symbol=name, address=address[:16])
+                await asyncio.sleep(0.15)
+        
+        if tracked_list:
+            log_info("trading.tracked_tokens.fetched", f"Fetched {len(tracked_list)} tracked tokens for {chain}",
+                     count=len(tracked_list), chain=chain)
+        return tracked_list
+    
     def _categorize_error(self, error_msg: str, token: Dict) -> Tuple[str, str]:
         """
         Categorize error type for proper handling
@@ -811,6 +910,7 @@ class EnhancedAsyncTradingEngine:
         """
         Early filtering: Apply volume/liquidity filters BEFORE expensive AI analysis.
         This saves significant API calls and processing time.
+        Tracked tokens (minute_price_tracker) always pass and are included.
         
         Returns only tokens that pass basic quality thresholds.
         """
@@ -818,10 +918,16 @@ class EnhancedAsyncTradingEngine:
         min_liquidity = get_config_float("min_liquidity_usd_for_buy", 200000)
         min_price = get_config_float("min_price_usd", 0.000001)
         
-        filtered_tokens = []
+        filtered_tokens: List[Dict] = []
         filtered_count = 0
+        tracked_bypassed = 0
         
         for token in tokens:
+            if token.get("_is_tracked_token", False):
+                filtered_tokens.append(token)
+                tracked_bypassed += 1
+                continue
+            
             volume_24h = float(token.get("volume24h", 0))
             liquidity = float(token.get("liquidity", 0))
             price_usd = float(token.get("priceUsd", 0))
@@ -842,6 +948,10 @@ class EnhancedAsyncTradingEngine:
             # Token passed early filters
             filtered_tokens.append(token)
         
+        if tracked_bypassed > 0:
+            log_info("trading.tracked_tokens.bypassed_filters",
+                     f"{tracked_bypassed} tracked tokens bypassed early filters",
+                     tracked_bypassed=tracked_bypassed)
         if filtered_count > 0:
             log_info("trading.early_filter", 
                     f"Early filtering: {filtered_count} tokens filtered out before AI analysis "
@@ -2488,6 +2598,31 @@ class EnhancedAsyncTradingEngine:
             
             log_info("trading.fetch", f"📊 Fetched {len(all_tokens)} tokens across {len(self.config.chains.supported_chains)} chains")
             
+            # Always include minute_price_tracker tokens in selection
+            tracked_all: List[Dict] = []
+            for ch in self.config.chains.supported_chains:
+                tracked = await self._fetch_tracked_tokens(ch)
+                tracked_all.extend(tracked)
+            if tracked_all:
+                seen = {(t.get("address") or "").lower() for t in all_tokens}
+                added = 0
+                for t in tracked_all:
+                    addr = (t.get("address") or "").lower()
+                    if not addr:
+                        continue
+                    if addr in seen:
+                        for i, tok in enumerate(all_tokens):
+                            if (tok.get("address") or "").lower() == addr:
+                                all_tokens[i] = t
+                                break
+                    else:
+                        all_tokens.append(t)
+                        seen.add(addr)
+                        added += 1
+                log_info("trading.tracked_tokens.injected",
+                         f"Injected {len(tracked_all)} tracked tokens into selection ({added} new)",
+                         total_tracked=len(tracked_all), added=added)
+            
         except Exception as e:
             log_error("trading.token_fetch_error", f"Error in token fetching: {e}")
             return {"success": False, "error": f"Token fetching failed: {e}"}
@@ -2506,18 +2641,26 @@ class EnhancedAsyncTradingEngine:
             log_info("trading.no_filtered_tokens", "😴 No tokens passed early filters this cycle")
             return {"success": True, "tokens_processed": 0, "tokens_filtered_early": len(all_tokens)}
         
-        # NEW: Apply hard limiter for candle fetching
+        # Apply hard limiter for candle fetching; always include tracked tokens
         max_tokens_for_candles = get_config_int('helius_15m_candle_policy.max_tokens_per_cycle_for_candles', 15)
+        tracked_tokens_list = [t for t in filtered_tokens if t.get("_is_tracked_token", False)]
+        regular_tokens = [t for t in filtered_tokens if not t.get("_is_tracked_token", False)]
+        did_limit_regular = len(regular_tokens) > max_tokens_for_candles
         
-        if len(filtered_tokens) > max_tokens_for_candles:
-            # Sort by quality score (liquidity + volume) using helper
-            filtered_tokens.sort(
-                key=self._get_token_sort_key,  # Use helper function
-                reverse=True
-            )
-            filtered_tokens = filtered_tokens[:max_tokens_for_candles]
+        if did_limit_regular:
+            regular_tokens.sort(key=self._get_token_sort_key, reverse=True)
+            regular_tokens = regular_tokens[:max_tokens_for_candles]
+        
+        filtered_tokens = tracked_tokens_list + regular_tokens
+        if tracked_tokens_list:
+            log_info("trading.tracked_tokens.included",
+                     f"📊 Including {len(tracked_tokens_list)} tracked tokens + {len(regular_tokens)} regular "
+                     f"(max regular={max_tokens_for_candles})",
+                     tracked=len(tracked_tokens_list), regular=len(regular_tokens))
+        if did_limit_regular:
             log_info("trading.candle_limiter",
-                    f"📊 Limited tokens for candle fetching: {len(filtered_tokens)} tokens (max={max_tokens_for_candles})")
+                    f"📊 Limited tokens for candle fetching: {len(filtered_tokens)} tokens "
+                    f"({len(tracked_tokens_list)} tracked + {len(regular_tokens)} regular, max regular={max_tokens_for_candles})")
         
         # Process tokens in batches (only tokens that passed early filters AND limiter)
         approved_tokens = []
