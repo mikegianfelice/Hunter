@@ -1444,16 +1444,38 @@ def _close_trade_record(trade: Dict[str, Any]) -> None:
 def monitor_all_positions():
     config = get_monitor_config()
     
-    # Only validate balances every 10th cycle (every ~10 minutes with 60s interval)
-    # This reduces RPC calls while still catching manually closed positions
+    # Use timestamp-based reconciliation instead of cycle count (persists across restarts)
+    # This ensures reconciliation runs regularly even if monitor restarts frequently
+    from src.config.config_loader import get_config_int
+    import time
+    
+    # Get reconciliation interval from config (default: every 5 cycles = ~75 seconds)
+    reconciliation_interval_cycles = get_config_int("position_reconciliation.scan_interval_cycles", 5)
+    
+    # Track last reconciliation time (persists across function calls)
+    _last_reconciliation_time = getattr(monitor_all_positions, '_last_reconciliation_time', 0.0)
+    current_time = time.time()
+    
+    # Calculate cycle duration (15 seconds per cycle based on sleep interval)
+    cycle_duration_seconds = 15
+    reconciliation_interval_seconds = reconciliation_interval_cycles * cycle_duration_seconds
+    
+    # Run reconciliation if enough time has passed OR if this is the first run
+    time_since_last_reconciliation = current_time - _last_reconciliation_time
+    validate_balances = (time_since_last_reconciliation >= reconciliation_interval_seconds) or (_last_reconciliation_time == 0.0)
+    
+    # Update last reconciliation time if we're running it this cycle
+    if validate_balances:
+        monitor_all_positions._last_reconciliation_time = current_time
+    
+    # Also track cycle count for logging
     _monitor_cycle_count = getattr(monitor_all_positions, '_cycle_count', 0) + 1
     monitor_all_positions._cycle_count = _monitor_cycle_count
     
-    validate_balances = (_monitor_cycle_count % 10 == 0)  # Every 10th cycle
-    
     # Load existing positions (with selective balance validation)
     if validate_balances:
-        print(f"🔍 [CYCLE {_monitor_cycle_count}] Validating balances this cycle...")
+        time_since_str = f"{time_since_last_reconciliation:.0f}s" if _last_reconciliation_time > 0 else "first run"
+        print(f"🔍 [CYCLE {_monitor_cycle_count}] Validating balances this cycle (last run: {time_since_str} ago, interval: {reconciliation_interval_seconds}s)...")
         positions = load_positions(validate_balances=True)
     else:
         positions = load_positions(validate_balances=False)  # Use cache instead
@@ -1882,7 +1904,67 @@ def monitor_all_positions():
                     # to track remaining position size and handle partial sells properly
                     if action.size_pct >= 1.0:
                         # Full sell - use existing logic
-                        tx = _sell_token_multi_chain(token_address, chain_id, symbol)
+                        # CRITICAL: Check balance BEFORE attempting to sell - if already sold, clean up position
+                        print(f"🔍 [PARTIAL TP PRE-SELL CHECK] Verifying token balance before sell...")
+                        pre_sell_balance = _check_token_balance_on_chain(token_address, chain_id)
+                        
+                        if pre_sell_balance == -1.0:
+                            # Balance check failed - proceed with sell attempt (can't verify)
+                            print(f"⚠️ [PARTIAL TP PRE-SELL CHECK] Balance check failed, proceeding with sell attempt...")
+                            tx = _sell_token_multi_chain(token_address, chain_id, symbol)
+                        elif pre_sell_balance <= 0.0 or pre_sell_balance < 0.000001:
+                            # Token already sold (zero/dust balance) - clean up position immediately
+                            print(f"✅ [PARTIAL TP PRE-SELL CHECK] Token balance is zero/dust ({pre_sell_balance:.8f}) - position already sold, cleaning up...")
+                            tx = None  # No sell needed, already sold
+                            
+                            # Log the trade exit
+                            _log_trade_exit(token_address, symbol, original_entry_price, current_price, action.reason,
+                                          position_data=position_data if isinstance(position_data, dict) else None)
+                            
+                            # Update performance tracker
+                            if trade:
+                                position_size = trade.get('position_size_usd', 0)
+                                pnl_usd = gain * position_size
+                                from src.core.performance_tracker import performance_tracker
+                                performance_tracker.log_trade_exit(trade['id'], current_price, pnl_usd, action.reason)
+                                print(f"📊 Updated performance tracker for {action.reason}: {trade.get('symbol', '?')}")
+                            
+                            # Clean up position
+                            cleanup_success = _cleanup_closed_position(position_key, token_address, chain_id)
+                            if not cleanup_success:
+                                cleanup_success = _verify_position_cleanup(position_key, token_address, chain_id)
+                            
+                            if cleanup_success:
+                                # Re-fetch current price right before notification
+                                fresh_current_price = _fetch_token_price_multi_chain(token_address) or current_price
+                                if fresh_current_price != current_price:
+                                    print(f"📊 [PRICE UPDATE] Re-fetched price: ${current_price:.6f} -> ${fresh_current_price:.6f}")
+                                    current_price = fresh_current_price
+                                    gain = (current_price - original_entry_price) / original_entry_price
+                                
+                                # Send notification
+                                tx_display = "Already sold (detected by balance check)"
+                                send_telegram_message(
+                                    f"🛑 Stop-loss triggered (already sold)!\n"
+                                    f"Token: {symbol} ({token_address})\n"
+                                    f"Chain: {chain_id.upper()}\n"
+                                    f"Entry: ${original_entry_price:.6f}\n"
+                                    f"Now: ${current_price:.6f} ({gain * 100:.2f}%)\n"
+                                    f"TX: {tx_display}"
+                                )
+                                
+                                closed_positions.append(position_key)
+                                updated_positions.pop(position_key, None)
+                            else:
+                                print(f"❌ [PARTIAL TP] Failed to verify position cleanup - notification not sent")
+                                # Still mark as closed to prevent retry loops
+                                closed_positions.append(position_key)
+                                updated_positions.pop(position_key, None)
+                            continue  # Skip to next position
+                        else:
+                            # Token still in wallet - proceed with sell attempt
+                            print(f"✅ [PARTIAL TP PRE-SELL CHECK] Token balance confirmed: {pre_sell_balance:.6f} - proceeding with sell...")
+                            tx = _sell_token_multi_chain(token_address, chain_id, symbol)
                         if tx:
                             # Check if this is a hard stop loss action - only set flag if sell succeeded
                             if "hard_stop_loss" in action.reason.lower():
