@@ -1931,6 +1931,21 @@ def monitor_all_positions():
                                 closed_positions.append(position_key)
                                 updated_positions.pop(position_key, None)
                             continue
+                        else:
+                            # CRITICAL FIX: Sell failed - do NOT set partial_tp_handled_stop_loss flag
+                            # This allows the main stop loss check to catch it as a fallback
+                            print(f"❌ [PARTIAL TP] Hard stop loss sell FAILED for {symbol} ({action.reason})")
+                            print(f"⚠️ [PARTIAL TP] Sell returned None/False - will fall through to main stop loss check")
+                            print(f"📊 [PARTIAL TP] Current PnL: {gain * 100:.2f}%, Entry: ${entry_price:.6f}, Current: ${current_price:.6f}")
+                            log_info("partial_tp.hard_stop_failed",
+                                    symbol=symbol,
+                                    pnl_pct=gain,
+                                    entry_price=entry_price,
+                                    current_price=current_price,
+                                    reason=action.reason)
+                            # Do NOT set partial_tp_handled_stop_loss = True here
+                            # Do NOT continue - let it fall through to main stop loss check
+                            # The main stop loss check will handle the retry
                     else:
                         # Partial sell - execute the sell and update position
                         print(f"📊 [PARTIAL TP] Executing partial sell: {action.size_pct*100:.0f}% of position ({action.reason})")
@@ -2928,6 +2943,7 @@ def monitor_all_positions():
                 traceback.print_exc()
 
         # Hard stop-loss (only if not already handled by Partial TP Manager)
+        # FALLBACK: If Partial TP Manager attempted but failed, this will catch it
         # Calculate effective stop loss with slippage buffer to account for execution slippage
         stop_loss_slippage_buffer = config.get('stop_loss_slippage_buffer', 0.15)
         effective_stop_loss = config['STOP_LOSS'] * (1 + stop_loss_slippage_buffer)
