@@ -617,9 +617,18 @@ def _fetch_token_price_multi_chain(token_address: str) -> float:
                     print(f"🔗 Fetched Solana price for {token_address[:8]}...{token_address[-8:]}: ${price:.6f}")
                     return price
                 else:
-                    # If Solana price fetch returns 0, don't fall back to Ethereum APIs
-                    # Try one more time with a direct DexScreener call as last resort
-                    print(f"⚠️ Solana price fetch returned 0, trying direct DexScreener fallback...")
+                    # Try Jupiter executor (different API/rate limit bucket than solana_executor)
+                    # Status report uses this - align for consistency so stop loss triggers when status shows loss
+                    print(f"⚠️ Solana price fetch returned 0, trying Jupiter executor fallback...")
+                    try:
+                        from src.execution.jupiter_executor import get_token_price_usd as jupiter_get_price
+                        price = jupiter_get_price(token_address)
+                        if price and price > 0:
+                            print(f"✅ Jupiter fallback price: ${price:.6f}")
+                            return price
+                    except Exception as e2:
+                        print(f"⚠️ Jupiter fallback failed: {e2}")
+                    # Last resort: direct DexScreener call
                     try:
                         import requests
                         url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
