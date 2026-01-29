@@ -1473,18 +1473,19 @@ def monitor_all_positions():
     monitor_all_positions._cycle_count = _monitor_cycle_count
     
     # Load existing positions (with selective balance validation)
+    # CRITICAL: For pruning we must pass the FULL positions dict from store - _prune does its
+    # own balance checks. Passing load_positions(validate_balances=True) would pre-filter
+    # zero-balance positions, so _prune would never find any to remove and never persist.
     if validate_balances:
         time_since_str = f"{time_since_last_reconciliation:.0f}s" if _last_reconciliation_time > 0 else "first run"
         print(f"🔍 [CYCLE {_monitor_cycle_count}] Validating balances this cycle (last run: {time_since_str} ago, interval: {reconciliation_interval_seconds}s)...")
-        positions = load_positions(validate_balances=True)
-    else:
-        positions = load_positions(validate_balances=False)  # Use cache instead
     
+    positions = load_positions_store()  # Always load full store for pruning
     reconciled_closed = []  # Track manually closed positions
     
     # Auto-reconcile FIRST: Remove positions with zero on-chain balance (manual closes)
     # This prevents manually closed positions from being re-added
-    # Only prune when validating balances (every 10th cycle) to reduce RPC calls
+    # Only prune when validating balances (every N cycles) to reduce RPC calls
     if positions and validate_balances:
         # Save original positions data before pruning (needed for performance tracker updates)
         original_positions_before_prune = dict(positions)

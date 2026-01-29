@@ -54,16 +54,27 @@ def reconcile_positions_and_pnl(limit: int = 200) -> Dict[str, Any]:
 
     Returns a summary dictionary with counts of the actions performed.
     """
+    # Reload performance data to pick up any changes from other processes or file edits
+    performance_tracker.load_data()
+
     if not HELIUS_API_KEY or not SOLANA_WALLET_ADDRESS:
         return {
             "enabled": False,
             "reason": "Missing HELIUS_API_KEY or SOLANA_WALLET_ADDRESS secrets",
         }
 
-    # Early exit if no Solana positions to reconcile
+    # Early exit only if BOTH performance_tracker AND open_positions have no Solana positions.
+    # open_positions can have orphan positions (never logged to performance_tracker) that need
+    # reconciliation via Step 1b - e.g. manual buys, sync failures, or positions added before
+    # performance_tracker was introduced.
     solana_trades = [t for t in performance_tracker.trades 
                      if (t.get("chain") or "").lower() == "solana"]
-    if not solana_trades:
+    open_positions = load_positions_store()
+    solana_open_positions = [
+        k for k, p in open_positions.items()
+        if (p.get("chain_id") or p.get("chain") or "").lower() == "solana"
+    ]
+    if not solana_trades and not solana_open_positions:
         return {
             "enabled": True,
             "open_positions_closed": 0,
@@ -72,7 +83,7 @@ def reconcile_positions_and_pnl(limit: int = 200) -> Dict[str, Any]:
             "issues": [],
             "skipped": "No Solana positions to reconcile",
         }
-    
+
     client = HeliusClient(HELIUS_API_KEY)
     context = _HeliusContext(client, SOLANA_WALLET_ADDRESS, limit=limit)
 
@@ -84,7 +95,7 @@ def reconcile_positions_and_pnl(limit: int = 200) -> Dict[str, Any]:
         "issues": [],
     }
 
-    open_positions = load_positions_store()
+    # open_positions already loaded above for early-exit check
     trades_changed = False
     positions_changed = False
 
@@ -286,6 +297,10 @@ def reconcile_positions_and_pnl(limit: int = 200) -> Dict[str, Any]:
             except Exception as e:
                 print(f"⚠️ Failed to invalidate cache: {e}")
 
+    # Persist position changes immediately - so cleanup is saved even if Step 2 fails (e.g. API rate limit)
+    if positions_changed:
+        replace_positions(open_positions)
+
     # ------------------------------------------------------------------ #
     # Step 2: Rebuild execution metrics using Helius transaction data
     # ------------------------------------------------------------------ #
@@ -333,12 +348,10 @@ def reconcile_positions_and_pnl(limit: int = 200) -> Dict[str, Any]:
             summary["trades_updated"] += 1
 
     # ------------------------------------------------------------------ #
-    # Persist changes if needed
+    # Persist changes if needed (positions already persisted after Step 1/1b)
     # ------------------------------------------------------------------ #
     if trades_changed:
         performance_tracker.save_data()
-    if positions_changed:
-        replace_positions(open_positions)
 
     return summary
 

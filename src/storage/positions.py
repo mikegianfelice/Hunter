@@ -53,12 +53,32 @@ def _migrate_from_json() -> None:
         set_meta("positions_json_mtime", str(POSITIONS_JSON_PATH.stat().st_mtime), conn)
 
 
-def _write_json_snapshot() -> None:
-    positions = load_positions()
+def _write_json_snapshot(positions: Optional[Dict[str, Dict[str, Any]]] = None) -> None:
+    """Write positions to JSON. If positions is provided, write it directly (avoids load_positions
+    re-import logic that can overwrite DB with stale JSON). Otherwise load from DB."""
+    if positions is not None:
+        to_write = positions
+    else:
+        _init_db()
+        to_write = _load_positions_from_db()
     POSITIONS_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
     with POSITIONS_JSON_PATH.open("w", encoding="utf-8") as fh:
-        json.dump(positions, fh, indent=2)
+        json.dump(to_write, fh, indent=2)
     set_meta("positions_json_mtime", str(POSITIONS_JSON_PATH.stat().st_mtime))
+
+
+def _load_positions_from_db() -> Dict[str, Dict[str, Any]]:
+    """Load positions from database only (no JSON re-import)."""
+    with get_connection() as conn:
+        rows = conn.execute("SELECT position_key, data FROM positions").fetchall()
+    result: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
+        try:
+            payload = json.loads(row["data"]) if row["data"] else {}
+            result[row["position_key"]] = payload
+        except Exception:
+            continue
+    return result
 
 
 def load_positions() -> Dict[str, Dict[str, Any]]:
@@ -168,7 +188,7 @@ def replace_positions(positions: Dict[str, Dict[str, Any]]) -> None:
                 "INSERT INTO positions (position_key, data, updated_at) VALUES (?, ?, strftime('%s','now'))",
                 ((k, json.dumps(v)) for k, v in positions.items()),
             )
-        _write_json_snapshot()
+        _write_json_snapshot(positions)  # Write provided dict directly - avoids load_positions re-import
 
 
 def export_positions_json() -> None:
