@@ -128,25 +128,8 @@ def get_config_values():
         'ENABLE_PRE_BUY_DELISTING_CHECK': get_config_bool("enable_pre_buy_delisting_check", False),
         'PRE_BUY_CHECK_SENSITIVITY': get_config("pre_buy_check_sensitivity", "lenient"),
         'PRE_BUY_CHECK_TIMEOUT': get_config_int("pre_buy_check_timeout", 10),
-        'ENABLE_EXTERNAL_MOMENTUM': get_config_bool("enable_external_momentum", True),
-        'EXTERNAL_MOMENTUM_PRIMARY_TIMEFRAME': get_config("external_momentum_primary_timeframe", "h1"),
-        'EXTERNAL_MOMENTUM_FALLBACK_TIMEFRAME': get_config("external_momentum_fallback_timeframe", "m5"),
-        'EXTERNAL_MOMENTUM_MIN_TIMEFRAME_WEIGHT': get_config_float("external_momentum_min_timeframe_weight", 0.3),
-        'USE_MULTI_TIMEFRAME_MOMENTUM': get_config_bool("use_multi_timeframe_momentum", True),
-        'EXTERNAL_MOMENTUM_M5_WEIGHT': get_config_float("external_momentum_m5_weight", 0.3),
-        'EXTERNAL_MOMENTUM_H1_WEIGHT': get_config_float("external_momentum_h1_weight", 0.5),
-        'EXTERNAL_MOMENTUM_H24_WEIGHT': get_config_float("external_momentum_h24_weight", 0.2),
-        'REQUIRE_MOMENTUM_ALIGNMENT': get_config_bool("require_momentum_alignment", True),
-        'REQUIRE_POSITIVE_24H_MOMENTUM': get_config_bool("require_positive_24h_momentum", True),
-        'MIN_24H_MOMENTUM_PCT': get_config_float("min_24h_momentum_pct", 0.03),  # 3% minimum
-        'MIN_1H_MOMENTUM_PCT': get_config_float("min_1h_momentum_pct", 0.015),  # 1.5% minimum
-        'ALLOW_NEGATIVE_24H_OVERRIDE': get_config_bool("allow_negative_24h_override", True),
-        'MIN_1H_MOMENTUM_FOR_OVERRIDE': get_config_float("min_1h_momentum_for_override", 0.04),  # 4% for override
-        'MIN_5M_MOMENTUM_FOR_OVERRIDE': get_config_float("min_5m_momentum_for_override", 0.05),  # 5% for override
-        'MIN_MOMENTUM_ACCELERATION': get_config_float("min_momentum_acceleration", 0.002),
-        'MIN_MOMENTUM_5M_VELOCITY': get_config_float("min_momentum_5m_velocity", 0.025),  # NEW: 5m velocity check
         'ENABLE_VOLUME_MOMENTUM_CHECK': get_config_bool("enable_volume_momentum_check", True),
-        'MIN_VOLUME_CHANGE_1H': get_config_float("min_volume_change_1h", 0.1),
+        'MIN_VOLUME_CHANGE_1H': get_config_float("min_volume_change_1h", 0.05),
         'ENABLE_RSI_FILTER': get_config_bool("enable_rsi_filter", True),
         'RSI_OVERBOUGHT_THRESHOLD': get_config_float("rsi_overbought_threshold", 70),
         # UPGRADE #2: VWAP Entry Filter

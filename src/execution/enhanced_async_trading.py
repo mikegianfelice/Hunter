@@ -1331,7 +1331,7 @@ class EnhancedAsyncTradingEngine:
                     config = get_config_values()
                     
                     if config.get('ENABLE_VOLUME_MOMENTUM_CHECK', True):
-                        min_volume_change = config.get('MIN_VOLUME_CHANGE_1H', 0.1)
+                        min_volume_change = config.get('MIN_VOLUME_CHANGE_1H', 0.05)
                         volume_change_1h = token.get("volumeChange1h")
                         
                         if volume_change_1h is None:

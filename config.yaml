@@ -305,26 +305,9 @@ price_memory_prune_hours: 24
 price_memory_momentum_pct: 0.02  # 2% minimum momentum for price memory (separate from general momentum threshold)
 price_memory_min_age_seconds: 300  # 5 minutes minimum age - short timeframes are noise, not real momentum
 
-# === External Momentum Configuration ===
-enable_external_momentum: false  # Use DexScreener price change data for momentum (DISABLED - not using external momentum)
-external_momentum_primary_timeframe: "h1"  # Primary timeframe: "m5", "h1", "h24" (DexScreener provides m5, h1, h6, h24)
-external_momentum_fallback_timeframe: "m5"  # Fallback if primary unavailable
-external_momentum_min_timeframe_weight: 0.3  # Minimum weight for primary timeframe
-use_multi_timeframe_momentum: true  # Combine multiple timeframes for robustness
-external_momentum_m5_weight: 0.5  # Increased weight for 5m momentum (was 0.3) - prioritize velocity/fast moves
-external_momentum_h1_weight: 0.3  # Reduced weight for 1h momentum (was 0.5) - still important but less than 5m
-external_momentum_h24_weight: 0.2  # Weight for 24h momentum (unchanged)
-require_momentum_alignment: true  # Require 5m and 1h momentum to both be positive (not just weighted average)
-require_positive_24h_momentum: true  # Require 24h momentum to also be positive for entry (with tiered override)
-min_24h_momentum_pct: 0.03  # Tiered: 3% minimum 24h momentum (allows override for strong recent momentum)
-min_1h_momentum_pct: 0.015  # 1.5% minimum 1h momentum
-allow_negative_24h_override: true  # Allow negative 24h if recent momentum is very strong
-min_1h_momentum_for_override: 0.04  # 4% 1h required for override
-min_5m_momentum_for_override: 0.05  # 5% 5m required for override
-min_momentum_acceleration: 0.002  # Require momentum acceleration: 5m momentum must exceed 1h by at least 0.2%
-min_momentum_5m_velocity: 0.025  # NEW: Require 5m momentum ≥ 2.5% for velocity check (fast moves only - filters slow pumps)
+# === Volume Momentum ===
 enable_volume_momentum_check: true  # Check if volume is increasing (if volume change data available)
-min_volume_change_1h: 0.1  # Require at least 10% volume increase in 1h (if data available)
+min_volume_change_1h: 0.05  # Require at least 5% volume increase in 1h (if data available)
 enable_rsi_filter: true  # Filter out overbought tokens (RSI > 70)
 rsi_overbought_threshold: 70  # RSI threshold to consider overbought
 

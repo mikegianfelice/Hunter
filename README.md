@@ -47,15 +47,10 @@ Before entering any trade, tokens must pass multiple analysis-driven checks:
   - Tokens are blocked for 1 hour cooldown period after detection
 - **Risk Score** ≤ 50% (lower is safer)
 - **Recommendation** = "buy" or "weak_buy" with ≥70% confidence (regular buy) or ≥60% confidence (weak buy)
-- **Momentum Requirements**:
-  - Minimum 1.5% momentum (always checked; uses token data when external momentum disabled)
-  - **When external momentum enabled** (currently disabled by default):
-    - Weighted average across 5m, 1h, 24h timeframes
-    - Both 5m and 1h momentum must be positive (alignment requirement)
-    - 24h momentum must be positive (longer-term trend confirmation, with override for strong recent momentum)
-    - Momentum acceleration: 5m momentum must exceed 1h by at least 0.2%
-    - Minimum 2.5% 5m momentum for velocity check (filters slow pumps)
-- **Volume Momentum**: Volume must be increasing (if volume change data available; requires 10% increase in 1h)
+- **Momentum Requirements** (candle-based only):
+  - Minimum momentum from validated 15m candles (computed from Helius DEX swap data)
+  - Candles are required for buy signal; no external momentum fallback
+- **Volume Momentum**: Volume must be increasing (if volume change data available; requires 5% increase in 1h)
 - **RSI Filter**: Rejects overbought tokens (RSI > 70)
 - **VWAP Entry Filter**: Requires price to be at or above VWAP (Volume Weighted Average Price):
   - Hard blocks entries below VWAP (requires buying strength)
@@ -671,7 +666,7 @@ token_discovery:
 min_quality_score: 60         # Minimum quality score (0-100, configurable)
 min_volume_24h_for_buy: 750000   # $750k minimum 24h volume - raised from $500k to improve win rate and PnL
 min_liquidity_usd_for_buy: 750000 # $750k minimum liquidity - raised from $500k to improve win rate and PnL
-min_momentum_pct: 0.015       # 1.5% minimum momentum for external momentum (weighted average of 5m, 1h, 24h)
+min_momentum_pct: 0.015       # 1.5% minimum momentum for candle-based buy signal
 
 # Risk Management (Current Settings)
 max_concurrent_positions: 4   # Maximum open positions (reduced from 6 to focus on quality)

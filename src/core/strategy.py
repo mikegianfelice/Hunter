@@ -95,7 +95,7 @@ def _calculate_momentum_score(token: dict, config: dict) -> tuple:
     Calculate momentum score from available sources (reusable for entry and exit).
     Returns (momentum_score: float, source: str, momentum_data: dict) tuple.
     momentum_score: Normalized score (0-1) or raw momentum value
-    source: "candle", "external", "token_data", or None
+    source: "candle", "token_data", or None
     momentum_data: Dict with 5m/1h/24h values for tracking decay
     """
     momentum_data = {
@@ -117,26 +117,6 @@ def _calculate_momentum_score(token: dict, config: dict) -> tuple:
             momentum_data['momentum_24h'] = token.get('priceChange24h')
             
             return candle_momentum, "candle", momentum_data
-    
-    # Try external momentum (DexScreener)
-    if config.get('ENABLE_EXTERNAL_MOMENTUM', True):
-        ext_momentum, ext_source = _get_external_momentum(token, config)
-        if ext_momentum is not None:
-            # Extract individual timeframes
-            def to_decimal(pct_val):
-                if pct_val is None or pct_val == "" or str(pct_val).lower() == "none" or str(pct_val).strip() == "":
-                    return None
-                try:
-                    val = float(pct_val)
-                    return val / 100.0 if abs(val) > 1 else val
-                except (ValueError, TypeError):
-                    return None
-            
-            momentum_data['momentum_5m'] = to_decimal(token.get('priceChange5m'))
-            momentum_data['momentum_1h'] = to_decimal(token.get('priceChange1h'))
-            momentum_data['momentum_24h'] = to_decimal(token.get('priceChange24h'))
-            
-            return ext_momentum, "external", momentum_data
     
     # Fallback to token data momentum
     momentum_24h = token.get("momentum_24h") or token.get("priceChange24h")
@@ -165,146 +145,6 @@ def _calculate_momentum_score(token: dict, config: dict) -> tuple:
         return mom_24h, "token_data", momentum_data
     
     return None, None, momentum_data
-
-def _get_external_momentum(token: dict, config: dict):
-    """
-    Get momentum from external historical data (DexScreener price changes).
-    Returns (momentum_value, source_description) tuple.
-    Returns (None, None) if no external data available.
-    """
-    if not config.get('ENABLE_EXTERNAL_MOMENTUM', True):
-        return None, None
-    
-    # Get price change data from token dict (DexScreener provides these as percentages)
-    # Note: DexScreener returns priceChange as percentages (e.g., 5.5 means 5.5%)
-    price_change_5m = token.get("priceChange5m")
-    price_change_1h = token.get("priceChange1h")
-    price_change_24h = token.get("priceChange24h")
-    
-    # Convert from percentage to decimal (5.5% -> 0.055)
-    def to_decimal(pct_val):
-        if pct_val is None or pct_val == "" or str(pct_val).lower() == "none" or str(pct_val).strip() == "":
-            return None
-        try:
-            return float(pct_val) / 100.0
-        except (ValueError, TypeError):
-            return None
-    
-    pc_5m = to_decimal(price_change_5m)
-    pc_1h = to_decimal(price_change_1h)
-    pc_24h = to_decimal(price_change_24h)
-    
-    primary_timeframe = config.get('EXTERNAL_MOMENTUM_PRIMARY_TIMEFRAME', 'h1')
-    use_multi = config.get('USE_MULTI_TIMEFRAME_MOMENTUM', True)
-    require_alignment = config.get('REQUIRE_MOMENTUM_ALIGNMENT', True)
-    require_24h_positive = config.get('REQUIRE_POSITIVE_24H_MOMENTUM', True)
-    
-    # Check momentum alignment requirement (5m and 1h both positive)
-    if require_alignment and pc_5m is not None and pc_1h is not None:
-        if pc_5m <= 0 or pc_1h <= 0:
-            # Timeframes not aligned - reject
-            return None, None
-    
-    # Tiered 24h momentum requirement with override logic
-    min_24h_momentum = config.get('MIN_24H_MOMENTUM_PCT', 0.03)  # 3% default
-    min_1h_momentum = config.get('MIN_1H_MOMENTUM_PCT', 0.015)  # 1.5% default
-    allow_override = config.get('ALLOW_NEGATIVE_24H_OVERRIDE', True)
-    min_1h_for_override = config.get('MIN_1H_MOMENTUM_FOR_OVERRIDE', 0.04)  # 4% default
-    min_5m_for_override = config.get('MIN_5M_MOMENTUM_FOR_OVERRIDE', 0.05)  # 5% default
-    
-    # Check 1h momentum minimum
-    if pc_1h is not None:
-        if pc_1h < min_1h_momentum:
-            # 1h momentum below minimum - reject
-            return None, None
-    
-    # Check 24h momentum with tiered logic
-    if require_24h_positive and pc_24h is not None:
-        if pc_24h < 0:
-            # 24h momentum negative - check for override
-            if allow_override and pc_1h is not None and pc_5m is not None:
-                # Allow override if recent momentum is very strong
-                if pc_1h >= min_1h_for_override and pc_5m >= min_5m_for_override:
-                    # Strong recent momentum overrides negative 24h
-                    pass  # Continue with momentum calculation
-                else:
-                    # Not strong enough for override - reject
-                    return None, None
-            else:
-                # No override allowed or missing data - reject
-                return None, None
-        elif pc_24h < min_24h_momentum:
-            # 24h momentum positive but below minimum - check for override
-            if allow_override and pc_1h is not None and pc_5m is not None:
-                # Allow override if recent momentum is very strong
-                if pc_1h >= min_1h_for_override and pc_5m >= min_5m_for_override:
-                    # Strong recent momentum overrides low 24h
-                    pass  # Continue with momentum calculation
-                else:
-                    # Not strong enough for override - reject
-                    return None, None
-            else:
-                # No override allowed or missing data - reject
-                return None, None
-    
-    if use_multi and (pc_5m is not None or pc_1h is not None or pc_24h is not None):
-        # Multi-timeframe weighted average
-        weights = {
-            'm5': config.get('EXTERNAL_MOMENTUM_M5_WEIGHT', 0.3),
-            'h1': config.get('EXTERNAL_MOMENTUM_H1_WEIGHT', 0.5),
-            'h24': config.get('EXTERNAL_MOMENTUM_H24_WEIGHT', 0.2)
-        }
-        
-        total_weight = 0
-        weighted_sum = 0
-        sources = []
-        
-        if pc_5m is not None:
-            weighted_sum += pc_5m * weights['m5']
-            total_weight += weights['m5']
-            sources.append(f"5m:{pc_5m*100:.2f}%")
-        
-        if pc_1h is not None:
-            weighted_sum += pc_1h * weights['h1']
-            total_weight += weights['h1']
-            sources.append(f"1h:{pc_1h*100:.2f}%")
-        
-        if pc_24h is not None:
-            weighted_sum += pc_24h * weights['h24']
-            total_weight += weights['h24']
-            sources.append(f"24h:{pc_24h*100:.2f}%")
-        
-        if total_weight > 0:
-            momentum = weighted_sum / total_weight  # Normalize by actual available weights
-            source_desc = f"external (weighted: {', '.join(sources)})"
-            return momentum, source_desc
-    
-    # Single timeframe fallback
-    if primary_timeframe == 'h1' and pc_1h is not None:
-        return pc_1h, "external (1h)"
-    elif primary_timeframe == 'm5' and pc_5m is not None:
-        return pc_5m, "external (5m)"
-    elif primary_timeframe == 'h24' and pc_24h is not None:
-        return pc_24h, "external (24h)"
-    
-    # Try fallback timeframes
-    fallback_timeframe = config.get('EXTERNAL_MOMENTUM_FALLBACK_TIMEFRAME', 'm5')
-    if fallback_timeframe == 'm5' and pc_5m is not None:
-        return pc_5m, "external (5m fallback)"
-    elif fallback_timeframe == 'h1' and pc_1h is not None:
-        return pc_1h, "external (1h fallback)"
-    elif fallback_timeframe == 'h24' and pc_24h is not None:
-        return pc_24h, "external (24h fallback)"
-    
-    # Try any available
-    if pc_1h is not None:
-        return pc_1h, "external (1h any)"
-    if pc_5m is not None:
-        return pc_5m, "external (5m any)"
-    if pc_24h is not None:
-        return pc_24h, "external (24h any)"
-    
-    return None, None
 
 def _add_to_delisted_tokens(address: str, symbol: str, reason: str):
     """
@@ -1306,7 +1146,7 @@ def check_buy_signal(token: dict) -> bool:
 
     # Volume momentum check - only if enabled in config
     if config.get('ENABLE_VOLUME_MOMENTUM_CHECK', True):
-        min_volume_change = config.get('MIN_VOLUME_CHANGE_1H', 0.1)
+        min_volume_change = config.get('MIN_VOLUME_CHANGE_1H', 0.05)
         # Try to get volume change data (from DexScreener)
         volume_change_1h = token.get("volumeChange1h")
         
@@ -1485,200 +1325,14 @@ def check_buy_signal(token: dict) -> bool:
                 return False
         else:
             _log_trace(
-                f"⚠️ Candle momentum unavailable (momentum={candle_momentum}, candles={len(candles) if candles else 0}), falling back to external momentum",
-                level="warning",
+                f"❌ Candle momentum unavailable (momentum={candle_momentum}, candles={len(candles) if candles else 0}) - candles are required for buy signal",
+                level="info",
                 event="strategy.buy.candle_momentum_unavailable",
                 symbol=token.get("symbol"),
                 candle_momentum=candle_momentum,
                 candles_count=len(candles) if candles else 0,
             )
-            # Fall through to external momentum below
-    
-    # Try external momentum (DexScreener price change data)
-    # Only check external momentum if it's enabled
-    if config.get('ENABLE_EXTERNAL_MOMENTUM', True):
-        ext_momentum, ext_source = _get_external_momentum(token, config)
-        if ext_momentum is not None:
-            # Check momentum acceleration (5m momentum must exceed 1h by threshold)
-            min_acceleration = config.get('MIN_MOMENTUM_ACCELERATION', 0.002)
-            price_change_5m = token.get("priceChange5m")
-            price_change_1h = token.get("priceChange1h")
-            
-            # Convert to decimal if needed
-            def to_decimal(pct_val):
-                if pct_val is None or pct_val == "" or str(pct_val).lower() == "none" or str(pct_val).strip() == "":
-                    return None
-                try:
-                    val = float(pct_val)
-                    return val / 100.0 if val > 1 else val
-                except (ValueError, TypeError):
-                    return None
-            
-            pc_5m = to_decimal(price_change_5m)
-            pc_1h = to_decimal(price_change_1h)
-            
-            # Check momentum acceleration
-            if pc_5m is not None and pc_1h is not None:
-                momentum_acceleration = pc_5m - pc_1h
-                if momentum_acceleration < min_acceleration:
-                    _log_trace(
-                        f"❌ Momentum not accelerating (5m-1h: {momentum_acceleration*100:.2f}% < {min_acceleration*100:.2f}%)",
-                        level="info",
-                        event="strategy.buy.momentum_acceleration_fail",
-                        symbol=token.get("symbol"),
-                        acceleration=momentum_acceleration,
-                        required_acceleration=min_acceleration,
-                    )
-                    return False
-            
-            # NEW: Velocity check - require 5m momentum ≥ 2.5-3% (fast moves only)
-            min_5m_velocity = config.get('MIN_MOMENTUM_5M_VELOCITY', 0.025)  # 2.5% minimum
-            if pc_5m is not None:
-                if pc_5m < min_5m_velocity:
-                    _log_trace(
-                        f"❌ 5m momentum too weak for velocity check: {pc_5m*100:.2f}% < {min_5m_velocity*100:.2f}% (slow move, likely noise)",
-                        level="info",
-                        event="strategy.buy.momentum_velocity_fail",
-                        symbol=token.get("symbol"),
-                        momentum_5m=pc_5m,
-                        required_velocity=min_5m_velocity,
-                    )
-                    return False
-                else:
-                    _log_trace(
-                        f"✅ 5m momentum velocity check passed: {pc_5m*100:.2f}% ≥ {min_5m_velocity*100:.2f}% (fast move)",
-                        level="info",
-                        event="strategy.buy.momentum_velocity_pass",
-                        symbol=token.get("symbol"),
-                        momentum_5m=pc_5m,
-                        required_velocity=min_5m_velocity,
-                    )
-            
-            _log_trace(
-                f"📈 Momentum from {ext_source}: {ext_momentum*100:.4f}% (need ≥ {momentum_need*100:.4f}%)",
-                level="info",
-                event="strategy.buy.external_momentum",
-                source=ext_source,
-                momentum=ext_momentum,
-                required_momentum=momentum_need,
-                symbol=token.get("symbol"),
-            )
-            if ext_momentum >= momentum_need:
-                _log_trace(
-                    "✅ External momentum buy signal → TRUE",
-                    level="info",
-                    event="strategy.buy.external_momentum_pass",
-                    symbol=token.get("symbol"),
-                )
-                return True
-            else:
-                _log_trace(
-                    "❌ External momentum insufficient.",
-                    level="error",
-                    event="strategy.buy.external_momentum_fail",
-                    symbol=token.get("symbol"),
-                )
-                return False
-
-        # External momentum enabled but unavailable - try using momentum from token dict
-        _log_trace(
-            "⚠️ External momentum unavailable; trying momentum from token data.",
-            level="info",
-            event="strategy.buy.no_external_momentum",
-            symbol=token.get("symbol"),
-        )
-        # Fall through to token momentum check below
-    else:
-        # External momentum disabled - use momentum from token dict
-        _log_trace(
-            "⏭️ External momentum disabled; using momentum from token data.",
-            level="info",
-            event="strategy.buy.external_momentum_disabled",
-            symbol=token.get("symbol"),
-        )
-    
-    # Try using momentum data from token dict (from AI recommendations)
-    # Check for momentum_24h/momentum_1h or priceChange24h/priceChange1h
-    momentum_24h = token.get("momentum_24h") or token.get("priceChange24h")
-    momentum_1h = token.get("momentum_1h") or token.get("priceChange1h")
-    
-    # Convert to decimal if needed (DexScreener provides as percentages)
-    def to_decimal(mom_val):
-        if mom_val is None or mom_val == "" or str(mom_val).lower() == "none" or str(mom_val).strip() == "":
-            return None
-        try:
-            val = float(mom_val)
-            # If value > 1, assume it's a percentage (e.g., 3.04 = 3.04%), convert to decimal
-            # If value < 1, assume it's already decimal (e.g., 0.0304 = 3.04%)
-            return val / 100.0 if abs(val) > 1 else val
-        except (ValueError, TypeError):
-            return None
-    
-    mom_24h = to_decimal(momentum_24h)
-    mom_1h = to_decimal(momentum_1h)
-    
-    if mom_1h is not None:
-        # Use 1h momentum as primary (most relevant for entry timing)
-        _log_trace(
-            f"📈 Momentum from token data (1h): {mom_1h*100:.4f}% (need ≥ {momentum_need*100:.4f}%)",
-            level="info",
-            event="strategy.buy.token_momentum",
-            momentum_1h=mom_1h,
-            momentum_24h=mom_24h,
-            required_momentum=momentum_need,
-            symbol=token.get("symbol"),
-        )
-        if mom_1h >= momentum_need:
-            _log_trace(
-                "✅ Token momentum buy signal → TRUE",
-                level="info",
-                event="strategy.buy.token_momentum_pass",
-                symbol=token.get("symbol"),
-            )
-            return True
-        else:
-            _log_trace(
-                f"❌ Token momentum insufficient ({mom_1h*100:.4f}% < {momentum_need*100:.4f}%).",
-                level="info",
-                event="strategy.buy.token_momentum_fail",
-                symbol=token.get("symbol"),
-            )
             return False
-    elif mom_24h is not None:
-        # Fallback to 24h momentum if 1h not available
-        _log_trace(
-            f"📈 Momentum from token data (24h): {mom_24h*100:.4f}% (need ≥ {momentum_need*100:.4f}%)",
-            level="info",
-            event="strategy.buy.token_momentum_24h",
-            momentum_24h=mom_24h,
-            required_momentum=momentum_need,
-            symbol=token.get("symbol"),
-        )
-        if mom_24h >= momentum_need:
-            _log_trace(
-                "✅ Token momentum (24h) buy signal → TRUE",
-                level="info",
-                event="strategy.buy.token_momentum_24h_pass",
-                symbol=token.get("symbol"),
-            )
-            return True
-        else:
-            _log_trace(
-                f"❌ Token momentum (24h) insufficient ({mom_24h*100:.4f}% < {momentum_need*100:.4f}%).",
-                level="info",
-                event="strategy.buy.token_momentum_24h_fail",
-                symbol=token.get("symbol"),
-            )
-            return False
-    
-    # No momentum available from any source
-    _log_trace(
-        "❌ No buy signal (no momentum confirmation from external or token data).",
-        level="error",
-        event="strategy.buy.no_signal",
-        symbol=token.get("symbol"),
-    )
-    return False
 
 def get_dynamic_take_profit(token: dict) -> float:
     config = get_config_values()
