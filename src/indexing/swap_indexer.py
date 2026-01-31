@@ -17,6 +17,7 @@ from solana.rpc.api import Client
 from solders.pubkey import Pubkey
 
 from src.config.secrets import SOLANA_RPC_URL, HELIUS_API_KEY
+from src.utils.address_utils import is_solana_address
 from src.storage.swap_events import (
     store_swap_event,
     get_latest_swap_time,
@@ -92,9 +93,18 @@ class SwapIndexer:
         logger.info("Swap indexer stopped")
 
     def add_token(self, token_address: str) -> None:
-        """Add a token to track for swap events"""
-        self.tracked_tokens.add(token_address.lower())
-        logger.debug(f"Added token to tracking: {token_address[:8]}...")
+        """Add a token to track for swap events. Skips invalid Solana addresses."""
+        if not token_address or not isinstance(token_address, str):
+            return
+        addr = token_address.strip()
+        if not is_solana_address(addr):
+            logger.debug(
+                f"Skipping invalid Solana address for swap indexer: {addr[:12]}... "
+                "(not a valid 32-byte Base58 pubkey)"
+            )
+            return
+        self.tracked_tokens.add(addr.lower())
+        logger.debug(f"Added token to tracking: {addr[:8]}...")
 
     def add_pool(self, pool_address: str) -> None:
         """Add a pool to track for swap events"""
@@ -105,17 +115,19 @@ class SwapIndexer:
         """Main indexing loop"""
         logger.info("Starting swap indexing loop...")
         
-        # Initial backfill for tracked tokens
-        if self.tracked_tokens:
-            logger.info(f"Performing initial backfill for {len(self.tracked_tokens)} tokens...")
-            self._backfill_tokens(list(self.tracked_tokens))
+        # Initial backfill for tracked tokens (skip invalid addresses)
+        valid_tokens = [a for a in self.tracked_tokens if is_solana_address(a)]
+        if valid_tokens:
+            logger.info(f"Performing initial backfill for {len(valid_tokens)} tokens...")
+            self._backfill_tokens(valid_tokens)
         
         # Continuous indexing
         while self.running:
             try:
-                # Index new swaps for tracked tokens
-                if self.tracked_tokens:
-                    self._index_new_swaps(list(self.tracked_tokens))
+                # Index new swaps for tracked tokens (skip invalid addresses)
+                valid_tokens = [a for a in self.tracked_tokens if is_solana_address(a)]
+                if valid_tokens:
+                    self._index_new_swaps(valid_tokens)
                 
                 # Index new swaps for tracked pools
                 if self.tracked_pools:
@@ -580,6 +592,9 @@ class SwapIndexer:
 
     def _find_pools_for_token(self, token_address: str) -> List[str]:
         """Find liquidity pools containing this token using direct DEX program queries"""
+        if not is_solana_address(token_address):
+            logger.debug(f"Skipping pool lookup for invalid address: {token_address[:12]}...")
+            return []
         # Try direct DEX program query first (more efficient, no external API)
         pools = self._find_pools_via_program_accounts(token_address)
         if pools:
