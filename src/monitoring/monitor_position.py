@@ -1823,6 +1823,12 @@ def monitor_all_positions():
         timestamp = _dt.now().strftime("%Y-%m-%d %H:%M:%S")
         print(f"[{timestamp}] 📈 Current price: ${current_price:.6f}")
         
+        # Calculate original_entry_price FIRST - used by peak/low defaults and gain calculation
+        # (Bug fix: was referenced at lines 1842-1843 before assignment, causing crash and blocking stop-loss)
+        original_entry_price = position_data.get("original_entry_price", entry_price) if isinstance(position_data, dict) else entry_price
+        gain = (current_price - original_entry_price) / original_entry_price
+        print(f"[{timestamp}] 📊 PnL: {gain * 100:.2f}% (entry: ${original_entry_price:.6f})")
+        
         # UPGRADE #4: Update recent_prices array for structure failure detection (every cycle)
         # Also track MFE/MAE (max favorable/adverse excursion) for trade summary
         if isinstance(position_data, dict):
@@ -1852,11 +1858,6 @@ def monitor_all_positions():
             # Update position
             position_data["recent_prices"] = recent_prices
             updated_positions[position_key] = position_data
-        
-        # Calculate gain based on original entry price (for partial positions, use original_entry_price if available)
-        original_entry_price = position_data.get("original_entry_price", entry_price) if isinstance(position_data, dict) else entry_price
-        gain = (current_price - original_entry_price) / original_entry_price
-        print(f"[{timestamp}] 📊 PnL: {gain * 100:.2f}% (entry: ${original_entry_price:.6f})")
         
         # Show partial sell info if applicable
         if isinstance(position_data, dict) and position_data.get("partial_sell_taken"):
