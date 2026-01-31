@@ -66,8 +66,8 @@ min_pool_reserves_multiplier: 2.0  # Pool reserves must be 2x trade amount
 min_momentum_pct: 0.015  # 1.5% minimum momentum for external momentum (weighted average of 5m, 1h, 24h)
 multichain_momentum_multiplier: 0.8  # Multi-chain tokens require 80% of ETH momentum (was 75%)
 multichain_momentum_min: 0.020  # Minimum 2.0% momentum for multi-chain tokens (raised from 1.0% for quality)
-min_volume_24h_for_buy: 750000   # Quality-first: $750k volume minimum for reliability (raised from $500k to improve win rate and PnL)
-min_liquidity_usd_for_buy: 750000  # Quality-first: $750k liquidity minimum for reliability (raised from $500k to improve win rate and PnL)
+min_volume_24h_for_buy: 500000   # Quality-first: $500k volume minimum for reliability
+min_liquidity_usd_for_buy: 500000  # Quality-first: $500k liquidity minimum for reliability
 min_price_usd: 0.000001  # MICRO TESTING - reduced minimum price for more opportunities
 
 # Fast-path thresholds for first-seen tokens
@@ -307,7 +307,7 @@ price_memory_min_age_seconds: 300  # 5 minutes minimum age - short timeframes ar
 
 # === Volume Momentum ===
 enable_volume_momentum_check: true  # Check if volume is increasing (if volume change data available)
-min_volume_change_1h: 0.05  # Require at least 5% volume increase in 1h (if data available)
+min_volume_change_1h: 0.03  # Require at least 3% volume increase in 1h (if data available)
 enable_rsi_filter: true  # Filter out overbought tokens (RSI > 70)
 rsi_overbought_threshold: 70  # RSI threshold to consider overbought
 
