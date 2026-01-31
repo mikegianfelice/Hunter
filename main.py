@@ -177,6 +177,26 @@ async def run_enhanced_trading_mode():
                      "❌ Preflight checks failed. Please fix errors before starting trading.")
             return False
         
+        # Start swap indexer (enables order-flow defense for Solana tokens)
+        try:
+            from src.config.config_loader import get_config
+            if get_config("swap_indexer.enabled", True):
+                from src.indexing.swap_indexer import get_indexer
+                indexer = get_indexer()
+                indexer.start()
+                log_info("async_trading.indexer", "✅ Swap indexer started")
+                # Add tokens from open positions to indexer
+                from src.storage.positions import load_positions
+                positions = load_positions()
+                for pos_key, pos_data in positions.items():
+                    token_address = pos_data.get("address")
+                    if token_address:
+                        indexer.add_token(token_address)
+                if positions:
+                    log_info("async_trading.indexer", f"Added {len(positions)} position token(s) to indexer")
+        except Exception as e:
+            log_error("async_trading.indexer", f"Failed to start swap indexer: {e}")
+        
         # Start price tracker
         from src.deployment.production_manager import ProductionManager
         pm = ProductionManager()
