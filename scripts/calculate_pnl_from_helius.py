@@ -540,6 +540,7 @@ def calculate_wallet_value_over_time_from_helius(
                         SOLANA_WALLET_ADDRESS,
                         limit=200,
                         before=before_signature,
+                        include_token_accounts=False,  # Use standard RPC (getSignaturesForAddress) - avoids 429 from getTransactionsForAddress
                     )
                 except Exception as e:
                     fetch_error = e
