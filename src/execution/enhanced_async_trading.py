@@ -1162,17 +1162,49 @@ class EnhancedAsyncTradingEngine:
                 and risk_score <= MAX_RISK_SCORE
             )
             
+            # Volume momentum check - part of AI filters (uses DexScreener volumeChange1h, no API call)
+            # Check BEFORE price momentum - filters tokens with decreasing volume early
+            if passes_ai_filters and get_config_bool("enable_volume_momentum_check", True):
+                from src.config.config_loader import get_config_values
+                config = get_config_values()
+                min_volume_change = config.get("MIN_VOLUME_CHANGE_1H", 0.05)
+                volume_change_1h = token.get("volumeChange1h")
+                if volume_change_1h is None:
+                    passes_ai_filters = False
+                else:
+                    try:
+                        volume_change_pct = float(volume_change_1h) / 100.0 if abs(float(volume_change_1h)) > 1 else float(volume_change_1h)
+                        if volume_change_pct < min_volume_change:
+                            passes_ai_filters = False
+                    except (ValueError, TypeError):
+                        passes_ai_filters = False
+            
             # Override action to "skip" if AI filters fail (makes logs clearer)
             # This ensures action in logs reflects actual execution status
             original_action = action
             if not passes_ai_filters and action in ["buy", "weak_buy", "strong_buy"]:
                 action = "skip"
             
-            # Log recommendation details for debugging
+            # Log recommendation details for debugging (includes volume momentum for filter visibility)
             momentum_24h = token.get("priceChange24h", 0)
             momentum_1h = token.get("priceChange1h", 0)
             volume_24h = float(token.get("volume24h", 0))
             liquidity = float(token.get("liquidity", 0))
+            volume_change_1h = token.get("volumeChange1h")
+            # Compute volume momentum for logging (same logic as passes_ai_filters check)
+            volume_momentum_pass = True
+            volume_change_pct = None
+            if volume_change_1h is not None:
+                try:
+                    from src.config.config_loader import get_config_values
+                    _cfg = get_config_values()
+                    min_vol = _cfg.get("MIN_VOLUME_CHANGE_1H", 0.05)
+                    volume_change_pct = float(volume_change_1h) / 100.0 if abs(float(volume_change_1h)) > 1 else float(volume_change_1h)
+                    volume_momentum_pass = volume_change_pct >= min_vol
+                except (ValueError, TypeError):
+                    volume_momentum_pass = False
+            else:
+                volume_momentum_pass = False
             log_info("trading.recommendation_check",
                     f"Token {token.get('symbol', 'UNKNOWN')}: action={action} (original={original_action}), passes_ai_filters={passes_ai_filters}",
                     symbol=token.get("symbol"),
@@ -1186,6 +1218,9 @@ class EnhancedAsyncTradingEngine:
                     momentum_1h=round(momentum_1h, 3),
                     volume_24h=round(volume_24h, 0),
                     liquidity=round(liquidity, 0),
+                    volumeChange1h=volume_change_1h,
+                    volume_change_pct=round(volume_change_pct * 100, 2) if volume_change_pct is not None else None,
+                    volume_momentum_pass=volume_momentum_pass,
                     passes_ai_filters=passes_ai_filters)
             
             # Allow both "buy" and "weak_buy" actions, with different confidence thresholds
@@ -1325,56 +1360,7 @@ class EnhancedAsyncTradingEngine:
                             log_error("trading.holder_concentration_error",
                                     f"Holder concentration check exception for {token.get('symbol', 'UNKNOWN')} (fail-open mode): {e}")
                     
-                    # OPTIMIZATION: Volume momentum check BEFORE candle fetch to save API calls
-                    # This prevents fetching expensive candles if volume is decreasing
-                    from src.config.config_loader import get_config_values
-                    config = get_config_values()
-                    
-                    if config.get('ENABLE_VOLUME_MOMENTUM_CHECK', True):
-                        min_volume_change = config.get('MIN_VOLUME_CHANGE_1H', 0.05)
-                        volume_change_1h = token.get("volumeChange1h")
-                        
-                        if volume_change_1h is None:
-                            log_error("trading.volume_momentum_blocked",
-                                    f"Token {token.get('symbol', 'UNKNOWN')} BLOCKED: volume change data unavailable (required but not available from DexScreener) | volumeChange1h=None",
-                                    symbol=token.get("symbol"),
-                                    volumeChange1h=None)
-                            enhanced_token["approved_for_trading"] = False
-                            enhanced_token["rejection_reason"] = "volume_momentum_data_unavailable"
-                            continue  # Skip to next token (don't fetch candles)
-                        
-                        # Parse and validate volume change
-                        try:
-                            # Handle both decimal format (<= 1) and legacy percentage format (> 1)
-                            volume_change_pct = float(volume_change_1h) / 100.0 if abs(float(volume_change_1h)) > 1 else float(volume_change_1h)
-                            
-                            if volume_change_pct < min_volume_change:
-                                log_error("trading.volume_momentum_blocked",
-                                        f"Token {token.get('symbol', 'UNKNOWN')} BLOCKED: volume not increasing (1h change: {volume_change_pct*100:.1f}% < {min_volume_change*100:.1f}%) | volumeChange1h={volume_change_1h:.4f}",
-                                        symbol=token.get("symbol"),
-                                        volumeChange1h=volume_change_1h,
-                                        volume_change=volume_change_pct,
-                                        required_change=min_volume_change)
-                                enhanced_token["approved_for_trading"] = False
-                                enhanced_token["rejection_reason"] = f"volume_momentum_fail_{volume_change_pct:.4f}_{min_volume_change:.4f}"
-                                continue  # Skip to next token (don't fetch candles)
-                            else:
-                                # Volume check passed - log for visibility
-                                log_info("trading.volume_momentum_pass",
-                                        f"Volume momentum check passed for {token.get('symbol', 'UNKNOWN')} (1h change: {volume_change_pct*100:.1f}% >= {min_volume_change*100:.1f}%) | volumeChange1h={volume_change_1h:.4f}",
-                                        symbol=token.get("symbol"),
-                                        volumeChange1h=volume_change_1h,
-                                        volume_change=volume_change_pct,
-                                        required_change=min_volume_change)
-                        except (ValueError, TypeError) as e:
-                            log_error("trading.volume_momentum_blocked",
-                                    f"Token {token.get('symbol', 'UNKNOWN')} BLOCKED: volume change data unparseable (required): {e} | volumeChange1h={volume_change_1h}",
-                                    symbol=token.get("symbol"),
-                                    volumeChange1h=volume_change_1h,
-                                    error=str(e))
-                            enhanced_token["approved_for_trading"] = False
-                            enhanced_token["rejection_reason"] = f"volume_momentum_parse_error_{str(e)}"
-                            continue  # Skip to next token (don't fetch candles)
+                    # Volume momentum already checked in passes_ai_filters (trading.recommendation_check)
                     
                     # ALWAYS fetch and validate candles before trade entry (required for technical checks)
                     # This ensures VWAP and other technical indicators are available
