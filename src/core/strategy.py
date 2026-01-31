@@ -1112,39 +1112,8 @@ def check_buy_signal(token: dict) -> bool:
         )
         return True
 
-    # RSI filter - MANDATORY: avoid overbought entries (required for all trades)
-    rsi_threshold = config.get('RSI_OVERBOUGHT_THRESHOLD', 70)
-    # Try to get RSI from token dict (if available from technical indicators)
-    rsi = token.get("rsi")
-    if rsi is None:
-        # Try to get from technical_indicators nested dict
-        tech_indicators = token.get("technical_indicators", {})
-        if isinstance(tech_indicators, dict):
-            rsi = tech_indicators.get("rsi")
-    
-    # MANDATORY: Block if RSI unavailable (should be calculated from validated candles)
-    if rsi is None:
-        _log_trace(
-            f"❌ RSI filter blocked: RSI unavailable (required but not calculated from candles)",
-            level="info",
-            event="strategy.buy.rsi_unavailable_blocked",
-            symbol=token.get("symbol"),
-        )
-        return False
-    
-    # Block if overbought
-    if rsi > rsi_threshold:
-        _log_trace(
-            f"❌ Token overbought (RSI: {rsi:.1f} > {rsi_threshold})",
-            level="info",
-            event="strategy.buy.rsi_overbought",
-            symbol=token.get("symbol"),
-            rsi=rsi,
-            threshold=rsi_threshold,
-        )
-        return False
-
-    # Volume momentum check - only if enabled in config
+    # Volume momentum check - BEFORE price momentum (RSI, VWAP, candle momentum)
+    # Uses DexScreener volumeChange1h - no candle fetch required
     if config.get('ENABLE_VOLUME_MOMENTUM_CHECK', True):
         min_volume_change = config.get('MIN_VOLUME_CHANGE_1H', 0.05)
         # Try to get volume change data (from DexScreener)
@@ -1200,6 +1169,38 @@ def check_buy_signal(token: dict) -> bool:
             )
             return False
     # If ENABLE_VOLUME_MOMENTUM_CHECK is False, skip this check entirely
+
+    # RSI filter - MANDATORY: avoid overbought entries (required for all trades)
+    rsi_threshold = config.get('RSI_OVERBOUGHT_THRESHOLD', 70)
+    # Try to get RSI from token dict (if available from technical indicators)
+    rsi = token.get("rsi")
+    if rsi is None:
+        # Try to get from technical_indicators nested dict
+        tech_indicators = token.get("technical_indicators", {})
+        if isinstance(tech_indicators, dict):
+            rsi = tech_indicators.get("rsi")
+    
+    # MANDATORY: Block if RSI unavailable (should be calculated from validated candles)
+    if rsi is None:
+        _log_trace(
+            f"❌ RSI filter blocked: RSI unavailable (required but not calculated from candles)",
+            level="info",
+            event="strategy.buy.rsi_unavailable_blocked",
+            symbol=token.get("symbol"),
+        )
+        return False
+    
+    # Block if overbought
+    if rsi > rsi_threshold:
+        _log_trace(
+            f"❌ Token overbought (RSI: {rsi:.1f} > {rsi_threshold})",
+            level="info",
+            event="strategy.buy.rsi_overbought",
+            symbol=token.get("symbol"),
+            rsi=rsi,
+            threshold=rsi_threshold,
+        )
+        return False
 
     # VWAP Entry Filter (UPGRADE #2: Strength filter)
     if config.get('ENABLE_VWAP_ENTRY_FILTER', True):
