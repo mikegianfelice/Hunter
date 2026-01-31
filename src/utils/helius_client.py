@@ -214,10 +214,10 @@ class HeliusClient:
         track_helius_call()
         
         # Rate limit: Add delay to respect RPS limits
-        # Helius has per-second rate limits (50-500 RPS depending on plan)
-        # Using 50ms delay = max 20 requests/sec, very conservative to avoid rate limits
+        # Helius Developer plan: 50 RPC req/s (config: api_rate_limiting.helius_rpc_req_per_sec)
+        # Using 50ms delay = max 20 requests/sec, conservative to stay under 50 req/s
         import time
-        time.sleep(0.05)  # 50ms delay = max 20 requests/sec, very conservative for all plans
+        time.sleep(0.05)  # 50ms delay = max 20 req/s
         
         response = post_json(self.endpoint, payload)
         
@@ -291,8 +291,7 @@ class HeliusClient:
             track_helius_call()
             
             # Rate limit: Add delay between batches to respect RPS limits
-            # Helius has per-second rate limits (50-500 RPS depending on plan)
-            # Adding 0.2s delay = max 5 requests/sec, very conservative to avoid rate limits
+            # Helius Developer plan: 50 RPC req/s
             if i > 0:  # Don't delay the first request
                 time.sleep(0.2)  # 200ms delay between batches for safety
             

@@ -28,7 +28,7 @@ def get_project_root():
 PROJECT_ROOT = get_project_root()
 
 # Official start date when bot officially began running after major changes
-OFFICIAL_START_DATE = datetime(2026, 1, 14, 0, 0, 0, tzinfo=timezone.utc)
+OFFICIAL_START_DATE = datetime(2026, 1, 15, 0, 0, 0, tzinfo=timezone.utc)
 
 
 def calculate_wallet_value_over_time_from_helius_wrapper(days=5, initial_wallet_usd=None):

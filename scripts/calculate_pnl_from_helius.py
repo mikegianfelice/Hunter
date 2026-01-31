@@ -328,8 +328,8 @@ def calculate_pnl_from_helius(start_date_str: str, end_date_str: str, initial_wa
     # Show API call count
     final_call_count = api_tracker.get_count('helius')
     calls_used = final_call_count - initial_call_count
-    print(f"\n  📡 Helius API Calls Used: {calls_used:,} (out of 30,000 daily limit)")
-    print(f"     Remaining today: {30_000 - final_call_count:,}")
+    print(f"\n  📡 Helius API Calls Used: {calls_used:,} (out of 300,000 daily limit)")
+    print(f"     Remaining today: {300_000 - final_call_count:,}")
     
     print(f"\n  📝 This uses ONLY on-chain Helius transaction data")
     print(f"     (matches buy/sell transactions using FIFO)")
@@ -940,8 +940,8 @@ def calculate_wallet_value_over_time_from_helius(
     # Show API call count
     final_call_count = api_tracker.get_count('helius')
     calls_used = final_call_count - initial_call_count
-    print(f"\n  📡 Helius API Calls Used: {calls_used:,} (out of 30,000 daily limit)")
-    print(f"     Remaining today: {30_000 - final_call_count:,}")
+    print(f"\n  📡 Helius API Calls Used: {calls_used:,} (out of 300,000 daily limit)")
+    print(f"     Remaining today: {300_000 - final_call_count:,}")
     
     # Show first few and last few events
     if wallet_value_events:

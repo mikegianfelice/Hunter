@@ -16,11 +16,11 @@ _lock = threading.Lock()
 # Singleton instance
 _tracker_instance: Optional['APICallTracker'] = None
 
-# API rate limits (from .cursorrules)
+# API rate limits (Helius Developer plan: 300k/day, 50 RPC req/s)
 API_LIMITS = {
     'coingecko': 330,  # 300 calls/day, but code uses 330
     'coincap': 130,
-    'helius': 300000
+    'helius': 300000  # Helius Developer plan daily limit
 }
 
 

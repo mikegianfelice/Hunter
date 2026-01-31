@@ -300,14 +300,14 @@ wallet_tiers:
 ### 📊 Enhanced Technical Indicators & API Integration
 - **Technical Indicators**: RSI (14-period), MACD (12/26/9), Bollinger Bands (20-period, 2 std dev), VWAP (Volume Weighted Average Price), volume profiles, and price action patterns
 - **15-Minute Candle System**: Builds OHLCV candles from Helius DEX swap transactions using 15-minute buckets (900s intervals) for precise technical analysis
-- **Helius API Integration**: Uses Helius API (30,000 calls/day limit) for Solana candlestick data from real DEX swap transactions
+- **Helius API Integration**: Uses Helius API (300,000 calls/day limit) for Solana candlestick data from real DEX swap transactions
   - **DEX → RPC Routing**: Automatically switches between DEX API (fast, 1 call) and RPC method (time-bounded, smaller payloads) based on payload size and processing time
   - **Routing Thresholds**: Switches to RPC if swaps >3000, response >15MB, or processing time >8s
   - **Quality Validation**: Validates candle data with configurable thresholds (min candles, swaps, time coverage, swap density)
   - **Hard Limiter**: Maximum 15 tokens per cycle eligible for candle fetching (sorted by liquidity+volume)
 - **Smart Caching**: 15-minute cache for 15m candles, 1-hour cache for CoinGecko to minimize API usage
 - **API Rate Limiting**: 
-  - Helius: 30,000 calls/day (plenty of headroom, optimized for speed/reliability with 300k/day budget available)
+  - Helius: 300,000 calls/day, 50 RPC req/s (Developer plan)
   - CoinGecko: 330 calls/day (conservative usage with caching)
 - **Quality Filtering**: Only fetches candlestick data for tokens with $750k+ volume/liquidity (Stage-0 prefilter) to minimize API calls
 - **Fallback Strategy**: Uses price_memory storage if APIs fail (no API calls needed)

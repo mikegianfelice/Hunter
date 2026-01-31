@@ -1800,7 +1800,8 @@ technical_indicators:
 
 # === API Rate Limiting ===
 api_rate_limiting:
-  helius_max_daily: 300000  # Helius limit
+  helius_max_daily: 300000  # Helius Developer plan: 300k calls/day
+  helius_rpc_req_per_sec: 50  # Helius Developer plan: 50 RPC req/s
   coingecko_max_daily: 330  # CoinGecko limit
   helius_cache_minutes: 5  # 5 minute cache for Helius
   coingecko_cache_hours: 1  # 1 hour cache for CoinGecko
