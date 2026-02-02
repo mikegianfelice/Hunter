@@ -1,8 +1,8 @@
 """
-Solana Order-Flow Defense Module (Zero API Calls)
+Solana Order-Flow Defense Module
 
-Uses indexed swap events from database to analyze order flow.
-No RPC calls required - all data comes from local SQLite database.
+Uses indexed swap events from database when available; falls back to Helius DEX API
+when the indexer has no data for a token.
 
 This module blocks trades when order flow indicates:
 - Single-wallet pumps
@@ -197,6 +197,146 @@ def fetch_swaps_from_indexer(
     return result
 
 
+def _helius_swap_to_order_flow_format(
+    swap: Dict, token_mint: str
+) -> Optional[Dict]:
+    """
+    Convert a Helius Enhanced Transactions swap to order-flow format.
+    
+    Returns dict with signer_wallet, side, trade_size_usd, timestamp; or None if unparseable.
+    """
+    try:
+        signer = (swap.get("feePayer") or "").strip()
+        if not signer:
+            return None
+        
+        token_mint_lower = token_mint.lower()
+        token_transfers = swap.get("tokenTransfers", [])
+        if len(token_transfers) < 2:
+            return None
+        
+        # Determine side: signer received target token = BUY, sent = SELL
+        signer_lower = signer.lower()
+        token_received = 0.0
+        token_sent = 0.0
+        base_received_usd = 0.0
+        base_sent_usd = 0.0
+        
+        USDC_MINT = "epjfwdd5aufqssqem2qn1xzybapc8g4weggkzwytdt1v"
+        USDT_MINT = "es9vmfrzwaerbvgtle3i33zq3f3kmbo2fdymgzcan4"
+        SOL_MINT = "so11111111111111111111111111111111111111112"
+        base_mints = {USDC_MINT, USDT_MINT, SOL_MINT}
+        
+        sol_price = get_sol_price_usd()
+        
+        for t in token_transfers:
+            mint = (t.get("mint") or "").lower()
+            amount = float(t.get("tokenAmount", 0) or 0)
+            from_acc = (t.get("fromUserAccount") or "").lower()
+            to_acc = (t.get("toUserAccount") or "").lower()
+            
+            if mint == token_mint_lower:
+                if to_acc == signer_lower:
+                    token_received += amount
+                elif from_acc == signer_lower:
+                    token_sent += amount
+            elif mint in base_mints:
+                usd_val = amount if mint in {USDC_MINT, USDT_MINT} else amount * sol_price
+                if to_acc == signer_lower:
+                    base_received_usd += usd_val
+                elif from_acc == signer_lower:
+                    base_sent_usd += usd_val
+        
+        # BUY: signer received token, sent base
+        if token_received > 0 and base_sent_usd > 0:
+            side = "BUY"
+            trade_size_usd = base_sent_usd
+        elif token_sent > 0 and base_received_usd > 0:
+            side = "SELL"
+            trade_size_usd = base_received_usd
+        else:
+            return None
+        
+        if trade_size_usd <= 0:
+            return None
+        
+        ts = swap.get("timestamp") or swap.get("blockTime", 0)
+        return {
+            "signature": swap.get("signature", ""),
+            "signer_wallet": signer,
+            "timestamp": ts,
+            "side": side,
+            "trade_size_usd": trade_size_usd,
+        }
+    except Exception:
+        return None
+
+
+def fetch_swaps_from_helius_api(
+    token_mint: str,
+    lookback_seconds: int,
+    max_txs: int
+) -> List[Dict]:
+    """
+    Fetch swap transactions from Helius DEX API (fallback when indexer has no data).
+    
+    Requires HELIUS_API_KEY. Uses same order-flow format as fetch_swaps_from_indexer.
+    """
+    try:
+        from src.config.secrets import HELIUS_API_KEY
+        from src.utils.api_tracker import track_helius_call
+        import requests
+        
+        api_key = (HELIUS_API_KEY or "").strip()
+        if not api_key:
+            return []
+        
+        url = "https://api.helius.xyz/v0/addresses/{}/transactions".format(token_mint)
+        params = {"api-key": api_key, "type": "SWAP"}
+        
+        track_helius_call()
+        response = requests.get(url, params=params, timeout=15)
+        
+        if response.status_code != 200:
+            log_warning(
+                "order_flow.helius_api_error",
+                f"Helius DEX API returned {response.status_code} for order-flow",
+                {"token": token_mint[:8], "status": response.status_code}
+            )
+            return []
+        
+        data = response.json()
+        swaps_raw = data if isinstance(data, list) else data.get("transactions", [])
+        
+        end_time = time.time()
+        start_time = end_time - lookback_seconds
+        
+        result = []
+        for swap in swaps_raw[:max_txs]:
+            ts = swap.get("timestamp") or swap.get("blockTime", 0)
+            if ts < start_time or ts > end_time:
+                continue
+            parsed = _helius_swap_to_order_flow_format(swap, token_mint)
+            if parsed:
+                result.append(parsed)
+        
+        if result:
+            log_info(
+                "order_flow.helius_fallback_used",
+                f"Order-flow using Helius API fallback: {len(result)} swaps",
+                {"token": token_mint[:8], "swaps": len(result)}
+            )
+        return result
+        
+    except Exception as e:
+        log_warning(
+            "order_flow.helius_fallback_error",
+            f"Helius API fallback failed: {e}",
+            {"token": token_mint[:8]}
+        )
+        return []
+
+
 def evaluate_order_flow_solana(
     token_mint: str,
     raydium_pool: Optional[str] = None,
@@ -250,8 +390,12 @@ def evaluate_order_flow_solana(
     
     now_ts = now_ts or int(time.time())
     
-    # Fetch swaps from database (ZERO API CALLS!)
+    # Fetch swaps: indexer first, then Helius API fallback if enabled
     swaps = fetch_swaps_from_indexer(token_mint, lookback_seconds, max_txs_scanned)
+    
+    use_api_fallback = get_config_bool("order_flow_use_api_fallback", True)
+    if not swaps and use_api_fallback:
+        swaps = fetch_swaps_from_helius_api(token_mint, lookback_seconds, max_txs_scanned)
     
     if not swaps:
         if fail_open:

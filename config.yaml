@@ -234,6 +234,7 @@ holder_concentration_fail_closed: true  # Block trades if holder concentration c
 
 # === Order Flow Defense ===
 enable_order_flow_defense: true  # Enable order-flow defense for Solana tokens (blocks single-wallet pumps, wash trading, fake momentum)
+order_flow_use_api_fallback: true  # Use Helius DEX API when indexer has no swap data (requires HELIUS_API_KEY)
 order_flow_lookback_seconds: 120  # 2 minute lookback window
 order_flow_buy_dom_min: 0.55  # Minimum 55% buy dominance
 order_flow_top_buyer_max: 0.20  # Max 20% from single wallet
