@@ -66,8 +66,8 @@ min_pool_reserves_multiplier: 2.0  # Pool reserves must be 2x trade amount
 min_momentum_pct: 0.015  # 1.5% minimum momentum for external momentum (weighted average of 5m, 1h, 24h)
 multichain_momentum_multiplier: 0.8  # Multi-chain tokens require 80% of ETH momentum (was 75%)
 multichain_momentum_min: 0.020  # Minimum 2.0% momentum for multi-chain tokens (raised from 1.0% for quality)
-min_volume_24h_for_buy: 500000   # Quality-first: $500k volume minimum for reliability
-min_liquidity_usd_for_buy: 500000  # Quality-first: $500k liquidity minimum for reliability
+min_volume_24h_for_buy: 250000   # Quality-first: $250k volume minimum for reliability
+min_liquidity_usd_for_buy: 250000  # Quality-first: $250k liquidity minimum for reliability
 min_price_usd: 0.000001  # MICRO TESTING - reduced minimum price for more opportunities
 
 # Fast-path thresholds for first-seen tokens

@@ -22,8 +22,8 @@ Hunter is a quant level crypto trading bot executing real on-chain trades with l
 
 ### **1. Token Selection** 🔍
 The bot continuously scans DexScreener for trending tokens across Solana and Base using configurable discovery settings. It filters out low-quality tokens by requiring:
-- Minimum $750k daily volume (configurable)
-- Minimum $750k liquidity (configurable)
+- Minimum $250k daily volume (configurable)
+- Minimum $250k liquidity (configurable)
 - Active trading activity
 - No stablecoins or wrapped tokens
 
@@ -309,7 +309,7 @@ wallet_tiers:
 - **API Rate Limiting**: 
   - Helius: 300,000 calls/day, 50 RPC req/s (Developer plan)
   - CoinGecko: 330 calls/day (conservative usage with caching)
-- **Quality Filtering**: Only fetches candlestick data for tokens with $750k+ volume/liquidity (Stage-0 prefilter) to minimize API calls
+- **Quality Filtering**: Only fetches candlestick data for tokens with $250k+ volume/liquidity (Stage-0 prefilter) to minimize API calls
 - **Fallback Strategy**: Uses price_memory storage if APIs fail (no API calls needed)
 - **A/B Testing Framework**: Test different feature weight combinations to optimize performance
 - **Expected Usage**: ~100-200 Helius calls/day, ~10-30 CoinGecko calls/day (well under limits)
@@ -664,8 +664,8 @@ token_discovery:
 
 # Strategy Thresholds (Improved Entry Quality)
 min_quality_score: 60         # Minimum quality score (0-100, configurable)
-min_volume_24h_for_buy: 750000   # $750k minimum 24h volume - raised from $500k to improve win rate and PnL
-min_liquidity_usd_for_buy: 750000 # $750k minimum liquidity - raised from $500k to improve win rate and PnL
+min_volume_24h_for_buy: 250000   # $250k minimum 24h volume for reliability
+min_liquidity_usd_for_buy: 250000 # $250k minimum liquidity for reliability
 min_momentum_pct: 0.015       # 1.5% minimum momentum for candle-based buy signal
 
 # Risk Management (Current Settings)
