@@ -9,7 +9,7 @@ for fast historical candlestick queries without API calls.
 import time
 import logging
 import threading
-from typing import Optional, Dict, List, Set
+from typing import Any, Optional, Dict, List, Set
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -17,7 +17,9 @@ from solana.rpc.api import Client
 from solders.pubkey import Pubkey
 
 from src.config.secrets import SOLANA_RPC_URL, HELIUS_API_KEY
+from src.config.config_loader import get_config_int
 from src.utils.address_utils import is_solana_address
+from src.utils.http_utils import post_json
 from src.storage.swap_events import (
     store_swap_event,
     get_latest_swap_time,
@@ -73,6 +75,99 @@ class SwapIndexer:
             # Use public RPC
             self.client = Client(self.rpc_url)
             logger.info("Using public Solana RPC for swap indexing")
+
+    def _get_rpc_endpoint(self) -> str:
+        """Return RPC HTTP endpoint for batch requests (with Helius API key if applicable)."""
+        base = self.rpc_url.rstrip("/")
+        if self.helius_api_key and "helius-rpc.com" in base and "api-key=" not in base.lower():
+            sep = "&" if "?" in base else "?"
+            return f"{base}{sep}api-key={self.helius_api_key}"
+        return base
+
+    def _get_transactions_batch(self, signatures: List[str]) -> List[Optional[Dict]]:
+        """
+        Fetch transactions in batches via JSON-RPC. ~100x fewer HTTP requests than one-by-one.
+        Returns list of tx dicts (or None for failures), in same order as signatures.
+        """
+        if not signatures:
+            return []
+
+        batch_size = get_config_int("helius_candlestick_settings.transaction_batch_size", 100)
+        endpoint = self._get_rpc_endpoint()
+        all_results: List[Optional[Dict]] = []
+
+        for i in range(0, len(signatures), batch_size):
+            batch_sigs = signatures[i : i + batch_size]
+
+            batch_payload = []
+            for idx, sig in enumerate(batch_sigs):
+                sig_str = str(sig) if hasattr(sig, "__str__") else sig
+                batch_payload.append({
+                    "jsonrpc": "2.0",
+                    "id": f"batch-{i}-{idx}",
+                    "method": "getTransaction",
+                    "params": [
+                        sig_str,
+                        {
+                            "encoding": "jsonParsed",
+                            "commitment": "confirmed",
+                            "maxSupportedTransactionVersion": 0,
+                        },
+                    ],
+                })
+
+            if self.helius_api_key:
+                track_helius_call()
+
+            if i > 0:
+                time.sleep(0.2)
+
+            try:
+                response = post_json(endpoint, batch_payload, timeout=30)
+            except Exception as e:
+                logger.debug(f"Batch getTransaction failed: {e}")
+                all_results.extend([None] * len(batch_sigs))
+                continue
+
+            if isinstance(response, list):
+                response_dict = {}
+                for item in response:
+                    if isinstance(item, dict) and "id" in item:
+                        response_dict[item["id"]] = item.get("result")
+                for idx, sig in enumerate(batch_sigs):
+                    req_id = f"batch-{i}-{idx}"
+                    raw = response_dict.get(req_id)
+                    all_results.append(self._normalize_rpc_tx_result(raw))
+            else:
+                all_results.extend([None] * len(batch_sigs))
+
+        return all_results
+
+    def _normalize_rpc_tx_result(self, raw: Optional[Any]) -> Optional[Dict]:
+        """Convert JSON-RPC getTransaction result to dict format expected by parsers."""
+        if raw is None or not isinstance(raw, dict):
+            return None
+        meta = raw.get("meta") or {}
+        if meta.get("err") is not None:
+            return None
+        tx = raw.get("transaction") or {}
+        msg = tx.get("message") or {}
+        account_keys_raw = msg.get("accountKeys", [])
+        account_keys = []
+        for k in account_keys_raw:
+            if isinstance(k, str):
+                account_keys.append(k)
+            elif isinstance(k, dict) and "pubkey" in k:
+                account_keys.append(k["pubkey"])
+            else:
+                account_keys.append(str(k))
+        result = dict(raw)
+        if "transaction" not in result:
+            result["transaction"] = {}
+        if "message" not in result["transaction"]:
+            result["transaction"]["message"] = {}
+        result["transaction"]["message"]["accountKeys"] = account_keys
+        return result
 
     def start(self) -> None:
         """Start the continuous indexing thread"""
@@ -319,17 +414,20 @@ class SwapIndexer:
                     else:
                         break
                 
-                # Fetch transactions in batches
-                batch_size = 50
-                for i in range(0, len(all_signatures), batch_size):
-                    batch = all_signatures[i:i + batch_size]
-                    for sig, block_time in batch:
-                        tx_data = self._get_transaction(sig)
-                        if tx_data:
-                            swap_data = self._parse_swap_transaction(tx_data, block_time, filter_token)
-                            if swap_data:
-                                swap_data["tx_signature"] = str(sig)
-                                swaps.append(swap_data)
+                # Fetch transactions in batches (batched RPC ~100x fewer calls)
+                sig_list = [s for s, _ in all_signatures]
+                block_times = {str(s): bt for s, bt in all_signatures}
+                tx_results = self._get_transactions_batch(sig_list)
+                for sig, tx_data in zip(sig_list, tx_results):
+                    if not tx_data:
+                        continue
+                    block_time = block_times.get(str(sig))
+                    if block_time is None:
+                        block_time = tx_data.get("blockTime") or 0
+                    swap_data = self._parse_swap_transaction(tx_data, block_time, filter_token)
+                    if swap_data:
+                        swap_data["tx_signature"] = str(sig)
+                        swaps.append(swap_data)
             else:
                 # Incremental indexing: only recent transactions
                 if self.helius_api_key:
@@ -343,26 +441,30 @@ class SwapIndexer:
                 if not sigs_response.value:
                     return []
                 
-                # Filter by time and fetch transactions
+                # Filter by time and collect (sig, block_time)
+                filtered = []
                 for sig_info in sigs_response.value:
                     if not sig_info.block_time:
                         continue
-                    
                     if sig_info.block_time < start_time:
-                        break  # Signatures are in reverse chronological order
-                    
+                        break
                     if sig_info.block_time > end_time:
                         continue
-                    
-                    # Fetch transaction
-                    tx_data = self._get_transaction(sig_info.signature)
+                    filtered.append((sig_info.signature, sig_info.block_time))
+                
+                # Fetch transactions in batch
+                sig_list = [s for s, _ in filtered]
+                block_times = {str(s): bt for s, bt in filtered}
+                tx_results = self._get_transactions_batch(sig_list)
+                for sig, tx_data in zip(sig_list, tx_results):
                     if not tx_data:
                         continue
-                    
-                    # Parse swap
-                    swap_data = self._parse_swap_transaction(tx_data, sig_info.block_time, filter_token)
+                    block_time = block_times.get(str(sig))
+                    if block_time is None:
+                        block_time = tx_data.get("blockTime") or 0
+                    swap_data = self._parse_swap_transaction(tx_data, block_time, filter_token)
                     if swap_data:
-                        swap_data["tx_signature"] = str(sig_info.signature)  # Set signature
+                        swap_data["tx_signature"] = str(sig)
                         swaps.append(swap_data)
         
         except Exception as e:
@@ -655,47 +757,39 @@ class SwapIndexer:
             if not sigs_response.value:
                 return []
             
-            # Extract unique pool addresses from transactions
             seen_pools = set()
-            
-            for sig_info in sigs_response.value[:50]:  # Limit to 50 to avoid too many RPC calls
+            sig_list = [str(sigs_response.value[i].signature) for i in range(min(50, len(sigs_response.value)))]
+            tx_results = self._get_transactions_batch(sig_list)
+
+            for tx_data in tx_results:
+                if not tx_data:
+                    continue
                 try:
-                    # Get transaction to check accounts
-                    # sig_info.signature is already a Signature object
-                    tx_response = self.client.get_transaction(
-                        sig_info.signature,
-                        max_supported_transaction_version=0,
-                    )
-                    
-                    if tx_response.value and tx_response.value.transaction:
-                        # Check if transaction involves our token
-                        accounts = tx_response.value.transaction.transaction.message.account_keys
-                        
-                        # Check token balances to see if our token is involved
-                        meta = tx_response.value.transaction.meta
-                        if meta and meta.pre_token_balances:
-                            for balance in meta.pre_token_balances:
-                                if balance.mint and str(balance.mint) == str(token_pubkey):
-                                    # This transaction involves our token
-                                    # Find pool address (usually one of the accounts)
-                                    for account in accounts:
-                                        account_str = str(account)
-                                        # Pool addresses are typically not the program itself
-                                        if account_str != str(RAYDIUM_V4) and account_str not in seen_pools:
-                                            # This might be a pool address
-                                            # Verify by checking if it's owned by Raydium
-                                            try:
-                                                account_info = self.client.get_account_info(account)
-                                                if account_info.value and account_info.value.owner == RAYDIUM_V4:
-                                                    pools.append(account_str)
-                                                    seen_pools.add(account_str)
-                                                    logger.debug(f"Found potential Raydium pool: {account_str[:8]}...")
-                                            except:
-                                                pass
-                                    break
+                    accounts = tx_data.get("transaction", {}).get("message", {}).get("accountKeys", [])
+                    meta = tx_data.get("meta") or {}
+                    pre_balances = meta.get("preTokenBalances") or []
+                    if not pre_balances:
+                        continue
+                    token_str = str(token_pubkey)
+                    for balance in pre_balances:
+                        mint = balance.get("mint")
+                        if mint and str(mint) == token_str:
+                            for account in accounts:
+                                account_str = str(account) if not isinstance(account, str) else account
+                                if account_str != str(RAYDIUM_V4) and account_str not in seen_pools:
+                                    try:
+                                        if self.helius_api_key:
+                                            track_helius_call()
+                                        account_info = self.client.get_account_info(Pubkey.from_string(account_str))
+                                        if account_info.value and account_info.value.owner == RAYDIUM_V4:
+                                            pools.append(account_str)
+                                            seen_pools.add(account_str)
+                                            logger.debug(f"Found potential Raydium pool: {account_str[:8]}...")
+                                    except Exception:
+                                        pass
+                            break
                 except Exception as e:
                     logger.debug(f"Error checking transaction for pools: {e}")
-                    continue
                     
         except Exception as e:
             logger.debug(f"Error querying Raydium pools via transactions: {e}")
@@ -725,36 +819,38 @@ class SwapIndexer:
                 return []
             
             seen_pools = set()
-            
-            for sig_info in sigs_response.value[:50]:
+            sig_list = [str(sigs_response.value[i].signature) for i in range(min(50, len(sigs_response.value)))]
+            tx_results = self._get_transactions_batch(sig_list)
+
+            for tx_data in tx_results:
+                if not tx_data:
+                    continue
                 try:
-                    tx_response = self.client.get_transaction(
-                        sig_info.signature,
-                        max_supported_transaction_version=0,
-                    )
-                    
-                    if tx_response.value and tx_response.value.transaction:
-                        accounts = tx_response.value.transaction.transaction.message.account_keys
-                        meta = tx_response.value.transaction.meta
-                        
-                        if meta and meta.pre_token_balances:
-                            for balance in meta.pre_token_balances:
-                                if balance.mint and str(balance.mint) == str(token_pubkey):
-                                    for account in accounts:
-                                        account_str = str(account)
-                                        if account_str != str(ORCA_WHIRLPOOL) and account_str not in seen_pools:
-                                            try:
-                                                account_info = self.client.get_account_info(account)
-                                                if account_info.value and account_info.value.owner == ORCA_WHIRLPOOL:
-                                                    pools.append(account_str)
-                                                    seen_pools.add(account_str)
-                                                    logger.debug(f"Found potential Orca pool: {account_str[:8]}...")
-                                            except:
-                                                pass
-                                    break
+                    accounts = tx_data.get("transaction", {}).get("message", {}).get("accountKeys", [])
+                    meta = tx_data.get("meta") or {}
+                    pre_balances = meta.get("preTokenBalances") or []
+                    if not pre_balances:
+                        continue
+                    token_str = str(token_pubkey)
+                    for balance in pre_balances:
+                        mint = balance.get("mint")
+                        if mint and str(mint) == token_str:
+                            for account in accounts:
+                                account_str = str(account) if not isinstance(account, str) else account
+                                if account_str != str(ORCA_WHIRLPOOL) and account_str not in seen_pools:
+                                    try:
+                                        if self.helius_api_key:
+                                            track_helius_call()
+                                        account_info = self.client.get_account_info(Pubkey.from_string(account_str))
+                                        if account_info.value and account_info.value.owner == ORCA_WHIRLPOOL:
+                                            pools.append(account_str)
+                                            seen_pools.add(account_str)
+                                            logger.debug(f"Found potential Orca pool: {account_str[:8]}...")
+                                    except Exception:
+                                        pass
+                            break
                 except Exception as e:
                     logger.debug(f"Error checking Orca transaction: {e}")
-                    continue
                     
         except Exception as e:
             logger.debug(f"Error querying Orca pools via transactions: {e}")
