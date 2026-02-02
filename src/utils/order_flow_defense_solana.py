@@ -311,24 +311,34 @@ def fetch_swaps_from_helius_api(
         
         data = response.json()
         swaps_raw = data if isinstance(data, list) else data.get("transactions", [])
-        
+        raw_count = len(swaps_raw)
+
         end_time = time.time()
         start_time = end_time - lookback_seconds
-        
+
         result = []
+        in_window = 0
         for swap in swaps_raw[:max_txs]:
             ts = swap.get("timestamp") or swap.get("blockTime", 0)
             if ts < start_time or ts > end_time:
                 continue
+            in_window += 1
             parsed = _helius_swap_to_order_flow_format(swap, token_mint)
             if parsed:
                 result.append(parsed)
-        
+
         if result:
             log_info(
                 "order_flow.helius_fallback_used",
                 f"Order-flow using Helius API fallback: {len(result)} swaps",
                 {"token": token_mint[:8], "swaps": len(result)}
+            )
+        elif raw_count > 0:
+            reason = f"0 in {lookback_seconds}s window" if in_window == 0 else f"{in_window} in window but 0 parsed"
+            log_info(
+                "order_flow.helius_no_swaps_in_window",
+                f"Helius returned {raw_count} swap(s) for token but order-flow got 0: {reason}",
+                {"token": token_mint[:8], "raw_count": raw_count, "in_window": in_window, "parsed": len(result), "lookback_seconds": lookback_seconds}
             )
         return result
         

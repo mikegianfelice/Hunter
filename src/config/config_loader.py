@@ -136,5 +136,6 @@ def get_config_values():
         'ENABLE_VWAP_ENTRY_FILTER': get_config_bool("enable_vwap_entry_filter", True),
         'VWAP_ENTRY_REQUIRED': get_config_bool("vwap_entry_required", True),
         'MAX_VWAP_EXTENSION_PCT': get_config_float("max_vwap_extension_pct", 0.05),
-        'VWAP_PULLBACK_TOLERANCE_PCT': get_config_float("vwap_pullback_tolerance_pct", 0.02)
+        'VWAP_PULLBACK_TOLERANCE_PCT': get_config_float("vwap_pullback_tolerance_pct", 0.02),
+        'ENABLE_ORDER_FLOW_DEFENSE': get_config_bool("enable_order_flow_defense", True),
     }
