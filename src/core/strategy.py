@@ -966,7 +966,8 @@ def _check_jupiter_tradeable(token_address: str, symbol: str) -> bool:
 
 def check_buy_signal(token: dict) -> bool:
     config = get_config_values()
-    address = (token.get("address") or "").lower()
+    raw_address = (token.get("address") or "").strip()
+    address = raw_address.lower()
     price   = float(token.get("priceUsd") or 0.0)
     vol24h  = float(token.get("volume24h") or 0.0)
     liq_usd = float(token.get("liquidity") or 0.0)
@@ -1061,10 +1062,11 @@ def check_buy_signal(token: dict) -> bool:
         return False
 
     # Order-flow defense for Solana tokens (after liquidity/volume, before momentum)
+    # Helius API requires canonical base58 address (case-sensitive); do not pass lowercased address.
     if chain_id == "solana" and config.get('ENABLE_ORDER_FLOW_DEFENSE', True):
         from src.utils.order_flow_defense_solana import evaluate_order_flow_solana
         
-        order_flow_result = evaluate_order_flow_solana(address)
+        order_flow_result = evaluate_order_flow_solana(raw_address)
         
         if not order_flow_result.get("pass", False):
             reasons = order_flow_result.get("reasons", [])

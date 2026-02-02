@@ -298,10 +298,14 @@ def fetch_swaps_from_helius_api(
         response = requests.get(url, params=params, timeout=15)
         
         if response.status_code != 200:
+            try:
+                body = response.text[:500] if response.text else ""
+            except Exception:
+                body = ""
             log_warning(
                 "order_flow.helius_api_error",
                 f"Helius DEX API returned {response.status_code} for order-flow",
-                {"token": token_mint[:8], "status": response.status_code}
+                {"token": token_mint[:8], "status": response.status_code, "response": body}
             )
             return []
         
@@ -390,12 +394,13 @@ def evaluate_order_flow_solana(
     
     now_ts = now_ts or int(time.time())
     
-    # Fetch swaps: indexer first, then Helius API fallback if enabled
-    swaps = fetch_swaps_from_indexer(token_mint, lookback_seconds, max_txs_scanned)
-    
-    use_api_fallback = get_config_bool("order_flow_use_api_fallback", True)
-    if not swaps and use_api_fallback:
+    # Fetch swaps: Helius API first, then indexer (DB) fallback if no data
+    use_helius = get_config_bool("order_flow_use_api_fallback", True)
+    swaps = []
+    if use_helius:
         swaps = fetch_swaps_from_helius_api(token_mint, lookback_seconds, max_txs_scanned)
+    if not swaps:
+        swaps = fetch_swaps_from_indexer(token_mint, lookback_seconds, max_txs_scanned)
     
     if not swaps:
         if fail_open:
