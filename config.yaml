@@ -160,7 +160,7 @@ helius_candlestick_settings:
   max_pools_to_query: 1  # Max liquidity pools to query for RPC method (reduced from 2) - query second pool only if first insufficient
   max_pagination_pages: 3  # Base pages per pool for RPC pagination (reduced from 5) - adds hours*2 pages up to max 15
   max_signatures_per_page: 100  # Max signatures per page for RPC (reduced from 500)
-  transaction_batch_size: 100  # Transactions per batch request (reduces API calls by ~98%)
+  transaction_batch_size: 25  # Stay under Helius 50 req/s (each batch item counts as 1 request)
   rate_limit_threshold: 250000  # Use fallback if Helius calls exceed this (83% of 300k limit)
   enable_stale_cache_fallback: true  # Use stale cache if rate limit high (>66% usage) to save API calls
 

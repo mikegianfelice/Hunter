@@ -1,7 +1,9 @@
 # http_utils.py
 import time
+import threading
 import requests
 from typing import Optional, Dict, Any
+from collections import deque
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -11,6 +13,48 @@ DEFAULT_TIMEOUT = 15  # Increased from 10 to 15 seconds
 DEFAULT_RETRIES = 4  # Increased from 3 to 4 retries
 DEFAULT_BACKOFF = 0.8  # Increased from 0.6 for better rate limiting
 DEFAULT_HEADERS = {"User-Agent": "Mozilla/5.0 (bot)"}
+
+# Helius RPC rate limit: Developer plan = 50 req/s; each JSON-RPC call in a batch counts
+# Use 40/s to stay safely under limit (bursts from multiple components)
+_HELIUS_RPC_MAX_PER_SEC = 40
+_helius_rpc_timestamps: deque = deque(maxlen=1000)
+_helius_rpc_lock = threading.Lock()
+
+
+def _reset_helius_rpc_rate_limit_for_test() -> None:
+    """Clear rate limit state (for testing only)."""
+    with _helius_rpc_lock:
+        _helius_rpc_timestamps.clear()
+
+
+def _helius_rpc_rate_limit(request_count: int, url: str) -> None:
+    """Block until we can send request_count RPC calls without exceeding Helius 50 req/s."""
+    if "helius-rpc" not in (url or "").lower():
+        return
+    with _helius_rpc_lock:
+        now = time.time()
+        remaining = request_count
+        while remaining > 0:
+            # Drop timestamps older than 1 second
+            while _helius_rpc_timestamps and now - _helius_rpc_timestamps[0] >= 1.0:
+                _helius_rpc_timestamps.popleft()
+            # How many can we add without exceeding limit?
+            available = _HELIUS_RPC_MAX_PER_SEC - len(_helius_rpc_timestamps)
+            to_add = min(remaining, max(0, available))
+            if to_add > 0:
+                for _ in range(to_add):
+                    _helius_rpc_timestamps.append(time.time())
+                remaining -= to_add
+            if remaining <= 0:
+                break
+            # Wait for oldest timestamp to expire
+            if _helius_rpc_timestamps:
+                sleep_time = 1.0 - (now - _helius_rpc_timestamps[0])
+                sleep_time = max(0.05, min(sleep_time, 1.0))
+            else:
+                sleep_time = 0.1
+            time.sleep(sleep_time)
+            now = time.time()
 
 # Circuit breaker state
 _circuit_breaker = {
@@ -207,6 +251,9 @@ def post_json(url, payload, headers=None, timeout=DEFAULT_TIMEOUT, retries=DEFAU
 
     last_err = None
     for attempt in range(1, retries + 1):
+        # Helius RPC: each JSON-RPC call in a batch counts toward 50 req/s
+        request_count = len(payload) if isinstance(payload, list) else 1
+        _helius_rpc_rate_limit(request_count, url)
         try:
             resp = _get_session().post(url, json=payload, headers=h, timeout=timeout)
             resp.raise_for_status()
