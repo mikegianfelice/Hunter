@@ -85,6 +85,28 @@ def _record_failure():
         _circuit_breaker["is_open"] = True
         print(f"⚠️ Circuit breaker OPENED after {_circuit_breaker['failures']} consecutive failures")
 
+
+def _url_source(url: str) -> str:
+    """Return a short, safe label for the URL (no API keys) for rate-limit logging."""
+    try:
+        from urllib.parse import urlparse
+        p = urlparse(url)
+        host = (p.netloc or "").lower()
+        if "helius" in host or "helius-rpc" in host:
+            return "helius"
+        if "jupiter" in host:
+            return "jupiter"
+        if "dexscreener" in host:
+            return "dexscreener"
+        if "coingecko" in host:
+            return "coingecko"
+        if "solana" in host and "rpc" in host:
+            return "solana_rpc"
+        return host or (url[:50] + "..." if len(url) > 50 else url)
+    except Exception:
+        return url[:60] if url else "unknown"
+
+
 def get_json(url, headers=None, timeout=DEFAULT_TIMEOUT, retries=DEFAULT_RETRIES, backoff=DEFAULT_BACKOFF) -> Optional[Dict[Any, Any]]:
     """
     GET request with retry logic, exponential backoff, and circuit breaker
@@ -129,7 +151,8 @@ def get_json(url, headers=None, timeout=DEFAULT_TIMEOUT, retries=DEFAULT_RETRIES
             # Special handling for 429 (rate limit) - should retry with backoff
             if hasattr(e, 'response') and e.response.status_code == 429:
                 last_err = e
-                print(f"⚠️ Rate limit (429) error (attempt {attempt}/{retries}), retrying with backoff...")
+                source = _url_source(url)
+                print(f"⚠️ Rate limit (429) from {source} (attempt {attempt}/{retries}), retrying with backoff...")
                 if attempt < retries:
                     # Much longer backoff for rate limits: exponential with minimum 5 seconds
                     wait_time = max(5.0, backoff * (2 ** (attempt + 1)))
@@ -211,7 +234,8 @@ def post_json(url, payload, headers=None, timeout=DEFAULT_TIMEOUT, retries=DEFAU
             # Special handling for 429 (rate limit) - should retry with backoff
             if hasattr(e, 'response') and e.response.status_code == 429:
                 last_err = e
-                print(f"⚠️ Rate limit (429) error (attempt {attempt}/{retries}), retrying with backoff...")
+                source = _url_source(url)
+                print(f"⚠️ Rate limit (429) from {source} (attempt {attempt}/{retries}), retrying with backoff...")
                 if attempt < retries:
                     # Much longer backoff for rate limits: exponential with minimum 5 seconds
                     wait_time = max(5.0, backoff * (2 ** (attempt + 1)))
