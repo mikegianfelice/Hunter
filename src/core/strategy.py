@@ -852,15 +852,16 @@ def _check_jupiter_tradeable(token_address: str, symbol: str) -> bool:
     Returns True if token is tradeable on Jupiter.
     """
     try:
-        # Validate Solana address format
-        if len(token_address) != 44:
+        # Validate Solana address format (base58: 32–44 chars for 32-byte keys)
+        addr_len = len(token_address)
+        if addr_len < 32 or addr_len > 44:
             _emit(
                 "error",
                 "strategy.jupiter.invalid_address_length",
                 "Jupiter pre-check failed due to invalid address length",
                 symbol=symbol,
                 token_address=token_address,
-                length=len(token_address),
+                length=addr_len,
             )
             return False
         
