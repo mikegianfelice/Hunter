@@ -1,26 +1,91 @@
 #!/usr/bin/env python3
 """
-Script to get AI score for a specific token symbol
+Script to get AI score for a specific token symbol or by address
 Usage: python get_token_score.py USELESS
+       python get_token_score.py USOR USoRyaQjch6E18nCdDvWoRgTo6osQs9MUd8JXEsspWR
 """
 
 import asyncio
 import sys
 import os
 import json
+import logging
 from typing import Dict, Any, Optional
 
 # Add src to path for imports
-sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+# Enable INFO logging so we see quality score breakdown (e.g. ai.score_breakdown for USOR)
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+for name in ("src.ai", "src.monitoring.structured_logger"):
+    logging.getLogger(name).setLevel(logging.INFO)
 
 from src.utils.http_utils import get_json
 from src.ai.ai_integration_engine import analyze_token_ai, get_ai_engine
 
-async def fetch_token_data(symbol: str) -> Optional[Dict[str, Any]]:
-    """Fetch token data from DexScreener"""
+def _pair_to_token_data(pair: Dict, symbol: str) -> Dict[str, Any]:
+    """Convert DexScreener pair to our token_data format."""
+    volume_24h = float(pair.get('volume', {}).get('h24', 0) if isinstance(pair.get('volume'), dict) else pair.get('volume', 0) or 0)
+    volume_1h = float(pair.get('volume', {}).get('h1', 0) if isinstance(pair.get('volume'), dict) else 0)
+    volume_change_1h = None
+    if volume_24h > 0 and volume_1h > 0:
+        volume_change_1h = (volume_1h * 24) / volume_24h - 1
+    elif volume_24h > 0:
+        volume_change_1h = -1.0
+    price_change = pair.get('priceChange', {}) or {}
+    h24 = price_change.get('h24') if isinstance(price_change, dict) else None
+    price_change_24h_pct = float(h24 or pair.get('priceChange24h', 0) or 0)
+    price_change_24h = price_change_24h_pct / 100.0  # store as decimal
+    return {
+        "symbol": pair.get('baseToken', {}).get('symbol', symbol),
+        "address": pair.get('baseToken', {}).get('address', ''),
+        "chainId": (pair.get('chainId') or 'solana').lower(),
+        "priceUsd": float(pair.get('priceUsd', 0)),
+        "volume24h": volume_24h,
+        "liquidity": float(pair.get('liquidity', {}).get('usd', 0) if isinstance(pair.get('liquidity'), dict) else pair.get('liquidity', 0) or 0),
+        "marketCap": float(pair.get('fdv', 0)),
+        "priceChange24h": price_change_24h,
+        "priceChange5m": float(price_change.get('m5', 0) or 0) / 100.0 if price_change.get('m5') is not None else None,
+        "priceChange1h": float(price_change.get('h1', 0) or 0) / 100.0 if price_change.get('h1') is not None else None,
+        "volumeChange1h": volume_change_1h,
+        "holders": 0,
+        "transactions24h": 0,
+        "social_mentions": 0,
+        "news_sentiment": 0.5,
+        "timestamp": pair.get('pairCreatedAt', ''),
+        "technical_indicators": {},
+        "on_chain_metrics": {},
+    }
+
+async def fetch_token_data_by_address(address: str) -> Optional[Dict[str, Any]]:
+    """Fetch token data from DexScreener by token address."""
+    print(f"🔍 Fetching data for address {address[:8]}... from DexScreener...")
+    url = f"https://api.dexscreener.com/latest/dex/tokens/{address}"
+    try:
+        data = get_json(url)
+        if not data or 'pairs' not in data or not data['pairs']:
+            print("❌ No pairs found for this address")
+            return None
+        pairs = data['pairs']
+        best_pair = max(pairs, key=lambda p: float(p.get('liquidity', {}).get('usd', 0) or 0))
+        symbol = best_pair.get('baseToken', {}).get('symbol', 'UNKNOWN')
+        token_data = _pair_to_token_data(best_pair, symbol)
+        print(f"✅ Found: {token_data['symbol']} on {token_data['chainId']}")
+        print(f"   Price: ${token_data['priceUsd']:.8f}")
+        print(f"   Volume 24h: ${token_data['volume24h']:,.2f}")
+        print(f"   Liquidity: ${token_data['liquidity']:,.2f}")
+        print(f"   Price Change 24h: {token_data['priceChange24h']*100:.2f}%")
+        return token_data
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return None
+
+async def fetch_token_data(symbol: str, address: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Fetch token data from DexScreener by address or by symbol search."""
+    if address:
+        return await fetch_token_data_by_address(address)
     print(f"🔍 Fetching data for {symbol} from DexScreener...")
-    
-    # Try to find token by symbol
     url = f"https://api.dexscreener.com/latest/dex/search/?q={symbol}"
     
     try:
@@ -99,14 +164,14 @@ async def fetch_token_data(symbol: str) -> Optional[Dict[str, Any]]:
         print(f"❌ Error fetching token data: {e}")
         return None
 
-async def get_token_score(symbol: str):
-    """Get AI score for a token"""
+async def get_token_score(symbol: str, address: Optional[str] = None):
+    """Get AI score for a token (by symbol or by address)."""
     print(f"\n{'='*60}")
-    print(f"Getting AI Score for {symbol}")
+    print(f"Getting AI Score for {symbol}" + (f" (address: {address[:8]}...)" if address else ""))
     print(f"{'='*60}\n")
     
-    # Fetch token data
-    token_data = await fetch_token_data(symbol)
+    # Fetch token data (by address or symbol)
+    token_data = await fetch_token_data(symbol, address=address)
     if not token_data:
         print(f"❌ Could not fetch data for {symbol}")
         return
@@ -177,10 +242,12 @@ async def get_token_score(symbol: str):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python get_token_score.py <SYMBOL>")
+        print("Usage: python get_token_score.py <SYMBOL> [ADDRESS]")
         print("Example: python get_token_score.py USELESS")
+        print("Example: python get_token_score.py USOR USoRyaQjch6E18nCdDvWoRgTo6osQs9MUd8JXEsspWR")
         sys.exit(1)
     
     symbol = sys.argv[1].upper()
-    asyncio.run(get_token_score(symbol))
+    address = sys.argv[2].strip() if len(sys.argv) > 2 else None
+    asyncio.run(get_token_score(symbol, address=address))
 

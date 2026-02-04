@@ -1,6 +1,6 @@
 # 🚀 Hunter: The Autonomous Crypto Trader
 
-Hunter is a quant level crypto trading bot executing real on-chain trades with live PnL, smart token scanning, sentiment scoring, microstructure analysis, and adaptive risk control. Uses weighted multi-factor analysis and heuristic algorithms for intelligent decision-making. Updated in real time. If you find this project useful, drop a ⭐️ to support it.
+Hunter is a quant level crypto trading bot executing real on-chain trades with live PnL, smart token scanning, microstructure analysis, and adaptive risk control. Uses weighted multi-factor analysis and heuristic algorithms for intelligent decision-making. Updated in real time. If you find this project useful, drop a ⭐️ to support it.
 
 ## ⚠️ **IMPORTANT DISCLAIMER**
 
@@ -31,7 +31,7 @@ Top candidates are ranked by volume and passed to the analysis system for deeper
 
 ### **2. Entry Decision** ✅
 Before entering any trade, tokens must pass multiple analysis-driven checks:
-- **Quality Score** ≥ 60% (configurable, default 60%; combines sentiment, technical analysis, price prediction)
+- **Quality Score** ≥ 60% (configurable, default 60%; combines technical analysis, price prediction, risk, and market metrics; sentiment is not used in scoring)
 - **Success Probability** ≥ 60% (prediction of profitable outcome based on weighted analysis)
 - **Holder Concentration** < 50% (configurable, default 50%; blocks tokens where top 10 holders own 50% or more; 45-50% is yellow zone with reduced position size)
 - **Order-Flow Defense** (Solana) - Blocks tokens with suspicious trading patterns:
@@ -842,7 +842,7 @@ python main.py
 - **Quality-Based Position Sizing**: Position sizes scale with token quality (1.2x-2.0x multipliers) - higher quality tokens get larger positions within tier limits
 - **Market Regime Adaptation**: Strategy adapts to bull, bear, sideways, and volatile markets
 - **Comprehensive Risk Management**: Multi-layered risk assessment with rule-based loss prevention
-- **Sentiment Analysis**: Sentiment analysis available when enabled (currently disabled by default to avoid being too restrictive)
+- **Sentiment Analysis**: Sentiment analysis available when enabled (currently disabled by default); not used in quality score
 - **Liquidity Analysis**: Ensures sufficient liquidity for trades
 - **Volume Analysis**: Tracks trading volume patterns
 - **Promotional Filtering**: Automatically filters spam and promotional content

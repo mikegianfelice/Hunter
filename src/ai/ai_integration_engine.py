@@ -1251,24 +1251,15 @@ class AIIntegrationEngine:
                                 token_data: Optional[Dict] = None) -> float:
         """Calculate overall AI analysis score with actual token metrics (Fix 1)"""
         try:
-            # Weighted combination of all analysis components
+            # Weighted combination of all analysis components (sentiment removed from scoring)
             weights = {
-                "sentiment": 0.2,
-                "prediction": 0.3,
-                "risk": 0.2,
-                "market": 0.15,
-                "technical": 0.15
+                "prediction": 0.375,   # 30% + redistributed 20% from sentiment
+                "risk": 0.25,
+                "market": 0.1875,
+                "technical": 0.1875
             }
             
             # Fix 1: Use actual token metrics instead of defaults
-            # Sentiment: Use actual sentiment or calculate from volume/price action
-            sentiment_score = sentiment.get("score", 0.5)
-            if sentiment_score == 0.5 and market_data:  # Likely defaulted
-                # Calculate from price momentum
-                price_change = getattr(market_data, 'price_change_24h', 0)
-                sentiment_score = 0.5 + (price_change * 2)  # Scale price change to sentiment
-                sentiment_score = max(0.0, min(1.0, sentiment_score))
-            
             # Prediction: Use actual prediction or calculate from volume/liquidity
             prediction_score = prediction.get("price_movement_probability", 0.5)
             if prediction_score == 0.5 and market_data:  # Likely defaulted
@@ -1372,7 +1363,6 @@ class AIIntegrationEngine:
                     technical_score = 0.3
             
             overall_score = (
-                sentiment_score * weights["sentiment"] +
                 prediction_score * weights["prediction"] +
                 risk_score * weights["risk"] +
                 market_score * weights["market"] +
@@ -1381,7 +1371,6 @@ class AIIntegrationEngine:
             
             # Fix 2: Expand score range with dynamic scaling (improved with bounds checking)
             component_scores = [
-                sentiment_score,
                 prediction_score,
                 risk_score,
                 market_score,
@@ -1421,11 +1410,10 @@ class AIIntegrationEngine:
                 if hasattr(market_data, 'symbol') and market_data.symbol.lower() == 'dreams':
                     log_info("ai.score_breakdown",
                             f"Quality score breakdown for {market_data.symbol}: "
-                            f"sentiment={sentiment_score:.3f} (20%), "
-                            f"prediction={prediction_score:.3f} (30%), "
-                            f"risk={risk_score:.3f} (20%), "
-                            f"market={market_score:.3f} (15%), "
-                            f"technical={technical_score:.3f} (15%), "
+                            f"prediction={prediction_score:.3f} (37.5%), "
+                            f"risk={risk_score:.3f} (25%), "
+                            f"market={market_score:.3f} (18.75%), "
+                            f"technical={technical_score:.3f} (18.75%), "
                             f"overall_before_penalty={overall_score:.3f}, "
                             f"volume_24h=${market_data.volume_24h:,.0f}, "
                             f"liquidity=${market_data.liquidity:,.0f}, "
@@ -1434,7 +1422,6 @@ class AIIntegrationEngine:
                             f"liquidity_score={liquidity_score:.3f}, "
                             f"volume_score={volume_score:.3f}",
                             symbol=market_data.symbol,
-                            sentiment_score=sentiment_score,
                             prediction_score=prediction_score,
                             risk_score=risk_score,
                             market_score=market_score,
