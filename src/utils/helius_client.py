@@ -280,9 +280,9 @@ class HeliusClient:
                     ]
                 })
             
-            # Track as ONE API call (not N calls)
+            # Track each getTransaction in the batch (Helius counts each RPC method)
             from src.utils.api_tracker import track_helius_call
-            track_helius_call()
+            track_helius_call(count=len(batch_sigs))
             
             # Rate limiting is handled by http_utils.post_json for Helius RPC URLs
             # Send batch request

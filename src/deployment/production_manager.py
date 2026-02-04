@@ -625,7 +625,7 @@ class ProductionManager:
             indexer_task = None
             try:
                 from src.config.config_loader import get_config
-                if get_config("swap_indexer.enabled", True):
+                if get_config("swap_indexer.enabled", False):
                     from src.indexing.swap_indexer import get_indexer
                     indexer = get_indexer()
                     indexer.start()

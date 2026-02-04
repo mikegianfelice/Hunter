@@ -28,7 +28,10 @@ def main():
     """Update priority tokens in swap indexer"""
     print("🔄 Updating priority tokens for swap indexer...\n")
     
-    # Check if priority indexing is enabled
+    # Swap indexer must be enabled to update priority tokens
+    if not get_config("swap_indexer.enabled", False):
+        print("⚠️  Swap indexer is disabled in config (swap_indexer.enabled: false)")
+        return
     if not get_config("swap_indexer.enable_priority_indexing", True):
         print("⚠️  Priority indexing is disabled in config")
         return

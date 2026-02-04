@@ -186,14 +186,16 @@ helius_15m_candle_policy:
   rpc_ideal_coverage_hours: 4.0  # Ideally 4+ hours (16+ candles)
 
 # === Swap Indexer Settings ===
+# DISABLED: Candles use minute_price_tracker primarily; indexer was driving 300k+ Helius getTransaction/day.
 swap_indexer:
-  enabled: true  # Enable continuous swap event indexing
-  index_interval_seconds: 60  # How often to check for new swaps (60 seconds)
-  max_pools_per_token: 1  # Only main pool for efficiency (was 5)
-  lookback_hours: 168  # 7 days lookback for accurate technical indicators (was 24)
-  cleanup_days: 30  # Delete swap events older than this many days
-  backfill_tokens_per_cycle: 2  # Max tokens to backfill per cycle (to stay within API limits)
-  min_candles_for_accuracy: 35  # Target candles for good technical indicator accuracy
+  enabled: false  # Swap indexer disabled - no 60s loop, no Helius getTransaction from indexing
+  index_interval_seconds: 60
+  max_tracked_tokens: 20
+  max_pools_per_token: 1
+  lookback_hours: 168
+  cleanup_days: 30
+  backfill_tokens_per_cycle: 2
+  min_candles_for_accuracy: 35
   
   # Priority indexing settings
   enable_priority_indexing: true  # Proactively index frequently-traded tokens

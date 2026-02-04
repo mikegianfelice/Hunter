@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 def main():
     """Start the swap indexer"""
     # Check if indexing is enabled
-    enabled = get_config("swap_indexer.enabled", True)
+    enabled = get_config("swap_indexer.enabled", False)
     if not enabled:
         logger.info("Swap indexer is disabled in config")
         return

@@ -128,8 +128,9 @@ def track_coincap_call():
     tracker.increment('coincap')
 
 
-def track_helius_call():
-    """Track a Helius API call"""
+def track_helius_call(count: int = 1):
+    """Track Helius RPC method invocations (each getTransaction in a batch counts as one).
+    Use count=N when sending a batch of N requests so the tracker matches Helius billing."""
     tracker = get_tracker()
-    tracker.increment('helius')
+    tracker.increment('helius', count)
 

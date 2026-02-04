@@ -1729,7 +1729,7 @@ class MarketDataFetcher:
             if not candles or len(candles) < 12:
                 try:
                     from src.config.config_loader import get_config
-                    if get_config("swap_indexer.enabled", True):
+                    if get_config("swap_indexer.enabled", False):
                         from src.indexing.swap_indexer import get_indexer
                         indexer = get_indexer()
                         if indexer.running:
@@ -2284,7 +2284,7 @@ class MarketDataFetcher:
             from src.config.config_loader import get_config, get_config_int
             from src.indexing.swap_indexer import get_indexer
             
-            if not get_config("swap_indexer.enabled", True):
+            if not get_config("swap_indexer.enabled", False):
                 return existing_candles
             
             # Check if we're allowed to backfill (rate limiting)

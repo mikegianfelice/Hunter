@@ -117,7 +117,7 @@ class SwapIndexer:
                 })
 
             if self.helius_api_key:
-                track_helius_call()
+                track_helius_call(count=len(batch_sigs))
 
             if i > 0:
                 time.sleep(0.2)
@@ -188,17 +188,24 @@ class SwapIndexer:
         logger.info("Swap indexer stopped")
 
     def add_token(self, token_address: str) -> None:
-        """Add a token to track for swap events. Skips invalid Solana addresses."""
+        """Add a token to track for swap events. Skips invalid Solana addresses.
+        Respects swap_indexer.max_tracked_tokens; when at cap, new tokens are not added."""
         if not token_address or not isinstance(token_address, str):
             return
-        addr = token_address.strip()
+        addr = token_address.strip().lower()
         if not is_solana_address(addr):
             logger.debug(
                 f"Skipping invalid Solana address for swap indexer: {addr[:12]}... "
                 "(not a valid 32-byte Base58 pubkey)"
             )
             return
-        self.tracked_tokens.add(addr.lower())
+        max_tracked = get_config_int("swap_indexer.max_tracked_tokens", 0)  # 0 = no cap
+        if max_tracked > 0 and addr not in self.tracked_tokens and len(self.tracked_tokens) >= max_tracked:
+            logger.debug(
+                f"Swap indexer at cap ({len(self.tracked_tokens)}/{max_tracked}), not adding {addr[:8]}..."
+            )
+            return
+        self.tracked_tokens.add(addr)
         logger.debug(f"Added token to tracking: {addr[:8]}...")
 
     def add_pool(self, pool_address: str) -> None:
@@ -693,19 +700,18 @@ class SwapIndexer:
             return None
 
     def _find_pools_for_token(self, token_address: str) -> List[str]:
-        """Find liquidity pools containing this token using direct DEX program queries"""
+        """Find liquidity pools containing this token. Prefer DexScreener (no RPC) then program accounts."""
         if not is_solana_address(token_address):
             logger.debug(f"Skipping pool lookup for invalid address: {token_address[:12]}...")
             return []
-        # Try direct DEX program query first (more efficient, no external API)
-        pools = self._find_pools_via_program_accounts(token_address)
+        # Prefer DexScreener first (no Helius getTransaction/getSignaturesForAddress)
+        pools = self._find_pools_via_dexscreener(token_address)
         if pools:
-            logger.debug(f"Found {len(pools)} pools via program accounts for {token_address[:8]}...")
+            logger.debug(f"Found {len(pools)} pools via DexScreener for {token_address[:8]}...")
             return pools[:self.max_pools_per_token]
-        
-        # Fallback to DexScreener if program accounts query fails
-        logger.debug(f"Program accounts query returned no pools, trying DexScreener fallback for {token_address[:8]}...")
-        return self._find_pools_via_dexscreener(token_address)
+        # Fallback to RPC-heavy program-accounts path only when DexScreener has no pairs
+        logger.debug(f"DexScreener had no pairs, trying program accounts for {token_address[:8]}...")
+        return self._find_pools_via_program_accounts(token_address)[:self.max_pools_per_token]
     
     def _find_pools_via_program_accounts(self, token_address: str) -> List[str]:
         """Find pools directly from DEX programs using getProgramAccounts"""
