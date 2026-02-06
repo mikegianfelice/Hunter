@@ -1580,7 +1580,7 @@ def evaluate_entry_lane(token: dict) -> dict:
     if confirm_passed:
         _log_trace(
             f"✅ CONFIRM_ADD lane selected for {symbol}: liq=${liq_usd:,.0f}, vol=${vol24h:,.0f}, "
-            f"long_mom={long_momentum*100:.2f}%, RSI={rsi:.1f if rsi else 0}, mult={confirm_multiplier:.2f}x",
+            f"long_mom={long_momentum*100:.2f}%, RSI={(rsi or 0):.1f}, mult={confirm_multiplier:.2f}x",
             level="info",
             event="strategy.lane.confirm_add_selected",
             symbol=symbol,
@@ -1686,7 +1686,7 @@ def evaluate_entry_lane(token: dict) -> dict:
         if not early_fail_reasons:
             _log_trace(
                 f"🔍 EARLY_SCOUT lane selected for {symbol}: liq=${liq_usd:,.0f}, vol=${vol24h:,.0f}, "
-                f"mom_30m={mom_30m*100:.2f}%, mom_1h={mom_1h*100:.2f}%, RSI={rsi:.1f if rsi else 0}, "
+                f"mom_30m={mom_30m*100:.2f}%, mom_1h={mom_1h*100:.2f}%, RSI={(rsi or 0):.1f}, "
                 f"last_green={last_candle_green}",
                 level="info",
                 event="strategy.lane.early_scout_selected",

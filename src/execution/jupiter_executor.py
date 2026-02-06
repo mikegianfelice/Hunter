@@ -726,7 +726,7 @@ def sell_token_solana(token_address: str, amount_usd: float, symbol: str = "", t
         # Capture UI balance for comparison after sell
         try:
             balance_before = executor.jupiter_lib.get_token_balance(token_address)
-            print(f"📊 Balance before sell: {balance_before:.8f if balance_before is not None else 'unknown'}")
+            print(f"📊 Balance before sell: {f'{balance_before:.8f}' if balance_before is not None else 'unknown'}")
         except:
             pass  # Non-critical, we'll check balance later
     except Exception as e:
@@ -758,7 +758,7 @@ def sell_token_solana(token_address: str, amount_usd: float, symbol: str = "", t
             if balance_before is None:
                 try:
                     balance_before = executor.jupiter_lib.get_token_balance(token_address)
-                    print(f"🔍 Current balance: {balance_before:.8f if balance_before is not None else 'unknown'}")
+                    print(f"🔍 Current balance: {f'{balance_before:.8f}' if balance_before is not None else 'unknown'}")
                 except:
                     balance_before = None
             else:
