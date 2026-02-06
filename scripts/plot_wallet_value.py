@@ -28,7 +28,7 @@ def get_project_root():
 PROJECT_ROOT = get_project_root()
 
 # Official start date when bot officially began running after major changes
-OFFICIAL_START_DATE = datetime(2026, 1, 15, 0, 0, 0, tzinfo=timezone.utc)
+OFFICIAL_START_DATE = datetime(2026, 2, 5, 0, 0, 0, tzinfo=timezone.utc)
 
 
 def calculate_wallet_value_over_time_from_helius_wrapper(days=5, initial_wallet_usd=None):
@@ -48,7 +48,7 @@ def calculate_wallet_value_over_time_from_helius_wrapper(days=5, initial_wallet_
         # Calculate date range (use timezone-aware datetimes)
         today = datetime.now(timezone.utc)
         calculated_start = (today - timedelta(days=days)).replace(hour=0, minute=0, second=0, microsecond=0)
-        # Enforce minimum start date of January 14, 2026 (official bot start date)
+        # Enforce minimum start date of February 5, 2026 (official bot start date)
         start_date = max(calculated_start, OFFICIAL_START_DATE)
         
         # Set default initial wallet if not provided
