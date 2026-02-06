@@ -28,6 +28,77 @@ trading:
     high: 1.2        # Quality 71-80: 20% larger positions
     base: 1.0        # Quality 65-70: Base size
 
+  # === Two-Lane Entry System ===
+  # Early Scout: Lower thresholds + stricter safety + smaller size (catch early breakouts 5-20min after ignition)
+  # Confirm/Add: Standard thresholds (current behavior for confirmed moves)
+  entry_lanes:
+    early_scout:
+      enabled: true
+      position_size_multiplier: 0.25        # 25% of normal position size
+      min_liquidity_usd: 80000              # $80k minimum liquidity (locked)
+      min_volume_24h_usd: 120000            # $120k minimum 24h volume (locked)
+      require_safety_strict: true           # Require stricter safety checks
+      vwap_rule: "band"                     # Allow within band below VWAP
+      vwap_band_bps_below: 80               # 0.8% below VWAP allowed (80 bps)
+      # Candle freshness guards (prevent stale/gapped data)
+      candle_max_stale_minutes: 20          # Reject if last candle older than 20 min
+      require_consecutive_candles: true     # Reject if last 2 candles have gaps
+      # Multi-window momentum (truly short: 15m-30m-1h hierarchy)
+      min_momentum_pct_15m: 0.002           # 0.2% impulse sanity check
+      min_momentum_pct_30m: 0.006           # 0.6% primary trigger (30m window)
+      min_momentum_pct_1h: 0.008            # 0.8% stability confirmation (1h window)
+      require_mom_30m_positive: true        # mom_30m must be > 0 (no falling knives)
+      # Falling-knife protection
+      require_last_candle_green_if_below_vwap: true  # If price < VWAP, last candle must be green
+      # Volume acceleration
+      volume_signal: "short"                # Use 5m/15m volume acceleration
+      min_volume_change_15m: 0.30           # +30% volume vs prior 15m
+      # RSI band
+      rsi_min: 45                           # RSI floor (avoid weak entries)
+      rsi_max: 65                           # RSI ceiling (avoid overbought)
+      cooldown_minutes: 30                  # Minutes before re-buying same token via early_scout
+    confirm_add:
+      enabled: true
+      position_size_multiplier: 1.0         # Full position size (for new positions)
+      min_liquidity_usd: 250000             # $250k minimum liquidity
+      min_volume_24h_usd: 250000            # $250k minimum 24h volume
+      require_safety_strict: false          # Standard safety checks
+      vwap_rule: "required_above"           # Price must be above VWAP
+      momentum_window: "long"               # Use long momentum window (3-4h)
+      min_momentum_pct_long: 0.015          # 1.5% momentum over long window
+      volume_signal: "1h"                   # Use 1h volume change
+      min_volume_change_1h: 0.05            # +5% volume change 1h (existing)
+      rsi_max: 75                           # Allow slightly higher RSI for confirmed moves
+      # Add-to-position behavior when already holding
+      enable_adds_if_held: true             # Allow adding to existing positions
+      add_position_size_multiplier: 0.50    # Add 50% of normal size
+      max_total_position_multiplier: 1.25   # Max total: early 0.25 + add 0.5 + buffer
+      add_only_if_unrealized_pnl_between: [-0.01, 0.06]  # Only add if PnL between -1% and +6%
+
+  # === Acceleration-Based Candle Selection ===
+  # Prioritize tokens with short-term momentum for candle fetching
+  accel_scoring:
+    enabled: true
+    max_tokens_per_cycle_for_candles: 30    # Increased from 15 to catch more opportunities
+    accel_slots_pct: 0.70                   # 70% of slots for highest accel_score
+    stability_slots_pct: 0.30               # 30% of slots for high liquidity/volume (stability)
+    min_safety_liquidity: 30000             # $30k min liquidity for stability slot tokens
+    accel_candidate_min_liquidity_usd: 60000  # $60k min liquidity for accel slot candidates
+    min_volume_15m_usd: 10000               # $10k min absolute 15m volume for accel candidates
+    # Input clamping to prevent score gaming
+    clamp_price_change_15m_min: -0.50       # -50% floor
+    clamp_price_change_15m_max: 2.00        # +200% ceiling
+    clamp_volume_change_15m_min: 0.00       # 0% floor (ignore negative volume change)
+    clamp_volume_change_15m_max: 5.00       # +500% ceiling
+    use_log_liquidity: true                 # Use log10 scale for liquidity component
+    max_txns_per_min: 10.0                  # Cap txns/min to prevent wash trading boost
+    # Scoring weights (normalize to sum ~1.0 for interpretability)
+    weights:
+      price_change_15m: 0.35                # Weight for 15m price change
+      volume_change_15m: 0.30               # Weight for 15m volume change
+      txns_per_min: 0.20                    # Weight for transactions/minute (or buys+sells proxy)
+      liquidity_normalized: 0.15            # Weight for normalized liquidity
+
 # === Advanced Trading Features ===
 # Order splitting for large trades
 enable_order_splitting: true

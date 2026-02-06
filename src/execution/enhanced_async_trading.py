@@ -134,6 +134,299 @@ class EnhancedAsyncTradingEngine:
         # Combined score: liquidity + volume (both in USD)
         combined_score = liquidity + volume
         return (combined_score, volume)
+    
+    def _calculate_accel_score(self, token: Dict) -> float:
+        """
+        Calculate acceleration score for a token to prioritize short-term movers.
+        
+        Score = w1 * priceChange15m + w2 * volumeChange15m + w3 * txnsPerMin + w4 * liquidityNorm
+        
+        Uses DexScreener fields when available; graceful fallback when data is missing.
+        Applies input clamping to prevent score gaming.
+        Returns a normalized score (higher = more acceleration).
+        """
+        import math
+        
+        # Get config
+        accel_cfg = get_config("trading.accel_scoring", {})
+        weights = accel_cfg.get("weights", {})
+        w_price = weights.get("price_change_15m", 0.35)
+        w_volume = weights.get("volume_change_15m", 0.30)
+        w_txns = weights.get("txns_per_min", 0.20)
+        w_liq = weights.get("liquidity_normalized", 0.15)
+        
+        # Get clamping config
+        clamp_price_min = accel_cfg.get("clamp_price_change_15m_min", -0.50)
+        clamp_price_max = accel_cfg.get("clamp_price_change_15m_max", 2.00)
+        clamp_vol_min = accel_cfg.get("clamp_volume_change_15m_min", 0.00)
+        clamp_vol_max = accel_cfg.get("clamp_volume_change_15m_max", 5.00)
+        use_log_liq = accel_cfg.get("use_log_liquidity", True)
+        max_txns_per_min = accel_cfg.get("max_txns_per_min", 10.0)
+        
+        # Get raw values
+        price_change_15m = self._safe_float(token.get("priceChange15m"))
+        price_change_5m = self._safe_float(token.get("priceChange5m"))
+        volume_change_15m = self._safe_float(token.get("volumeChange15m"))
+        volume_change_5m = self._safe_float(token.get("volumeChange5m"))
+        liquidity = self._safe_float(token.get("liquidity"))
+        volume_24h = self._safe_float(token.get("volume24h"))
+        
+        # Try to get transaction data (buys + sells as proxy for txns/min)
+        txns_5m = token.get("txns5m", {})
+        txns_15m = token.get("txns15m", {})
+        buys_5m = self._safe_float(txns_5m.get("buys") if isinstance(txns_5m, dict) else 0)
+        sells_5m = self._safe_float(txns_5m.get("sells") if isinstance(txns_5m, dict) else 0)
+        buys_15m = self._safe_float(txns_15m.get("buys") if isinstance(txns_15m, dict) else 0)
+        sells_15m = self._safe_float(txns_15m.get("sells") if isinstance(txns_15m, dict) else 0)
+        
+        # =====================================================================
+        # 1. Price acceleration with clamping
+        # =====================================================================
+        if price_change_15m != 0:
+            price_accel = price_change_15m / 100.0  # Convert to decimal
+        elif price_change_5m != 0:
+            price_accel = (price_change_5m * 3) / 100.0  # Estimate 15m from 5m
+        else:
+            price_accel = 0.0
+        
+        # CLAMP: Apply configurable bounds to prevent gaming
+        price_accel = max(clamp_price_min, min(clamp_price_max, price_accel))
+        
+        # Shift to positive scale based on clamp range
+        price_range = clamp_price_max - clamp_price_min
+        price_score = (price_accel - clamp_price_min) / price_range if price_range > 0 else 0.5
+        
+        # =====================================================================
+        # 2. Volume acceleration with clamping
+        # =====================================================================
+        if volume_change_15m != 0:
+            vol_accel = volume_change_15m / 100.0
+        elif volume_change_5m != 0:
+            vol_accel = (volume_change_5m * 3) / 100.0
+        else:
+            vol_accel = 0.0
+        
+        # CLAMP: Apply configurable bounds (ignore negative volume change)
+        vol_accel = max(clamp_vol_min, min(clamp_vol_max, vol_accel))
+        
+        # Shift to positive scale
+        vol_range = clamp_vol_max - clamp_vol_min
+        vol_score = (vol_accel - clamp_vol_min) / vol_range if vol_range > 0 else 0.0
+        
+        # =====================================================================
+        # 3. Transaction rate proxy with capping
+        # =====================================================================
+        txns_per_min = 0.0
+        txns_available = False
+        
+        if buys_5m + sells_5m > 0:
+            txns_per_min = (buys_5m + sells_5m) / 5.0  # 5 minutes
+            txns_available = True
+        elif buys_15m + sells_15m > 0:
+            txns_per_min = (buys_15m + sells_15m) / 15.0  # 15 minutes
+            txns_available = True
+        
+        # CLAMP: Cap to prevent wash trading boost
+        txns_per_min = min(max_txns_per_min, txns_per_min)
+        
+        # Normalize: scale to 0-1 based on max
+        txns_score = txns_per_min / max_txns_per_min if max_txns_per_min > 0 else 0.0
+        
+        # If txns unavailable, reduce weight contribution
+        effective_w_txns = w_txns if txns_available else w_txns * 0.3
+        
+        # =====================================================================
+        # 4. Liquidity normalization (log scale if enabled)
+        # =====================================================================
+        if liquidity > 0:
+            if use_log_liq:
+                # Log scale: $10k=1.0, $100k=2.0, $1M=3.0, $10M=4.0
+                liq_log = math.log10(max(liquidity, 1))
+                # Normalize: log10($60k)≈4.78, log10($10M)≈7.0
+                # Scale so $60k baseline gives ~0.3, $1M gives ~0.7, $10M gives 1.0
+                liq_score = min(1.0, max(0.0, (liq_log - 4.0) / 3.0))
+            else:
+                # Linear normalization (old behavior)
+                liq_log = math.log10(liquidity / 30000.0 + 1)
+                liq_score = min(1.0, liq_log / 2.5)
+        else:
+            liq_score = 0.0
+        
+        # =====================================================================
+        # Calculate weighted score (adjust for missing txns)
+        # =====================================================================
+        total_weight = w_price + w_volume + effective_w_txns + w_liq
+        
+        accel_score = (
+            w_price * price_score +
+            w_volume * vol_score +
+            effective_w_txns * txns_score +
+            w_liq * liq_score
+        ) / total_weight if total_weight > 0 else 0.0
+        
+        # Store components in token for logging/debugging
+        token['_accel_score'] = accel_score
+        token['_accel_components'] = {
+            'price_score': round(price_score, 4),
+            'vol_score': round(vol_score, 4),
+            'txns_score': round(txns_score, 4),
+            'liq_score': round(liq_score, 4),
+            'price_change_15m': price_change_15m,
+            'price_change_15m_clamped': round(price_accel * 100, 2),
+            'volume_change_15m': volume_change_15m,
+            'volume_change_15m_clamped': round(vol_accel * 100, 2),
+            'txns_per_min': round(txns_per_min, 2),
+            'txns_available': txns_available,
+            'liquidity': liquidity,
+            'use_log_liq': use_log_liq,
+        }
+        
+        return accel_score
+    
+    def _select_tokens_for_candles(self, tokens: List[Dict], max_tokens: int) -> List[Dict]:
+        """
+        Select tokens for candle fetching using acceleration-based prioritization.
+        
+        Split:
+        - accel_slots_pct (70%): Highest acceleration score (requires higher liquidity floor)
+        - stability_slots_pct (30%): Highest liquidity+volume (stability)
+        
+        Tokens must meet min_safety_liquidity for stability, accel_candidate_min_liquidity_usd for accel.
+        """
+        if not tokens:
+            return []
+        
+        # Get config
+        accel_cfg = get_config("trading.accel_scoring", {})
+        accel_enabled = accel_cfg.get("enabled", True)
+        accel_pct = accel_cfg.get("accel_slots_pct", 0.70)
+        stability_pct = accel_cfg.get("stability_slots_pct", 0.30)
+        min_safety_liq = accel_cfg.get("min_safety_liquidity", 30000)
+        accel_min_liq = accel_cfg.get("accel_candidate_min_liquidity_usd", 60000)  # Higher floor for accel
+        min_vol_15m_usd = accel_cfg.get("min_volume_15m_usd", 10000)  # Absolute volume guardrail for accel
+        
+        # Filter by minimum safety liquidity (for stability candidates)
+        safe_tokens = [
+            t for t in tokens
+            if self._safe_float(t.get("liquidity")) >= min_safety_liq
+        ]
+        
+        if not safe_tokens:
+            log_info("trading.candle_selection.no_safe_tokens",
+                    f"No tokens meet minimum safety liquidity ${min_safety_liq:,.0f}",
+                    min_safety_liq=min_safety_liq)
+            return []
+        
+        if not accel_enabled:
+            # Fall back to old behavior: sort by liquidity + volume
+            safe_tokens.sort(key=self._get_token_sort_key, reverse=True)
+            selected = safe_tokens[:max_tokens]
+            log_info("trading.candle_selection.fallback",
+                    f"Accel scoring disabled, using liq+vol sort: {len(selected)} tokens",
+                    selected_count=len(selected))
+            return selected
+        
+        # Filter accel candidates by higher liquidity floor AND minimum 15m volume
+        # Calculate volume_15m_usd from volume24h and volumeChange15m if not directly available
+        def get_volume_15m_usd(t: Dict) -> float:
+            """Estimate 15-minute USD volume for accel candidate filtering."""
+            # Try direct volume15m field first
+            vol_15m = self._safe_float(t.get("volume15m"))
+            if vol_15m > 0:
+                return vol_15m
+            
+            # Estimate from 24h volume (assuming uniform distribution: vol24h / 96 periods)
+            vol_24h = self._safe_float(t.get("volume24h"))
+            if vol_24h > 0:
+                base_15m = vol_24h / 96.0  # 96 15-min periods in 24h
+                
+                # Adjust by volume change if available
+                vol_change_15m = self._safe_float(t.get("volumeChange15m"))
+                if vol_change_15m != 0:
+                    # volumeChange15m is percentage, e.g., 50 means +50%
+                    change_mult = 1.0 + (vol_change_15m / 100.0)
+                    return base_15m * max(0.1, change_mult)  # Floor at 10% of base
+                
+                return base_15m
+            
+            return 0.0
+        
+        accel_candidates = [
+            t for t in safe_tokens
+            if (self._safe_float(t.get("liquidity")) >= accel_min_liq and
+                get_volume_15m_usd(t) >= min_vol_15m_usd)
+        ]
+        
+        # Track how many were filtered out by volume
+        liq_only_candidates = [
+            t for t in safe_tokens
+            if self._safe_float(t.get("liquidity")) >= accel_min_liq
+        ]
+        vol_filtered_count = len(liq_only_candidates) - len(accel_candidates)
+        
+        # Calculate acceleration scores for accel candidates only
+        for token in accel_candidates:
+            self._calculate_accel_score(token)
+        
+        # Split slots
+        accel_slots = int(max_tokens * accel_pct)
+        stability_slots = max_tokens - accel_slots
+        
+        # Sort accel candidates by acceleration score (descending)
+        accel_sorted = sorted(accel_candidates, key=lambda t: t.get('_accel_score', 0), reverse=True)
+        
+        # Sort all safe tokens by liquidity + volume (descending) for stability
+        stability_sorted = sorted(safe_tokens, key=self._get_token_sort_key, reverse=True)
+        
+        # Select accel tokens (may be fewer than accel_slots if not enough candidates)
+        accel_selected = accel_sorted[:accel_slots]
+        actual_accel_count = len(accel_selected)
+        
+        # For stability slots, exclude tokens already selected by accel
+        accel_addresses = {t.get("address", "").lower() for t in accel_selected}
+        stability_candidates = [
+            t for t in stability_sorted
+            if t.get("address", "").lower() not in accel_addresses
+        ]
+        
+        # Fill remaining slots with stability (including any unfilled accel slots)
+        remaining_slots = max_tokens - actual_accel_count
+        stability_selected = stability_candidates[:remaining_slots]
+        
+        # Combine
+        selected = accel_selected + stability_selected
+        
+        # Log selection details
+        log_info("trading.candle_selection.accel_priority",
+                f"Selected {len(selected)} tokens for candles: "
+                f"{actual_accel_count} by acceleration (target {accel_slots}, min_liq ${accel_min_liq/1000:.0f}k, min_vol15m ${min_vol_15m_usd/1000:.0f}k), "
+                f"{len(stability_selected)} by stability, "
+                f"{vol_filtered_count} filtered by low 15m volume",
+                total_selected=len(selected),
+                accel_count=actual_accel_count,
+                accel_candidates_available=len(accel_candidates),
+                vol_filtered_count=vol_filtered_count,
+                stability_count=len(stability_selected),
+                accel_slots_target=accel_slots,
+                accel_min_liquidity=accel_min_liq,
+                min_volume_15m_usd=min_vol_15m_usd)
+        
+        # Log top acceleration tokens
+        if accel_selected:
+            top_accel = accel_selected[:3]
+            for i, t in enumerate(top_accel):
+                components = t.get('_accel_components', {})
+                log_info("trading.candle_selection.top_accel",
+                        f"Top accel #{i+1}: {t.get('symbol', 'UNKNOWN')} "
+                        f"(score={t.get('_accel_score', 0):.3f}, "
+                        f"price15m={components.get('price_change_15m', 0):.1f}%, "
+                        f"vol15m={components.get('volume_change_15m', 0):.1f}%, "
+                        f"txns/min={components.get('txns_per_min', 0):.1f})",
+                        symbol=t.get('symbol'),
+                        accel_score=t.get('_accel_score', 0),
+                        **components)
+        
+        return selected
         
     async def __aenter__(self):
         """Async context manager entry"""
@@ -1651,6 +1944,22 @@ class EnhancedAsyncTradingEngine:
                                 size_before_reduction=round(size_before_weak_buy, 3),
                                 adjusted_size=round(quality_adjusted_size, 3))
                     
+                    # Apply entry lane multiplier (early_scout = 0.25x, confirm_add = 1.0x)
+                    # This is applied after quality/regime adjustments but before tier bounds
+                    entry_lane = token.get('entry_lane')
+                    entry_lane_multiplier = token.get('entry_lane_multiplier', 1.0)
+                    if entry_lane and entry_lane_multiplier != 1.0:
+                        size_before_lane = quality_adjusted_size
+                        quality_adjusted_size = quality_adjusted_size * entry_lane_multiplier
+                        log_info("trading.entry_lane_sizing",
+                                f"Entry lane '{entry_lane}' position size adjustment for {token.get('symbol', 'UNKNOWN')}: "
+                                f"${size_before_lane:.2f} × {entry_lane_multiplier:.2f} = ${quality_adjusted_size:.2f}",
+                                symbol=token.get("symbol"),
+                                entry_lane=entry_lane,
+                                entry_lane_multiplier=entry_lane_multiplier,
+                                size_before_lane=round(size_before_lane, 3),
+                                adjusted_size=round(quality_adjusted_size, 3))
+                    
                     # Ensure position size is within tier bounds (safety check)
                     final_position_size = max(tier_base_size, min(quality_adjusted_size, tier_max_size))
                     
@@ -2559,15 +2868,23 @@ class EnhancedAsyncTradingEngine:
             log_info("trading.no_filtered_tokens", "😴 No tokens passed early filters this cycle")
             return {"success": True, "tokens_processed": 0, "tokens_filtered_early": len(all_tokens)}
         
-        # Apply hard limiter for candle fetching; always include tracked tokens
-        max_tokens_for_candles = get_config_int('helius_15m_candle_policy.max_tokens_per_cycle_for_candles', 15)
+        # Apply hard limiter for candle fetching with acceleration-based prioritization
+        # Use accel_scoring config if available, otherwise fall back to legacy config
+        accel_cfg = get_config("trading.accel_scoring", {})
+        max_tokens_for_candles = accel_cfg.get("max_tokens_per_cycle_for_candles") or get_config_int('helius_15m_candle_policy.max_tokens_per_cycle_for_candles', 15)
+        
         tracked_tokens_list = [t for t in filtered_tokens if t.get("_is_tracked_token", False)]
         regular_tokens = [t for t in filtered_tokens if not t.get("_is_tracked_token", False)]
-        did_limit_regular = len(regular_tokens) > max_tokens_for_candles
+        original_regular_count = len(regular_tokens)
         
-        if did_limit_regular:
-            regular_tokens.sort(key=self._get_token_sort_key, reverse=True)
-            regular_tokens = regular_tokens[:max_tokens_for_candles]
+        # Use acceleration-based selection for regular tokens
+        if len(regular_tokens) > max_tokens_for_candles:
+            regular_tokens = self._select_tokens_for_candles(regular_tokens, max_tokens_for_candles)
+            log_info("trading.candle_selection.applied",
+                    f"📊 Applied acceleration-based selection: {len(regular_tokens)}/{original_regular_count} regular tokens selected",
+                    selected=len(regular_tokens),
+                    original=original_regular_count,
+                    max_allowed=max_tokens_for_candles)
         
         filtered_tokens = tracked_tokens_list + regular_tokens
         if tracked_tokens_list:
@@ -2575,7 +2892,7 @@ class EnhancedAsyncTradingEngine:
                      f"📊 Including {len(tracked_tokens_list)} tracked tokens + {len(regular_tokens)} regular "
                      f"(max regular={max_tokens_for_candles})",
                      tracked=len(tracked_tokens_list), regular=len(regular_tokens))
-        if did_limit_regular:
+        if original_regular_count > max_tokens_for_candles:
             log_info("trading.candle_limiter",
                     f"📊 Limited tokens for candle fetching: {len(filtered_tokens)} tokens "
                     f"({len(tracked_tokens_list)} tracked + {len(regular_tokens)} regular, max regular={max_tokens_for_candles})")

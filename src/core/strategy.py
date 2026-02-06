@@ -965,6 +965,773 @@ def _check_jupiter_tradeable(token_address: str, symbol: str) -> bool:
         )
         return True
 
+
+# ============================================================================
+# TWO-LANE ENTRY SYSTEM
+# ============================================================================
+# Early Scout: Lower thresholds + stricter safety + smaller size (catch early breakouts)
+# Confirm/Add: Standard thresholds (current behavior for confirmed moves)
+
+# Cooldown persistence file path
+_COOLDOWN_FILE = Path("data/early_scout_cooldowns.json")
+_COOLDOWNS_LOADED = False
+_EARLY_SCOUT_COOLDOWNS: dict = {}
+
+# Cooldown retention period (7 days in seconds)
+_COOLDOWN_RETENTION_SECONDS = 7 * 24 * 60 * 60
+
+
+def _prune_old_cooldowns():
+    """Remove cooldown entries older than 7 days."""
+    global _EARLY_SCOUT_COOLDOWNS
+    now = time.time()
+    cutoff = now - _COOLDOWN_RETENTION_SECONDS
+    
+    original_count = len(_EARLY_SCOUT_COOLDOWNS)
+    _EARLY_SCOUT_COOLDOWNS = {
+        k: v for k, v in _EARLY_SCOUT_COOLDOWNS.items()
+        if v > cutoff
+    }
+    pruned_count = original_count - len(_EARLY_SCOUT_COOLDOWNS)
+    
+    if pruned_count > 0:
+        _log_trace(
+            f"🗑️ Pruned {pruned_count} cooldown entries older than 7 days",
+            level="info",
+            event="strategy.cooldown.pruned",
+            pruned_count=pruned_count,
+            remaining_count=len(_EARLY_SCOUT_COOLDOWNS)
+        )
+    
+    return pruned_count
+
+
+def _load_cooldowns_from_disk():
+    """Load cooldowns from persistent storage on first access."""
+    global _COOLDOWNS_LOADED, _EARLY_SCOUT_COOLDOWNS
+    if _COOLDOWNS_LOADED:
+        return
+    
+    try:
+        if _COOLDOWN_FILE.exists():
+            with open(_COOLDOWN_FILE, "r") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    _EARLY_SCOUT_COOLDOWNS = data
+                    _log_trace(
+                        f"📁 Loaded {len(_EARLY_SCOUT_COOLDOWNS)} cooldown entries from disk",
+                        level="info",
+                        event="strategy.cooldown.loaded",
+                        count=len(_EARLY_SCOUT_COOLDOWNS)
+                    )
+                    # Prune old entries on load
+                    _prune_old_cooldowns()
+    except Exception as e:
+        _log_trace(
+            f"⚠️ Failed to load cooldowns from disk: {e}",
+            level="warning",
+            event="strategy.cooldown.load_error",
+            error=str(e)
+        )
+    _COOLDOWNS_LOADED = True
+
+
+def _save_cooldowns_to_disk():
+    """Persist cooldowns to disk with atomic write (prunes old entries first)."""
+    global _EARLY_SCOUT_COOLDOWNS
+    
+    try:
+        # Prune old entries before saving
+        _prune_old_cooldowns()
+        
+        # Ensure data directory exists
+        _COOLDOWN_FILE.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Atomic write: write to temp file then replace
+        tmp_path = Path(str(_COOLDOWN_FILE) + ".tmp")
+        with open(tmp_path, "w") as f:
+            json.dump(_EARLY_SCOUT_COOLDOWNS, f, indent=2)
+        os.replace(tmp_path, _COOLDOWN_FILE)
+    except Exception as e:
+        _log_trace(
+            f"⚠️ Failed to save cooldowns to disk: {e}",
+            level="warning",
+            event="strategy.cooldown.save_error",
+            error=str(e)
+        )
+
+
+def _get_lane_config(lane_name: str) -> dict:
+    """Get configuration for a specific entry lane."""
+    lane_config = get_config(f"trading.entry_lanes.{lane_name}", {})
+    return lane_config if isinstance(lane_config, dict) else {}
+
+
+def _is_early_scout_on_cooldown(address: str) -> bool:
+    """Check if a token is on early_scout cooldown (prevents duplicate buys)."""
+    _load_cooldowns_from_disk()  # Ensure loaded
+    
+    address_lower = address.lower()
+    cooldown_key = f"{address_lower}:early_scout:buy"
+    
+    if cooldown_key not in _EARLY_SCOUT_COOLDOWNS:
+        return False
+    
+    cooldown_minutes = get_config_float("trading.entry_lanes.early_scout.cooldown_minutes", 30.0)
+    cooldown_secs = cooldown_minutes * 60
+    last_buy_ts = _EARLY_SCOUT_COOLDOWNS[cooldown_key]
+    
+    return (time.time() - last_buy_ts) < cooldown_secs
+
+
+def _record_early_scout_buy(address: str):
+    """Record a successful early_scout buy to start cooldown (persisted)."""
+    _load_cooldowns_from_disk()  # Ensure loaded
+    
+    address_lower = address.lower()
+    cooldown_key = f"{address_lower}:early_scout:buy"
+    _EARLY_SCOUT_COOLDOWNS[cooldown_key] = time.time()
+    
+    # Persist to disk
+    _save_cooldowns_to_disk()
+
+
+def _calculate_momentum_15m(candles: list) -> float:
+    """
+    Calculate 15-minute momentum (1 candle on 15m timeframe).
+    Returns momentum as a decimal (e.g., 0.02 = 2%).
+    """
+    if not candles or len(candles) < 1:
+        return 0.0
+    
+    last_candle = candles[-1]
+    open_price = last_candle.get('open', 0) or last_candle.get('close', 0)
+    close_price = last_candle.get('close', 0)
+    
+    if open_price <= 0:
+        return 0.0
+    
+    return (close_price - open_price) / open_price
+
+
+def _calculate_momentum_30m(candles: list) -> float:
+    """
+    Calculate 30-minute momentum (2 candles on 15m timeframe).
+    Returns momentum as a decimal (e.g., 0.02 = 2%).
+    """
+    if not candles or len(candles) < 2:
+        return 0.0
+    
+    recent_candles = candles[-2:]
+    first_price = recent_candles[0].get('open', 0) or recent_candles[0].get('close', 0)
+    last_price = recent_candles[-1].get('close', 0)
+    
+    if first_price <= 0:
+        return 0.0
+    
+    return (last_price - first_price) / first_price
+
+
+def _calculate_momentum_1h(candles: list) -> float:
+    """
+    Calculate 1-hour momentum (4 candles on 15m timeframe).
+    Returns momentum as a decimal (e.g., 0.02 = 2%).
+    """
+    if not candles or len(candles) < 4:
+        return 0.0
+    
+    recent_candles = candles[-4:]
+    first_price = recent_candles[0].get('close', 0)
+    last_price = recent_candles[-1].get('close', 0)
+    
+    if first_price <= 0:
+        return 0.0
+    
+    return (last_price - first_price) / first_price
+
+
+def _calculate_short_momentum(candles: list, num_candles: int = 4) -> float:
+    """
+    Calculate short-term momentum using the last N candles (default 4 = ~1 hour at 15m).
+    Returns momentum as a decimal (e.g., 0.02 = 2%).
+    DEPRECATED: Use _calculate_momentum_1h() instead.
+    """
+    return _calculate_momentum_1h(candles) if num_candles == 4 else _calculate_momentum_30m(candles) if num_candles == 2 else _calculate_momentum_15m(candles)
+
+
+def _calculate_long_momentum(candles: list) -> float:
+    """
+    Calculate long-term momentum using all available candles (3-4h+).
+    Returns momentum as a decimal (e.g., 0.02 = 2%).
+    """
+    if not candles or len(candles) < 4:
+        return 0.0
+    
+    first_price = candles[0].get('close', 0)
+    last_price = candles[-1].get('close', 0)
+    
+    if first_price <= 0:
+        return 0.0
+    
+    return (last_price - first_price) / first_price
+
+
+def _is_last_candle_green(candles: list) -> tuple:
+    """
+    Check if the last candle is green (close > open).
+    
+    Returns:
+        (is_green: bool, mode: str)
+        - mode: "open_close" if using open vs close
+        - mode: "close_close_proxy" if using close[-1] vs close[-2]
+        - mode: "unavailable" if cannot determine
+    """
+    if not candles:
+        return (False, "unavailable")
+    
+    last_candle = candles[-1]
+    open_price = last_candle.get('open', 0)
+    close_price = last_candle.get('close', 0)
+    
+    # Prefer open vs close if available
+    if open_price and open_price > 0:
+        is_green = close_price > open_price
+        return (is_green, "open_close")
+    
+    # Fallback: close-to-close comparison with previous candle
+    if len(candles) >= 2:
+        prev_close = candles[-2].get('close', 0)
+        if prev_close > 0:
+            is_green = close_price > prev_close
+            return (is_green, "close_close_proxy")
+    
+    return (False, "unavailable")
+
+
+def _check_candle_freshness(candles: list, max_stale_minutes: int = 20) -> tuple:
+    """
+    Check if candles are fresh (last candle within max_stale_minutes) and consecutive.
+    
+    Returns:
+        (is_valid: bool, fail_reason: str or None, details: dict)
+    """
+    if not candles or len(candles) < 2:
+        return (False, "insufficient_candles", {"candles_count": len(candles) if candles else 0})
+    
+    now = time.time()
+    last_candle = candles[-1]
+    
+    # Check timestamp freshness
+    last_ts = last_candle.get('timestamp') or last_candle.get('time') or last_candle.get('t')
+    
+    if last_ts:
+        # Handle various timestamp formats
+        try:
+            if isinstance(last_ts, str):
+                # ISO format or numeric string
+                if 'T' in last_ts or '-' in last_ts:
+                    from datetime import datetime
+                    dt = datetime.fromisoformat(last_ts.replace('Z', '+00:00'))
+                    last_ts_unix = dt.timestamp()
+                else:
+                    last_ts_unix = float(last_ts)
+            elif isinstance(last_ts, (int, float)):
+                last_ts_unix = float(last_ts)
+                # Handle milliseconds
+                if last_ts_unix > 1e12:
+                    last_ts_unix = last_ts_unix / 1000
+            else:
+                last_ts_unix = None
+            
+            if last_ts_unix:
+                age_seconds = now - last_ts_unix
+                age_minutes = age_seconds / 60
+                
+                if age_minutes > max_stale_minutes:
+                    return (False, "stale_candles", {
+                        "last_candle_age_minutes": round(age_minutes, 1),
+                        "max_stale_minutes": max_stale_minutes
+                    })
+        except Exception:
+            # Timestamp parsing failed - continue without freshness check
+            pass
+    
+    # Check consecutiveness of last 2 candles
+    if len(candles) >= 2:
+        last_candle = candles[-1]
+        prev_candle = candles[-2]
+        
+        last_ts = last_candle.get('timestamp') or last_candle.get('time') or last_candle.get('t')
+        prev_ts = prev_candle.get('timestamp') or prev_candle.get('time') or prev_candle.get('t')
+        
+        if last_ts and prev_ts:
+            try:
+                # Parse timestamps
+                def parse_ts(ts):
+                    if isinstance(ts, str):
+                        if 'T' in ts or '-' in ts:
+                            from datetime import datetime
+                            dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                            return dt.timestamp()
+                        else:
+                            val = float(ts)
+                            return val / 1000 if val > 1e12 else val
+                    elif isinstance(ts, (int, float)):
+                        val = float(ts)
+                        return val / 1000 if val > 1e12 else val
+                    return None
+                
+                last_ts_unix = parse_ts(last_ts)
+                prev_ts_unix = parse_ts(prev_ts)
+                
+                if last_ts_unix and prev_ts_unix:
+                    gap_minutes = (last_ts_unix - prev_ts_unix) / 60
+                    
+                    # 15m candles should be ~15 min apart (allow 10-20 min for tolerance)
+                    if gap_minutes < 10 or gap_minutes > 25:
+                        return (False, "non_consecutive_candles", {
+                            "gap_minutes": round(gap_minutes, 1),
+                            "expected_gap": "15"
+                        })
+            except Exception:
+                # Timestamp parsing failed - skip consecutiveness check
+                pass
+    
+    return (True, None, {})
+
+
+def _check_vwap_band(price: float, vwap_value: float, vwap_rule: str, band_bps_below: float = 80,
+                     candles: list = None, require_green_if_below: bool = True,
+                     mom_30m: float = None) -> tuple:
+    """
+    Check VWAP condition based on rule type with falling-knife protection.
+    
+    Args:
+        price: Current price
+        vwap_value: VWAP value
+        vwap_rule: "required_above", "band", or "off"
+        band_bps_below: Basis points below VWAP allowed for "band" mode
+        candles: Optional candle data for green candle check
+        require_green_if_below: If True and price < VWAP in band mode, require last candle green
+        mom_30m: 30-minute momentum (required positive if price < VWAP in band mode)
+    
+    Returns:
+        (passes: bool, reason: str, price_vs_vwap_pct: float)
+    """
+    if not vwap_value or vwap_value <= 0:
+        return (False, "vwap_unavailable", 0.0)
+    
+    price_vs_vwap_pct = ((price - vwap_value) / vwap_value)
+    
+    if vwap_rule == "off":
+        return (True, "vwap_off", price_vs_vwap_pct)
+    
+    if vwap_rule == "required_above":
+        if price >= vwap_value:
+            return (True, "above_vwap", price_vs_vwap_pct)
+        else:
+            return (False, "below_vwap", price_vs_vwap_pct)
+    
+    if vwap_rule == "band":
+        # Allow price within band below VWAP
+        band_pct = band_bps_below / 10000.0  # Convert bps to decimal (80 bps = 0.008)
+        min_allowed_pct = -band_pct  # e.g., -0.008 = 0.8% below VWAP
+        
+        if price_vs_vwap_pct >= min_allowed_pct:
+            # Within band - but if below VWAP, apply falling-knife protection
+            if price < vwap_value:
+                # FALLING-KNIFE PROTECTION: require positive momentum AND green candle
+                if require_green_if_below and candles:
+                    is_green, green_mode = _is_last_candle_green(candles)
+                    if not is_green:
+                        return (False, f"below_vwap_red_candle_{green_mode}", price_vs_vwap_pct)
+                if mom_30m is not None and mom_30m <= 0:
+                    return (False, "below_vwap_neg_momentum", price_vs_vwap_pct)
+            return (True, "within_vwap_band", price_vs_vwap_pct)
+        else:
+            return (False, "below_vwap_band", price_vs_vwap_pct)
+    
+    # Default: require above VWAP
+    return (price >= vwap_value, "default_above", price_vs_vwap_pct)
+
+
+def _check_add_to_position_allowed(token: dict, confirm_cfg: dict) -> tuple:
+    """
+    Check if adding to an existing position is allowed based on PnL window and cap.
+    
+    Uses actual current exposure to enforce max_total_position_multiplier.
+    
+    Returns: (allowed: bool, add_multiplier: float, reason: str)
+    """
+    if not confirm_cfg.get("enable_adds_if_held", True):
+        return (False, 0.0, "adds_disabled")
+    
+    # Check if token is already held
+    try:
+        from src.storage.positions import load_positions as load_positions_store
+        from src.utils.position_sync import create_position_key
+        
+        address = (token.get("address") or "").lower()
+        positions = load_positions_store()
+        position_key = create_position_key(address)
+        existing_position = positions.get(position_key)
+        
+        if not existing_position:
+            # Not held - this is a new entry, not an add
+            return (True, confirm_cfg.get("position_size_multiplier", 1.0), "new_position")
+        
+        # Check if position has unrealized PnL data
+        entry_price = float(existing_position.get("entry_price", 0) or 0)
+        current_price = float(token.get("priceUsd") or 0)
+        
+        if entry_price <= 0 or current_price <= 0:
+            return (False, 0.0, "price_unavailable")
+        
+        unrealized_pnl_pct = (current_price - entry_price) / entry_price
+        
+        # Get PnL window from config
+        pnl_window = confirm_cfg.get("add_only_if_unrealized_pnl_between", [-0.01, 0.06])
+        min_pnl = pnl_window[0] if len(pnl_window) > 0 else -0.01
+        max_pnl = pnl_window[1] if len(pnl_window) > 1 else 0.06
+        
+        if unrealized_pnl_pct < min_pnl:
+            return (False, 0.0, f"unrealized_pnl_too_low_{unrealized_pnl_pct*100:.1f}%")
+        if unrealized_pnl_pct > max_pnl:
+            return (False, 0.0, f"unrealized_pnl_too_high_{unrealized_pnl_pct*100:.1f}%")
+        
+        # =====================================================================
+        # CHECK ACTUAL CURRENT EXPOSURE VS CAP
+        # =====================================================================
+        add_mult = confirm_cfg.get("add_position_size_multiplier", 0.5)
+        max_total_mult = confirm_cfg.get("max_total_position_multiplier", 1.25)
+        
+        # Get current position size and the base tier size for comparison
+        current_size_usd = float(existing_position.get("position_size_usd", 0) or 0)
+        
+        # Get base tier size from config (or use a reference)
+        # We need the original tier size that the multipliers are relative to
+        base_size_usd = float(existing_position.get("original_tier_size_usd", 0) or 0)
+        
+        # Fallback: estimate from the trading config
+        if base_size_usd <= 0:
+            from src.utils.config_loader import get_config
+            tier_config = get_config("trading.tiers.micro", {})
+            base_size_usd = tier_config.get("max_size_usd", 100)
+        
+        if base_size_usd > 0:
+            # Calculate current position multiplier based on actual exposure
+            current_position_mult = current_size_usd / base_size_usd
+            
+            # Check if already at or over cap
+            if current_position_mult >= max_total_mult:
+                return (False, 0.0, f"already_at_cap({current_position_mult:.2f}x>={max_total_mult:.2f}x)")
+            
+            # Calculate remaining room
+            remaining_mult = max_total_mult - current_position_mult
+            
+            # If remaining room is less than requested add, either:
+            # - Reduce add to fit (partial add)
+            # - Or reject if partial adds not supported (we'll reject for safety)
+            if remaining_mult < add_mult:
+                # Check if partial adds are allowed (default: no, for simplicity)
+                allow_partial = confirm_cfg.get("allow_partial_adds", False)
+                
+                if allow_partial and remaining_mult > 0.1:  # At least 0.1x room
+                    adjusted_mult = remaining_mult
+                    return (True, adjusted_mult, f"partial_add({adjusted_mult:.2f}x,cap_room)")
+                else:
+                    return (False, 0.0, f"insufficient_cap_room({remaining_mult:.2f}x<{add_mult:.2f}x)")
+            
+            return (True, add_mult, f"add_allowed_pnl_{unrealized_pnl_pct*100:.1f}%_mult_{current_position_mult:.2f}x")
+        else:
+            # Cannot determine base size - allow add with warning
+            _log_trace(
+                f"⚠️ Cannot determine base tier size for cap check",
+                level="warning",
+                event="strategy.lane.add_cap_check_failed",
+                address=address[:8],
+                current_size_usd=current_size_usd
+            )
+            return (True, add_mult, f"add_allowed_pnl_{unrealized_pnl_pct*100:.1f}%_nocap")
+        
+    except Exception as e:
+        _log_trace(
+            f"⚠️ Error checking add-to-position: {e}",
+            level="warning",
+            event="strategy.lane.add_check_error",
+            error=str(e)
+        )
+        return (False, 0.0, f"add_check_error_{str(e)[:20]}")
+
+
+def evaluate_entry_lane(token: dict) -> dict:
+    """
+    Evaluate which entry lane (if any) a token qualifies for.
+    
+    Returns dict with:
+        - lane: "early_scout", "confirm_add", or None
+        - position_size_multiplier: float
+        - reason: str (why lane was selected or rejected)
+        - details: dict (metrics used for decision)
+        - early_fail_reasons: list[str] (all failing gates for early_scout)
+        - confirm_fail_reasons: list[str] (all failing gates for confirm_add)
+    """
+    address = (token.get("address") or "").lower()
+    price = float(token.get("priceUsd") or 0.0)
+    vol24h = float(token.get("volume24h") or 0.0)
+    liq_usd = float(token.get("liquidity") or 0.0)
+    is_trusted = bool(token.get("is_trusted", False))
+    chain_id = token.get("chainId", "ethereum").lower()
+    symbol = token.get("symbol", "UNKNOWN")
+    
+    # Get candles and technical indicators
+    candles = token.get('candles_15m', [])
+    tech_indicators = token.get('technical_indicators', {})
+    rsi = token.get('rsi') or (tech_indicators.get('rsi') if isinstance(tech_indicators, dict) else None)
+    vwap_dict = tech_indicators.get('vwap') or token.get('vwap')
+    vwap_value = None
+    if isinstance(vwap_dict, dict):
+        vwap_value = vwap_dict.get('vwap')
+    elif isinstance(vwap_dict, (int, float)):
+        vwap_value = float(vwap_dict)
+    
+    # Get volume change data
+    volume_change_1h = token.get("volumeChange1h")
+    volume_change_15m = token.get("volumeChange15m")
+    
+    # Get accel_score if computed by trading engine
+    accel_score = token.get("_accel_score")
+    
+    # Calculate momentum windows (15m, 30m, 1h, long)
+    mom_15m = _calculate_momentum_15m(candles)
+    mom_30m = _calculate_momentum_30m(candles)
+    mom_1h = _calculate_momentum_1h(candles)
+    long_momentum = _calculate_long_momentum(candles)
+    
+    # Check green candle with mode tracking
+    last_candle_green, green_mode = _is_last_candle_green(candles)
+    
+    details = {
+        "vol24h": vol24h,
+        "liq_usd": liq_usd,
+        "price": price,
+        "rsi": rsi,
+        "vwap": vwap_value,
+        "mom_15m": round(mom_15m, 5) if mom_15m else 0,
+        "mom_30m": round(mom_30m, 5) if mom_30m else 0,
+        "mom_1h": round(mom_1h, 5) if mom_1h else 0,
+        "long_momentum": round(long_momentum, 5) if long_momentum else 0,
+        "last_candle_green": last_candle_green,
+        "last_candle_green_mode": green_mode,
+        "volume_change_1h": volume_change_1h,
+        "volume_change_15m": volume_change_15m,
+        "candles_count": len(candles),
+        "accel_score": round(accel_score, 4) if accel_score else None,
+    }
+    
+    # Collect fail reasons for each lane
+    early_fail_reasons = []
+    confirm_fail_reasons = []
+    
+    # =========================================================================
+    # CONFIRM_ADD LANE EVALUATION
+    # =========================================================================
+    confirm_cfg = _get_lane_config("confirm_add")
+    confirm_passed = False
+    confirm_multiplier = 1.0
+    
+    if confirm_cfg.get("enabled", True):
+        min_liq = confirm_cfg.get("min_liquidity_usd", 250000)
+        min_vol = confirm_cfg.get("min_volume_24h_usd", 250000)
+        min_momentum = confirm_cfg.get("min_momentum_pct_long", 0.015)
+        rsi_max = confirm_cfg.get("rsi_max", 75)
+        vwap_rule = confirm_cfg.get("vwap_rule", "required_above")
+        
+        # Check thresholds and collect all fail reasons
+        if liq_usd < min_liq:
+            confirm_fail_reasons.append(f"liq<{min_liq/1000:.0f}k")
+        if vol24h < min_vol:
+            confirm_fail_reasons.append(f"vol24h<{min_vol/1000:.0f}k")
+        if rsi is None:
+            confirm_fail_reasons.append("rsi_unavailable")
+        elif rsi > rsi_max:
+            confirm_fail_reasons.append(f"rsi>{rsi_max}")
+        
+        vwap_pass, vwap_reason, vwap_pct = _check_vwap_band(price, vwap_value, vwap_rule)
+        if not vwap_pass:
+            confirm_fail_reasons.append(f"vwap_{vwap_reason}")
+        
+        if long_momentum < min_momentum:
+            confirm_fail_reasons.append(f"long_mom<{min_momentum*100:.1f}%")
+        
+        # If all checks pass
+        if not confirm_fail_reasons:
+            # Check add-to-position logic
+            add_allowed, add_mult, add_reason = _check_add_to_position_allowed(token, confirm_cfg)
+            if add_allowed:
+                confirm_passed = True
+                confirm_multiplier = add_mult
+                details["add_reason"] = add_reason
+            else:
+                confirm_fail_reasons.append(add_reason)
+    else:
+        confirm_fail_reasons.append("disabled")
+    
+    if confirm_passed:
+        _log_trace(
+            f"✅ CONFIRM_ADD lane selected for {symbol}: liq=${liq_usd:,.0f}, vol=${vol24h:,.0f}, "
+            f"long_mom={long_momentum*100:.2f}%, RSI={rsi:.1f if rsi else 0}, mult={confirm_multiplier:.2f}x",
+            level="info",
+            event="strategy.lane.confirm_add_selected",
+            symbol=symbol,
+            address=address[:8],
+            **details
+        )
+        return {
+            "lane": "confirm_add",
+            "position_size_multiplier": confirm_multiplier,
+            "reason": "passes_confirm_add",
+            "details": details,
+            "early_fail_reasons": early_fail_reasons,
+            "confirm_fail_reasons": []
+        }
+    
+    # =========================================================================
+    # EARLY_SCOUT LANE EVALUATION
+    # =========================================================================
+    scout_cfg = _get_lane_config("early_scout")
+    
+    if scout_cfg.get("enabled", True):
+        min_liq = scout_cfg.get("min_liquidity_usd", 80000)
+        min_vol = scout_cfg.get("min_volume_24h_usd", 120000)
+        min_mom_15m = scout_cfg.get("min_momentum_pct_15m", 0.002)
+        min_mom_30m = scout_cfg.get("min_momentum_pct_30m", 0.006)
+        min_mom_1h = scout_cfg.get("min_momentum_pct_1h", 0.008)
+        require_mom_30m_positive = scout_cfg.get("require_mom_30m_positive", True)
+        rsi_min = scout_cfg.get("rsi_min", 45)
+        rsi_max = scout_cfg.get("rsi_max", 65)
+        vwap_rule = scout_cfg.get("vwap_rule", "band")
+        vwap_band_bps = scout_cfg.get("vwap_band_bps_below", 80)
+        min_vol_change_15m = scout_cfg.get("min_volume_change_15m", 0.30)
+        require_green_if_below_vwap = scout_cfg.get("require_last_candle_green_if_below_vwap", True)
+        candle_max_stale_minutes = scout_cfg.get("candle_max_stale_minutes", 20)
+        require_consecutive_candles = scout_cfg.get("require_consecutive_candles", True)
+        
+        # Check cooldown first
+        if _is_early_scout_on_cooldown(address):
+            early_fail_reasons.append("cooldown_active")
+            _log_trace(
+                f"⏳ EARLY_SCOUT cooldown active for {symbol}",
+                level="info",
+                event="strategy.lane.early_scout_cooldown",
+                symbol=symbol,
+                address=address[:8]
+            )
+        else:
+            # Check candle freshness and consecutiveness (critical for early_scout)
+            candles_valid, candle_fail_reason, candle_details = _check_candle_freshness(
+                candles, max_stale_minutes=candle_max_stale_minutes
+            )
+            if candle_details:
+                details.update(candle_details)
+            details["candles_valid"] = candles_valid
+            
+            if not candles_valid:
+                early_fail_reasons.append(candle_fail_reason)
+            
+            # Check liquidity/volume
+            if liq_usd < min_liq:
+                early_fail_reasons.append(f"liq<{min_liq/1000:.0f}k")
+            if vol24h < min_vol:
+                early_fail_reasons.append(f"vol24h<{min_vol/1000:.0f}k")
+            
+            # Check RSI band
+            if rsi is None:
+                early_fail_reasons.append("rsi_unavailable")
+            elif rsi < rsi_min:
+                early_fail_reasons.append(f"rsi<{rsi_min}")
+            elif rsi > rsi_max:
+                early_fail_reasons.append(f"rsi>{rsi_max}")
+            
+            # Check VWAP with falling-knife protection
+            vwap_pass, vwap_reason, vwap_pct = _check_vwap_band(
+                price, vwap_value, vwap_rule, vwap_band_bps,
+                candles=candles,
+                require_green_if_below=require_green_if_below_vwap,
+                mom_30m=mom_30m if require_mom_30m_positive else None
+            )
+            if not vwap_pass:
+                early_fail_reasons.append(f"vwap_{vwap_reason}")
+            
+            # Check momentum hierarchy (30m is primary, 15m/1h for confirmation)
+            if require_mom_30m_positive and mom_30m <= 0:
+                early_fail_reasons.append(f"mom_30m<=0({mom_30m*100:.2f}%)")
+            elif mom_30m < min_mom_30m:
+                early_fail_reasons.append(f"mom_30m<{min_mom_30m*100:.1f}%({mom_30m*100:.2f}%)")
+            
+            # Require at least one of: mom_1h meets threshold OR mom_15m > 0 (stability check)
+            if mom_1h < min_mom_1h and mom_15m <= 0:
+                early_fail_reasons.append(f"stability_fail(mom_1h<{min_mom_1h*100:.1f}%,mom_15m<=0)")
+            
+            # Check 15m volume acceleration (if available)
+            if volume_change_15m is not None:
+                try:
+                    vol_change_pct = float(volume_change_15m) / 100.0 if abs(float(volume_change_15m)) > 1 else float(volume_change_15m)
+                    if vol_change_pct < min_vol_change_15m:
+                        early_fail_reasons.append(f"vol15m<{min_vol_change_15m*100:.0f}%({vol_change_pct*100:.1f}%)")
+                except (ValueError, TypeError):
+                    pass  # Graceful fallback
+        
+        # If all checks pass
+        if not early_fail_reasons:
+            _log_trace(
+                f"🔍 EARLY_SCOUT lane selected for {symbol}: liq=${liq_usd:,.0f}, vol=${vol24h:,.0f}, "
+                f"mom_30m={mom_30m*100:.2f}%, mom_1h={mom_1h*100:.2f}%, RSI={rsi:.1f if rsi else 0}, "
+                f"last_green={last_candle_green}",
+                level="info",
+                event="strategy.lane.early_scout_selected",
+                symbol=symbol,
+                address=address[:8],
+                **details
+            )
+            return {
+                "lane": "early_scout",
+                "position_size_multiplier": scout_cfg.get("position_size_multiplier", 0.25),
+                "reason": "passes_early_scout",
+                "details": details,
+                "early_fail_reasons": [],
+                "confirm_fail_reasons": confirm_fail_reasons
+            }
+    else:
+        early_fail_reasons.append("disabled")
+    
+    # =========================================================================
+    # NO LANE QUALIFIES - LOG STRUCTURED FAIL REASONS
+    # =========================================================================
+    early_fail_str = ",".join(early_fail_reasons) if early_fail_reasons else "disabled"
+    confirm_fail_str = ",".join(confirm_fail_reasons) if confirm_fail_reasons else "disabled"
+    
+    _log_trace(
+        f"❌ No entry lane for {symbol} | early_fail=\"{early_fail_str}\" confirm_fail=\"{confirm_fail_str}\"",
+        level="info",
+        event="strategy.lane.no_lane",
+        symbol=symbol,
+        address=address[:8] if address else "N/A",
+        early_fail=early_fail_str,
+        confirm_fail=confirm_fail_str,
+        **details
+    )
+    
+    return {
+        "lane": None,
+        "position_size_multiplier": 0.0,
+        "reason": "no_lane_qualifies",
+        "details": details,
+        "early_fail_reasons": early_fail_reasons,
+        "confirm_fail_reasons": confirm_fail_reasons
+    }
+
+
 def check_buy_signal(token: dict) -> bool:
     config = get_config_values()
     raw_address = (token.get("address") or "").strip()
@@ -1038,31 +1805,16 @@ def check_buy_signal(token: dict) -> bool:
         event="strategy.buy.delisting_disabled",
     )
 
-    # For trusted tokens, require milder depth floors
-    min_vol = config['MIN_VOL_24H_BUY'] if not is_trusted else max(2000.0, config['MIN_VOL_24H_BUY'] * 0.5)
-    min_liq = config['MIN_LIQ_USD_BUY'] if not is_trusted else max(2000.0, config['MIN_LIQ_USD_BUY'] * 0.5)
-    
-    # For multi-chain tokens, use lower requirements but not too aggressive
-    if chain_id != "ethereum":
-        # Previously: 20% / 30% of ETH thresholds (too lenient)
-        # Now: require 75% of ETH thresholds with sensible floors
-        min_vol = max(50_000.0, min_vol * 0.75)
-        min_liq = max(75_000.0, min_liq * 0.75)
-
-    if vol24h < min_vol or liq_usd < min_liq:
+    # WETH is handled specially in executor.py - skip here
+    if address == "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2":  # WETH
         _log_trace(
-            f"🪫 Fails market depth: vol ${vol24h:,.0f} (need ≥ {min_vol:,.0f}), liq ${liq_usd:,.0f} (need ≥ {min_liq:,.0f})",
+            "🔓 WETH detected - will be handled in executor",
             level="info",
-            event="strategy.buy.market_depth_fail",
-            volume_24h=vol24h,
-            required_volume=min_vol,
-            liquidity_usd=liq_usd,
-            required_liquidity=min_liq,
-            symbol=token.get("symbol"),
+            event="strategy.buy.weth_special_case",
         )
-        return False
+        return True
 
-    # Order-flow defense for Solana tokens (after liquidity/volume, before momentum)
+    # Order-flow defense for Solana tokens (safety check before lane evaluation)
     # Helius API requires canonical base58 address (case-sensitive); do not pass lowercased address.
     if chain_id == "solana" and config.get('ENABLE_ORDER_FLOW_DEFENSE', True):
         from src.utils.order_flow_defense_solana import evaluate_order_flow_solana
@@ -1081,262 +1833,61 @@ def check_buy_signal(token: dict) -> bool:
             )
             return False
 
+    # Update price memory
     mem = load_price_memory()
-    entry = mem.get(address)
     now_ts = _now()
     mem[address] = {"price": price, "ts": now_ts}
     save_price_memory(mem)
 
-    # Trusted tokens: slightly easier momentum threshold
-    momentum_need = config['MIN_MOMENTUM_PCT'] if not is_trusted else max(0.003, config['MIN_MOMENTUM_PCT'] * 0.5)  # e.g. 0.3%
+    # =========================================================================
+    # TWO-LANE ENTRY EVALUATION
+    # =========================================================================
+    # Evaluates token against both early_scout and confirm_add lanes.
+    # Each lane has different thresholds for liquidity, volume, VWAP, RSI, momentum.
+    # Returns lane info with position_size_multiplier for sizing.
+    # =========================================================================
     
-    # Multi-chain tokens: require real momentum (increased threshold for quality)
-    if chain_id != "ethereum":
-        # Previously: momentum_need * 0.5 (≈0.15% threshold), too loose.
-        # Now: require at least 0.2-0.225% momentum for better entry quality.
-        multichain_momentum_multiplier = config.get('multichain_momentum_multiplier', 0.75)  # 75% of ETH threshold
-        multichain_momentum_min = config.get('multichain_momentum_min', 0.002)  # Minimum 0.2%
-        momentum_need = max(multichain_momentum_min, momentum_need * multichain_momentum_multiplier)
-        _log_trace(
-            f"🔓 Multi-chain momentum threshold: {momentum_need*100:.4f}%",
-            level="info",
-            event="strategy.buy.multichain_momentum_threshold",
-            symbol=token.get("symbol"),
-            chain=chain_id,
-            momentum_threshold=momentum_need,
-        )
-
-    # WETH is handled specially in executor.py - skip here
-    if address == "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2":  # WETH
-        _log_trace(
-            "🔓 WETH detected - will be handled in executor",
-            level="info",
-            event="strategy.buy.weth_special_case",
-        )
-        return True
-
-    # Volume momentum check - BEFORE price momentum (RSI, VWAP, candle momentum)
-    # Uses DexScreener volumeChange1h - no candle fetch required
-    if config.get('ENABLE_VOLUME_MOMENTUM_CHECK', True):
-        min_volume_change = config.get('MIN_VOLUME_CHANGE_1H', 0.05)
-        # Try to get volume change data (from DexScreener)
-        volume_change_1h = token.get("volumeChange1h")
-        
-        # If check is enabled but data unavailable, block the trade
-        if volume_change_1h is None:
-            _log_trace(
-                f"❌ Volume momentum check blocked: volume change data unavailable (required but not available from DexScreener) | volumeChange1h=None",
-                level="info",
-                event="strategy.buy.volume_momentum_unavailable_blocked",
-                symbol=token.get("symbol"),
-                volumeChange1h=None,
-            )
-            return False
-        
-        # Parse and validate volume change
-        # volumeChange1h is stored as decimal (e.g., 0.1 = 10% increase, -0.5 = 50% decrease)
-        # Handle both decimal format (<= 1) and legacy percentage format (> 1) for backward compatibility
-        try:
-            volume_change_pct = float(volume_change_1h) / 100.0 if abs(float(volume_change_1h)) > 1 else float(volume_change_1h)
-            if volume_change_pct < min_volume_change:
-                _log_trace(
-                    f"❌ Volume not increasing (1h change: {volume_change_pct*100:.1f}% < {min_volume_change*100:.1f}%) | volumeChange1h={volume_change_1h:.4f}",
-                    level="info",
-                    event="strategy.buy.volume_momentum_fail",
-                    symbol=token.get("symbol"),
-                    volumeChange1h=volume_change_1h,
-                    volume_change=volume_change_pct,
-                    required_change=min_volume_change,
-                )
-                return False
-            else:
-                # Log successful volume momentum check
-                _log_trace(
-                    f"✅ Volume momentum check passed (1h change: {volume_change_pct*100:.1f}% >= {min_volume_change*100:.1f}%) | volumeChange1h={volume_change_1h:.4f}",
-                    level="info",
-                    event="strategy.buy.volume_momentum_pass",
-                    symbol=token.get("symbol"),
-                    volumeChange1h=volume_change_1h,
-                    volume_change=volume_change_pct,
-                    required_change=min_volume_change,
-                )
-        except (ValueError, TypeError) as e:
-            # Block if volume change data is unparseable
-            _log_trace(
-                f"❌ Volume momentum check blocked: volume change data unparseable (required): {e} | volumeChange1h={volume_change_1h}",
-                level="info",
-                event="strategy.buy.volume_momentum_parse_error_blocked",
-                symbol=token.get("symbol"),
-                volumeChange1h=volume_change_1h,
-                error=str(e),
-            )
-            return False
-    # If ENABLE_VOLUME_MOMENTUM_CHECK is False, skip this check entirely
-
-    # RSI filter - MANDATORY: avoid overbought entries (required for all trades)
-    rsi_threshold = config.get('RSI_OVERBOUGHT_THRESHOLD', 70)
-    # Try to get RSI from token dict (if available from technical indicators)
-    rsi = token.get("rsi")
-    if rsi is None:
-        # Try to get from technical_indicators nested dict
-        tech_indicators = token.get("technical_indicators", {})
-        if isinstance(tech_indicators, dict):
-            rsi = tech_indicators.get("rsi")
+    lane_result = evaluate_entry_lane(token)
+    selected_lane = lane_result.get("lane")
+    position_multiplier = lane_result.get("position_size_multiplier", 1.0)
+    lane_reason = lane_result.get("reason", "unknown")
+    lane_details = lane_result.get("details", {})
     
-    # MANDATORY: Block if RSI unavailable (should be calculated from validated candles)
-    if rsi is None:
+    if selected_lane is None:
+        # No lane qualifies - log and reject
         _log_trace(
-            f"❌ RSI filter blocked: RSI unavailable (required but not calculated from candles)",
+            f"❌ No entry lane qualifies for {token.get('symbol', 'UNKNOWN')}: {lane_reason}",
             level="info",
-            event="strategy.buy.rsi_unavailable_blocked",
+            event="strategy.buy.no_lane",
             symbol=token.get("symbol"),
+            reason=lane_reason,
+            **lane_details
         )
         return False
     
-    # Block if overbought
-    if rsi > rsi_threshold:
-        _log_trace(
-            f"❌ Token overbought (RSI: {rsi:.1f} > {rsi_threshold})",
-            level="info",
-            event="strategy.buy.rsi_overbought",
-            symbol=token.get("symbol"),
-            rsi=rsi,
-            threshold=rsi_threshold,
-        )
-        return False
-
-    # VWAP Entry Filter (UPGRADE #2: Strength filter)
-    if config.get('ENABLE_VWAP_ENTRY_FILTER', True):
-        vwap_entry_required = config.get('VWAP_ENTRY_REQUIRED', True)
-        max_vwap_extension_pct = config.get('MAX_VWAP_EXTENSION_PCT', 0.05)
-        vwap_pullback_tolerance_pct = config.get('VWAP_PULLBACK_TOLERANCE_PCT', 0.02)
-        
-        # Try to get VWAP from technical indicators or token dict
-        tech_indicators = token.get('technical_indicators', {})
-        vwap_dict = tech_indicators.get('vwap') or token.get('vwap')
-        vwap_value = None
-        
-        # Handle VWAP dict format (from TechnicalIndicators.calculate_vwap)
-        if isinstance(vwap_dict, dict):
-            vwap_value = vwap_dict.get('vwap')
-        elif isinstance(vwap_dict, (int, float)):
-            vwap_value = float(vwap_dict)
-        
-        if vwap_value and vwap_value > 0:
-            # VWAP available - apply filter
-            price_vs_vwap_pct = ((price - vwap_value) / vwap_value) if vwap_value > 0 else 0.0
-            
-            if vwap_entry_required and price < vwap_value:
-                # Hard block: price below VWAP
-                _log_trace(
-                    f"❌ VWAP entry filter blocked: price ${price:.6f} < VWAP ${vwap_value:.6f} ({price_vs_vwap_pct*100:.2f}% below)",
-                    level="info",
-                    event="strategy.buy.vwap_below_blocked",
-                    symbol=token.get("symbol"),
-                    price=price,
-                    vwap=vwap_value,
-                    price_vs_vwap_pct=price_vs_vwap_pct,
-                )
-                return False
-            
-            # Check for extended price (too far above VWAP)
-            if price_vs_vwap_pct > max_vwap_extension_pct:
-                # Price extended above VWAP - require extra momentum confirmation
-                _log_trace(
-                    f"⚠️ Price extended above VWAP: {price_vs_vwap_pct*100:.2f}% (threshold: {max_vwap_extension_pct*100:.2f}%) - requiring extra momentum confirmation",
-                    level="warning",
-                    event="strategy.buy.vwap_extended",
-                    symbol=token.get("symbol"),
-                    price_vs_vwap_pct=price_vs_vwap_pct,
-                    max_extension=max_vwap_extension_pct,
-                )
-                # Continue but momentum threshold will be checked below
-            elif abs(price_vs_vwap_pct) <= vwap_pullback_tolerance_pct:
-                # Price near VWAP (pullback) - preferred entry zone
-                _log_trace(
-                    f"✅ VWAP pullback entry: price ${price:.6f} near VWAP ${vwap_value:.6f} ({abs(price_vs_vwap_pct)*100:.2f}% distance)",
-                    level="info",
-                    event="strategy.buy.vwap_pullback",
-                    symbol=token.get("symbol"),
-                    price=price,
-                    vwap=vwap_value,
-                    distance_pct=abs(price_vs_vwap_pct),
-                )
-        else:
-            # VWAP unavailable - block trade if VWAP entry is required
-            if vwap_entry_required:
-                _log_trace(
-                    f"❌ VWAP entry filter blocked: VWAP unavailable (required but not calculated from candles)",
-                    level="info",
-                    event="strategy.buy.vwap_unavailable_blocked",
-                    symbol=token.get("symbol"),
-                )
-                return False
-            else:
-                # VWAP not required - log warning but allow trade
-                _log_trace(
-                    "⚠️ VWAP unavailable - proceeding without VWAP filter (not required)",
-                    level="warning",
-                    event="strategy.buy.vwap_unavailable",
-                    symbol=token.get("symbol"),
-                )
-
-    # Use candle-based momentum if available (most accurate - computed from validated 15m candles)
-    # This takes priority over external momentum since it's computed from real on-chain data
-    if token.get('candles_validated') and token.get('candles_15m'):
-        candles = token['candles_15m']
-        candle_momentum = token.get('candle_momentum')
-        
-        if candle_momentum is not None and len(candles) >= 4:  # Need at least 1 hour of data
-            # Get VWAP from technical indicators if available
-            tech_indicators = token.get('technical_indicators', {})
-            vwap = tech_indicators.get('vwap') or token.get('vwap')
-            
-            # Format VWAP safely to avoid format string errors
-            vwap_str = f"{vwap:.8f}" if isinstance(vwap, (int, float)) and vwap is not None else "N/A"
-            
-            _log_trace(
-                f"📈 Candle-based momentum: {candle_momentum*100:.4f}% (need ≥ {momentum_need*100:.4f}%), VWAP={vwap_str}",
-                level="info",
-                event="strategy.buy.candle_momentum",
-                symbol=token.get("symbol"),
-                momentum=candle_momentum,
-                vwap=vwap,
-                required_momentum=momentum_need,
-                candles_count=len(candles),
-            )
-            
-            # Use candle momentum if it meets threshold
-            if candle_momentum >= momentum_need:
-                _log_trace(
-                    "✅ Candle-based momentum buy signal → TRUE",
-                    level="info",
-                    event="strategy.buy.candle_momentum_pass",
-                    symbol=token.get("symbol"),
-                    momentum=candle_momentum,
-                    vwap=vwap,
-                )
-                return True
-            else:
-                _log_trace(
-                    f"❌ Candle-based momentum insufficient ({candle_momentum*100:.4f}% < {momentum_need*100:.4f}%).",
-                    level="info",
-                    event="strategy.buy.candle_momentum_fail",
-                    symbol=token.get("symbol"),
-                    momentum=candle_momentum,
-                    required_momentum=momentum_need,
-                )
-                return False
-        else:
-            _log_trace(
-                f"❌ Candle momentum unavailable (momentum={candle_momentum}, candles={len(candles) if candles else 0}) - candles are required for buy signal",
-                level="info",
-                event="strategy.buy.candle_momentum_unavailable",
-                symbol=token.get("symbol"),
-                candle_momentum=candle_momentum,
-                candles_count=len(candles) if candles else 0,
-            )
-            return False
+    # Store lane information in token dict for position sizing and tracking
+    token['entry_lane'] = selected_lane
+    token['entry_lane_multiplier'] = position_multiplier
+    token['entry_lane_details'] = lane_details
+    
+    # Log successful lane selection
+    _log_trace(
+        f"✅ Entry lane '{selected_lane}' selected for {token.get('symbol', 'UNKNOWN')} "
+        f"(size_mult={position_multiplier:.2f}x, liq=${lane_details.get('liq_usd', 0):,.0f}, "
+        f"short_mom={lane_details.get('short_momentum', 0)*100:.2f}%, long_mom={lane_details.get('long_momentum', 0)*100:.2f}%)",
+        level="info",
+        event="strategy.buy.lane_selected",
+        symbol=token.get("symbol"),
+        lane=selected_lane,
+        position_multiplier=position_multiplier,
+        **lane_details
+    )
+    
+    # Record early_scout buy for cooldown tracking
+    if selected_lane == "early_scout":
+        _record_early_scout_buy(address)
+    
+    return True
 
 def get_dynamic_take_profit(token: dict) -> float:
     config = get_config_values()
