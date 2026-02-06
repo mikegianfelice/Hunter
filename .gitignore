@@ -224,6 +224,7 @@ __marimo__/
 # Runtime state files
 .run_state.json
 cooldown.json
+data/early_scout_cooldowns.json
 open_positions.json
 risk_state.json
 peak_prices.json
