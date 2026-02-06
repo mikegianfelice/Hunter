@@ -1,10 +1,10 @@
 name: Update Performance Charts
 
+# DISABLED: Charts are generated locally via update_charts.sh and launchd
+# This workflow is kept for manual triggers only (won't have local Helius data)
+
 on:
-  schedule:
-    # Run daily at 5AM UTC (12AM Eastern Standard Time)
-    - cron: '0 5 * * *'
-  workflow_dispatch:  # Allow manual triggers from GitHub UI
+  workflow_dispatch:  # Manual triggers only
 
 jobs:
   update-charts:
