@@ -1,17 +1,10 @@
 name: Update Performance Charts
 
-# DISABLED: Charts are now generated locally and pushed via update_charts.sh
-# This workflow is kept as a backup/alternative method
-# To re-enable, uncomment the 'on' section below
-
-# on:
-#   schedule:
-#     # Run every hour at minute 0 (e.g., 00:00, 01:00, 02:00, etc. UTC)
-#     - cron: '0 * * * *'
-#   workflow_dispatch:  # Allow manual triggers from GitHub UI
-
 on:
-  workflow_dispatch:  # Only allow manual triggers for backup
+  schedule:
+    # Run daily at 5AM UTC (12AM Eastern Standard Time)
+    - cron: '0 5 * * *'
+  workflow_dispatch:  # Allow manual triggers from GitHub UI
 
 jobs:
   update-charts:
