@@ -1829,8 +1829,8 @@ partial_tp_manager:
 # === MOMENTUM DECAY EXIT ===
 # Exit positions when entry momentum fades (strategy integrity)
 enable_momentum_decay_exit: true  # Enable momentum decay exit
-momentum_decay_threshold: 0.005  # 0.5% absolute minimum momentum (exit if current momentum drops below this)
-momentum_decay_delta: 0.01  # 1% decay from entry momentum triggers exit
+momentum_decay_threshold: 0.01  # 1.0% absolute minimum momentum (exit if current momentum drops below entry-grade quality)
+momentum_decay_delta: 0.015  # 1.5% decay from entry momentum triggers exit (catches fading momentum more aggressively)
 momentum_decay_consecutive_checks: 2  # Require 2 consecutive monitor cycles showing decay before triggering
 
 # === VWAP ENTRY FILTER ===
