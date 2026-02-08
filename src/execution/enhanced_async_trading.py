@@ -27,7 +27,7 @@ from src.config.config_loader import get_config_bool, get_config_int, get_config
 from src.monitoring.performance_monitor import record_trade_metrics, start_trading_session, end_trading_session
 from src.core.centralized_risk_manager import assess_trade_risk, update_trade_result, is_circuit_breaker_active
 from src.ai.ai_circuit_breaker import circuit_breaker_manager, check_ai_module_health
-from src.monitoring.telegram_bot import send_periodic_status_report
+from src.monitoring.telegram_bot import send_periodic_status_report, send_telegram_message
 from src.execution.multi_chain_executor import _launch_monitor_detached
 from src.ai.ai_market_regime_detector import ai_market_regime_detector
 
@@ -91,6 +91,19 @@ class EnhancedAsyncTradingEngine:
         # Cached AI engine instance for better performance
         self.ai_engine = None
         self._ai_engine_lock = asyncio.Lock()
+        
+        # DEX executor circuit breaker state
+        self._dex_consecutive_failures = 0
+        self._dex_circuit_breaker_until = 0.0  # timestamp when circuit breaker expires
+        self._dex_last_alert_time = 0.0  # avoid alert spam
+        self._dex_failure_threshold = get_config_int("dex_circuit_breaker.failure_threshold", 3)
+        self._dex_cooldown_minutes = get_config_int("dex_circuit_breaker.cooldown_minutes", 15)
+        self._dex_retry_attempts = get_config_int("dex_circuit_breaker.retry_attempts", 2)
+        self._dex_retry_delay_seconds = get_config_float("dex_circuit_breaker.retry_delay_seconds", 3.0)
+        
+        # In-memory duplicate buy guard (belt-and-suspenders alongside open_positions.json check)
+        # Prevents buying the same token twice even if position file save is delayed/fails
+        self._recently_bought_tokens: Dict[str, float] = {}  # address -> timestamp
     
     def _safe_float(self, value, default=0.0) -> float:
         """Safely convert value to float, handling None, strings, and invalid types"""
@@ -863,100 +876,186 @@ class EnhancedAsyncTradingEngine:
     
     async def _execute_real_trade(self, token: Dict, position_size: float, chain: str) -> Dict[str, Any]:
         """
-        Execute real trade using chain-specific executors (no time-window gate)
+        Execute real trade using chain-specific executors with DEX circuit breaker protection.
         """
-        # Directly execute the trade without AI time-window gating
-        return await self._execute_real_trade_internal(token, position_size, chain)
+        symbol = token.get("symbol", "")
+        
+        # DEX circuit breaker check - block trades if executors are persistently failing
+        now = time.time()
+        if now < self._dex_circuit_breaker_until:
+            remaining = int(self._dex_circuit_breaker_until - now)
+            log_warning("trading.dex_circuit_breaker_active",
+                       f"DEX circuit breaker active for {symbol} - {remaining}s remaining "
+                       f"({self._dex_consecutive_failures} consecutive failures)",
+                       symbol=symbol, remaining_seconds=remaining,
+                       consecutive_failures=self._dex_consecutive_failures)
+            return {
+                "success": False,
+                "error": f"DEX circuit breaker active ({remaining}s remaining after {self._dex_consecutive_failures} consecutive failures)",
+                "error_type": "gate",  # Mark as gate so it doesn't count as a trade attempt
+                "profit_loss": 0,
+                "tx_hash": ""
+            }
+        
+        # Execute the trade
+        result = await self._execute_real_trade_internal(token, position_size, chain)
+        
+        # Track DEX executor health
+        if result.get("success", False):
+            if self._dex_consecutive_failures > 0:
+                log_info("trading.dex_recovered",
+                        f"DEX executor recovered after {self._dex_consecutive_failures} consecutive failures",
+                        consecutive_failures=self._dex_consecutive_failures)
+                # Send recovery alert if we previously alerted about failures
+                if self._dex_consecutive_failures >= self._dex_failure_threshold:
+                    send_telegram_message(
+                        f"✅ DEX Executor Recovered\n"
+                        f"Successfully executed trade for {symbol} after "
+                        f"{self._dex_consecutive_failures} consecutive failures.",
+                        message_type="dex_health"
+                    )
+            self._dex_consecutive_failures = 0
+        elif result.get("error_type") != "gate":
+            # Only count actual execution failures, not gate blocks
+            self._dex_consecutive_failures += 1
+            log_warning("trading.dex_failure_tracked",
+                       f"DEX failure #{self._dex_consecutive_failures} for {symbol}: {result.get('error', 'unknown')}",
+                       symbol=symbol, consecutive_failures=self._dex_consecutive_failures,
+                       error=result.get('error', 'unknown'))
+            
+            # Trigger circuit breaker after threshold
+            if self._dex_consecutive_failures >= self._dex_failure_threshold:
+                cooldown_seconds = self._dex_cooldown_minutes * 60
+                self._dex_circuit_breaker_until = time.time() + cooldown_seconds
+                
+                log_error("trading.dex_circuit_breaker_triggered",
+                         f"DEX circuit breaker TRIGGERED after {self._dex_consecutive_failures} consecutive failures. "
+                         f"Pausing DEX execution for {self._dex_cooldown_minutes} minutes.",
+                         consecutive_failures=self._dex_consecutive_failures,
+                         cooldown_minutes=self._dex_cooldown_minutes)
+                
+                # Send Telegram alert (rate-limited: max once per cooldown period)
+                if time.time() - self._dex_last_alert_time > cooldown_seconds:
+                    self._dex_last_alert_time = time.time()
+                    send_telegram_message(
+                        f"🚨 DEX Circuit Breaker Triggered\n\n"
+                        f"• Consecutive failures: {self._dex_consecutive_failures}\n"
+                        f"• Last error: {result.get('error', 'unknown')[:100]}\n"
+                        f"• Cooldown: {self._dex_cooldown_minutes} minutes\n"
+                        f"• Resumes at: {datetime.fromtimestamp(self._dex_circuit_breaker_until).strftime('%H:%M:%S')}\n\n"
+                        f"⚠️ Check Jupiter/Raydium executor health and RPC connectivity.",
+                        message_type="dex_health"
+                    )
+        
+        return result
     
     async def _execute_real_trade_internal(self, token: Dict, position_size: float, chain: str) -> Dict[str, Any]:
-        """Execute real trade using DEX integrations"""
+        """Execute real trade using DEX integrations with retry logic"""
         try:
             symbol = token.get("symbol", "")
             address = token.get("address", "")
+            retry_attempts = self._dex_retry_attempts
+            retry_delay = self._dex_retry_delay_seconds
+            last_error = "unknown"
             
             # Import the appropriate executor based on chain
             if chain.lower() == "solana":
                 from .jupiter_executor import buy_token_solana
                 
-                # Try Jupiter first
-                try:
-                    log_info("trading.jupiter", f"Executing Jupiter trade for {symbol} on Solana")
-                    result = buy_token_solana(address, position_size, symbol, test_mode=False)
+                # Retry loop: try Jupiter then Raydium, with configurable retries
+                for attempt in range(retry_attempts):
+                    if attempt > 0:
+                        log_info("trading.dex_retry", 
+                                f"Retry attempt {attempt + 1}/{retry_attempts} for {symbol} "
+                                f"(waiting {retry_delay}s)",
+                                symbol=symbol, attempt=attempt + 1, max_attempts=retry_attempts)
+                        await asyncio.sleep(retry_delay * attempt)  # Progressive backoff
                     
-                    # Handle both 2-value (legacy) and 3-value return formats
-                    if len(result) == 3:
-                        tx_hash, success, quoted_output_amount = result
-                    elif len(result) == 2:
-                        tx_hash, success = result
-                        quoted_output_amount = None
-                        log_info("trading.jupiter_legacy_return", f"Jupiter returned 2 values for {symbol}, assuming no quoted amount")
-                    else:
-                        log_error("trading.jupiter_error", f"Jupiter returned unexpected number of values for {symbol}: {len(result)}")
-                        raise ValueError(f"Unexpected return format from buy_token_solana: {len(result)} values")
+                    # Try Jupiter first
+                    try:
+                        log_info("trading.jupiter", f"Executing Jupiter trade for {symbol} on Solana" +
+                                (f" (attempt {attempt + 1})" if attempt > 0 else ""))
+                        result = buy_token_solana(address, position_size, symbol, test_mode=False)
+                        
+                        # Handle both 2-value (legacy) and 3-value return formats
+                        if len(result) == 3:
+                            tx_hash, success, quoted_output_amount = result
+                        elif len(result) == 2:
+                            tx_hash, success = result
+                            quoted_output_amount = None
+                            log_info("trading.jupiter_legacy_return", f"Jupiter returned 2 values for {symbol}, assuming no quoted amount")
+                        else:
+                            log_error("trading.jupiter_error", f"Jupiter returned unexpected number of values for {symbol}: {len(result)}")
+                            raise ValueError(f"Unexpected return format from buy_token_solana: {len(result)} values")
+                        
+                        if success and tx_hash:
+                            # Analyze transaction to get actual execution details including slippage
+                            buy_fee_data = await self._analyze_buy_transaction(tx_hash, chain, "jupiter", quoted_output_amount)
+                            
+                            # At entry time, P&L is 0.0 - will be calculated when position is closed
+                            profit_loss = 0.0  # No profit/loss until position is closed
+                            
+                            trade_result = {
+                                "success": True,
+                                "profit_loss": profit_loss,
+                                "tx_hash": tx_hash,
+                                "dex": "jupiter",
+                                "fee_data": buy_fee_data
+                            }
+                            
+                            # Include actual slippage in trade result for metrics
+                            if 'actual_slippage' in buy_fee_data:
+                                trade_result['slippage'] = buy_fee_data['actual_slippage']
+                            
+                            return trade_result
+                        elif not success:
+                            # Log detailed error for Jupiter failures
+                            error_msg = tx_hash if isinstance(tx_hash, str) and not tx_hash.startswith("0x") and tx_hash else "Jupiter returned unsuccessful"
+                            last_error = f"Jupiter: {error_msg}"
+                            log_error("trading.jupiter_error", f"Jupiter execution failed for {symbol}: {error_msg}")
+                    except ValueError as ve:
+                        last_error = f"Jupiter ValueError: {ve}"
+                        log_error("trading.jupiter_error", f"Jupiter execution value error for {symbol}: {ve}")
+                    except Exception as e:
+                        error_str = str(e)
+                        last_error = f"Jupiter exception: {error_str[:200]}"
+                        log_error("trading.jupiter_error", f"Jupiter execution exception for {symbol}: {error_str}")
+                        
+                        if "not enough values to unpack" in error_str.lower():
+                            log_error("trading.jupiter_unpack_error", 
+                                    f"Jupiter return value unpacking error for {symbol}. "
+                                    f"This may indicate the transaction actually succeeded but return format was unexpected. "
+                                    f"Please verify transaction on-chain manually.")
                     
-                    if success and tx_hash:
-                        # Analyze transaction to get actual execution details including slippage
-                        buy_fee_data = await self._analyze_buy_transaction(tx_hash, chain, "jupiter", quoted_output_amount)
+                    # Try Raydium fallback
+                    try:
+                        from .raydium_executor import RaydiumExecutor
                         
-                        # At entry time, P&L is 0.0 - will be calculated when position is closed
-                        # Real P&L = (exit_price - entry_price) / entry_price * position_size
-                        profit_loss = 0.0  # No profit/loss until position is closed
-                        
-                        trade_result = {
-                            "success": True,
-                            "profit_loss": profit_loss,
-                            "tx_hash": tx_hash,
-                            "dex": "jupiter",
-                            "fee_data": buy_fee_data
-                        }
-                        
-                        # Include actual slippage in trade result for metrics
-                        if 'actual_slippage' in buy_fee_data:
-                            trade_result['slippage'] = buy_fee_data['actual_slippage']
-                        
-                        return trade_result
-                    elif not success:
-                        # Log detailed error for Jupiter failures
-                        error_msg = tx_hash if isinstance(tx_hash, str) and not tx_hash.startswith("0x") and tx_hash else "Jupiter returned unsuccessful"
-                        log_error("trading.jupiter_error", f"Jupiter execution failed for {symbol}: {error_msg}")
-                except ValueError as ve:
-                    # Handle unpacking/value errors specifically
-                    log_error("trading.jupiter_error", f"Jupiter execution value error for {symbol}: {ve}")
-                except Exception as e:
-                    # For other exceptions, check if transaction might have actually succeeded
-                    error_str = str(e)
-                    log_error("trading.jupiter_error", f"Jupiter execution exception for {symbol}: {error_str}")
-                    
-                    # If the error mentions a transaction hash, try to verify it succeeded
-                    if "not enough values to unpack" in error_str.lower():
-                        log_error("trading.jupiter_unpack_error", 
-                                f"Jupiter return value unpacking error for {symbol}. "
-                                f"This may indicate the transaction actually succeeded but return format was unexpected. "
-                                f"Please verify transaction on-chain manually.")
+                        log_info("trading.raydium", f"Executing Raydium trade for {symbol} on Solana" +
+                                (f" (attempt {attempt + 1})" if attempt > 0 else ""))
+                        raydium = RaydiumExecutor()
+                        success, tx_hash = raydium.execute_trade(address, position_size, is_buy=True)
+                        if success and tx_hash:
+                            buy_fee_data = await self._analyze_buy_transaction(tx_hash, chain, "raydium", None)
+                            
+                            profit_loss = 0.0  # No profit/loss until position is closed
+                            return {
+                                "success": True,
+                                "profit_loss": profit_loss,
+                                "tx_hash": tx_hash,
+                                "dex": "raydium",
+                                "fee_data": buy_fee_data
+                            }
+                        else:
+                            last_error = f"Raydium: trade unsuccessful"
+                    except Exception as e:
+                        last_error = f"Raydium: {str(e)[:200]}"
+                        log_error("trading.raydium_error", f"Raydium execution failed: {e}")
                 
-                # Try Raydium fallback
-                try:
-                    from .raydium_executor import RaydiumExecutor
-                    
-                    log_info("trading.raydium", f"Executing Raydium trade for {symbol} on Solana")
-                    raydium = RaydiumExecutor()
-                    success, tx_hash = raydium.execute_trade(address, position_size, is_buy=True)
-                    if success and tx_hash:
-                        # Analyze transaction to get actual execution details
-                        # Note: Raydium doesn't return quoted amount yet, so slippage won't be calculated
-                        buy_fee_data = await self._analyze_buy_transaction(tx_hash, chain, "raydium", None)
-                        
-                        # At entry time, P&L is 0.0 - will be calculated when position is closed
-                        profit_loss = 0.0  # No profit/loss until position is closed
-                        return {
-                            "success": True,
-                            "profit_loss": profit_loss,
-                            "tx_hash": tx_hash,
-                            "dex": "raydium",
-                            "fee_data": buy_fee_data
-                        }
-                except Exception as e:
-                    log_error("trading.raydium_error", f"Raydium execution failed: {e}")
+                # All retry attempts exhausted for Solana
+                log_error("trading.dex_all_retries_exhausted",
+                         f"All {retry_attempts} DEX retry attempts exhausted for {symbol}. Last error: {last_error}",
+                         symbol=symbol, retry_attempts=retry_attempts, last_error=last_error)
                     
             elif chain.lower() in ["ethereum", "base", "arbitrum", "polygon"]:
                 from .uniswap_executor import buy_token
@@ -2062,6 +2161,29 @@ class EnhancedAsyncTradingEngine:
                 current_position_size = 0.0
                 existing_entry_price = 0.0
                 
+                # In-memory duplicate buy guard (fast check before file I/O)
+                # Prevents buying same token twice if position save was delayed
+                address_lower = (address or "").lower().strip()
+                if address_lower and address_lower in self._recently_bought_tokens:
+                    bought_at = self._recently_bought_tokens[address_lower]
+                    elapsed = time.time() - bought_at
+                    # Guard active for 10 minutes (enough time for position to be saved to file)
+                    if elapsed < 600:
+                        log_warning("trading.duplicate_buy_guard",
+                                   f"In-memory duplicate guard blocked {symbol} - "
+                                   f"already bought {elapsed:.0f}s ago",
+                                   symbol=symbol, elapsed_seconds=elapsed)
+                        return {
+                            "success": False,
+                            "symbol": symbol,
+                            "error": f"Duplicate buy guard: {symbol} bought {elapsed:.0f}s ago",
+                            "error_type": "gate",
+                            "chain": chain
+                        }
+                    else:
+                        # Expired - remove from guard
+                        del self._recently_bought_tokens[address_lower]
+                
                 # Pre-trade wallet/limits gate - check balance and position limits
                 try:
                     from src.core.risk_manager import allow_new_trade
@@ -2165,6 +2287,10 @@ class EnhancedAsyncTradingEngine:
                     profit_loss = trade_result.get("profit_loss", 0)
                     tx_hash = trade_result.get("tx_hash", "")
                     execution_time = (time.time() - start_time) * 1000
+                    
+                    # Register in in-memory duplicate guard IMMEDIATELY (before any I/O)
+                    if address_lower and not is_adding_to_position:
+                        self._recently_bought_tokens[address_lower] = time.time()
                     
                     log_trade("buy", symbol, trade_amount, True, profit_loss, execution_time)
                     log_info("trading.success", f"✅ Real trade successful: {symbol} - PnL: ${profit_loss:.2f} - TX: {tx_hash}")

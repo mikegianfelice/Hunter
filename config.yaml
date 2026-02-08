@@ -220,6 +220,14 @@ min_wallet_balance_buffer: 0.02  # Reduced buffer for limited capital
 max_position_duration_hours: 72  # Auto-close positions older than 72 hours (3 days) to free capital for new opportunities
 enable_max_position_duration: true  # Enable automatic closing of stale positions
 
+# === DEX Executor Circuit Breaker ===
+# Prevents wasting cycles when Jupiter/Raydium are broken (e.g. RPC issues, auth errors)
+dex_circuit_breaker:
+  failure_threshold: 3       # Trigger circuit breaker after 3 consecutive DEX failures
+  cooldown_minutes: 15       # Pause DEX execution for 15 minutes after circuit breaker triggers
+  retry_attempts: 2          # Retry each DEX (Jupiter then Raydium) up to 2 times per trade with backoff
+  retry_delay_seconds: 3.0   # Base delay between retries (progressive: 3s, 6s)
+
 # === Reconciliation Settings ===
 enable_helius_reconciliation: true  # Periodically sync Solana positions using Helius
 helius_reconciliation_interval_minutes: 20  # How often to run reconciliation
