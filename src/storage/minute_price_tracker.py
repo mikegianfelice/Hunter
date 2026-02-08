@@ -13,31 +13,27 @@ _LOCK = threading.Lock()
 PIPPIN_ADDRESS = "Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump"  # Correct Pippin token address
 FARTCOIN_ADDRESS = "9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump"
 USOR_ADDRESS = "USoRyaQjch6E18nCdDvWoRgTo6osQs9MUd8JXEsspWR"
-ONE_ADDRESS = "GMvCfcZg8YvkkQmwDaAzCtHDrrEtgE74nQpQ7xNabonk"
 USELESS_ADDRESS = "Dz9mQ9NzkBcCsuGPFJ3r1bS4wgqKMHBPiVuniW8Mbonk"
 AVICI_ADDRESS = "BANKJmvhT8tiJRsBSS1n2HryMBPvT5Ze4HU95DUAmeta"
-GME_ADDRESS = "8wXtPeU6557ETkp9WHFY1n1EcU6NxDvbAggHGsMYiHsB"
 GIGA_ADDRESS = "63LfDmNb3MQ8mw9MtZ2To9bEA2M71kZUUGq5tiJxcqj9"
 DREAMS_ADDRESS = "GMzuntWYJLpNuCizrSR7ZXggiMdDzTNiEmSNHHunpump"
 AURA_ADDRESS = "DtR4D9FtVoTX2569gaL837ZgrB6wNjj6tkmnX9Rdk9B2"
 POPCAT_ADDRESS = "7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr"
-JITOSOL_ADDRESS = "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn"
 SKR_ADDRESS = "SKRbvo6Gf7GondiT3BbTfuRDPqLWei4j2Qy2NPGZhW3"
+WAR_ADDRESS = "8opvqaWysX1oYbXuTL8PHaoaTiXD69VFYAX4smPebonk"
 
 TRACKED_TOKENS = {
     "pippin": PIPPIN_ADDRESS,
     "fartcoin": FARTCOIN_ADDRESS,
     "usor": USOR_ADDRESS,
-    "one": ONE_ADDRESS,
     "useless": USELESS_ADDRESS,
     "avici": AVICI_ADDRESS,
-    "gme": GME_ADDRESS,
     "giga": GIGA_ADDRESS,
     "dreams": DREAMS_ADDRESS,
     "aura": AURA_ADDRESS,
     "popcat": POPCAT_ADDRESS,
-    "jitosol": JITOSOL_ADDRESS,
     "skr": SKR_ADDRESS,
+    "war": WAR_ADDRESS,
 }
 
 # 5-minute interval (300 seconds)
