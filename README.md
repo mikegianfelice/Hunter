@@ -6,18 +6,6 @@ Hunter is a quant level crypto trading bot executing real on-chain trades with l
 
 **Cryptocurrency trading involves significant risk of loss. Never invest more than you can afford to lose. The developers are not responsible for any financial losses incurred from using this bot.**
 
-## 📊 Live Performance
-
-![30-Day Performance](docs/performance_chart.png)
-
-*Performance charts updated daily. Past performance does not guarantee future results.*
-
-**More Stats:**
-- [90-Day Performance](docs/performance_90d.png)
-- [180-Day Performance](docs/performance_180d.png)
-
----
-
 ## 🔄 How It Works
 
 ### **1. Token Selection** 🔍
