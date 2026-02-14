@@ -257,6 +257,7 @@ data/token_balance_cache.json
 data/api_call_tracker.json
 data/candlestick_cache.json
 data/helius_wallet_value_cache.json
+data/token_trade_state.json
 performance_data.json
 data/performance_data.json
 
