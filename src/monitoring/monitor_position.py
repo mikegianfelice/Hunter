@@ -34,6 +34,11 @@ from src.storage.performance import load_performance_data, replace_performance_d
 from src.storage.delist import load_delisted_state, save_delisted_state
 from src.monitoring.structured_logger import log_info
 
+
+class _SkipPartialTP(Exception):
+    """Sentinel: skip the AI Partial TP block without running any logic."""
+    pass
+
 # Dynamic config loading
 def get_monitor_config():
     """Get current configuration values dynamically"""
@@ -60,7 +65,57 @@ def get_monitor_config():
         'structure_lookback_candles': get_config_int("structure_lookback_candles", 20),
         'structure_recent_prices_window': get_config_int("structure_recent_prices_window", 10),
         'stop_loss_slippage_buffer': get_config_float("stop_loss_slippage_buffer", 0.15),
+        # --- Soft exit profit floors ---
+        'soft_exit_min_profit': get_config_float("soft_exit_min_profit", 0.05),
+        'momentum_decay_min_profit': get_config_float("momentum_decay_min_profit", 0.05),
+        'structure_failure_min_profit': get_config_float("structure_failure_min_profit", 0.05),
+        # --- AI Partial TP gating ---
+        'ENABLE_AI_PARTIAL_TP': get_config_bool("enable_ai_partial_tp_manager", False),
+        'ai_partial_tp_min_profit': get_config_float("ai_partial_tp_min_profit", 0.10),
+        # --- Price health failsafe ---
+        'max_price_staleness_seconds': get_config_int("max_price_staleness_seconds", 45),
+        'invalid_price_exit_enabled': get_config_bool("invalid_price_exit_enabled", True),
+        'invalid_price_exit_grace_seconds': get_config_int("invalid_price_exit_grace_seconds", 120),
+        'invalid_price_action': get_config("invalid_price_action", "defensive_exit"),
     }
+
+
+# ---------------------------------------------------------------------------
+# Soft-exit profit floor helper
+# ---------------------------------------------------------------------------
+def _soft_exit_gated(gain: float, exit_name: str, per_exit_key: str, config: dict) -> bool:
+    """
+    Return True if the soft exit is ALLOWED (gain exceeds its profit floor).
+    Return False (gated) if gain is below the floor — logs once per call.
+
+    Uses the *higher* of (global soft_exit_min_profit, per-exit min_profit).
+    """
+    global_floor = config.get('soft_exit_min_profit', 0.05)
+    per_exit_floor = config.get(per_exit_key, global_floor)
+    effective_floor = max(global_floor, per_exit_floor)
+
+    if gain < effective_floor:
+        log_info(
+            "monitor.soft_exit_gated",
+            f"🚫 {exit_name} GATED: gain={gain*100:.2f}% < floor={effective_floor*100:.1f}%",
+            context={
+                "exit_name": exit_name,
+                "gain_pct": round(gain * 100, 2),
+                "floor_pct": round(effective_floor * 100, 1),
+                "global_floor": global_floor,
+                "per_exit_floor": per_exit_floor,
+            },
+        )
+        return False
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Price-health per-position tracker (in-memory, ephemeral)
+# ---------------------------------------------------------------------------
+# Maps position_key -> {"last_valid_price": float, "last_valid_ts": float,
+#                        "invalid_since": float | None}
+_price_health: Dict[str, dict] = {}
 
 # Use absolute paths based on project root
 _project_root = Path(__file__).resolve().parents[2]
@@ -236,6 +291,7 @@ def _cleanup_closed_position(position_key: str, token_address: str, chain_id: st
     3. performance_data.json (mark trade as closed)
     4. Partial TP manager state (clear tracking state)
     5. Balance cache (invalidate stale cache)
+    6. Price health cache (remove entry)
     
     Returns True if cleanup succeeded, False otherwise.
     """
@@ -325,6 +381,9 @@ def _cleanup_closed_position(position_key: str, token_address: str, chain_id: st
                 replace_performance_data(perf_data)
         except Exception as e:
             print(f"⚠️ Error updating performance_data.json: {e}")
+        
+        # Clean up price health cache
+        _price_health.pop(position_key, None)
         
         return removed
             
@@ -444,10 +503,12 @@ def _normalize_exit_reason(reason: str) -> str:
         return "error"  # Unknown reason
 
 def _log_trade_exit(token_address: str, symbol: str, entry_price: float, exit_price: float, 
-                    reason: str, position_data: dict = None, tx_hash: str = None):
+                    reason: str, position_data: dict = None, tx_hash: str = None,
+                    chain_id: str = None, pnl_usd: float = None):
     """
     Enhanced trade exit logging with canonical reason, MFE/MAE, and holding time.
     This is the canonical exit logging function - all exits should use this.
+    Also records the trade close in token_trade_state for cooldown/blacklist.
     """
     # Compute MFE/MAE from position data
     mfe_pct, mae_pct = _compute_mfe_mae(position_data, entry_price, exit_price) if position_data else (None, None)
@@ -463,6 +524,23 @@ def _log_trade_exit(token_address: str, symbol: str, entry_price: float, exit_pr
     log_trade(token_address, entry_price, exit_price, reason,
               entry_time=entry_time, exit_time=exit_time, tx_hash=tx_hash,
               mfe_pct=mfe_pct, mae_pct=mae_pct, holding_time_sec=holding_time_sec)
+
+    # --- Record trade close for cooldown/blacklist tracking ---
+    try:
+        _chain = chain_id or (position_data.get("chain_id") if position_data else None) or "solana"
+        # Estimate PnL if not provided
+        if pnl_usd is None and entry_price > 0:
+            gain_pct = (exit_price - entry_price) / entry_price
+            pos_size = (position_data.get("position_size_usd", 0) if position_data else 0) or 0
+            pnl_usd = gain_pct * pos_size if pos_size else (exit_price - entry_price)
+        from src.utils.token_trade_state import record_trade_close
+        record_trade_close(token_address, _chain, pnl_usd or 0.0)
+        log_info("monitor.trade_state_recorded",
+                 f"📝 Trade state recorded: {symbol} chain={_chain} pnl=${pnl_usd or 0:.2f} reason={reason}",
+                 context={"token": token_address, "chain_id": _chain,
+                          "pnl_usd": round(pnl_usd or 0, 4), "reason": reason})
+    except Exception as e:
+        print(f"⚠️ Failed to record trade state for cooldown/blacklist: {e}")
 
 def log_trade(token, entry_price, exit_price, reason="normal", 
               entry_time=None, exit_time=None, tx_hash=None, 
@@ -1660,6 +1738,29 @@ def monitor_all_positions():
         # Fetch current price using multi-chain function
         current_price = _fetch_token_price_multi_chain(token_address)
 
+        # --- Price health tracking ---
+        import math as _math
+        _ph = _price_health.setdefault(position_key, {
+            "last_valid_price": 0.0,
+            "last_valid_ts": 0.0,
+            "invalid_since": None,
+        })
+        _price_is_valid = (
+            current_price is not None
+            and isinstance(current_price, (int, float))
+            and not _math.isnan(current_price)
+            and current_price > 0
+            and abs(current_price - 0.000001) > 1e-9  # reject sentinel fallback
+        )
+        _now_ts = time.time()
+        if _price_is_valid:
+            _ph["last_valid_price"] = current_price
+            _ph["last_valid_ts"] = _now_ts
+            _ph["invalid_since"] = None
+        else:
+            if _ph["invalid_since"] is None:
+                _ph["invalid_since"] = _now_ts
+
         # Track price fetch failures
         if current_price == 0:
             # CRITICAL: For open positions, verify balance BEFORE incrementing failures
@@ -1818,7 +1919,57 @@ def monitor_all_positions():
                 position_key, symbol, token_address, chain_id,
                 "price fallback (all APIs failed)",
             )
-            continue
+            # Fall through to price-health failsafe below (do NOT continue)
+
+        # --- Price health failsafe ---
+        # If price has been invalid for longer than grace period, trigger defensive exit.
+        if not _price_is_valid:
+            _grace = config.get('invalid_price_exit_grace_seconds', 120)
+            _inv_since = _ph.get("invalid_since")
+            _elapsed = (_now_ts - _inv_since) if _inv_since else 0
+            _last_good = _ph.get("last_valid_price", 0)
+            _last_good_age = _now_ts - _ph.get("last_valid_ts", 0)
+
+            if _inv_since and _elapsed >= _grace and config.get('invalid_price_exit_enabled', True):
+                _action = config.get('invalid_price_action', 'defensive_exit')
+                log_info("monitor.price_health_failsafe",
+                         f"🚨 PRICE_INVALID_FAILSAFE: {symbol} invalid for {_elapsed:.0f}s "
+                         f"(grace={_grace}s, action={_action}, last_valid=${_last_good:.6f} {_last_good_age:.0f}s ago)",
+                         context={"token": token_address, "chain_id": chain_id,
+                                  "invalid_seconds": round(_elapsed), "grace": _grace,
+                                  "action": _action, "last_valid_price": _last_good})
+                if _action == "defensive_exit":
+                    print(f"🚨 [PRICE_INVALID_FAILSAFE] Defensive exit for {symbol} — price invalid {_elapsed:.0f}s")
+                    tx = _sell_token_multi_chain(token_address, chain_id, symbol)
+                    if tx:
+                        _exit_price = _last_good if _last_good > 0 else entry_price
+                        _log_trade_exit(token_address, symbol, entry_price, _exit_price,
+                                        "PRICE_INVALID_FAILSAFE",
+                                        position_data=position_data if isinstance(position_data, dict) else None,
+                                        tx_hash=tx, chain_id=chain_id)
+                        trade = _find_open_trade_by_address(token_address, chain_id)
+                        if trade:
+                            _gain_est = (_exit_price - entry_price) / entry_price if entry_price > 0 else 0
+                            _pnl_est = _gain_est * trade.get('position_size_usd', 0)
+                            from src.core.performance_tracker import performance_tracker
+                            performance_tracker.log_trade_exit(trade['id'], _exit_price, _pnl_est, "PRICE_INVALID_FAILSAFE")
+                        _cleanup_closed_position(position_key, token_address, chain_id)
+                        send_telegram_message(
+                            f"🚨 PRICE_INVALID_FAILSAFE!\n"
+                            f"Token: {symbol} ({token_address[:8]}...)\n"
+                            f"Chain: {chain_id.upper()}\n"
+                            f"Price invalid for {_elapsed:.0f}s\n"
+                            f"Last valid: ${_last_good:.6f}\n"
+                            f"TX: {tx}"
+                        )
+                        closed_positions.append(position_key)
+                        updated_positions.pop(position_key, None)
+                    else:
+                        print(f"❌ [PRICE_INVALID_FAILSAFE] Sell failed for {symbol}, will retry next cycle")
+                else:
+                    # pause_monitoring mode — just log, skip all TP/SL checks
+                    print(f"⏸️ [PRICE_HEALTH] Pausing monitoring for {symbol} (price invalid {_elapsed:.0f}s)")
+            continue  # skip remaining checks this cycle (price unreliable)
 
         timestamp = _dt.now().strftime("%Y-%m-%d %H:%M:%S")
         print(f"[{timestamp}] 📈 Current price: ${current_price:.6f}")
@@ -1878,7 +2029,18 @@ def monitor_all_positions():
 
         # AI Partial Take-Profit Manager
         partial_tp_handled_stop_loss = False  # Flag to track if Partial TP Manager already handled stop loss
+        _ai_ptp_enabled = config.get('ENABLE_AI_PARTIAL_TP', False)
+        _ai_ptp_min_profit = config.get('ai_partial_tp_min_profit', 0.10)
+        if not _ai_ptp_enabled:
+            log_info("monitor.ai_partial_tp_disabled",
+                     f"⏭️ AI Partial TP Manager disabled by config for {symbol}")
+        elif gain < _ai_ptp_min_profit:
+            log_info("monitor.ai_partial_tp_gated",
+                     f"🚫 AI Partial TP GATED for {symbol}: gain={gain*100:.2f}% < floor={_ai_ptp_min_profit*100:.1f}%",
+                     context={"gain_pct": round(gain*100,2), "floor_pct": round(_ai_ptp_min_profit*100,1), "symbol": symbol})
         try:
+            if not _ai_ptp_enabled or gain < _ai_ptp_min_profit:
+                raise _SkipPartialTP()  # jump to except → no-op
             from src.ai.ai_partial_take_profit_manager import get_partial_tp_manager
             partial_tp_manager = get_partial_tp_manager()
             
@@ -2367,20 +2529,26 @@ def monitor_all_positions():
                     print(f"📊 [PARTIAL TP] Moving stop to ${action.new_stop_price:.6f} ({action.reason})")
                     trail_state[f"{token_address}_peak"] = current_price
                     trail_state[f"{token_address}_stop"] = action.new_stop_price
+        except _SkipPartialTP:
+            pass  # AI partial TP disabled or gated by profit floor
         except Exception as e:
             print(f"⚠️ Partial TP manager error: {e}")
             import traceback
             traceback.print_exc()
 
         # Technical Indicator-Based Exit Signals
-        technical_exit_reason = _check_technical_exit_signals(
-            position_dict if isinstance(position_data, dict) else {},
-            current_price,
-            gain,
-            token_address,
-            chain_id,
-            config
-        )
+        # Gate: skip entirely if disabled OR if gain below profit floor
+        technical_exit_reason = None
+        if get_config_bool("enable_technical_exit_signals", False) and \
+                _soft_exit_gated(gain, "technical_exit", "technical_exit_min_profit_for_signal", config):
+            technical_exit_reason = _check_technical_exit_signals(
+                position_dict if isinstance(position_data, dict) else {},
+                current_price,
+                gain,
+                token_address,
+                chain_id,
+                config
+            )
         
         if technical_exit_reason:
             print(f"📊 [TECHNICAL EXIT] Signal detected: {technical_exit_reason}")
@@ -2491,15 +2659,17 @@ def monitor_all_positions():
             else:
                 print(f"❌ [TECHNICAL EXIT] Sell failed, will retry on next cycle")
 
-        # Volume Deterioration Check
-        volume_exit_reason = _check_volume_deterioration(
-            position_data if isinstance(position_data, dict) else {},
-            current_price,
-            gain,
-            token_address,
-            chain_id,
-            config
-        )
+        # Volume Deterioration Check (soft exit — gated by profit floor)
+        volume_exit_reason = None
+        if _soft_exit_gated(gain, "volume_deterioration", "volume_deterioration_min_profit", config):
+            volume_exit_reason = _check_volume_deterioration(
+                position_data if isinstance(position_data, dict) else {},
+                current_price,
+                gain,
+                token_address,
+                chain_id,
+                config
+            )
         
         if volume_exit_reason:
             print(f"📉 [VOLUME EXIT] Volume deteriorated: {volume_exit_reason}")
@@ -2793,8 +2963,10 @@ def monitor_all_positions():
             continue  # move to next token
 
         # UPGRADE #1: Momentum Decay Exit (strategy integrity - before stop-loss)
+        # Soft exit — gated by profit floor
         momentum_decay_exit_reason = None
-        if config.get('ENABLE_MOMENTUM_DECAY_EXIT', True) and isinstance(position_data, dict):
+        if config.get('ENABLE_MOMENTUM_DECAY_EXIT', True) and isinstance(position_data, dict) \
+                and _soft_exit_gated(gain, "momentum_decay", "momentum_decay_min_profit", config):
             try:
                 entry_momentum_score = position_data.get("entry_momentum_score")
                 entry_momentum_source = position_data.get("entry_momentum_source")
@@ -2950,8 +3122,10 @@ def monitor_all_positions():
                 traceback.print_exc()
 
         # UPGRADE #4: Structure Failure Exit (strategy integrity - before stop-loss)
+        # Soft exit — gated by profit floor
         structure_failure_exit_reason = None
-        if config.get('ENABLE_STRUCTURE_FAILURE_EXIT', True) and isinstance(position_data, dict):
+        if config.get('ENABLE_STRUCTURE_FAILURE_EXIT', True) and isinstance(position_data, dict) \
+                and _soft_exit_gated(gain, "structure_failure", "structure_failure_min_profit", config):
             try:
                 # Check minimum position age
                 position_timestamp = position_data.get("timestamp")

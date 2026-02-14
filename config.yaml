@@ -363,23 +363,42 @@ requote_slippage_buffer: 0.005
 trailing_stop_percent: 0.05  # 5% trailing stop (activate earlier to lock in profits)
 
 # === Technical Indicator Exit Settings ===
-enable_technical_exit_signals: true  # Enable technical indicator-based exits
+enable_technical_exit_signals: false  # DISABLED: RSI/MACD/BB exits premature for memecoins (see soft_exit_min_profit)
 technical_exit_rsi_overbought: 70  # RSI threshold for overbought exit
 technical_exit_rsi_oversold: 30  # RSI threshold for oversold exit (only if in loss)
 technical_exit_macd_bearish: true  # Exit on MACD bearish crossover
 technical_exit_bollinger_upper: 0.85  # Exit if price at 85% of Bollinger upper band
 technical_exit_vwap_below: true  # Exit if price below VWAP + declining volume
-technical_exit_min_profit_for_signal: 0.02  # Minimum 2% profit before technical exit triggers
+technical_exit_min_profit_for_signal: 0.05  # 5% profit floor before technical exit triggers (was 2%)
 technical_exit_require_profit: true  # Only trigger technical exits if position is profitable
 
 # === Volume Deterioration Exit Settings ===
 enable_volume_deterioration_exit: true  # Enable volume deterioration exit
 volume_deterioration_threshold: 0.50  # Exit if volume drops 50% from entry average
-volume_deterioration_min_profit: 0.01  # Minimum 1% profit before volume exit triggers
+volume_deterioration_min_profit: 0.05  # 5% profit floor before volume exit triggers (was 1%)
 volume_deterioration_require_profit: true  # Only trigger if position is profitable
 volume_deterioration_lookback_hours: 24  # Compare current volume to last 24h average
 volume_deterioration_confirmations: 2  # Require 2 consecutive checks (1 minute) before triggering
 volume_cache_duration_seconds: 300  # Cache volume data for 5 minutes (same as candlestick cache)
+
+# === Soft Exit Global Profit Floor ===
+# All "soft exits" (technical, volume, momentum decay, structure failure) are gated by a minimum profit.
+# The per-exit min_profit overrides this if higher; this is the global minimum.
+soft_exit_min_profit: 0.05  # 5% profit floor for any soft exit (prevents premature winner-cutting)
+
+# === Token Cooldown & Blacklist (Anti Revenge-Trading) ===
+# Prevents the bot from repeatedly re-trading the same losing token.
+token_cooldown_minutes: 240            # 4 hours cooldown after any trade close (buy or sell)
+blacklist_after_consecutive_losses: 2  # Blacklist token after N consecutive losses
+blacklist_hours: 24                    # Duration of blacklist (hours)
+max_trades_per_token_per_day: 3        # Max trades on same token per rolling 24h window
+
+# === Price Health & Stop-Loss Failsafe ===
+# Detects stale/invalid prices and triggers a defensive exit if the bot loses price visibility.
+max_price_staleness_seconds: 45        # Price older than this is considered stale
+invalid_price_exit_enabled: true       # Enable defensive exit when price is invalid for too long
+invalid_price_exit_grace_seconds: 120  # Grace period before defensive exit fires (seconds)
+invalid_price_action: "defensive_exit" # "defensive_exit" (market sell) or "pause_monitoring" (log & hold)
 
 # === Price Memory ===
 price_memory_ttl_minutes: 15
@@ -1816,7 +1835,8 @@ partial_fill_retry:
 
 # === AI PARTIAL TAKE PROFIT MANAGER ===
 # Enable AI-powered partial take-profit management
-enable_ai_partial_tp_manager: true  # Enable partial TP manager
+enable_ai_partial_tp_manager: false  # DISABLED: partial sells cut winners short on memecoins
+ai_partial_tp_min_profit: 0.10  # If enabled, don't partial-sell before +10% gain
 partial_tp_manager:
   first_take_pct: 0.50  # Take 50% at first TP trigger
   first_take_trigger_pct: 0.05  # Trigger at +5% gain (was 6% - activate earlier to lock in profits)
@@ -1832,6 +1852,7 @@ enable_momentum_decay_exit: true  # Enable momentum decay exit
 momentum_decay_threshold: 0.01  # 1.0% absolute minimum momentum (exit if current momentum drops below entry-grade quality)
 momentum_decay_delta: 0.015  # 1.5% decay from entry momentum triggers exit (catches fading momentum more aggressively)
 momentum_decay_consecutive_checks: 2  # Require 2 consecutive monitor cycles showing decay before triggering
+momentum_decay_min_profit: 0.05  # 5% profit floor: momentum decay exit only fires when profitable enough
 
 # === VWAP ENTRY FILTER ===
 # Filter entries to only buy above VWAP (momentum strength requirement)
@@ -1855,6 +1876,7 @@ structure_failure_min_age_seconds: 300  # 5 minutes minimum position age before 
 structure_break_threshold: 0.02  # 2% break below support/swing low triggers exit
 structure_lookback_candles: 20  # Lookback window for swing low detection (20 candles = 5 hours for 15m candles)
 structure_recent_prices_window: 10  # Number of recent prices to track when candles unavailable (fallback method)
+structure_failure_min_profit: 0.05  # 5% profit floor: structure failure exit only fires when profitable enough
 
 # === AI TIME WINDOW SCHEDULER ===
 # Enable AI-powered time window scheduling for optimal entry timing

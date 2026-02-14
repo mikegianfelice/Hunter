@@ -1752,6 +1752,29 @@ def check_buy_signal(token: dict) -> bool:
         )
         return False
 
+    # --- Token cooldown / blacklist / daily cap gate ---
+    try:
+        from src.utils.token_trade_state import is_token_allowed
+        allowed, reason = is_token_allowed(raw_address, chain_id)
+        if not allowed:
+            _log_trace(
+                f"🚫 Token blocked by trade-state: {reason}",
+                level="info",
+                event="strategy.buy.token_trade_state_blocked",
+                symbol=token.get("symbol"),
+                address=address[:12],
+                chain_id=chain_id,
+                reason=reason,
+            )
+            return False
+    except Exception as e:
+        _log_trace(
+            f"⚠️ token_trade_state check failed (allowing): {e}",
+            level="warning",
+            event="strategy.buy.token_trade_state_error",
+            error=str(e),
+        )
+
     # CRITICAL: Require validated candles before trade entry (required for technical checks)
     # Candles must be fetched and validated to ensure VWAP and other technical indicators are available
     if not token.get('candles_validated') or not token.get('candles_15m'):
