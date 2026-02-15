@@ -814,13 +814,43 @@ def reconcile_wallet_with_positions(
                 symbol = holding.get("symbol", "UNKNOWN")
                 chain_id = holding.get("chain_id", "solana")
                 
-                # Check if this token is already tracked
+                # Check if this token is already tracked in open_positions
                 already_tracked = False
                 for position_key, position_data in open_positions.items():
                     pos_address = resolve_token_address(position_key, position_data).lower()
                     if pos_address == token_address_lower:
                         already_tracked = True
                         break
+                
+                # Also check performance_data.trades for existing open trades
+                # This prevents the remove-then-rediscover loop that creates
+                # phantom positions: Step 1 removes from open_positions,
+                # Step 2 re-discovers and appends a NEW trade with current price
+                # as a fake entry price.
+                if not already_tracked:
+                    for t in trades:
+                        if (t.get("status", "").lower() == "open"
+                                and (t.get("address") or "").lower() == token_address_lower
+                                and (t.get("chain") or "").lower() == chain_id.lower()):
+                            already_tracked = True
+                            # Re-add to open_positions so it's tracked again,
+                            # but do NOT create a new trade in performance_data
+                            existing_trade_id = t.get("id", "")
+                            existing_entry_price = t.get("entry_price", price_usd)
+                            existing_position_size = t.get("position_size_usd", balance * price_usd if price_usd > 0 else 0.0)
+                            existing_entry_time = t.get("entry_time", "")
+                            rekey = create_position_key(token_address)
+                            open_positions[rekey] = {
+                                "entry_price": existing_entry_price,
+                                "chain_id": chain_id,
+                                "symbol": symbol,
+                                "address": token_address,
+                                "timestamp": existing_entry_time,
+                                "position_size_usd": existing_position_size,
+                                "trade_id": existing_trade_id,
+                            }
+                            print(f"🔄 Re-linked existing trade to open_positions: {symbol} ({token_address[:8]}...{token_address[-8:]}) - trade_id: {existing_trade_id}")
+                            break
                 
                 if not already_tracked:
                     # New position discovered - add it

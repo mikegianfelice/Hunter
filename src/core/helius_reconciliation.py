@@ -99,6 +99,10 @@ def reconcile_positions_and_pnl(limit: int = 200) -> Dict[str, Any]:
     trades_changed = False
     positions_changed = False
 
+    # Track mints we've already sent a reconciliation notification for
+    # to avoid spamming duplicate messages for phantom positions.
+    _notified_mints: set = set()
+
     # ------------------------------------------------------------------ #
     # Step 1: Verify open positions against on-chain balances
     # ------------------------------------------------------------------ #
@@ -175,44 +179,46 @@ def reconcile_positions_and_pnl(limit: int = 200) -> Dict[str, Any]:
                 except Exception as e:
                     print(f"⚠️ Failed to log trade to trade_log.csv: {e}")
                 
-                # Send Telegram notification with PnL details
-                try:
-                    from src.monitoring.telegram_bot import send_telegram_message
-                    from src.config.config_loader import get_config_float
-                    
-                    symbol = trade.get("symbol", "UNKNOWN")
-                    gain = (exit_price / entry_price - 1.0) if entry_price > 0 else 0.0
-                    pnl_pct = gain * 100
-                    
-                    # Get config thresholds for determining stop loss vs take profit
-                    stop_loss_threshold = -abs(get_config_float("stop_loss", 0.04))  # Negative threshold
-                    take_profit_threshold = get_config_float("take_profit", 0.08)
-                    
-                    # Determine if it was stop loss or take profit
-                    if gain <= stop_loss_threshold:
-                        reason_emoji = "🛑 Stop-loss"
-                        reason_text = "stop-loss"
-                    elif gain >= take_profit_threshold:
-                        reason_emoji = "💰 Take-profit"
-                        reason_text = "take-profit"
-                    else:
-                        reason_emoji = "📊 Position closed"
-                        reason_text = "closed"
-                    
-                    exit_sig = exit_tx.get("signature") if exit_tx else None
-                    tx_display = exit_sig if exit_sig else "Detected via reconciliation"
-                    
-                    send_telegram_message(
-                        f"{reason_emoji} triggered (detected via reconciliation)!\n"
-                        f"Token: {symbol} ({mint[:8]}...{mint[-8:]})\n"
-                        f"Chain: SOLANA\n"
-                        f"Entry: ${entry_price:.6f}\n"
-                        f"Exit: ${exit_price:.6f} ({pnl_pct:+.2f}%)\n"
-                        f"TX: {tx_display}",
-                        message_type="trade"
-                    )
-                except Exception as e:
-                    print(f"⚠️ Failed to send Telegram notification: {e}")
+                # Send Telegram notification with PnL details (once per mint)
+                if mint not in _notified_mints:
+                    _notified_mints.add(mint)
+                    try:
+                        from src.monitoring.telegram_bot import send_telegram_message
+                        from src.config.config_loader import get_config_float
+                        
+                        symbol = trade.get("symbol", "UNKNOWN")
+                        gain = (exit_price / entry_price - 1.0) if entry_price > 0 else 0.0
+                        pnl_pct = gain * 100
+                        
+                        # Get config thresholds for determining stop loss vs take profit
+                        stop_loss_threshold = -abs(get_config_float("stop_loss", 0.04))  # Negative threshold
+                        take_profit_threshold = get_config_float("take_profit", 0.08)
+                        
+                        # Determine if it was stop loss or take profit
+                        if gain <= stop_loss_threshold:
+                            reason_emoji = "🛑 Stop-loss"
+                            reason_text = "stop-loss"
+                        elif gain >= take_profit_threshold:
+                            reason_emoji = "💰 Take-profit"
+                            reason_text = "take-profit"
+                        else:
+                            reason_emoji = "📊 Position closed"
+                            reason_text = "closed"
+                        
+                        exit_sig = exit_tx.get("signature") if exit_tx else None
+                        tx_display = exit_sig if exit_sig else "Detected via reconciliation"
+                        
+                        send_telegram_message(
+                            f"{reason_emoji} triggered (detected via reconciliation)!\n"
+                            f"Token: {symbol} ({mint[:8]}...{mint[-8:]})\n"
+                            f"Chain: SOLANA\n"
+                            f"Entry: ${entry_price:.6f}\n"
+                            f"Exit: ${exit_price:.6f} ({pnl_pct:+.2f}%)\n"
+                            f"TX: {tx_display}",
+                            message_type="trade"
+                        )
+                    except Exception as e:
+                        print(f"⚠️ Failed to send Telegram notification: {e}")
                 
                 summary["open_positions_closed"] += 1
                 trades_changed = True
