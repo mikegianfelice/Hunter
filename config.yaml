@@ -4,8 +4,8 @@ test_mode: false  # LIVE TRADING ENABLED - Realistic Scaling
 # === Trading Parameters ===
 # Note: trade_amount_usd removed - position sizing now uses tier-based percentage system (wallet_tiers)
 slippage: 0.03  # 3% slippage (tightened for better execution)
-take_profit: 0.10  # 10% (increased from 8% for better risk/reward ratio)
-stop_loss: 0.03  # 3% stop loss (improved risk/reward vs 5% average win)
+take_profit: 0.06  # 6% — matches actual average win (was 10%, rarely hit)
+stop_loss: 0.03  # 3% stop loss
 stop_loss_slippage_buffer: 0.15  # 15% buffer to account for execution slippage (effective trigger = stop_loss * 1.15)
 use_dynamic_tp: true  # Enable dynamic take profit
 # Note: min_trade_amount_usd removed - not used (tier-based sizing handles minimums)
@@ -29,51 +29,45 @@ trading:
     base: 1.0        # Quality 65-70: Base size
 
   # === Two-Lane Entry System ===
-  # Early Scout: Lower thresholds + stricter safety + smaller size (catch early breakouts 5-20min after ignition)
-  # Confirm/Add: Standard thresholds (current behavior for confirmed moves)
+  # Early Scout: DISABLED — 7-day audit showed 23% WR with most losses from early_scout
+  # Confirm/Add: Raised thresholds for higher conviction entries only
   entry_lanes:
     early_scout:
-      enabled: true
-      position_size_multiplier: 0.25        # 25% of normal position size
-      min_liquidity_usd: 80000              # $80k minimum liquidity (locked)
-      min_volume_24h_usd: 120000            # $120k minimum 24h volume (locked)
-      require_safety_strict: true           # Require stricter safety checks
-      vwap_rule: "band"                     # Allow within band below VWAP
-      vwap_band_bps_below: 80               # 0.8% below VWAP allowed (80 bps)
-      # Candle freshness guards (prevent stale/gapped data)
-      candle_max_stale_minutes: 20          # Reject if last candle older than 20 min
-      require_consecutive_candles: true     # Reject if last 2 candles have gaps
-      # Multi-window momentum (truly short: 15m-30m-1h hierarchy)
-      min_momentum_pct_15m: 0.002           # 0.2% impulse sanity check
-      min_momentum_pct_30m: 0.006           # 0.6% primary trigger (30m window)
-      min_momentum_pct_1h: 0.008            # 0.8% stability confirmation (1h window)
-      require_mom_30m_positive: true        # mom_30m must be > 0 (no falling knives)
-      # Falling-knife protection
-      require_last_candle_green_if_below_vwap: true  # If price < VWAP, last candle must be green
-      # Volume acceleration
-      volume_signal: "short"                # Use 5m/15m volume acceleration
-      min_volume_change_15m: 0.30           # +30% volume vs prior 15m
-      # RSI band
-      rsi_min: 45                           # RSI floor (avoid weak entries)
-      rsi_max: 65                           # RSI ceiling (avoid overbought)
-      cooldown_minutes: 30                  # Minutes before re-buying same token via early_scout
+      enabled: false                        # DISABLED — responsible for majority of losing trades
+      position_size_multiplier: 0.10        # 10% of normal (if re-enabled, must be tiny)
+      min_liquidity_usd: 200000             # $200k minimum (raised from $80k)
+      min_volume_24h_usd: 250000            # $250k minimum (raised from $120k)
+      require_safety_strict: true
+      vwap_rule: "required_above"           # ABOVE VWAP only (no more band below)
+      vwap_band_bps_below: 0                # No band below allowed
+      candle_max_stale_minutes: 10          # Tighter freshness
+      require_consecutive_candles: true
+      min_momentum_pct_15m: 0.005           # 0.5% (raised from 0.2%)
+      min_momentum_pct_30m: 0.012           # 1.2% (raised from 0.6%)
+      min_momentum_pct_1h: 0.015            # 1.5% (raised from 0.8%)
+      require_mom_30m_positive: true
+      require_last_candle_green_if_below_vwap: true
+      volume_signal: "short"
+      min_volume_change_15m: 0.40           # +40% (raised from 30%)
+      rsi_min: 48
+      rsi_max: 62                           # Narrower RSI band
+      cooldown_minutes: 120                 # 2h cooldown (raised from 30min)
     confirm_add:
       enabled: true
-      position_size_multiplier: 1.0         # Full position size (for new positions)
-      min_liquidity_usd: 250000             # $250k minimum liquidity
-      min_volume_24h_usd: 250000            # $250k minimum 24h volume
-      require_safety_strict: false          # Standard safety checks
-      vwap_rule: "required_above"           # Price must be above VWAP
-      momentum_window: "long"               # Use long momentum window (3-4h)
-      min_momentum_pct_long: 0.015          # 1.5% momentum over long window
-      volume_signal: "1h"                   # Use 1h volume change
-      min_volume_change_1h: 0.05            # +5% volume change 1h (existing)
-      rsi_max: 75                           # Allow slightly higher RSI for confirmed moves
-      # Add-to-position behavior when already holding
-      enable_adds_if_held: true             # Allow adding to existing positions
-      add_position_size_multiplier: 0.50    # Add 50% of normal size
-      max_total_position_multiplier: 1.25   # Max total: early 0.25 + add 0.5 + buffer
-      add_only_if_unrealized_pnl_between: [-0.01, 0.06]  # Only add if PnL between -1% and +6%
+      position_size_multiplier: 1.0
+      min_liquidity_usd: 300000             # $300k minimum (raised from $250k)
+      min_volume_24h_usd: 300000            # $300k minimum (raised from $250k)
+      require_safety_strict: false
+      vwap_rule: "required_above"
+      momentum_window: "long"
+      min_momentum_pct_long: 0.025          # 2.5% momentum (raised from 1.5%)
+      volume_signal: "1h"
+      min_volume_change_1h: 0.08            # +8% volume change (raised from 5%)
+      rsi_max: 70                           # Lowered from 75 to avoid overbought
+      enable_adds_if_held: false            # DISABLED — prevents overexposure to same token
+      add_position_size_multiplier: 0.0
+      max_total_position_multiplier: 1.0
+      add_only_if_unrealized_pnl_between: [-0.01, 0.06]
 
   # === Acceleration-Based Candle Selection ===
   # Prioritize tokens with short-term momentum for candle fetching
@@ -134,17 +128,50 @@ check_pool_reserves: true  # Verify pool has sufficient reserves
 min_pool_reserves_multiplier: 2.0  # Pool reserves must be 2x trade amount
 
 # === Strategy Thresholds ===
-min_momentum_pct: 0.015  # 1.5% minimum momentum for external momentum (weighted average of 5m, 1h, 24h)
-multichain_momentum_multiplier: 0.8  # Multi-chain tokens require 80% of ETH momentum (was 75%)
-multichain_momentum_min: 0.020  # Minimum 2.0% momentum for multi-chain tokens (raised from 1.0% for quality)
-min_volume_24h_for_buy: 250000   # Quality-first: $250k volume minimum for reliability
-min_liquidity_usd_for_buy: 250000  # Quality-first: $250k liquidity minimum for reliability
-min_price_usd: 0.000001  # MICRO TESTING - reduced minimum price for more opportunities
+min_momentum_pct: 0.025  # 2.5% minimum momentum (raised from 1.5% — require real moves, not noise)
+multichain_momentum_multiplier: 0.8
+multichain_momentum_min: 0.025  # 2.5% (raised from 2.0%)
+min_volume_24h_for_buy: 300000   # $300k volume minimum (raised from $250k)
+min_liquidity_usd_for_buy: 300000  # $300k liquidity minimum (raised from $250k)
+min_price_usd: 0.000001
 
 # Fast-path thresholds for first-seen tokens
-fastpath_min_volume_24h: 50000   # Increased from $10k to $50k to reduce risky early entries
-fastpath_min_liquidity_usd: 100000   # Increased from $30k to $100k to reduce risky early entries
-fastpath_min_sent_score: 50  # Increased from 30 to 50 to reduce risky early entries
+fastpath_min_volume_24h: 100000  # Raised from $50k — first-seen tokens need higher bar
+fastpath_min_liquidity_usd: 150000  # Raised from $100k
+fastpath_min_sent_score: 60  # Raised from 50
+
+# === Trade Gate — Centralised Quality / Frequency / Time Gate ===
+# Every trade must pass ALL gate checks before execution.
+# This is the single chokepoint that prevents overtrading.
+trade_gate:
+  enabled: true
+  max_trades_per_day: 5             # Hard cap: max 5 trades per rolling 24h
+  global_cooldown_seconds: 1800     # 30 minutes between any two trades
+
+  # Time-of-day filter (UTC hours)
+  enable_time_filter: true
+  allowed_hours_utc: [[6, 12], [15, 19]]   # Only trade during these UTC windows
+  blocked_hours_utc: [21, 22, 23, 0, 1, 2, 3, 4, 5]  # Explicitly blocked hours
+
+  # Entry quality score — multi-factor composite (0-100)
+  min_quality_score: 55.0           # Minimum composite score to enter
+
+  # Quality scoring component weights (must sum to ~1.0)
+  quality_weights:
+    liquidity: 0.25
+    volume_24h: 0.20
+    momentum: 0.20
+    rsi_position: 0.15
+    volume_spike: 0.10
+    holder_distribution: 0.10
+
+  # Thresholds for component scaling
+  quality_liq_excellent: 500000     # Liquidity above this → 100 score
+  quality_liq_floor: 100000         # Liquidity below this → low score
+  quality_vol_excellent: 500000     # Volume above this → 100 score
+  quality_vol_floor: 100000         # Volume below this → low score
+  quality_mom_excellent: 0.05       # 5% momentum → 100 score
+  quality_mom_floor: 0.015          # 1.5% momentum → minimum passing
 
 # === Pre-buy Delisting Check ===
 enable_pre_buy_delisting_check: false  # DISABLED - too aggressive, causing false rejections
@@ -211,14 +238,14 @@ solana_usdc_mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"  # USDC mint ad
 solana_min_sol_for_fees: 0.05  # Minimum SOL needed for transaction fees (separate from trading balance)
 
 # === Risk Management ===
-max_concurrent_positions: 6  # Maximum concurrent open positions
-max_concurrent_trades: 5  # Maximum number of trades to execute concurrently per cycle (set to 5 to reduce race condition risk with quality multipliers)
-daily_loss_limit_usd: 10.0  # Minimum daily loss limit floor (actual limit is 5% of wallet balance, minimum $10)
-max_losing_streak: 3  # Stop after 3 losses
-circuit_breaker_minutes: 60  # 60 minute cooldown after losses
-min_wallet_balance_buffer: 0.02  # Reduced buffer for limited capital
-max_position_duration_hours: 72  # Auto-close positions older than 72 hours (3 days) to free capital for new opportunities
-enable_max_position_duration: true  # Enable automatic closing of stale positions
+max_concurrent_positions: 4  # Reduced from 6 — fewer, higher-conviction positions
+max_concurrent_trades: 3  # Reduced from 5 — quality over quantity
+daily_loss_limit_usd: 10.0  # Minimum daily loss limit floor
+max_losing_streak: 2  # Stop after 2 losses (tightened from 3)
+circuit_breaker_minutes: 120  # 2 hour cooldown after losses (doubled from 60)
+min_wallet_balance_buffer: 0.02
+max_position_duration_hours: 48  # Tightened from 72h to free capital faster
+enable_max_position_duration: true
 
 # === DEX Executor Circuit Breaker ===
 # Prevents wasting cycles when Jupiter/Raydium are broken (e.g. RPC issues, auth errors)
@@ -360,7 +387,7 @@ requote_delay_seconds: 10
 requote_slippage_buffer: 0.005
 
 # === Monitoring ===
-trailing_stop_percent: 0.05  # 5% trailing stop (activate earlier to lock in profits)
+trailing_stop_percent: 0.03  # 3% trailing stop (tightened from 5% — lock profits earlier)
 
 # === Technical Indicator Exit Settings ===
 enable_technical_exit_signals: false  # DISABLED: RSI/MACD/BB exits premature for memecoins (see soft_exit_min_profit)
@@ -387,11 +414,12 @@ volume_cache_duration_seconds: 300  # Cache volume data for 5 minutes (same as c
 soft_exit_min_profit: 0.05  # 5% profit floor for any soft exit (prevents premature winner-cutting)
 
 # === Token Cooldown & Blacklist (Anti Revenge-Trading) ===
-# Prevents the bot from repeatedly re-trading the same losing token.
-token_cooldown_minutes: 240            # 4 hours cooldown after any trade close (buy or sell)
-blacklist_after_consecutive_losses: 2  # Blacklist token after N consecutive losses
-blacklist_hours: 24                    # Duration of blacklist (hours)
-max_trades_per_token_per_day: 3        # Max trades on same token per rolling 24h window
+# OVERHAULED 2026-02-21: 7-day audit showed bot re-trading same losers 23 times.
+# Blacklist after 1 loss.  24h cooldown.  1 trade per token per day.
+token_cooldown_minutes: 1440           # 24 hours cooldown after any trade close (raised from 240)
+blacklist_after_consecutive_losses: 1  # Blacklist after 1 loss (raised from 2) — zero tolerance
+blacklist_hours: 48                    # 48h blacklist (raised from 24h) — must prove itself elsewhere
+max_trades_per_token_per_day: 1        # 1 trade per token per day (raised from 3)
 
 # === Price Health & Stop-Loss Failsafe ===
 # Detects stale/invalid prices and triggers a defensive exit if the bot loses price visibility.
@@ -423,16 +451,16 @@ quality_liquidity_weight: 0.4  # 40% weight for liquidity in quality score
 quality_price_weight: 0.2  # 20% weight for price stability in quality score
 
 # Dynamic take profit settings
-base_take_profit: 0.10  # 10% base take profit (updated to match take_profit)
-max_take_profit: 0.20  # 20% maximum take profit
-min_take_profit: 0.10  # 10% minimum take profit
+base_take_profit: 0.06  # 6% base take profit (matches actual avg win)
+max_take_profit: 0.15  # 15% maximum take profit (lowered from 20%)
+min_take_profit: 0.05  # 5% minimum take profit (lowered from 10%)
 quality_tp_bonus: 0.03  # +3% for high quality tokens
 volume_tp_bonus: 0.02  # +2% for high volume tokens
 liquidity_tp_bonus: 0.02  # +2% for high liquidity tokens
 
 # Sustainable trading limits
-max_sustainable_trades_per_day: 12  # Increased for $100 start strategy (8-12 trades/day)
-sustainable_trade_cooldown_minutes: 10  # Reduced cooldown for higher frequency
+max_sustainable_trades_per_day: 5  # Reduced from 12 — quality over quantity
+sustainable_trade_cooldown_minutes: 30  # 30 min cooldown (raised from 10)
 
 # === Dynamic Position Sizing ===
 # Position sizing based on token quality

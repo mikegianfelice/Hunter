@@ -4,18 +4,26 @@ Token Trade State — per-token cooldown, blacklist, and daily trade counter.
 Persisted to data/token_trade_state.json.  Loaded lazily on first access.
 All public functions use (token_address, chain_id) as the composite key so the
 same mint on different chains is tracked independently.
+
+KEY DESIGN DECISIONS (2026-02-21 overhaul):
+  - Blacklist after 1 consecutive loss (configurable, default 1).
+  - Token cooldown is 24 hours after any trade close (configurable).
+  - Max 1 trade per token per rolling 24 h (configurable).
+  - Early-scout and confirm-add share the SAME counter — no separate tracking.
+  - Prefer-new-tokens flag: tokens traded in the last 48 h are deprioritised.
 """
 
 import json
 import os
 import time
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from src.config.config_loader import (
     get_config_float,
     get_config_int,
 )
+from src.monitoring.structured_logger import log_info, log_warning
 
 # ---------------------------------------------------------------------------
 # Persistence paths
@@ -24,8 +32,7 @@ _STATE_FILE = Path("data/token_trade_state.json")
 _STATE: Dict[str, dict] = {}
 _LOADED = False
 
-# Retention: prune entries older than 7 days on every save
-_RETENTION_SECONDS = 7 * 24 * 60 * 60
+_RETENTION_SECONDS = 7 * 24 * 60 * 60  # prune entries older than 7 days
 
 
 def _key(token_address: str, chain_id: str) -> str:
@@ -47,7 +54,7 @@ def _load() -> None:
             if isinstance(data, dict):
                 _STATE = data
     except Exception as e:
-        print(f"[token_trade_state] WARNING: load failed: {e}")
+        log_warning("token_trade_state.load_error", f"Load failed: {e}")
     _LOADED = True
 
 
@@ -61,7 +68,7 @@ def _save() -> None:
             json.dump(_STATE, f, indent=2)
         os.replace(tmp, _STATE_FILE)
     except Exception as e:
-        print(f"[token_trade_state] WARNING: save failed: {e}")
+        log_warning("token_trade_state.save_error", f"Save failed: {e}")
 
 
 def _prune() -> None:
@@ -84,7 +91,9 @@ def _get(token_address: str, chain_id: str) -> dict:
             "cooldown_until": 0,
             "consecutive_losses": 0,
             "blacklist_until": 0,
-            "trades_24h": [],  # list of timestamps
+            "trades_24h": [],
+            "last_pnl_usd": None,
+            "total_losses": 0,
         }
     return _STATE[k]
 
@@ -99,8 +108,7 @@ def is_token_allowed(
 ) -> Tuple[bool, str]:
     """
     Return (allowed: bool, reason: str).
-
-    Checks cooldown, blacklist, and daily trade cap.
+    Checks blacklist → cooldown → daily trade cap (in that order).
     """
     now = time.time()
     rec = _get(token_address, chain_id)
@@ -108,21 +116,25 @@ def is_token_allowed(
     # --- blacklist ---
     bl_until = rec.get("blacklist_until", 0)
     if now < bl_until:
-        remaining = int(bl_until - now)
-        return False, f"blacklisted ({remaining}s remaining, consecutive_losses={rec.get('consecutive_losses', 0)})"
+        remaining_h = (bl_until - now) / 3600
+        return False, (
+            f"blacklisted ({remaining_h:.1f}h remaining, "
+            f"consecutive_losses={rec.get('consecutive_losses', 0)}, "
+            f"total_losses={rec.get('total_losses', 0)})"
+        )
 
     # --- cooldown ---
     cd_until = rec.get("cooldown_until", 0)
     if now < cd_until:
-        remaining = int(cd_until - now)
-        return False, f"cooldown ({remaining}s remaining)"
+        remaining_m = (cd_until - now) / 60
+        return False, f"cooldown ({remaining_m:.0f}min remaining)"
 
-    # --- daily trade cap ---
-    max_per_day = get_config_int("max_trades_per_token_per_day", 3)
+    # --- daily trade cap (unified across all entry lanes) ---
+    max_per_day = get_config_int("max_trades_per_token_per_day", 1)
     trades_24h = rec.get("trades_24h", [])
     day_ago = now - 86400
     trades_24h = [ts for ts in trades_24h if ts > day_ago]
-    rec["trades_24h"] = trades_24h  # prune in-place
+    rec["trades_24h"] = trades_24h
     if len(trades_24h) >= max_per_day:
         return False, f"daily_cap ({len(trades_24h)}/{max_per_day} trades in 24h)"
 
@@ -141,33 +153,43 @@ def record_trade_close(
     """
     Called after a position is fully closed.
 
-    * Always sets cooldown.
-    * If pnl < 0: increments consecutive_losses; may set blacklist.
-    * If pnl >= 0: resets consecutive_losses.
+    * Always sets cooldown (24 h default).
+    * If pnl < 0: increments consecutive_losses + total_losses; blacklists
+      after threshold (default: 1 loss).
+    * If pnl >= 0: resets consecutive_losses (total_losses is never reset).
     """
     now = time.time()
     rec = _get(token_address, chain_id)
+    k = _key(token_address, chain_id)
 
-    # --- record timestamp ---
     rec["last_trade_ts"] = now
+    rec["last_pnl_usd"] = round(pnl_usd, 4)
     trades_24h = rec.get("trades_24h", [])
     trades_24h.append(now)
     rec["trades_24h"] = trades_24h
 
-    # --- cooldown (always) ---
-    cooldown_minutes = get_config_float("token_cooldown_minutes", 240)
+    # --- cooldown (always applied) ---
+    cooldown_minutes = get_config_float("token_cooldown_minutes", 1440)  # 24 h default
     rec["cooldown_until"] = now + cooldown_minutes * 60
 
     # --- consecutive losses / blacklist ---
     if pnl_usd < 0:
         rec["consecutive_losses"] = rec.get("consecutive_losses", 0) + 1
-        bl_threshold = get_config_int("blacklist_after_consecutive_losses", 2)
+        rec["total_losses"] = rec.get("total_losses", 0) + 1
+        bl_threshold = get_config_int("blacklist_after_consecutive_losses", 1)
         if rec["consecutive_losses"] >= bl_threshold:
             bl_hours = get_config_float("blacklist_hours", 24)
             rec["blacklist_until"] = now + bl_hours * 3600
-            print(
-                f"[token_trade_state] BLACKLISTED {_key(token_address, chain_id)} "
-                f"for {bl_hours}h (consecutive_losses={rec['consecutive_losses']})"
+            log_warning(
+                "token_trade_state.blacklisted",
+                f"BLACKLISTED {k} for {bl_hours}h "
+                f"(consecutive_losses={rec['consecutive_losses']}, "
+                f"total_losses={rec['total_losses']}, "
+                f"last_pnl=${pnl_usd:.2f})",
+                token=k,
+                consecutive_losses=rec["consecutive_losses"],
+                total_losses=rec["total_losses"],
+                blacklist_hours=bl_hours,
             )
     else:
         rec["consecutive_losses"] = 0
@@ -176,7 +198,30 @@ def record_trade_close(
 
 
 # ---------------------------------------------------------------------------
-# Public: introspection (for tests / dry-run)
+# Public: recently-traded token detection (prefer new tokens)
+# ---------------------------------------------------------------------------
+
+def was_recently_traded(token_address: str, chain_id: str, hours: float = 48) -> bool:
+    """Return True if this token had any trade in the last ``hours`` hours."""
+    rec = _get(token_address, chain_id)
+    last_ts = rec.get("last_trade_ts", 0)
+    return (time.time() - last_ts) < hours * 3600
+
+
+def get_recent_token_addresses(chain_id: str, hours: float = 48) -> List[str]:
+    """Return list of token addresses traded in the last ``hours`` hours."""
+    _load()
+    cutoff = time.time() - hours * 3600
+    prefix = f"{chain_id.lower()}:"
+    result = []
+    for k, v in _STATE.items():
+        if k.startswith(prefix) and v.get("last_trade_ts", 0) > cutoff:
+            result.append(k[len(prefix):])
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Public: introspection
 # ---------------------------------------------------------------------------
 
 def get_state(token_address: str, chain_id: str) -> dict:

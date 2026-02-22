@@ -1235,7 +1235,7 @@ class EnhancedAsyncTradingEngine:
     
     def _filter_tokens_early(self, tokens: List[Dict]) -> List[Dict]:
         """
-        Early filtering: Apply volume/liquidity filters BEFORE expensive AI analysis.
+        Early filtering: Apply volume/liquidity/blacklist filters BEFORE expensive AI analysis.
         This saves significant API calls and processing time.
         Tracked tokens (minute_price_tracker) always pass and are included.
         
@@ -1248,6 +1248,8 @@ class EnhancedAsyncTradingEngine:
         filtered_tokens: List[Dict] = []
         filtered_count = 0
         tracked_bypassed = 0
+        blacklisted_count = 0
+        recently_traded_count = 0
         
         for token in tokens:
             if token.get("_is_tracked_token", False):
@@ -1255,11 +1257,32 @@ class EnhancedAsyncTradingEngine:
                 tracked_bypassed += 1
                 continue
             
+            address = (token.get("address") or "").strip()
+            chain_id = token.get("chainId", token.get("chain", "solana")).lower()
+            
+            # Token trade state gate (blacklist + cooldown + daily cap)
+            try:
+                from src.utils.token_trade_state import is_token_allowed
+                allowed, reason = is_token_allowed(address, chain_id)
+                if not allowed:
+                    blacklisted_count += 1
+                    continue
+            except Exception:
+                pass
+            
+            # Prefer-new-tokens: skip tokens traded in last 48h
+            try:
+                from src.utils.token_trade_state import was_recently_traded
+                if was_recently_traded(address, chain_id, hours=48):
+                    recently_traded_count += 1
+                    continue
+            except Exception:
+                pass
+            
             volume_24h = float(token.get("volume24h", 0))
             liquidity = float(token.get("liquidity", 0))
             price_usd = float(token.get("priceUsd", 0))
             
-            # Apply early filters - reject tokens that don't meet basic requirements
             if price_usd < min_price:
                 filtered_count += 1
                 continue
@@ -1272,18 +1295,22 @@ class EnhancedAsyncTradingEngine:
                 filtered_count += 1
                 continue
             
-            # Token passed early filters
             filtered_tokens.append(token)
         
         if tracked_bypassed > 0:
             log_info("trading.tracked_tokens.bypassed_filters",
                      f"{tracked_bypassed} tracked tokens bypassed early filters",
                      tracked_bypassed=tracked_bypassed)
-        if filtered_count > 0:
+        total_removed = filtered_count + blacklisted_count + recently_traded_count
+        if total_removed > 0:
             log_info("trading.early_filter", 
-                    f"Early filtering: {filtered_count} tokens filtered out before AI analysis "
-                    f"({len(filtered_tokens)}/{len(tokens)} passed)",
-                    {"filtered_out": filtered_count, "passed": len(filtered_tokens), "total": len(tokens)})
+                    f"Early filtering: {total_removed} removed "
+                    f"(quality={filtered_count}, blacklist/cooldown={blacklisted_count}, "
+                    f"recently_traded={recently_traded_count}) — "
+                    f"{len(filtered_tokens)}/{len(tokens)} passed",
+                    {"filtered_out": filtered_count, "blacklisted": blacklisted_count,
+                     "recently_traded": recently_traded_count,
+                     "passed": len(filtered_tokens), "total": len(tokens)})
         
         return filtered_tokens
     
@@ -2295,6 +2322,13 @@ class EnhancedAsyncTradingEngine:
                     log_trade("buy", symbol, trade_amount, True, profit_loss, execution_time)
                     log_info("trading.success", f"✅ Real trade successful: {symbol} - PnL: ${profit_loss:.2f} - TX: {tx_hash}")
                     
+                    # Record execution in trade gate (daily cap + cooldown)
+                    try:
+                        from src.core.trade_gate import record_trade_execution
+                        record_trade_execution()
+                    except Exception as gate_err:
+                        log_error("trading.trade_gate_record_error", f"Failed to record in trade gate: {gate_err}")
+                    
                     # Add token to swap indexer for continuous tracking
                     try:
                         from src.config.config_loader import get_config
@@ -3234,6 +3268,14 @@ class EnhancedAsyncTradingEngine:
         except Exception as e:
             log_error("trading.position_summary_error", f"Error collecting position summary: {e}")
         
+        # Trade gate status
+        gate_status = {}
+        try:
+            from src.core.trade_gate import get_gate_status
+            gate_status = get_gate_status()
+        except Exception as e:
+            log_error("trading.gate_status_error", f"Error collecting gate status: {e}")
+        
         cycle_summary = {
             "success": True,
             "cycle_time": cycle_time,
@@ -3246,6 +3288,7 @@ class EnhancedAsyncTradingEngine:
             "retries_attempted": len(retry_results),
             "retries_successful": len([r for r in retry_results if isinstance(r, dict) and r.get("success", False)]),
             "success_rate": successful_trades / len(trade_results) if trade_results else 0,
+            "trade_gate": gate_status,
             "wallet_metrics": wallet_metrics,
             "api_metrics": api_metrics,
             "price_memory_stats": price_memory_stats,

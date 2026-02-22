@@ -1863,13 +1863,25 @@ def check_buy_signal(token: dict) -> bool:
     save_price_memory(mem)
 
     # =========================================================================
+    # PREFER-NEW-TOKENS CHECK
+    # =========================================================================
+    try:
+        from src.utils.token_trade_state import was_recently_traded
+        if was_recently_traded(raw_address, chain_id, hours=48):
+            _log_trace(
+                f"⏭️ Deprioritised recently-traded token {token.get('symbol', 'UNKNOWN')} (traded <48h ago)",
+                level="info",
+                event="strategy.buy.recently_traded",
+                symbol=token.get("symbol"),
+                address=address[:12],
+            )
+            return False
+    except Exception:
+        pass
+
+    # =========================================================================
     # TWO-LANE ENTRY EVALUATION
     # =========================================================================
-    # Evaluates token against both early_scout and confirm_add lanes.
-    # Each lane has different thresholds for liquidity, volume, VWAP, RSI, momentum.
-    # Returns lane info with position_size_multiplier for sizing.
-    # =========================================================================
-    
     lane_result = evaluate_entry_lane(token)
     selected_lane = lane_result.get("lane")
     position_multiplier = lane_result.get("position_size_multiplier", 1.0)
@@ -1877,7 +1889,6 @@ def check_buy_signal(token: dict) -> bool:
     lane_details = lane_result.get("details", {})
     
     if selected_lane is None:
-        # No lane qualifies - log and reject
         _log_trace(
             f"❌ No entry lane qualifies for {token.get('symbol', 'UNKNOWN')}: {lane_reason}",
             level="info",
@@ -1888,25 +1899,48 @@ def check_buy_signal(token: dict) -> bool:
         )
         return False
     
-    # Store lane information in token dict for position sizing and tracking
     token['entry_lane'] = selected_lane
     token['entry_lane_multiplier'] = position_multiplier
     token['entry_lane_details'] = lane_details
-    
-    # Log successful lane selection
+
+    # =========================================================================
+    # TRADE GATE — centralised quality / frequency / time gate
+    # =========================================================================
+    try:
+        from src.core.trade_gate import trade_gate_check
+        gate_ok, gate_reason, gate_diag = trade_gate_check(token)
+        if not gate_ok:
+            _log_trace(
+                f"🚫 Trade gate BLOCKED {token.get('symbol', 'UNKNOWN')}: {gate_reason}",
+                level="warning",
+                event="strategy.buy.trade_gate_blocked",
+                symbol=token.get("symbol"),
+                address=address[:12],
+                gate_reason=gate_reason,
+            )
+            return False
+        token['trade_gate_diagnostics'] = gate_diag
+        token['entry_quality_score'] = gate_diag.get("quality", {}).get("score", 0)
+    except Exception as e:
+        _log_trace(
+            f"⚠️ Trade gate check failed (allowing): {e}",
+            level="warning",
+            event="strategy.buy.trade_gate_error",
+            error=str(e),
+        )
+
     _log_trace(
         f"✅ Entry lane '{selected_lane}' selected for {token.get('symbol', 'UNKNOWN')} "
-        f"(size_mult={position_multiplier:.2f}x, liq=${lane_details.get('liq_usd', 0):,.0f}, "
-        f"short_mom={lane_details.get('short_momentum', 0)*100:.2f}%, long_mom={lane_details.get('long_momentum', 0)*100:.2f}%)",
+        f"(size_mult={position_multiplier:.2f}x, quality={token.get('entry_quality_score', 'N/A')}, "
+        f"liq=${lane_details.get('liq_usd', 0):,.0f})",
         level="info",
         event="strategy.buy.lane_selected",
         symbol=token.get("symbol"),
         lane=selected_lane,
         position_multiplier=position_multiplier,
-        **lane_details
+        quality_score=token.get('entry_quality_score'),
     )
     
-    # Record early_scout buy for cooldown tracking
     if selected_lane == "early_scout":
         _record_early_scout_buy(address)
     
