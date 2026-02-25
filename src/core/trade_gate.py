@@ -6,7 +6,7 @@ The gate enforces:
 
 1. **Daily trade cap**       – hard limit on trades per rolling 24 h window
 2. **Global cooldown**       – minimum seconds between any two trade executions
-3. **Time-of-day filter**    – only allow trading during configured UTC hour windows
+3. **Time-of-day status**    – records configured UTC hour windows (observe-only)
 4. **Entry quality score**   – multi-factor composite score with minimum threshold
 
 State is persisted to ``data/trade_gate_state.json`` so caps survive restarts.
@@ -118,6 +118,8 @@ def _check_global_cooldown() -> Tuple[bool, str]:
 # ---------------------------------------------------------------------------
 
 def _check_time_of_day() -> Tuple[bool, str]:
+    # Time windows are no longer used as hard execution blocks.
+    # Keep a status message for diagnostics/observability only.
     if not _cfg_bool("enable_time_filter", True):
         return True, "time_filter_disabled"
 
@@ -128,13 +130,13 @@ def _check_time_of_day() -> Tuple[bool, str]:
     blocked_hours: List[int] = _cfg("blocked_hours_utc", [21, 22, 23])
 
     if hour in blocked_hours:
-        return False, f"blocked_hour (UTC {hour:02d}:00 is in blocked_hours)"
+        return True, f"time_filter_observe_only: blocked_hour (UTC {hour:02d}:00 is in blocked_hours)"
 
     for window in allowed_windows:
         if len(window) == 2 and window[0] <= hour < window[1]:
-            return True, f"allowed_window (UTC {hour:02d}:00 in [{window[0]:02d}-{window[1]:02d}))"
+            return True, f"time_filter_observe_only: allowed_window (UTC {hour:02d}:00 in [{window[0]:02d}-{window[1]:02d}))"
 
-    return False, f"outside_allowed_hours (UTC {hour:02d}:00)"
+    return True, f"time_filter_observe_only: outside_allowed_hours (UTC {hour:02d}:00)"
 
 
 # ---------------------------------------------------------------------------
