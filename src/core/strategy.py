@@ -1363,9 +1363,6 @@ def _check_add_to_position_allowed(token: dict, confirm_cfg: dict) -> tuple:
     
     Returns: (allowed: bool, add_multiplier: float, reason: str)
     """
-    if not confirm_cfg.get("enable_adds_if_held", True):
-        return (False, 0.0, "adds_disabled")
-    
     # Check if token is already held
     try:
         from src.storage.positions import load_positions as load_positions_store
@@ -1379,6 +1376,10 @@ def _check_add_to_position_allowed(token: dict, confirm_cfg: dict) -> tuple:
         if not existing_position:
             # Not held - this is a new entry, not an add
             return (True, confirm_cfg.get("position_size_multiplier", 1.0), "new_position")
+
+        # Token is already held; respect add-to-position toggle
+        if not confirm_cfg.get("enable_adds_if_held", True):
+            return (False, 0.0, "adds_disabled")
         
         # Check if position has unrealized PnL data
         entry_price = float(existing_position.get("entry_price", 0) or 0)
