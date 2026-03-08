@@ -16,9 +16,10 @@ trading:
   batch_size: 10  # Number of tokens to process in parallel (increased from 5 for better efficiency)
   
   # Adaptive cycle wait time (seconds)
-  cycle_wait_base_seconds: 300  # Base wait time: 5 minutes
-  cycle_wait_min_seconds: 300   # Minimum wait: 5 minutes (when market is active)
-  cycle_wait_max_seconds: 600   # Maximum wait: 10 minutes (when market is quiet)
+  cycle_wait_base_seconds: 60   # Base wait time: 60 seconds
+  cycle_wait_min_seconds: 30    # Minimum wait: 30 seconds (when market is active)
+  cycle_wait_max_seconds: 120   # Maximum wait: 120 seconds (when market is quiet)
+  cycle_wait_jitter_seconds: 10 # Add +/- 10s jitter to avoid bursty API patterns
   
   # Quality-based position sizing multipliers
   enable_quality_based_sizing: true  # Enable quality-based position size scaling
@@ -132,7 +133,7 @@ min_momentum_pct: 0.025  # 2.5% minimum momentum (raised from 1.5% — require r
 multichain_momentum_multiplier: 0.8
 multichain_momentum_min: 0.025  # 2.5% (raised from 2.0%)
 min_volume_24h_for_buy: 300000   # $300k volume minimum (raised from $250k)
-min_liquidity_usd_for_buy: 300000  # $300k liquidity minimum (raised from $250k)
+min_liquidity_usd_for_buy: 120000  # $120k liquidity minimum for broader opportunity capture
 min_price_usd: 0.000001
 
 # Fast-path thresholds for first-seen tokens
@@ -145,8 +146,8 @@ fastpath_min_sent_score: 60  # Raised from 50
 # This is the single chokepoint that prevents overtrading.
 trade_gate:
   enabled: true
-  max_trades_per_day: 5             # Hard cap: max 5 trades per rolling 24h
-  global_cooldown_seconds: 1800     # 30 minutes between any two trades
+  max_trades_per_day: 12            # Hard cap: max 12 trades per rolling 24h
+  global_cooldown_seconds: 600      # 10 minutes between any two trades
 
   # Time-of-day filter (UTC hours)
   enable_time_filter: true

@@ -2715,6 +2715,7 @@ class EnhancedAsyncTradingEngine:
         base_wait = get_config_int("trading.cycle_wait_base_seconds", 300)  # Default 5 minutes
         min_wait = get_config_int("trading.cycle_wait_min_seconds", 120)  # Minimum 2 minutes
         max_wait = get_config_int("trading.cycle_wait_max_seconds", 600)  # Maximum 10 minutes
+        jitter_seconds = max(0, get_config_int("trading.cycle_wait_jitter_seconds", 0))
         
         tokens_approved = cycle_result.get("tokens_approved", 0)
         trades_executed = cycle_result.get("trades_executed", 0)
@@ -2737,6 +2738,10 @@ class EnhancedAsyncTradingEngine:
         if tokens_approved == 0 and tokens_filtered_early > 20:
             wait_time = min(max_wait, wait_time + 120)  # Increase by 2 minutes
         
+        # Add a small random jitter to avoid synchronized API burst patterns.
+        if jitter_seconds > 0:
+            wait_time += random.randint(-jitter_seconds, jitter_seconds)
+
         # Ensure wait time is within bounds
         wait_time = max(min_wait, min(wait_time, max_wait))
         
@@ -3374,6 +3379,7 @@ async def run_enhanced_async_trading():
                             f"(adaptive: {result.get('tokens_approved', 0)} approved, "
                             f"{result.get('trades_executed', 0)} executed)",
                             {"wait_seconds": wait_time, "wait_minutes": wait_minutes})
+                    log_info("trading.scan_interval", f"Scan cycle completed — next scan in {wait_time} seconds")
                     await asyncio.sleep(wait_time)
                     
                 except KeyboardInterrupt:
