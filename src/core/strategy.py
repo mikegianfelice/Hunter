@@ -1355,6 +1355,35 @@ def _check_vwap_band(price: float, vwap_value: float, vwap_rule: str, band_bps_b
     return (price >= vwap_value, "default_above", price_vs_vwap_pct)
 
 
+def _did_cross_above_vwap_last_candle(candles: list, vwap_value: float) -> bool:
+    """
+    Return True if price crossed above VWAP in the most recent candle window.
+
+    We infer crossover from the latest candle shape and prior close:
+    - last open < VWAP <= last close
+    - OR previous close < VWAP <= last close
+    """
+    if not candles or len(candles) < 1 or not vwap_value or vwap_value <= 0:
+        return False
+
+    try:
+        last = candles[-1] or {}
+        last_open = float(last.get("open", last.get("close", 0)) or 0)
+        last_close = float(last.get("close", 0) or 0)
+        if last_open > 0 and last_close > 0 and last_open < vwap_value <= last_close:
+            return True
+
+        if len(candles) >= 2:
+            prev = candles[-2] or {}
+            prev_close = float(prev.get("close", 0) or 0)
+            if prev_close > 0 and last_close > 0 and prev_close < vwap_value <= last_close:
+                return True
+    except (TypeError, ValueError):
+        return False
+
+    return False
+
+
 def _check_add_to_position_allowed(token: dict, confirm_cfg: dict) -> tuple:
     """
     Check if adding to an existing position is allowed based on PnL window and cap.
@@ -1547,23 +1576,63 @@ def evaluate_entry_lane(token: dict) -> dict:
         min_momentum = confirm_cfg.get("min_momentum_pct_long", 0.015)
         rsi_max = confirm_cfg.get("rsi_max", 75)
         vwap_rule = confirm_cfg.get("vwap_rule", "required_above")
+        technical_indicator_adjustment = get_config_bool("technical_indicator_adjustment", True)
+        rsi_reduce_threshold = get_config_float("rsi_reduce_threshold", 70.0)
+        rsi_heavy_reduce_threshold = get_config_float("rsi_heavy_reduce_threshold", 80.0)
+        vwap_soft_filter_enabled = get_config_bool("vwap_soft_filter_enabled", True)
+        rsi_multiplier = 1.0
+        vwap_multiplier = 1.0
+        vwap_recent_cross = False
+        indicator_adjustments = []
         
         # Check thresholds and collect all fail reasons
         if liq_usd < min_liq:
             confirm_fail_reasons.append(f"liq<{min_liq/1000:.0f}k")
         if vol24h < min_vol:
             confirm_fail_reasons.append(f"vol24h<{min_vol/1000:.0f}k")
-        if rsi is None:
-            confirm_fail_reasons.append("rsi_unavailable")
-        elif rsi > rsi_max:
-            confirm_fail_reasons.append(f"rsi>{rsi_max}")
-        
-        vwap_pass, vwap_reason, vwap_pct = _check_vwap_band(price, vwap_value, vwap_rule)
-        if not vwap_pass:
-            confirm_fail_reasons.append(f"vwap_{vwap_reason}")
+        if technical_indicator_adjustment:
+            if rsi is not None:
+                if rsi > rsi_heavy_reduce_threshold:
+                    rsi_multiplier = 0.5
+                    indicator_adjustments.append(
+                        f"RSI extreme ({float(rsi):.1f}) - reducing position size by 50%"
+                    )
+                elif rsi > rsi_reduce_threshold:
+                    rsi_multiplier = 0.75
+                    indicator_adjustments.append(
+                        f"RSI elevated ({float(rsi):.1f}) - reducing position size by 25%"
+                    )
+
+            if vwap_rule == "required_above" and vwap_soft_filter_enabled:
+                vwap_recent_cross = _did_cross_above_vwap_last_candle(candles, vwap_value)
+                vwap_allowed = (vwap_value is not None and price >= vwap_value) or vwap_recent_cross
+                if not vwap_allowed:
+                    vwap_multiplier = 0.75
+                    indicator_adjustments.append(
+                        "Price below VWAP without crossover - reducing size by 25%"
+                    )
+            else:
+                vwap_pass, vwap_reason, vwap_pct = _check_vwap_band(price, vwap_value, vwap_rule)
+                if not vwap_pass:
+                    confirm_fail_reasons.append(f"vwap_{vwap_reason}")
+        else:
+            if rsi is None:
+                confirm_fail_reasons.append("rsi_unavailable")
+            elif rsi > rsi_max:
+                confirm_fail_reasons.append(f"rsi>{rsi_max}")
+
+            vwap_pass, vwap_reason, vwap_pct = _check_vwap_band(price, vwap_value, vwap_rule)
+            if not vwap_pass:
+                confirm_fail_reasons.append(f"vwap_{vwap_reason}")
         
         if long_momentum < min_momentum:
             confirm_fail_reasons.append(f"long_mom<{min_momentum*100:.1f}%")
+
+        details["technical_indicator_adjustment"] = technical_indicator_adjustment
+        details["rsi_multiplier"] = rsi_multiplier
+        details["vwap_multiplier"] = vwap_multiplier
+        details["vwap_recent_cross"] = vwap_recent_cross
+        details["indicator_adjustments"] = indicator_adjustments
         
         # If all checks pass
         if not confirm_fail_reasons:

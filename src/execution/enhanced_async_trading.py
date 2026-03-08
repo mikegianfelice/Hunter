@@ -2085,6 +2085,35 @@ class EnhancedAsyncTradingEngine:
                                 entry_lane_multiplier=entry_lane_multiplier,
                                 size_before_lane=round(size_before_lane, 3),
                                 adjusted_size=round(quality_adjusted_size, 3))
+
+                    # Soft technical-indicator sizing (RSI/VWAP) for confirm_add lane.
+                    # When disabled, legacy hard-gate behavior in strategy.py remains active.
+                    rsi_multiplier = 1.0
+                    vwap_multiplier = 1.0
+                    technical_indicator_adjustment = get_config_bool("technical_indicator_adjustment", True)
+                    indicator_adjustments = []
+                    lane_details = token.get("entry_lane_details", {}) or {}
+                    if technical_indicator_adjustment and entry_lane == "confirm_add":
+                        rsi_multiplier = float(lane_details.get("rsi_multiplier", 1.0) or 1.0)
+                        vwap_multiplier = float(lane_details.get("vwap_multiplier", 1.0) or 1.0)
+                        indicator_adjustments = lane_details.get("indicator_adjustments", []) or []
+
+                        indicator_multiplier = rsi_multiplier * vwap_multiplier
+                        if indicator_multiplier != 1.0:
+                            size_before_indicator = quality_adjusted_size
+                            quality_adjusted_size = quality_adjusted_size * indicator_multiplier
+                            reason_suffix = f" | {'; '.join(indicator_adjustments)}" if indicator_adjustments else ""
+                            log_info("trading.indicator_sizing",
+                                    f"Indicator size adjustment for {token.get('symbol', 'UNKNOWN')}: "
+                                    f"${size_before_indicator:.2f} × RSI({rsi_multiplier:.2f}) × VWAP({vwap_multiplier:.2f}) "
+                                    f"= ${quality_adjusted_size:.2f}{reason_suffix}",
+                                    symbol=token.get("symbol"),
+                                    entry_lane=entry_lane,
+                                    rsi_multiplier=rsi_multiplier,
+                                    vwap_multiplier=vwap_multiplier,
+                                    size_before_indicator=round(size_before_indicator, 3),
+                                    adjusted_size=round(quality_adjusted_size, 3),
+                                    indicator_adjustments=indicator_adjustments)
                     
                     # Ensure position size is within tier bounds (safety check)
                     final_position_size = max(tier_base_size, min(quality_adjusted_size, tier_max_size))

@@ -440,6 +440,10 @@ enable_volume_momentum_check: true  # Check if volume is increasing (if volume c
 min_volume_change_1h: 0.015  # Require at least 1.5% volume increase in 1h (if data available)
 enable_rsi_filter: true  # Filter out overbought tokens (RSI > 70)
 rsi_overbought_threshold: 70  # RSI threshold to consider overbought
+technical_indicator_adjustment: true  # Use RSI/VWAP as size modifiers in confirm_add lane
+rsi_reduce_threshold: 70  # RSI above this cuts position size by 25%
+rsi_heavy_reduce_threshold: 80  # RSI above this cuts position size by 50%
+vwap_soft_filter_enabled: true  # If below VWAP without recent cross, reduce size by 25%
 
 # === State Management ===
 reset_state_now: false
